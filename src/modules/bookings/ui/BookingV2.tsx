@@ -641,7 +641,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       }
       const data = await res.json();
       if (data.session_url) {
-        window.location.href = data.session_url;
+        try {
+          if (window.top) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
+        } catch (e) {
+          // Fallback if cross-origin restricts window.top
+          window.location.href = data.session_url;
+        }
       } else {
         setError(data.error || 'Payment failed to start');
       }
@@ -1264,7 +1273,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* STEP 5: PAYMENT (Breakdown) */}
         <div className={`v3-step ${step === 5 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{t.paymentTitle}</h1>
-          <p className="v3-step-sub">{t.securePaymentNote}</p>
+          <p className="v3-step-sub">{siteConfig?.hasPayment ? t.securePaymentNote : t.paymentSubtitle}</p>
 
           <div className="v3-breakdown">
             <div className="v3-breakdown-row">
@@ -1283,7 +1292,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           </div>
 
-          {siteConfig?.config?.payment?.enabled ? (
+          {siteConfig?.hasPayment ? (
             <>
               <div className="v3-pay-method selected">
                 <div className="v3-pay-method-radio"></div>
