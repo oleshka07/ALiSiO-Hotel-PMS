@@ -27,6 +27,10 @@
   var ENABLE_PAYMENT = scriptTag ? (scriptTag.getAttribute('data-payment') !== 'false') : true;
   var AUTO_PROMO = scriptTag ? (scriptTag.getAttribute('data-promo') || '') : '';
   var SITE_ID = scriptTag ? (scriptTag.getAttribute('data-site') || '') : '';
+  // Stay window — used by breakfast widget to render multi-day picker
+  // (each morning between check-in+1 and check-out is a candidate)
+  var STAY_CHECKIN  = scriptTag ? (scriptTag.getAttribute('data-checkin')  || '') : '';
+  var STAY_CHECKOUT = scriptTag ? (scriptTag.getAttribute('data-checkout') || '') : '';
 
   // Service ID mapping
   var SERVICE_IDS = { sauna: 'svc_sauna', tub: 'svc_pool', breakfast: 'svc_breakfast' };
@@ -54,6 +58,7 @@
       backToDetails: '← Back', paymentFailed: 'Payment failed. Please try again.',
       paymentSuccess: 'Payment successful!',
       promoLabel: 'Have a promo code?', promoApply: 'Apply', promoApplied: 'Applied', promoInvalid: 'Invalid code', promoPlaceholder: 'Enter code',
+      breakfastDays: 'Breakfast days', breakfastDaysHint: 'Tap each morning you want delivery', perDay: '/day', noDaysSelected: 'Select at least one day',
       mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
       months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     },
@@ -77,6 +82,7 @@
       backToDetails: '← Назад', paymentFailed: 'Оплата не вдалася. Спробуйте ще раз.',
       paymentSuccess: 'Оплата пройшла успішно!',
       promoLabel: 'Є промокод?', promoApply: 'Застосувати', promoApplied: 'Застосовано', promoInvalid: 'Невірний код', promoPlaceholder: 'Введіть код',
+      breakfastDays: 'Дні сніданку', breakfastDaysHint: 'Позначте ранки, в які хочете доставку', perDay: '/день', noDaysSelected: 'Оберіть хоча б один день',
       mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
       months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
     },
@@ -100,6 +106,7 @@
       backToDetails: '← Zpět', paymentFailed: 'Platba se nezdařila. Zkuste to znovu.',
       paymentSuccess: 'Platba proběhla úspěšně!',
       promoLabel: 'Máte promokód?', promoApply: 'Použít', promoApplied: 'Aplikováno', promoInvalid: 'Neplatný kód', promoPlaceholder: 'Zadejte kód',
+      breakfastDays: 'Dny snídaně', breakfastDaysHint: 'Označte rána, kdy chcete doručit', perDay: '/den', noDaysSelected: 'Vyberte alespoň jeden den',
       mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
       months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
     },
@@ -123,6 +130,7 @@
       backToDetails: '← Zurück', paymentFailed: 'Zahlung fehlgeschlagen. Bitte versuchen Sie es erneut.',
       paymentSuccess: 'Zahlung erfolgreich!',
       promoLabel: 'Haben Sie einen Aktionscode?', promoApply: 'Anwenden', promoApplied: 'Angewendet', promoInvalid: 'Ungültiger Code', promoPlaceholder: 'Code eingeben',
+      breakfastDays: 'Frühstückstage', breakfastDaysHint: 'Wählen Sie die Morgen für die Lieferung', perDay: '/Tag', noDaysSelected: 'Mindestens einen Tag wählen',
       mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So',
       months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     }
@@ -138,7 +146,7 @@
     price: 600, originalPrice: 600, broomPrice: 300, addons: [],
     bookedSlots: [],
     // Breakfast
-    menuItems: [], itemQty: {},
+    menuItems: [], itemQty: {}, selectedBreakfastDates: [],
     // Guest (for standalone, no reservation)
     guestName: '', guestPhone: '',
     // Calendar
@@ -189,12 +197,44 @@
     return state.price * state.hours + state.broomPrice * state.brooms;
   }
 
-  function getBreakfastTotal() {
+  // Per-day breakfast subtotal (sum of items × qty)
+  function getBreakfastDailyTotal() {
     var tot = 0;
     state.menuItems.forEach(function(item) {
       tot += (item.price || 0) * (state.itemQty[item.id] || 0);
     });
     return tot;
+  }
+
+  // Total = per-day × number of selected breakfast days. Falls back to
+  // single-day pricing when stay window is unknown (standalone widget).
+  function getBreakfastTotal() {
+    var days = getBreakfastDayCount();
+    return getBreakfastDailyTotal() * Math.max(1, days);
+  }
+
+  // List of «morning» dates between check-in+1 and check-out (inclusive),
+  // i.e. each morning the guest is present at breakfast time. Empty when
+  // stay window is not provided.
+  function getBreakfastDays() {
+    if (!STAY_CHECKIN || !STAY_CHECKOUT) return [];
+    var ci = parseDate(STAY_CHECKIN);
+    var co = parseDate(STAY_CHECKOUT);
+    var days = [];
+    var d = new Date(ci); d.setDate(d.getDate() + 1);
+    while (d <= co) {
+      days.push(fmtDate(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  }
+
+  // How many days count toward the total. When stay window is missing
+  // we treat it as a 1-day order so the existing standalone flow keeps
+  // working unchanged.
+  function getBreakfastDayCount() {
+    if (!STAY_CHECKIN || !STAY_CHECKOUT) return 1;
+    return state.selectedBreakfastDates.length;
   }
 
   // ─── API ───
@@ -223,6 +263,11 @@
         state.menuItems.forEach(function(item) {
           if (!state.itemQty[item.id]) state.itemQty[item.id] = 0;
         });
+        // Default-select all breakfast days when guest has a stay window.
+        // Most guests want delivery every morning — they can opt-out per day.
+        if (STAY_CHECKIN && STAY_CHECKOUT && state.selectedBreakfastDates.length === 0) {
+          state.selectedBreakfastDates = getBreakfastDays();
+        }
       }
 
       if (!state.date) state.date = checkIn;
@@ -281,6 +326,7 @@
         hours: state.hours,
         brooms: state.brooms,
         itemQty: state.itemQty,
+        selectedBreakfastDates: state.selectedBreakfastDates,
         reservationId: RESERVATION_ID,
         promoCode: state.promoApplied ? state.promoCode : null,
       };
@@ -358,8 +404,26 @@
   }
 
   async function finalizeBookingAfterPayment(bookingData, paymentSessionId) {
-    // The checkout-session API already created a preliminary order,
-    // and payment-return already confirmed it. Just show success.
+    // For slot services (sauna, tub) the preliminary service_orders row
+    // created by /api/booking/checkout-session already covers everything —
+    // payment-return confirmed it. Just show success.
+    //
+    // Breakfast is special: the preliminary SO row only captures the total
+    // amount, not the per-menu-item details. Restore widget state from
+    // bookingData and call book-breakfast (one POST per selected day) so
+    // the dashboard sees one booking_service_orders row per (item, date).
+    if (bookingData && bookingData.serviceType === 'breakfast') {
+      try {
+        if (bookingData.itemQty) state.itemQty = bookingData.itemQty;
+        if (bookingData.selectedBreakfastDates) state.selectedBreakfastDates = bookingData.selectedBreakfastDates;
+        await doSubmitBreakfast(paymentSessionId);
+        return;
+      } catch (e) {
+        console.error('[ASW] finalize breakfast error:', e);
+        // Fall through to plain success state — payment succeeded, the
+        // operator can see the SO row even if BSO creation failed.
+      }
+    }
     state.view = 'success';
     state.loading = false; render();
   }
@@ -398,15 +462,26 @@
     });
     if (items.length === 0) { state.error = 'Select at least one item'; state.loading = false; render(); return; }
 
-    var body = { action: 'book-breakfast', items: items };
-    if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
-    if (paymentId) body.paymentId = paymentId;
+    // Multi-day breakfast: post once per selected morning. Backend creates
+    // separate booking_service_orders rows per day, so the dashboard groups
+    // them under the right date instead of bundling on check-in.
+    var dates = state.selectedBreakfastDates && state.selectedBreakfastDates.length > 0
+      ? state.selectedBreakfastDates
+      : [null];
 
-    var res = await fetch(API_BASE + '/api/booking/services', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+    for (var i = 0; i < dates.length; i++) {
+      var body = { action: 'book-breakfast', items: items };
+      if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
+      if (paymentId) body.paymentId = paymentId;
+      if (dates[i]) body.serviceDate = dates[i];
+
+      var res = await fetch(API_BASE + '/api/booking/services', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+    }
+
     state.view = 'success';
     state.loading = false; render();
   }
@@ -425,8 +500,11 @@
   }
 
   async function submitBreakfastOrder() {
+    if (getBreakfastDailyTotal() <= 0) { state.error = 'Select at least one item'; render(); return; }
+    if (STAY_CHECKIN && STAY_CHECKOUT && state.selectedBreakfastDates.length === 0) {
+      state.error = t.noDaysSelected; render(); return;
+    }
     var total = getBreakfastTotal();
-    if (total <= 0) { state.error = 'Select at least one item'; render(); return; }
     if (ENABLE_PAYMENT && total > 0) {
       await initiatePayment(total, t.breakfast);
     } else {
@@ -580,7 +658,10 @@
   }
 
   function renderBreakfast() {
+    var dailyTotal = getBreakfastDailyTotal();
+    var dayCount = getBreakfastDayCount();
     var total = getBreakfastTotal();
+    var breakfastDays = getBreakfastDays();
     var h = '';
 
     h += '<div class="asw-card">';
@@ -600,11 +681,30 @@
       h += '<div class="asw-error">' + state.error + '</div>';
     }
 
-    // Menu items
+    // Days picker (only when stay window is known and has 2+ mornings)
+    if (breakfastDays.length >= 2) {
+      h += '<div class="asw-field-group">';
+      h += '<label class="asw-label">' + t.breakfastDays + ' <span class="asw-hint">' + t.breakfastDaysHint + '</span></label>';
+      h += '<div class="asw-day-grid">';
+      breakfastDays.forEach(function(d) {
+        var checked = state.selectedBreakfastDates.indexOf(d) !== -1;
+        var dObj = parseDate(d);
+        var weekdayKeys = ['sun','mon','tue','wed','thu','fri','sat'];
+        var wd = t[weekdayKeys[dObj.getDay()]] || '';
+        h += '<label class="asw-day-chip' + (checked ? ' asw-day-chip-on' : '') + '" data-day="' + d + '">';
+        h += '<span class="asw-day-wd">' + wd + '</span>';
+        h += '<span class="asw-day-num">' + dObj.getDate() + '.' + (dObj.getMonth()+1) + '</span>';
+        h += '<input type="checkbox" data-day-cb="' + d + '"' + (checked ? ' checked' : '') + ' />';
+        h += '</label>';
+      });
+      h += '</div></div>';
+    }
+
+    // Compact menu items
     if (state.menuItems.length === 0) {
       h += '<div class="asw-empty">No menu items available</div>';
     } else {
-      h += '<div class="asw-menu-grid">';
+      h += '<div class="asw-menu-list">';
       state.menuItems.forEach(function(item) {
         var qty = state.itemQty[item.id] || 0;
         var nameKey = 'name' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
@@ -612,19 +712,21 @@
         var descKey = 'description' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
         var displayDesc = item[descKey] || item.descriptionEn || item.description;
 
-        h += '<div class="asw-menu-item">';
+        h += '<div class="asw-menu-row">';
         if (item.photoUrl) {
-          h += '<div class="asw-menu-photo" style="background-image:url(' + item.photoUrl + ')"></div>';
+          h += '<div class="asw-menu-row-photo" style="background-image:url(' + item.photoUrl + ')"></div>';
         } else {
-          h += '<div class="asw-menu-photo asw-menu-photo-placeholder">🍽️</div>';
+          h += '<div class="asw-menu-row-photo asw-menu-photo-placeholder">🍽️</div>';
         }
-        h += '<div class="asw-menu-info">';
-        h += '<div class="asw-menu-name">' + escHtml(displayName) + '</div>';
-        if (displayDesc) h += '<div class="asw-menu-desc">' + escHtml(displayDesc) + '</div>';
-        if (item.weightGrams) h += '<div class="asw-menu-weight">' + item.weightGrams + 'g</div>';
-        h += '<div class="asw-menu-price">' + fmtPrice(item.price) + ' Kč</div>';
+        h += '<div class="asw-menu-row-info">';
+        h += '<div class="asw-menu-row-name">' + escHtml(displayName) + '</div>';
+        if (displayDesc) h += '<div class="asw-menu-row-desc">' + escHtml(displayDesc) + '</div>';
+        h += '<div class="asw-menu-row-meta">';
+        if (item.weightGrams) h += '<span class="asw-menu-weight">' + item.weightGrams + 'g</span>';
+        h += '<span class="asw-menu-price">' + fmtPrice(item.price) + ' Kč' + (dayCount > 1 ? ' ' + t.perDay : '') + '</span>';
         h += '</div>';
-        h += '<div class="asw-menu-qty">';
+        h += '</div>';
+        h += '<div class="asw-menu-row-qty">';
         h += '<button class="asw-counter-btn" data-item-minus="' + item.id + '"' + (qty <= 0 ? ' disabled' : '') + '>−</button>';
         h += '<span class="asw-counter-val">' + qty + '</span>';
         h += '<button class="asw-counter-btn" data-item-plus="' + item.id + '">+</button>';
@@ -636,6 +738,9 @@
 
     // Divider + Total
     h += '<div class="asw-divider"></div>';
+    if (dayCount > 1 && dailyTotal > 0) {
+      h += '<div class="asw-total-sub"><span>' + fmtPrice(dailyTotal) + ' Kč ' + t.perDay + ' × ' + dayCount + '</span></div>';
+    }
     h += '<div class="asw-total-row">';
     h += '<span class="asw-total-label">' + t.total + '</span>';
     h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
@@ -732,6 +837,18 @@
       btn.addEventListener('click', function() {
         var id = btn.getAttribute('data-item-minus');
         state.itemQty[id] = Math.max(0, (state.itemQty[id] || 0) - 1); render();
+      });
+    });
+
+    // Breakfast day chips — toggle inclusion in the dates list
+    root.querySelectorAll('[data-day]').forEach(function(label) {
+      label.addEventListener('click', function(e) {
+        e.preventDefault();
+        var d = label.getAttribute('data-day');
+        var idx = state.selectedBreakfastDates.indexOf(d);
+        if (idx === -1) state.selectedBreakfastDates.push(d);
+        else state.selectedBreakfastDates.splice(idx, 1);
+        render();
       });
     });
 
@@ -860,7 +977,7 @@
       '.asw-success-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px}',
       '.asw-success-msg{font-size:14px;color:var(--text2);margin-bottom:24px}',
 
-      // Menu (breakfast)
+      // Menu (breakfast) — legacy classes kept for safety
       '.asw-menu-grid{display:flex;flex-direction:column;gap:12px}',
       '.asw-menu-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}',
       '.asw-menu-photo{width:60px;height:60px;border-radius:8px;background-size:cover;background-position:center;flex-shrink:0}',
@@ -869,10 +986,33 @@
       '.asw-menu-name{font-size:14px;font-weight:600;color:var(--text)}',
       '.asw-menu-desc{font-size:12px;color:var(--text2);margin-top:2px}',
       '.asw-menu-weight{font-size:11px;color:var(--text2)}',
-      '.asw-menu-price{font-size:14px;font-weight:700;color:var(--text);margin-top:2px}',
+      '.asw-menu-price{font-size:14px;font-weight:700;color:var(--text)}',
       '.asw-menu-qty{display:flex;align-items:center;gap:8px;flex-shrink:0}',
       '.asw-menu-qty .asw-counter-btn{width:30px;height:30px;font-size:15px}',
       '.asw-menu-qty .asw-counter-val{min-width:24px;font-size:14px}',
+
+      // Compact menu row (new layout)
+      '.asw-menu-list{display:flex;flex-direction:column;gap:8px}',
+      '.asw-menu-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}',
+      '.asw-menu-row-photo{width:40px;height:40px;border-radius:8px;background-size:cover;background-position:center;flex-shrink:0}',
+      '.asw-menu-row-info{flex:1;min-width:0}',
+      '.asw-menu-row-name{font-size:13px;font-weight:600;color:var(--text);line-height:1.2}',
+      '.asw-menu-row-desc{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}',
+      '.asw-menu-row-meta{display:flex;align-items:center;gap:8px;margin-top:3px}',
+      '.asw-menu-row-qty{display:flex;align-items:center;gap:6px;flex-shrink:0}',
+      '.asw-menu-row-qty .asw-counter-btn{width:28px;height:28px;font-size:14px}',
+      '.asw-menu-row-qty .asw-counter-val{min-width:18px;font-size:13px;text-align:center}',
+
+      // Day chips for breakfast multi-day picker
+      '.asw-day-grid{display:flex;flex-wrap:wrap;gap:6px}',
+      '.asw-day-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:48px;padding:6px 8px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg);cursor:pointer;user-select:none;transition:all .15s}',
+      '.asw-day-chip-on{border-color:var(--accent);background:var(--accent);color:#fff}',
+      '.asw-day-chip input{display:none}',
+      '.asw-day-wd{font-size:10px;text-transform:uppercase;opacity:.7;font-weight:600}',
+      '.asw-day-num{font-size:14px;font-weight:700;margin-top:1px}',
+
+      // Sub-total row (per day × count)
+      '.asw-total-sub{font-size:12px;color:var(--text2);text-align:right;margin-bottom:4px}',
 
       // Calendar overlay
       '.asw-cal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}',

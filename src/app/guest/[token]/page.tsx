@@ -512,6 +512,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     script.setAttribute('data-container', widgetId);
     script.setAttribute('data-nonce', nonce);
     if (r?.id) script.setAttribute('data-reservation', r.id);
+    // Pass stay window so the breakfast widget can render a per-morning
+    // picker (defaults to all mornings between check-in+1 and check-out).
+    if (r?.check_in)  script.setAttribute('data-checkin',  r.check_in);
+    if (r?.check_out) script.setAttribute('data-checkout', r.check_out);
     if (widgetService === 'sauna') script.setAttribute('data-promo', 'GLAMPING');
     container.appendChild(script);
 
