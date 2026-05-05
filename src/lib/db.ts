@@ -3450,6 +3450,40 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #D: backfill needs_review on legacy null-account ops.
+  //
+  // The migrations from `income`, `expenses`, `transfers`, `payments`
+  // copied rows into fin_operations even when account_id was NULL.
+  // createOperationInTx now rejects such rows on creation (see
+  // operations.handlers.ts:185-192), but the historical leftovers stay
+  // invisible — they don't show up in /finance/reconcile because their
+  // needs_review flag was never set, and their balance impact is hidden
+  // by PR #signals-filter (the latest fix).
+  //
+  // Mark them needs_review=1 so the operator sees them in the existing
+  // triage queue (`/finance/operations?needs_review=1`) and can either
+  // assign an account or archive them. Idempotent: only flips rows
+  // currently at 0.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const result = database.prepare(`
+      UPDATE fin_operations
+      SET needs_review = 1
+      WHERE needs_review = 0
+        AND (
+          (op_type = 'income'   AND account_to_id   IS NULL) OR
+          (op_type = 'expense'  AND account_from_id IS NULL) OR
+          (op_type = 'transfer' AND (account_from_id IS NULL OR account_to_id IS NULL))
+        )
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #D: flagged ${result.changes} legacy null-account fin_operations as needs_review=1`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #D needs_review backfill:', e.message);
+  }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
