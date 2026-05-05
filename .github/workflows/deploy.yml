@@ -35,7 +35,7 @@ jobs:
             if [ ! -d ".git" ]; then
               cd ..
               rm -rf alisio-pms
-              git clone git@github.com:ostepeniev/ALiSiO-Hotel-PMS.git alisio-pms
+              git clone git@github.com:oleshka07/ALiSiO-Hotel-PMS.git alisio-pms
               cd alisio-pms
             else
               git fetch origin

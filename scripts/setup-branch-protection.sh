@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO="ostepeniev/ALiSiO-Hotel-PMS"
+REPO="oleshka07/ALiSiO-Hotel-PMS"
 BRANCH="main"
 
 # Resolve gh command (Windows install location vs PATH).

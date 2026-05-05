@@ -77,7 +77,7 @@ git config --unset core.hooksPath
 
 **Перевірка** через GitHub CLI:
 ```bash
-"/c/Program Files/GitHub CLI/gh.exe" api repos/ostepeniev/ALiSiO-Hotel-PMS/branches/main/protection \
+"/c/Program Files/GitHub CLI/gh.exe" api repos/oleshka07/ALiSiO-Hotel-PMS/branches/main/protection \
   --jq '{enforce_admins: .enforce_admins.enabled, status_checks: .required_status_checks.contexts}'
 ```
 Має повернути `{"enforce_admins": true, "status_checks": ["build"]}`.
