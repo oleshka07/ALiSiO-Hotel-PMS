@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
+import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
 import ExportButton from '../_components/ExportButton';
 
 type OpType = 'income' | 'expense' | 'transfer';
@@ -37,6 +38,8 @@ interface Operation {
 }
 
 interface Account { id: string; name: string; color: string; balance: number; currency: string }
+interface CategoryRow { id: string; name: string; icon: string | null; op_type: string | null }
+interface NamedRow { id: string; name: string }
 
 function formatMoney(n: number, currency: string): string {
   const sign = n < 0 ? '−' : '';
@@ -46,6 +49,9 @@ function formatMoney(n: number, currency: string): string {
 export default function OperationsPage() {
   const [ops, setOps] = useState<Operation[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [projects, setProjects] = useState<NamedRow[]>([]);
+  const [counterparties, setCounterparties] = useState<NamedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalType, setModalType] = useState<OpType | null>(null);
   const [editOp, setEditOp] = useState<Operation | null>(null);
@@ -90,8 +96,42 @@ export default function OperationsPage() {
     } catch (e) { console.error(e); }
   }, []);
 
+  // Lookup lists for inline pickers — fetched once per visit, not per row.
+  const fetchLookups = useCallback(async () => {
+    try {
+      const [cats, projs, cps] = await Promise.all([
+        fetch('/api/finance/categories').then((r) => r.json()).catch(() => []),
+        fetch('/api/finance/projects').then((r) => r.json()).catch(() => []),
+        fetch('/api/finance/counterparties').then((r) => r.json()).catch(() => []),
+      ]);
+      setCategories(Array.isArray(cats) ? cats : []);
+      setProjects(Array.isArray(projs) ? projs : []);
+      setCounterparties(Array.isArray(cps) ? cps : []);
+    } catch (e) { console.error(e); }
+  }, []);
+
   useEffect(() => { fetchOps(); }, [fetchOps]);
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  useEffect(() => { fetchLookups(); }, [fetchLookups]);
+
+  // PATCH a single field on the operation (used by inline pickers).
+  // Updates the local row optimistically + refetches on failure.
+  async function patchOperation(opId: string, patch: Partial<Operation> & { category_id?: string | null; project_id?: string | null; counterparty_id?: string | null }) {
+    setOps((prev) => prev.map((o) => (o.id === opId ? { ...o, ...patch } as Operation : o)));
+    try {
+      const res = await fetch(`/api/finance/operations/${opId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error('PATCH failed');
+      // Refetch in background to pull joined names back from the server.
+      fetchOps();
+    } catch (e) {
+      console.error('inline patch error', e);
+      fetchOps();
+    }
+  }
 
   async function handleDelete(op: Operation) {
     if (!confirm(`Видалити операцію на ${formatMoney(op.amount, op.currency)}?`)) return;
@@ -221,8 +261,24 @@ export default function OperationsPage() {
                     const isTransfer = o.op_type === 'transfer';
                     const amountColor = isTransfer ? 'var(--text-secondary)' : isExpense ? '#ef4444' : '#22c55e';
                     const sign = isTransfer ? '⇄' : isExpense ? '−' : '+';
+                    const openModal = () => { setEditOp(o); setModalType(o.op_type); };
+                    // Categories filtered by op_type so an income row only sees
+                    // income categories, etc. Transfers don't take a category.
+                    const categoryOptions: InlinePickerOption[] = isTransfer
+                      ? []
+                      : categories
+                          .filter((c) => !c.op_type || c.op_type === o.op_type)
+                          .map((c) => ({ id: c.id, name: c.name, icon: c.icon }));
+                    const projectOptions: InlinePickerOption[] = projects.map((p) => ({ id: p.id, name: p.name }));
+                    const counterpartyOptions: InlinePickerOption[] = counterparties.map((c) => ({ id: c.id, name: c.name }));
                     return (
-                      <tr key={o.id} style={{ borderTop: '1px solid var(--border-primary)' }}>
+                      <tr
+                        key={o.id}
+                        onClick={openModal}
+                        style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
                         <td style={td}>{o.paid_at?.substring(0, 10)}</td>
                         <td style={{ ...td, textAlign: 'right', color: amountColor, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                           {sign} {Math.abs(o.amount).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {o.currency}
@@ -230,9 +286,38 @@ export default function OperationsPage() {
                         <td style={td}>
                           {isTransfer ? `${o.account_from_name} → ${o.account_to_name}` : (o.account_from_name || o.account_to_name || '—')}
                         </td>
-                        <td style={td}>{o.counterparty_name || <span style={{ color: 'var(--text-secondary)' }}>—</span>}</td>
-                        <td style={td}>{o.category_icon ? <span style={{ marginRight: 4 }}>{o.category_icon}</span> : null}{o.category_name || <span style={{ color: 'var(--text-secondary)' }}>—</span>}</td>
-                        <td style={td}>{o.project_name || <span style={{ color: 'var(--text-secondary)' }}>—</span>}</td>
+                        <td style={td}>
+                          <InlinePicker
+                            value={o.counterparty_id}
+                            displayName={o.counterparty_name}
+                            options={counterpartyOptions}
+                            onPick={(id) => patchOperation(o.id, { counterparty_id: id })}
+                            onClear={() => patchOperation(o.id, { counterparty_id: null })}
+                          />
+                        </td>
+                        <td style={td}>
+                          {isTransfer ? (
+                            <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                          ) : (
+                            <InlinePicker
+                              value={o.category_id}
+                              displayName={o.category_name}
+                              displayIcon={o.category_icon}
+                              options={categoryOptions}
+                              onPick={(id) => patchOperation(o.id, { category_id: id })}
+                              onClear={() => patchOperation(o.id, { category_id: null })}
+                            />
+                          )}
+                        </td>
+                        <td style={td}>
+                          <InlinePicker
+                            value={o.project_id}
+                            displayName={o.project_name}
+                            options={projectOptions}
+                            onPick={(id) => patchOperation(o.id, { project_id: id })}
+                            onClear={() => patchOperation(o.id, { project_id: null })}
+                          />
+                        </td>
                         <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.comment || undefined}>
                           {o.comment || <span style={{ color: 'var(--text-secondary)' }}>—</span>}
                           {o.tags.length > 0 && (
@@ -243,10 +328,10 @@ export default function OperationsPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                           {o.suggested_recurring_id && (
                             <span
-                              onClick={() => { setEditOp(o); setModalType(o.op_type); }}
+                              onClick={openModal}
                               style={{
                                 display: 'inline-flex', alignItems: 'center', gap: 2,
                                 padding: '1px 5px', marginRight: 4, borderRadius: 4,
@@ -260,7 +345,7 @@ export default function OperationsPage() {
                           )}
                           {attachCounts[o.id] > 0 && (
                             <span
-                              onClick={() => { setEditOp(o); setModalType(o.op_type); }}
+                              onClick={openModal}
                               style={{
                                 display: 'inline-flex', alignItems: 'center', gap: 2,
                                 padding: '1px 5px', marginRight: 4, borderRadius: 4,
@@ -272,7 +357,7 @@ export default function OperationsPage() {
                               <Paperclip size={10} /> {attachCounts[o.id]}
                             </span>
                           )}
-                          <button onClick={() => { setEditOp(o); setModalType(o.op_type); }} style={iconBtn} title="Редагувати"><Copy size={14} /></button>
+                          <button onClick={openModal} style={iconBtn} title="Редагувати"><Pencil size={14} /></button>
                           <button onClick={() => handleDuplicate(o)} style={iconBtn} title="Дублювати"><Copy size={14} /></button>
                           <button onClick={() => handleDelete(o)} style={{ ...iconBtn, color: '#dc2626' }} title="Видалити"><Trash2 size={14} /></button>
                         </td>

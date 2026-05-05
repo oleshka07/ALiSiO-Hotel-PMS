@@ -280,14 +280,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// Side-panel layout (Finmap-style): slides in from the right, full
+// viewport height, fixed 480 px wide. Clicking the dim overlay closes.
 const overlayStyle: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+  display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end',
 };
 const modalStyle: React.CSSProperties = {
-  background: 'var(--bg-primary)', borderRadius: 12, padding: 24,
-  width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto',
-  border: '1px solid var(--border-primary)',
+  background: 'var(--bg-primary)', padding: 24,
+  width: 480, maxWidth: '100%', height: '100vh', overflowY: 'auto',
+  borderLeft: '1px solid var(--border-primary)',
+  boxShadow: '-8px 0 24px rgba(0,0,0,0.12)',
 };
 const input: React.CSSProperties = {
   width: '100%', padding: '8px 12px', border: '1px solid var(--border-primary)',
