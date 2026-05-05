@@ -1140,15 +1140,26 @@ function runMigrations(database: any) {
     )
   `);
 
-  // Seed GLAMPING promo code: 310 CZK/hour for sauna (instead of 600)
+  // Seed GLAMPING promo code: 310 CZK/hour for sauna AND tub (instead of 600)
   try {
-    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get();
+    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get() as { id: string } | undefined;
     if (!glamExists) {
       database.prepare(`
         INSERT INTO promo_codes (id, code, description, discount_type, discount_value, applicable_services, is_active)
-        VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna"]', 1)
+        VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna+tub discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna","svc_pool"]', 1)
       `).run();
-      console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna)');
+      console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna+tub)');
+    } else {
+      // Backfill existing rows that only included svc_sauna — extend to svc_pool
+      // so the same promo works in the chan/hot-tub widget.
+      const row = database.prepare("SELECT applicable_services FROM promo_codes WHERE code = 'GLAMPING'").get() as { applicable_services: string | null };
+      if (row?.applicable_services && !row.applicable_services.includes('svc_pool')) {
+        database.prepare(`
+          UPDATE promo_codes SET applicable_services = '["svc_sauna","svc_pool"]'
+          WHERE code = 'GLAMPING'
+        `).run();
+        console.log('[DB] Extended GLAMPING promo to include svc_pool (chan/tub)');
+      }
     }
   } catch (e) {
     console.warn('[DB] Promo seed error:', e);
