@@ -684,159 +684,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     );
   }
 
-  // ─── FAR BEFORE ───────────────────────────────
-  if (phase === 'far_before') {
-    return (
-      <div className="gp-root">
-        <FarBeforeScreen
-          data={data} t={t} lang={lang} dLeft={dLeft}
-          isRegistered={isRegistered}
-          onRegisterClick={() => setShowReg(true)}
-          checkInTime={r?.check_in_time}
-          checkOutTime={r?.check_out_time}
-        />
-
-        {/* Registration overlay — must be rendered here because far_before does an early return */}
-        {showReg && (
-          <div className="gp-reg-overlay">
-            <div className="gp-reg-header">
-              <button className="gp-reg-back" onClick={() => {
-                if (regStep === 1) setShowReg(false);
-                else setRegStep(s => s - 1);
-              }}>{regStep === 1 ? '✕' : t.back}</button>
-              <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, 3)}</span>
-              <div style={{ width: 48 }} />
-            </div>
-            <div className="gp-reg-progress">
-              <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
-            </div>
-
-            <div className="gp-reg-body">
-              {/* Step 1: Guest Details */}
-              {regStep === 1 && (
-                <>
-                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.fullName} *</div>
-                    <input className="gp-field-input" value={regData.fullName} autoComplete="name"
-                      onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.email} *</div>
-                    <input className="gp-field-input" type="email" value={regData.email} autoComplete="email"
-                      onChange={e => setRegData(d => ({ ...d, email: e.target.value }))} />
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.phone}</div>
-                    <input className="gp-field-input" type="tel" value={regData.phone} autoComplete="tel"
-                      onChange={e => setRegData(d => ({ ...d, phone: e.target.value }))} />
-                    <div className="gp-field-hint">{t.phoneHint}</div>
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.dateOfBirth} *</div>
-                    <input className="gp-field-input" type="date" value={regData.dateOfBirth} autoComplete="bday"
-                      onChange={e => setRegData(d => ({ ...d, dateOfBirth: e.target.value }))} />
-                  </div>
-                </>
-              )}
-
-              {/* Step 2: ID Document */}
-              {regStep === 2 && (
-                <>
-                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
-                  <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
-                  <div className="gp-security-notice">{t.securityNotice}</div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.documentType} *</div>
-                    <select className="gp-field-input" value={regData.documentType}
-                      onChange={e => setRegData(d => ({ ...d, documentType: e.target.value }))}>
-                      <option value="">{t.selectDoc}</option>
-                      <option value="passport">{t.passportDoc}</option>
-                      <option value="id_card">{t.idCardDoc}</option>
-                      <option value="driving_license">{t.drivingLicenseDoc}</option>
-                    </select>
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.documentNumber} *</div>
-                    <input className="gp-field-input" value={regData.documentNumber}
-                      onChange={e => setRegData(d => ({ ...d, documentNumber: e.target.value }))} />
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.nationality} *</div>
-                    <input className="gp-field-input" value={regData.nationality} autoComplete="country-name"
-                      placeholder="DEU, CZE, UKR..."
-                      onChange={e => setRegData(d => ({ ...d, nationality: e.target.value }))} />
-                  </div>
-                  <div className="gp-field">
-                    <div className="gp-field-label">{t.permanentAddress} *</div>
-                    <input className="gp-field-input" value={regData.address} autoComplete="street-address"
-                      placeholder="München, Germany"
-                      onChange={e => setRegData(d => ({ ...d, address: e.target.value }))} />
-                  </div>
-                </>
-              )}
-
-              {/* Step 3: Confirm */}
-              {regStep === 3 && (
-                <>
-                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>{t.step3Title}</h2>
-                  <div className="gp-confirm-table">
-                    {[
-                      [t.fullName, regData.fullName],
-                      [t.email, regData.email],
-                      [t.phone, regData.phone || '—'],
-                      [t.dateOfBirth, regData.dateOfBirth],
-                      [t.documentType, regData.documentType],
-                      [t.documentNumber, regData.documentNumber],
-                      [t.nationality, regData.nationality],
-                      [t.permanentAddress, regData.address],
-                    ].map(([label, value], i) => (
-                      <div key={i} className="gp-confirm-row">
-                        <span className="gp-confirm-label">{label}</span>
-                        <span className="gp-confirm-value">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="gp-confirm-success">{t.confirmNotice}</div>
-                </>
-              )}
-            </div>
-
-            <div className="gp-reg-footer">
-              {regStep < 3 ? (
-                <button className="gp-btn gp-btn-primary" onClick={() => {
-                  if (regStep === 1) {
-                    if (!regData.fullName.trim() || !regData.email.trim() || !regData.dateOfBirth) {
-                      showToast(t.regError, 'error'); return;
-                    }
-                  }
-                  if (regStep === 2) {
-                    if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
-                      showToast(t.regError, 'error'); return;
-                    }
-                  }
-                  setRegStep(s => s + 1);
-                }}>
-                  {t.continue_}
-                </button>
-              ) : (
-                <button className="gp-btn gp-btn-primary" onClick={handleRegSubmit} disabled={regLoading}>
-                  {regLoading ? '...' : t.confirmReg}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Toast */}
-        {toast && (
-          <div className={`gp-toast ${toast.type === 'error' ? 'gp-toast-error' : ''}`}>{toast.msg}</div>
-        )}
-      </div>
-    );
-  }
-
-
   // ─── Data derivatives ─────────────────────────
   const amenities = parseJSON<any[]>(cfg?.amenities, []);
   const rules = parseJSON<any[]>(cfg?.rules, []);
@@ -859,7 +706,19 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     <div className="gp-root">
 
       {/* ════ HOME TAB ════ */}
-      {tab === 'home' && (
+      {tab === 'home' && phase === 'far_before' && (
+        <div className="gp-tab-content">
+          <FarBeforeScreen
+            data={data} t={t} lang={lang} dLeft={dLeft}
+            isRegistered={isRegistered}
+            onRegisterClick={() => setShowReg(true)}
+            checkInTime={r?.check_in_time}
+            checkOutTime={r?.check_out_time}
+          />
+        </div>
+      )}
+
+      {tab === 'home' && phase !== 'far_before' && (
         <div className="gp-tab-content">
 
           {/* ── WALLET CARD ── */}
