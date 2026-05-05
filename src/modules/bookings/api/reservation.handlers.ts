@@ -67,6 +67,17 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     }
 
+    // Snapshot BEFORE the UPDATE so the activity log can record the
+    // previous unit. Reading after the UPDATE would just echo the new
+    // value back at us.
+    let prevUnitLabel: string | null = null;
+    if (body.unit_id !== undefined) {
+      const prevRow = db.prepare(
+        'SELECT u.name AS unit_name, r.unit_id FROM reservations r LEFT JOIN units u ON u.id = r.unit_id WHERE r.id = ?',
+      ).get(id) as { unit_name?: string; unit_id?: string } | undefined;
+      prevUnitLabel = prevRow?.unit_name || prevRow?.unit_id || null;
+    }
+
     for (const key of allowed) {
       if (body[key] !== undefined) {
         sets.push(`${key} = ?`);
@@ -114,6 +125,15 @@ export async function updateReservation(request: NextRequest, { params }: { para
       if (body.status) logActions.push({ action: 'status_change', details: `Статус → ${body.status}` });
       if (body.payment_status) logActions.push({ action: 'payment_status_change', details: `Оплата → ${body.payment_status}` });
       if (body.total_price !== undefined) logActions.push({ action: 'price_change', details: `Ціна → ${body.total_price} CZK` });
+      // Forensic trail for unit moves — without this we can't tell whether
+      // a "stale unit in TG" report is a save failure, a duplicate-booking
+      // edit, or a downstream cache.
+      if (body.unit_id !== undefined) {
+        const nextRow = db.prepare('SELECT name FROM units WHERE id = ?').get(body.unit_id) as { name?: string } | undefined;
+        const before = prevUnitLabel || '—';
+        const after  = nextRow?.name || body.unit_id;
+        logActions.push({ action: 'unit_change', details: `Юніт: ${before} → ${after}` });
+      }
       for (const log of logActions) {
         db.prepare("INSERT INTO booking_activity_log (id, reservation_id, action, details) VALUES (?, ?, ?, ?)")
           .run(`al_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, id, log.action, log.details);
