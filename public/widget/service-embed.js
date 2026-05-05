@@ -59,6 +59,7 @@
       paymentSuccess: 'Payment successful!',
       promoLabel: 'Have a promo code?', promoApply: 'Apply', promoApplied: 'Applied', promoInvalid: 'Invalid code', promoPlaceholder: 'Enter code',
       breakfastDays: 'Breakfast days', breakfastDaysHint: 'Tap each morning you want delivery', perDay: '/day', noDaysSelected: 'Select at least one day',
+      addToCart: 'Add to cart',
       mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
       months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     },
@@ -83,6 +84,7 @@
       paymentSuccess: 'Оплата пройшла успішно!',
       promoLabel: 'Є промокод?', promoApply: 'Застосувати', promoApplied: 'Застосовано', promoInvalid: 'Невірний код', promoPlaceholder: 'Введіть код',
       breakfastDays: 'Дні сніданку', breakfastDaysHint: 'Позначте ранки, в які хочете доставку', perDay: '/день', noDaysSelected: 'Оберіть хоча б один день',
+      addToCart: 'Додати в кошик',
       mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
       months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
     },
@@ -107,6 +109,7 @@
       paymentSuccess: 'Platba proběhla úspěšně!',
       promoLabel: 'Máte promokód?', promoApply: 'Použít', promoApplied: 'Aplikováno', promoInvalid: 'Neplatný kód', promoPlaceholder: 'Zadejte kód',
       breakfastDays: 'Dny snídaně', breakfastDaysHint: 'Označte rána, kdy chcete doručit', perDay: '/den', noDaysSelected: 'Vyberte alespoň jeden den',
+      addToCart: 'Přidat do košíku',
       mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
       months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
     },
@@ -131,6 +134,7 @@
       paymentSuccess: 'Zahlung erfolgreich!',
       promoLabel: 'Haben Sie einen Aktionscode?', promoApply: 'Anwenden', promoApplied: 'Angewendet', promoInvalid: 'Ungültiger Code', promoPlaceholder: 'Code eingeben',
       breakfastDays: 'Frühstückstage', breakfastDaysHint: 'Wählen Sie die Morgen für die Lieferung', perDay: '/Tag', noDaysSelected: 'Mindestens einen Tag wählen',
+      addToCart: 'In den Warenkorb',
       mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So',
       months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     }
@@ -650,9 +654,17 @@
     h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
     h += '</div>';
 
-    // Book / Pay button
+    // Book / Pay button + optional Add-to-cart button (only when guest
+    // page exposed the bridge and we have a reservation context).
     var btnLabel = ENABLE_PAYMENT ? (t.payAmount + ' ' + fmtPrice(total) + ' Kč') : t.addToBooking;
-    h += '<button class="asw-book-btn" id="asw-submit">' + btnLabel + '</button>';
+    if (cartBridgeAvailable()) {
+      h += '<div class="asw-btn-row">';
+      h += '<button class="asw-book-btn asw-book-btn-secondary" id="asw-cart">🛒 ' + t.addToCart + '</button>';
+      h += '<button class="asw-book-btn" id="asw-submit">' + btnLabel + '</button>';
+      h += '</div>';
+    } else {
+      h += '<button class="asw-book-btn" id="asw-submit">' + btnLabel + '</button>';
+    }
     h += '</div>';
     return h;
   }
@@ -747,9 +759,95 @@
     h += '</div>';
 
     var btnLabel = ENABLE_PAYMENT ? (t.payAmount + ' ' + fmtPrice(total) + ' Kč') : t.order;
-    h += '<button class="asw-book-btn" id="asw-submit"' + (total <= 0 ? ' disabled' : '') + '>' + btnLabel + '</button>';
+    if (cartBridgeAvailable() && total > 0) {
+      h += '<div class="asw-btn-row">';
+      h += '<button class="asw-book-btn asw-book-btn-secondary" id="asw-cart">🛒 ' + t.addToCart + '</button>';
+      h += '<button class="asw-book-btn" id="asw-submit">' + btnLabel + '</button>';
+      h += '</div>';
+    } else {
+      h += '<button class="asw-book-btn" id="asw-submit"' + (total <= 0 ? ' disabled' : '') + '>' + btnLabel + '</button>';
+    }
     h += '</div>';
     return h;
+  }
+
+  // ─── Cart bridge ────
+  // The guest page exposes window.alisioAddToCart when a reservation is
+  // present. When absent (standalone widget, or pre-cart session), the
+  // cart button is hidden and the widget falls back to direct payment.
+  function cartBridgeAvailable() {
+    return typeof window.alisioAddToCart === 'function' && !!RESERVATION_ID;
+  }
+
+  function buildSlotCartPayload() {
+    var isS = SERVICE_TYPE === 'sauna';
+    var name = isS ? t.sauna : t.tub;
+    var icon = isS ? '🔥' : '🛁';
+    var lineTotal = getSlotTotal();
+    return {
+      type: 'slot',
+      serviceId: serviceId,
+      serviceName: name,
+      icon: icon,
+      currency: 'CZK',
+      lineTotal: lineTotal,
+      pricePerHour: state.price,
+      hours: state.hours,
+      startHour: state.startHour,
+      date: state.date,
+      addonBrooms: state.brooms || 0,
+      addonBroomPrice: state.broomPrice || 0,
+      serviceDates: state.date ? [state.date] : undefined,
+    };
+  }
+
+  function buildBreakfastCartPayload() {
+    var menuPicks = [];
+    Object.keys(state.itemQty).forEach(function(id) {
+      if ((state.itemQty[id] || 0) > 0) {
+        var info = null;
+        for (var i = 0; i < state.menuItems.length; i++) {
+          if (state.menuItems[i].id === id) { info = state.menuItems[i]; break; }
+        }
+        if (info) {
+          var nameKey = 'name' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
+          menuPicks.push({
+            menuItemId: id,
+            quantity: state.itemQty[id],
+            price: info.price,
+            name: info[nameKey] || info.nameEn || info.name,
+          });
+        }
+      }
+    });
+    return {
+      type: 'breakfast',
+      serviceId: serviceId,
+      serviceName: t.breakfast,
+      icon: '🍳',
+      currency: 'CZK',
+      lineTotal: getBreakfastTotal(),
+      breakfastMenuItems: menuPicks,
+      serviceDates: state.selectedBreakfastDates && state.selectedBreakfastDates.length > 0
+        ? state.selectedBreakfastDates.slice() : undefined,
+    };
+  }
+
+  function submitToCart() {
+    if (!cartBridgeAvailable()) return;
+    if (SERVICE_TYPE === 'breakfast') {
+      if (getBreakfastDailyTotal() <= 0) { state.error = 'Select at least one item'; render(); return; }
+      if (STAY_CHECKIN && STAY_CHECKOUT && state.selectedBreakfastDates.length === 0) {
+        state.error = t.noDaysSelected; render(); return;
+      }
+      var ok = window.alisioAddToCart(buildBreakfastCartPayload());
+      if (ok !== false) state.view = 'success';
+    } else {
+      if (!state.date) { state.error = t.selectDate; render(); return; }
+      var ok2 = window.alisioAddToCart(buildSlotCartPayload());
+      if (ok2 !== false) state.view = 'success';
+    }
+    render();
   }
 
   function renderSuccess() {
@@ -857,6 +955,8 @@
       if (SERVICE_TYPE === 'breakfast') submitBreakfastOrder();
       else submitSlotBooking();
     });
+    // Add-to-cart (only present when the guest page exposed the bridge)
+    bindClick('asw-cart', function() { submitToCart(); });
 
     // Promo code
     bindClick('asw-promo-toggle', function() { state.promoOpen = !state.promoOpen; render(); });
@@ -961,6 +1061,10 @@
       '.asw-book-btn:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}',
       '.asw-book-btn:disabled{opacity:.4;cursor:not-allowed}',
       '.asw-outline-btn{background:transparent;color:var(--accent);border:2px solid var(--accent)}',
+      // Two-button row (Add-to-cart + Pay)
+      '.asw-btn-row{display:flex;gap:8px}',
+      '.asw-btn-row .asw-book-btn{flex:1;font-size:14px;padding:12px 8px}',
+      '.asw-book-btn-secondary{background:transparent;color:var(--accent);border:2px solid var(--accent)}',
 
       // Error
       '.asw-error{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}',

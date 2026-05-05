@@ -112,10 +112,27 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const widgetContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Cart ─────────────────────────────────────────────────
+  // Schema notes:
+  //   - Simple services (BBQ, late checkout, etc): just serviceId + qty
+  //   - Slot services (sauna, tub): set `hours`, optional `addonBrooms`,
+  //     `startHour`, `slotDate`. lineTotal overrides price×quantity.
+  //   - Breakfast bundle: set `breakfastMenuItems` + `serviceDates`,
+  //     lineTotal = sum(items × dates).
+  // Each widget item is treated as one "booking" (qty stays 1) — we can't
+  // sensibly increment a sauna booking from the cart stepper, so we only
+  // allow adjusting qty for simple services.
+  interface CartBreakfastItem { menuItemId: string; quantity: number; price: number; name: string }
   interface CartItem {
     serviceId: string; serviceName: string; price: number;
     currency: string; quantity: number; icon: string;
-    serviceDates?: string[]; // for breakfast-type: dates breakfast is needed
+    serviceDates?: string[];
+    // Slot service extras
+    hours?: number; startHour?: number; slotDate?: string;
+    addonBrooms?: number; addonBroomPrice?: number;
+    // Breakfast bundle
+    breakfastMenuItems?: CartBreakfastItem[];
+    // Pre-computed line total (overrides price * quantity when set)
+    lineTotal?: number;
   }
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoading, setCartLoading] = useState(false);
@@ -234,7 +251,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     if (!token) return;
     const handleUnload = () => {
       if (cartItems.length === 0) return;
-      const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+      const cartTotal = cartItems.reduce((s, i) =>
+        s + (typeof i.lineTotal === 'number' ? i.lineTotal : i.price * i.quantity), 0);
       try {
         // Blob with explicit Content-Type is required so Next.js request.json() can parse the body
         const payload = JSON.stringify({
@@ -393,6 +411,75 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     logCartEvent('add', svc.id, qty);
   };
 
+  // ─── Widget → Cart bridge ─────────────────────────────────
+  // The shadow-DOM service widget (sauna/tub/breakfast) calls
+  // window.alisioAddToCart with a typed payload; we map it to a CartItem
+  // and add it to the existing cart. Same shadow root, so postMessage
+  // is not needed — direct function invocation works.
+  interface BridgePayload {
+    type: 'slot' | 'breakfast';
+    serviceId: string;
+    serviceName: string;
+    icon?: string;
+    currency?: string;
+    lineTotal: number;
+    // slot
+    hours?: number; startHour?: number; date?: string; pricePerHour?: number;
+    addonBrooms?: number; addonBroomPrice?: number;
+    // breakfast
+    breakfastMenuItems?: CartBreakfastItem[];
+    serviceDates?: string[];
+  }
+  useEffect(() => {
+    if (!r) return;
+    const bridge = (payload: BridgePayload) => {
+      try {
+        if (cartItems.length > 0 && payload.currency && payload.currency !== cartItems[0].currency) {
+          showToast(`Cannot mix ${payload.currency} and ${cartItems[0].currency} in one cart`, 'error');
+          return false;
+        }
+        setCartItems(prev => {
+          // Replace existing line for the same serviceId — guests re-open
+          // the widget to «edit» (re-pick hours/brooms/dates) and we want
+          // the latest selection, not a duplicate.
+          const filtered = prev.filter(i => i.serviceId !== payload.serviceId);
+          const item: CartItem = {
+            serviceId: payload.serviceId,
+            serviceName: payload.serviceName,
+            icon: payload.icon || '✨',
+            currency: payload.currency || 'Kč',
+            price: payload.pricePerHour || 0,
+            quantity: 1,
+            lineTotal: payload.lineTotal,
+            serviceDates: payload.serviceDates,
+            hours: payload.hours,
+            startHour: payload.startHour,
+            slotDate: payload.date,
+            addonBrooms: payload.addonBrooms,
+            addonBroomPrice: payload.addonBroomPrice,
+            breakfastMenuItems: payload.breakfastMenuItems,
+          };
+          return [...filtered, item];
+        });
+        showToast(t.addedToCart);
+        logCartEvent('add', payload.serviceId, 1, payload.lineTotal);
+        // Dismiss the widget popup so the guest returns to the services
+        // grid with the cart FAB visible.
+        setWidgetService(null);
+        return true;
+      } catch (e) {
+        console.error('[alisioAddToCart] error:', e);
+        return false;
+      }
+    };
+    (window as any).alisioAddToCart = bridge;
+    return () => {
+      if ((window as any).alisioAddToCart === bridge) {
+        delete (window as any).alisioAddToCart;
+      }
+    };
+  }, [r, cartItems.length, t.addedToCart]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const removeFromCart = (serviceId: string) => {
     setCartItems(prev => {
       const item = prev.find(i => i.serviceId === serviceId);
@@ -412,7 +499,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     }, []));
   };
 
-  const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  // Per-line total falls back to price × quantity for legacy simple items.
+  const cartLineTotal = (i: CartItem) =>
+    typeof i.lineTotal === 'number' ? i.lineTotal : i.price * i.quantity;
+  const cartTotal = cartItems.reduce((s, i) => s + cartLineTotal(i), 0);
   // cartCount = number of distinct service lines (not total qty), for FAB badge readability
   const cartCount = cartItems.length;
 
@@ -429,6 +519,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             serviceId: i.serviceId,
             quantity: i.quantity,
             serviceDates: i.serviceDates,
+            // Slot service extras (sauna/tub) — backend uses these to
+            // recompute the line total and persist hours/brooms.
+            hours: i.hours,
+            startHour: i.startHour,
+            slotDate: i.slotDate,
+            addonBrooms: i.addonBrooms,
+            addonBroomPrice: i.addonBroomPrice,
+            // Breakfast bundle — backend creates one BSO per (item, date).
+            breakfastMenuItems: i.breakfastMenuItems,
+            // Pre-computed total to keep server in sync with client display.
+            lineTotal: i.lineTotal,
           }))
         }),
       });
@@ -1553,34 +1654,75 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </div>
         ) : (
           <div style={{ padding: '0 4px' }}>
-            {cartItems.map(item => (
-              <div key={item.serviceId} className="gp-cart-item">
-                <div className="gp-cart-item-icon">{item.icon}</div>
-                <div className="gp-cart-item-info">
-                  <div className="gp-cart-item-name">{item.serviceName}</div>
-                  <div className="gp-cart-item-price">{(item.price * item.quantity).toFixed(0)} {item.currency}</div>
-                  {/* #8 FIX: Show selected dates for breakfast-type items */}
-                  {item.serviceDates && item.serviceDates.length > 0 && (
-                    <div className="gp-cart-item-dates">
-                      {item.serviceDates.map(d => formatDateLocalized(d, lang)).join(', ')}
+            {cartItems.map(item => {
+              const isSlot = typeof item.hours === 'number';
+              const isBreakfastBundle = !!(item.breakfastMenuItems && item.breakfastMenuItems.length > 0);
+              const isWidgetLine = isSlot || isBreakfastBundle;
+              const lineTotal = cartLineTotal(item);
+              // Slot subtitle: «4 год · 14:00 · 1 вінік»
+              const slotMeta: string[] = [];
+              if (isSlot) {
+                slotMeta.push(`${item.hours} ${(item.hours === 1 ? t.hour : t.hours) || 'h'}`);
+                if (typeof item.startHour === 'number') {
+                  slotMeta.push(`${String(item.startHour).padStart(2, '0')}:00`);
+                }
+                if (item.addonBrooms && item.addonBrooms > 0) {
+                  slotMeta.push(`🌿 ×${item.addonBrooms}`);
+                }
+              }
+              // Breakfast bundle subtitle: «3 страви × 2 дні»
+              const breakfastMeta: string[] = [];
+              if (isBreakfastBundle) {
+                const totalQty = item.breakfastMenuItems!.reduce((s, m) => s + m.quantity, 0);
+                breakfastMeta.push(`${totalQty} ${t.dishes || 'items'}`);
+                const days = item.serviceDates?.length || 1;
+                if (days > 1) breakfastMeta.push(`× ${days} ${t.daysShort || 'd'}`);
+              }
+              return (
+                <div key={item.serviceId} className="gp-cart-item">
+                  <div className="gp-cart-item-icon">{item.icon}</div>
+                  <div className="gp-cart-item-info">
+                    <div className="gp-cart-item-name">{item.serviceName}</div>
+                    <div className="gp-cart-item-price">{lineTotal.toFixed(0)} {item.currency}</div>
+                    {slotMeta.length > 0 && (
+                      <div className="gp-cart-item-dates">{slotMeta.join(' · ')}</div>
+                    )}
+                    {breakfastMeta.length > 0 && (
+                      <div className="gp-cart-item-dates">{breakfastMeta.join(' ')}</div>
+                    )}
+                    {item.serviceDates && item.serviceDates.length > 0 && (
+                      <div className="gp-cart-item-dates">
+                        {item.serviceDates.map(d => formatDateLocalized(d, lang)).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  {isWidgetLine ? (
+                    // Widget items are atomic bookings — only allow removal,
+                    // not increment (changing hours/brooms means re-opening
+                    // the widget and adding a fresh line).
+                    <div className="gp-cart-stepper">
+                      <button
+                        className="gp-cart-stepper-btn remove"
+                        onClick={() => removeFromCart(item.serviceId)}
+                        aria-label="Remove">×</button>
+                    </div>
+                  ) : (
+                    <div className="gp-cart-stepper">
+                      <button
+                        className={`gp-cart-stepper-btn${item.quantity === 1 ? ' remove' : ''}`}
+                        onClick={() => updateCartQty(item.serviceId, -1)}>
+                        {item.quantity === 1 ? '×' : '−'}
+                      </button>
+                      <span className="gp-cart-stepper-qty">{item.quantity}</span>
+                      <button
+                        className="gp-cart-stepper-btn"
+                        disabled={!!(item.serviceDates?.length && item.quantity >= item.serviceDates.length)}
+                        onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
                     </div>
                   )}
                 </div>
-                <div className="gp-cart-stepper">
-                  <button
-                    className={`gp-cart-stepper-btn${item.quantity === 1 ? ' remove' : ''}`}
-                    onClick={() => updateCartQty(item.serviceId, -1)}>
-                    {item.quantity === 1 ? '×' : '−'}
-                  </button>
-                  <span className="gp-cart-stepper-qty">{item.quantity}</span>
-                  {/* #7 FIX: Disable + when qty is already at max serviceDates count */}
-                  <button
-                    className="gp-cart-stepper-btn"
-                    disabled={!!(item.serviceDates?.length && item.quantity >= item.serviceDates.length)}
-                    onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="gp-cart-total">
               <span className="gp-cart-total-label">Total</span>
               <span className="gp-cart-total-value">{cartTotal.toFixed(0)} {cartItems[0]?.currency || 'Kč'}</span>

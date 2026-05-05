@@ -68,13 +68,47 @@ export function createPendingServiceOrder(
   quantity: number,
   totalPrice: number,
   serviceDate?: string | null,
+  notesJson?: string | null,
 ): string {
   const result = getDb().prepare(`
-    INSERT INTO service_orders (reservation_id, service_id, quantity, total_price, status, payment_status, service_date)
-    VALUES (?, ?, ?, ?, 'pending', 'pending', ?)
+    INSERT INTO service_orders (reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
+    VALUES (?, ?, ?, ?, 'pending', 'pending', ?, ?)
     RETURNING id
-  `).get(reservationId, serviceId, quantity, totalPrice, serviceDate || null) as any;
+  `).get(reservationId, serviceId, quantity, totalPrice, serviceDate || null, notesJson || null) as any;
   return result?.id;
+}
+
+// Create one booking_service_orders row per (menu item × selected day).
+// Used for breakfast cart-bundle payments — the cart line carries an
+// array of menu items + dates; backend fans them out to per-row records
+// so the dashboard groups breakfasts on the morning they are delivered.
+export function createPendingBreakfastBundle(
+  reservationId: string,
+  menuItems: Array<{ menuItemId: string; quantity: number; price: number }>,
+  serviceDates: string[],
+): string[] {
+  const db = getDb();
+  const insert = db.prepare(`
+    INSERT INTO booking_service_orders
+      (reservation_id, service_id, menu_item_id, quantity, service_date, unit_price, total_price, status, payment_status)
+    VALUES (?, 'svc_breakfast', ?, ?, ?, ?, ?, 'pending', 'pending')
+    RETURNING id
+  `);
+  const ids: string[] = [];
+  for (const date of serviceDates) {
+    for (const it of menuItems) {
+      const row = insert.get(
+        reservationId, it.menuItemId, it.quantity, date,
+        it.price, it.price * it.quantity,
+      ) as any;
+      if (row?.id) ids.push(row.id);
+    }
+  }
+  return ids;
+}
+
+export function updateBookingServiceOrderPaymentId(orderId: string, paymentId: string) {
+  getDb().prepare('UPDATE booking_service_orders SET payment_id = ? WHERE id = ?').run(paymentId, orderId);
 }
 
 export function updateOrderPaymentId(orderId: string, paymentId: string) {
