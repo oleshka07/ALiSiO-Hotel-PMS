@@ -212,7 +212,9 @@ export async function getReconcileDashboard(_request: NextRequest): Promise<Next
       teya_result: tickMap.teya_sync_last_run ? safeParse(tickMap.teya_sync_last_run.value) : null,
     };
 
-    // Current month KPIs
+    // Current month KPIs — skip is_pms_signal=1 ops so the income figure
+    // reflects money actually in the bank, not channel prepayments still
+    // waiting for settlement (Hostex / Teya / widget).
     const monthStr = new Date().toISOString().substring(0, 7);
     const monthKpi = db.prepare(`
       SELECT
@@ -220,7 +222,7 @@ export async function getReconcileDashboard(_request: NextRequest): Promise<Next
         COALESCE(SUM(CASE WHEN op_type = 'expense' THEN amount_company ELSE 0 END), 0) AS expense_czk,
         COUNT(*) AS op_count
       FROM fin_operations
-      WHERE organization_id = ? AND status = 'completed'
+      WHERE organization_id = ? AND status = 'completed' AND is_pms_signal = 0
         AND strftime('%Y-%m', paid_at) = ?
     `).get(orgId, monthStr) as any;
     status.month = {
