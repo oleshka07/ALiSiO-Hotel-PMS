@@ -20,6 +20,7 @@ export async function listReservations(request: NextRequest) {
         r.group_id, r.commission_amount,
         r.city_tax_amount, r.city_tax_included, r.city_tax_paid,
         r.registration_status, r.hostex_channel_type, r.hostex_reservation_code,
+        r.is_multi_room, r.multi_room_marker,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone, g.nationality,
         u.id as unit_id, u.name as unit_name, u.code as unit_code,
         c.id as category_id, c.name as category_name, c.type as category_type,

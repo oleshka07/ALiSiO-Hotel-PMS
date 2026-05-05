@@ -280,15 +280,19 @@ export async function bookWidgetService(request: NextRequest) {
       try {
         const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
         let guestInfo = 'Зовнішній клієнт';
+        let isMultiRoom = 0;
         if (reservationId) {
           const guest = db.prepare(`
-            SELECT g.first_name, g.last_name, u.name as unit_name
+            SELECT g.first_name, g.last_name, u.name as unit_name, r.is_multi_room
             FROM reservations r
             JOIN guests g ON r.guest_id = g.id
             LEFT JOIN units u ON r.unit_id = u.id
             WHERE r.id = ?
           `).get(reservationId) as any;
-          if (guest) guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
+          if (guest) {
+            guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
+            isMultiRoom = guest.is_multi_room || 0;
+          }
         }
         const svcName = service.name_en || service.name;
         const payStatus = paymentId ? '💳 Очікує оплати' : '✅ Без оплати';
@@ -300,6 +304,7 @@ export async function bookWidgetService(request: NextRequest) {
           `💰 ${totalPrice} CZK`,
           payStatus,
         ];
+        if (isMultiRoom) lines.push('', `⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`);
         if (reservationId) lines.push('', `🔖 <code>${esc(reservationId)}</code>`);
         sendTelegramMessage(lines.join('\n')).catch(() => {});
       } catch { /* non-critical */ }

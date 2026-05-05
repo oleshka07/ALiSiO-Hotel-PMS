@@ -352,7 +352,9 @@ function recordPayment(
 function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const order = db.prepare(`
-      SELECT bso.*, ads.name as service_name, ads.name_en, r.id AS reservation_id, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
+      SELECT bso.*, ads.name as service_name, ads.name_en,
+             r.id AS reservation_id, r.check_in, r.check_out, r.is_multi_room,
+             g.first_name, g.last_name, u.name as unit_name
       FROM booking_service_orders bso
       JOIN additional_services ads ON bso.service_id = ads.id
       LEFT JOIN reservations r ON bso.reservation_id = r.id
@@ -369,6 +371,7 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
       `💳 <b>Оплата послуги підтверджена</b>`, ``,
       `👤 ${guestName}`,
       order.unit_name ? `🏠 ${esc(order.unit_name)}` : '',
+      order.is_multi_room ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.` : '',
       `✨ ${esc(order.name_en || order.service_name)}${timeInfo}`,
       `💰 ${order.total_price} ${currency || 'CZK'} — ✅ Оплачено`,
       order.reservation_id ? `\n🔖 <code>${esc(order.reservation_id)}</code>` : '',
@@ -380,7 +383,9 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const orders = db.prepare(`
-      SELECT so.*, ads.name as service_name, ads.name_en, r.id AS reservation_id, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
+      SELECT so.*, ads.name as service_name, ads.name_en,
+             r.id AS reservation_id, r.check_in, r.check_out, r.is_multi_room,
+             g.first_name, g.last_name, u.name as unit_name
       FROM service_orders so JOIN additional_services ads ON so.service_id = ads.id
       JOIN reservations r ON so.reservation_id = r.id JOIN guests g ON r.guest_id = g.id JOIN units u ON r.unit_id = u.id
       WHERE so.payment_id = ?
@@ -397,7 +402,9 @@ function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
       `💳 <b>Оплата підтверджена</b>`, ``,
       `👤 ${esc(first.first_name)} ${esc(first.last_name)}`,
       `🏠 ${esc(first.unit_name)}`,
-      `📅 ${first.check_in} — ${first.check_out}`, ``,
+      `📅 ${first.check_in} — ${first.check_out}`,
+      first.is_multi_room ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.` : '',
+      ``,
       ...itemLines, ``,
       orders.length > 1 ? `💰 Разом: ${grandTotal} ${currency} — ✅ Оплачено` : `💰 ${grandTotal} ${currency} — ✅ Оплачено`,
       first.reservation_id ? `\n🔖 <code>${esc(first.reservation_id)}</code>` : '',

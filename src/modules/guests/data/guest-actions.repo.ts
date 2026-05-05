@@ -49,6 +49,7 @@ export function orderServices(reservationId: string, services: { serviceId: stri
 export function getReservationForPay(token: string) {
   return getDb().prepare(`
     SELECT r.id, r.property_id, r.check_in, r.check_out,
+           r.is_multi_room, r.multi_room_marker,
            g.first_name, g.last_name, u.name as unit_name
     FROM reservations r
     JOIN guests g ON r.guest_id = g.id

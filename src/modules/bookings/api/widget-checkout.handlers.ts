@@ -178,10 +178,11 @@ export async function createWidgetCheckoutSession(req: Request) {
     try {
       let guestName = '';
       let unitName = '';
+      let isMultiRoom = 0;
       if (reservation_id) {
         try {
           const resInfo = db.prepare(`
-            SELECT r.id, rg.first_name, rg.last_name, u.name as unit_name
+            SELECT r.id, r.is_multi_room, rg.first_name, rg.last_name, u.name as unit_name
             FROM reservations r
             LEFT JOIN reservation_guests rg ON rg.reservation_id = r.id
             LEFT JOIN units u ON u.id = r.unit_id
@@ -190,6 +191,7 @@ export async function createWidgetCheckoutSession(req: Request) {
           if (resInfo) {
             guestName = [resInfo.first_name, resInfo.last_name].filter(Boolean).join(' ');
             unitName = resInfo.unit_name || '';
+            isMultiRoom = resInfo.is_multi_room || 0;
           }
         } catch { /* guest lookup failed */ }
       }
@@ -208,6 +210,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       lines.push(`💰 ${amount} ${currency}`);
       if (body.promoCode) lines.push(`🏷️ Промокод: ${esc(body.promoCode)}`);
       lines.push(`💳 Очікує оплати`);
+      if (isMultiRoom) lines.push('', `⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`);
       if (reservation_id) lines.push('', `🔖 <code>${esc(reservation_id)}</code>`);
 
       sendTelegramMessage(lines.join('\n')).catch(() => { });

@@ -238,6 +238,10 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
   const netEur = totalEur - commissionEur;
   const totalCzk = Math.round(totalEur * result.eurCzkRate);
 
+  // Multi-room detection (Booking.com group bookings carry an _N- marker)
+  const multiRoomMarker = detectMultiRoomMarker(res.stay_code);
+  const isMultiRoom = multiRoomMarker ? 1 : 0;
+
   // Payment info, notes, status
   const paymentInfo = detectPaymentInfo(res);
   const financialNote = buildFinancialNote(res, result.eurCzkRate, totalEur, commissionEur, netEur, totalCzk);
@@ -282,6 +286,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       totalEur, commissionEur, netEur,
       res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0,
       financialNote,
+      isMultiRoom, multiRoomMarker,
     ];
     if (newToken) params.push(newToken);
     params.push(existing.id);
@@ -295,7 +300,8 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
         hostex_channel_type = ?, hostex_channel_id = ?, hostex_listing_id = ?,
         total_rate_eur = ?, commission_eur = ?, net_rate_eur = ?,
         channel_remarks = ?, is_prepaid = ?,
-        notes = ?${tokenClause},
+        notes = ?,
+        is_multi_room = ?, multi_room_marker = ?${tokenClause},
         updated_at = datetime('now')
       WHERE id = ?
     `).run(...params);
@@ -365,7 +371,8 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
         hostex_reservation_code, hostex_stay_code, hostex_channel_type,
         hostex_channel_id, hostex_listing_id,
         total_rate_eur, commission_eur, net_rate_eur,
-        channel_remarks, is_prepaid
+        channel_remarks, is_prepaid,
+        is_multi_room, multi_room_marker
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
@@ -373,6 +380,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
         ?, ?, ?,
         ?, ?,
         ?, ?, ?,
+        ?, ?,
         ?, ?
       )
     `).run(
@@ -384,7 +392,8 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       res.reservation_code, res.stay_code, res.channel_type,
       res.channel_id, res.listing_id,
       totalEur, commissionEur, netEur,
-      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0
+      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0,
+      isMultiRoom, multiRoomMarker,
     );
 
     if (paymentInfo.isPrepaid && totalCzk > 0) {
@@ -555,6 +564,23 @@ function buildFinancialNote(
   return lines.join('\n');
 }
 
+// ─── Multi-room detection ─────────────────────────────────
+//
+// Booking.com group bookings (one guest reserves multiple cabins under
+// one confirmation) come through Hostex as a single reservation_code
+// with an aggregated total_rate. The hostex_stay_code carries an
+// "_N-" marker (e.g. "9-5169043266_3-ibzjrqm6ja") that identifies the
+// booking as part of a multi-cabin group. We extract the marker so
+// the operator can verify in Hostex which cabins are actually booked.
+
+const MULTI_ROOM_RE = /(_[1-9]\d?-)/;
+
+function detectMultiRoomMarker(stayCode: string | null | undefined): string | null {
+  if (!stayCode) return null;
+  const m = stayCode.match(MULTI_ROOM_RE);
+  return m ? m[1] : null;
+}
+
 // ─── DB migrations for Hostex columns ─────────────────────
 
 function ensureHostexColumns(db: any) {
@@ -572,6 +598,15 @@ function ensureHostexColumns(db: any) {
     ['net_rate_eur', 'REAL'],
     ['channel_remarks', 'TEXT'],
     ['is_prepaid', 'INTEGER DEFAULT 0'],
+    // Multi-room detection: when Hostex's stay_code carries an "_N-" marker
+    // (e.g. "9-5169043266_3-…"), the reservation is part of a Booking.com
+    // group booking that may span multiple cabins under one channel_id.
+    // We can't fetch siblings (Hostex API has no channel_id filter, and
+    // group bookings collapse into a single reservation_code), so we
+    // record the raw marker value for the operator to verify in Hostex
+    // and surface a warning in TG / admin UI.
+    ['is_multi_room', 'INTEGER DEFAULT 0'],
+    ['multi_room_marker', 'TEXT'],
   ];
 
   for (const [name, type] of newCols) {

@@ -64,11 +64,14 @@ async function handleSinglePay(
   sendTelegramMessage([
     `📦 <b>Нове замовлення послуги</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
-    `📅 ${reservation.check_in} — ${reservation.check_out}`, ``,
+    `📅 ${reservation.check_in} — ${reservation.check_out}`,
+    reservation.is_multi_room
+      ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
+      : '', ``,
     `✨ ${escHtml(serviceName)} × ${effectiveQty} — ${totalPrice} ${service.currency || 'CZK'}${datesLabel}`,
     `💳 Статус: Очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
-  ].join('\n')).catch((e) => console.error('[Guest Pay] TG error:', e.message));
+  ].filter(Boolean).join('\n')).catch((e) => console.error('[Guest Pay] TG error:', e.message));
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
@@ -232,11 +235,14 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
   sendTelegramMessage([
     `🛒 <b>Cart Checkout</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
-    `📅 ${reservation.check_in} — ${reservation.check_out}`, ``,
+    `📅 ${reservation.check_in} — ${reservation.check_out}`,
+    reservation.is_multi_room
+      ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
+      : '', ``,
     ...tgLines, ``,
     `💰 Total: ${grandTotal} ${currency}`, `💳 Статус: Очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
-  ].join('\n')).catch((e) => console.error('[Cart Pay] TG error:', e.message));
+  ].filter(Boolean).join('\n')).catch((e) => console.error('[Cart Pay] TG error:', e.message));
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';

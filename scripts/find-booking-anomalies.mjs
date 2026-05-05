@@ -27,21 +27,33 @@ console.log('\n🔎 Booking anomaly report');
 console.log('   DB:', 'data/alisio.db');
 hr();
 
-// 1. Multi-room markers in stay_code
-//    SQLite's `_` is a single-char wildcard in LIKE; ESCAPE clauses are
-//    fiddly across drivers. Easier to fetch all stay_codes and post-filter
-//    in JS — there's only ~hundreds of reservations.
-const allWithStayCode = db.prepare(`
-  SELECT id, hostex_channel_id, hostex_stay_code, hostex_reservation_code,
-         unit_id, total_rate_eur, total_price, status,
-         check_in, check_out
-  FROM reservations
-  WHERE hostex_stay_code IS NOT NULL
-`).all();
-const MULTI_ROOM_RE = /_[1-9]\d?-/;
-const multiRoom = allWithStayCode
-  .filter((r) => MULTI_ROOM_RE.test(r.hostex_stay_code || ''))
-  .sort((a, b) => (a.check_in || '').localeCompare(b.check_in || ''));
+// 1. Multi-room markers — prefer the materialised column populated by
+//    Hostex sync; fall back to regex on stay_code so the script works
+//    even before the new migration ran on prod.
+let multiRoom;
+try {
+  multiRoom = db.prepare(`
+    SELECT id, hostex_channel_id, hostex_stay_code, hostex_reservation_code,
+           multi_room_marker, unit_id, total_rate_eur, total_price, status,
+           check_in, check_out
+    FROM reservations
+    WHERE is_multi_room = 1
+    ORDER BY check_in ASC
+  `).all();
+} catch {
+  // Column not present yet — derive from stay_code.
+  const all = db.prepare(`
+    SELECT id, hostex_channel_id, hostex_stay_code, hostex_reservation_code,
+           NULL AS multi_room_marker, unit_id, total_rate_eur, total_price, status,
+           check_in, check_out
+    FROM reservations
+    WHERE hostex_stay_code IS NOT NULL
+  `).all();
+  const MULTI_ROOM_RE = /_[1-9]\d?-/;
+  multiRoom = all
+    .filter((r) => MULTI_ROOM_RE.test(r.hostex_stay_code || ''))
+    .sort((a, b) => (a.check_in || '').localeCompare(b.check_in || ''));
+}
 
 console.log(`\n[1] Hostex multi-room markers: ${multiRoom.length} reservation(s)`);
 if (multiRoom.length === 0) {

@@ -203,6 +203,18 @@ export default function BookingViewModal({
       </>}>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {(b as any).is_multi_room ? (
+          <div style={{
+            padding: '10px 12px', marginBottom: 8, borderRadius: 8,
+            background: '#f59e0b22', color: '#92400e', border: '1px solid #f59e0b',
+            fontSize: 12, lineHeight: 1.4,
+          }}>
+            <strong>⚠️ Multi-room booking</strong> — Hostex колапсує групове бронювання Booking.com в один запис.
+            Сума {total.toLocaleString()} CZK може покривати <strong>кілька будинків</strong>.
+            Перевір у Hostex (марker <code>{(b as any).multi_room_marker || '?'}</code>) скільки фактично кімнат
+            і за потреби створи окремі рядки — інакше календар не заблокує інші будинки.
+          </div>
+        ) : null}
         {/* ── Compact Header ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
@@ -215,6 +227,9 @@ export default function BookingViewModal({
               {b.hostex_channel_type && (
                 <span className="badge" style={{ background: '#ff6b3522', color: '#ff6b35' }}>Hostex: {b.hostex_channel_type}</span>
               )}
+              {(b as any).is_multi_room ? (
+                <span className="badge" style={{ background: '#f59e0b22', color: '#92400e' }}>⚠️ Multi-room</span>
+              ) : null}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
