@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
 import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
+import { applyRulesToOperation, loadActiveRules } from '../data/auto-rules-engine';
 
 export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'invoice' | 'online' | 'booking_platform';
 export type PaymentSubtype = 'deposit' | 'full' | 'partial' | 'service' | 'refund';
@@ -141,6 +142,22 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
   });
 
   recalcReservationPaymentStatus(db, reservationId);
+
+  // Auto-rules: payment-bridge ops (Hostex / Teia / widget / manual
+  // payment) start with no category / counterparty / project. Run the
+  // active rules so they get auto-tagged the same way bank-imported ops
+  // already do. Failure here must not break the payment write — wrapped
+  // in try/catch with console-only logging.
+  try {
+    const rules = loadActiveRules(db, row.org_id);
+    if (rules.length > 0) {
+      const op = db.prepare('SELECT * FROM fin_operations WHERE id = ?').get(operationId) as any;
+      if (op) applyRulesToOperation(db, op, rules, row.org_id);
+    }
+  } catch (e: any) {
+    console.error('[payment-bridge] auto-rules apply failed (non-fatal):', e.message);
+  }
+
   return { operationId };
 }
 
