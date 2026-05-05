@@ -13,37 +13,38 @@ jobs:
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: GH_TOKEN
           script: |
-            # Fail fast: any command failing aborts the deploy. Without this,
-            # a failed `npm run build` would still trigger systemctl restart
-            # and bring the whole service down with broken code.
             set -euo pipefail
 
-            cd /root/projects/alisio-pms
+            REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/oleshka07/ALiSiO-Hotel-PMS.git"
 
-            # Save the currently-deployed commit so we can roll back if the
-            # new build fails health-check. This stays even after git reset.
-            PREVIOUS_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
-            echo "Previous commit: $PREVIOUS_COMMIT"
+            cd /root/projects
 
-            # Pull latest code
-            if [ ! -d ".git" ]; then
-              cd ..
+            # If no .git dir → fresh clone
+            if [ ! -d "alisio-pms/.git" ]; then
               rm -rf alisio-pms
-              git clone git@github.com:oleshka07/ALiSiO-Hotel-PMS.git alisio-pms
+              git clone "$REPO_URL" alisio-pms
               cd alisio-pms
             else
+              cd alisio-pms
+              # Switch remote to new repo (in case it still points to old one)
+              git remote set-url origin "$REPO_URL"
+              PREVIOUS_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
+              echo "Previous commit: $PREVIOUS_COMMIT"
               git fetch origin
               git reset --hard origin/main
             fi
 
             NEW_COMMIT=$(git rev-parse HEAD)
-            echo "New commit:      $NEW_COMMIT"
+            echo "New commit: $NEW_COMMIT"
 
             # Ensure data dir exists (DB lives here, excluded from git)
             mkdir -p data
@@ -51,8 +52,8 @@ jobs:
             # Install dependencies
             npm ci --production=false
 
-            # Build Next.js. If this fails, `set -e` aborts BEFORE we touch the
-            # running service, so the currently-running version keeps serving.
+            # Build Next.js. If this fails, abort before touching the running service.
+            PREVIOUS_COMMIT=${PREVIOUS_COMMIT:-""}
             if ! npm run build; then
               echo "❌ Build failed — aborting deploy. Live service untouched."
               if [ -n "$PREVIOUS_COMMIT" ]; then
@@ -66,7 +67,7 @@ jobs:
             systemctl restart alisio-pms
             sleep 3
 
-            # Verify the service actually came up. If not, roll back.
+            # Verify the service actually came up.
             if ! systemctl is-active --quiet alisio-pms; then
               echo "❌ Service failed to start after restart — rolling back"
               if [ -n "$PREVIOUS_COMMIT" ]; then
@@ -79,5 +80,5 @@ jobs:
               exit 1
             fi
 
-            echo "✅ Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
+            echo "✅ Deploy complete (now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
