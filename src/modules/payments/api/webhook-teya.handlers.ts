@@ -352,7 +352,7 @@ function recordPayment(
 function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const order = db.prepare(`
-      SELECT bso.*, ads.name as service_name, ads.name_en, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
+      SELECT bso.*, ads.name as service_name, ads.name_en, r.id AS reservation_id, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
       FROM booking_service_orders bso
       JOIN additional_services ads ON bso.service_id = ads.id
       LEFT JOIN reservations r ON bso.reservation_id = r.id
@@ -365,7 +365,14 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
     let timeInfo = '';
     if (order.options_json) { try { const opts = JSON.parse(order.options_json); timeInfo = `\n⏰ ${order.service_date} ${opts.startHour}:00–${opts.startHour + opts.hours}:00`; } catch { /* ignore */ } }
     const guestName = order.first_name ? `${esc(order.first_name)} ${esc(order.last_name)}` : 'Зовнішній клієнт';
-    const text = [`💳 <b>Оплата послуги підтверджена</b>`, ``, `👤 ${guestName}`, order.unit_name ? `🏠 ${esc(order.unit_name)}` : '', `✨ ${esc(order.name_en || order.service_name)}${timeInfo}`, `💰 ${order.total_price} ${currency || 'CZK'} — ✅ Оплачено`].filter(Boolean).join('\n');
+    const text = [
+      `💳 <b>Оплата послуги підтверджена</b>`, ``,
+      `👤 ${guestName}`,
+      order.unit_name ? `🏠 ${esc(order.unit_name)}` : '',
+      `✨ ${esc(order.name_en || order.service_name)}${timeInfo}`,
+      `💰 ${order.total_price} ${currency || 'CZK'} — ✅ Оплачено`,
+      order.reservation_id ? `\n🔖 <code>${esc(order.reservation_id)}</code>` : '',
+    ].filter(Boolean).join('\n');
     sendTelegramMessage(text).catch(() => {});
   } catch { /* non-critical */ }
 }
@@ -373,7 +380,7 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const orders = db.prepare(`
-      SELECT so.*, ads.name as service_name, ads.name_en, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
+      SELECT so.*, ads.name as service_name, ads.name_en, r.id AS reservation_id, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
       FROM service_orders so JOIN additional_services ads ON so.service_id = ads.id
       JOIN reservations r ON so.reservation_id = r.id JOIN guests g ON r.guest_id = g.id JOIN units u ON r.unit_id = u.id
       WHERE so.payment_id = ?
@@ -393,7 +400,8 @@ function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
       `📅 ${first.check_in} — ${first.check_out}`, ``,
       ...itemLines, ``,
       orders.length > 1 ? `💰 Разом: ${grandTotal} ${currency} — ✅ Оплачено` : `💰 ${grandTotal} ${currency} — ✅ Оплачено`,
-    ].join('\n');
+      first.reservation_id ? `\n🔖 <code>${esc(first.reservation_id)}</code>` : '',
+    ].filter(Boolean).join('\n');
     sendTelegramMessage(text).catch(() => {});
   } catch { /* non-critical */ }
 }

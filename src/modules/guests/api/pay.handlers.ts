@@ -67,6 +67,7 @@ async function handleSinglePay(
     `📅 ${reservation.check_in} — ${reservation.check_out}`, ``,
     `✨ ${escHtml(serviceName)} × ${effectiveQty} — ${totalPrice} ${service.currency || 'CZK'}${datesLabel}`,
     `💳 Статус: Очікує оплати`,
+    ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].join('\n')).catch((e) => console.error('[Guest Pay] TG error:', e.message));
 
   try {
@@ -234,6 +235,7 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
     `📅 ${reservation.check_in} — ${reservation.check_out}`, ``,
     ...tgLines, ``,
     `💰 Total: ${grandTotal} ${currency}`, `💳 Статус: Очікує оплати`,
+    ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].join('\n')).catch((e) => console.error('[Cart Pay] TG error:', e.message));
 
   try {

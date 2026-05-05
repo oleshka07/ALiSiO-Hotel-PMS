@@ -292,15 +292,16 @@ export async function bookWidgetService(request: NextRequest) {
         }
         const svcName = service.name_en || service.name;
         const payStatus = paymentId ? '💳 Очікує оплати' : '✅ Без оплати';
-        const text = [
+        const lines = [
           `📦 <b>Нове замовлення: ${esc(svcName)}</b>`,
           ``,
           `👤 ${guestInfo}`,
           `📅 ${date}, ${startHour}:00–${startHour + hours}:00`,
           `💰 ${totalPrice} CZK`,
           payStatus,
-        ].join('\n');
-        sendTelegramMessage(text).catch(() => {});
+        ];
+        if (reservationId) lines.push('', `🔖 <code>${esc(reservationId)}</code>`);
+        sendTelegramMessage(lines.join('\n')).catch(() => {});
       } catch { /* non-critical */ }
 
       return NextResponse.json({

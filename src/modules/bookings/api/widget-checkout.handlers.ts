@@ -208,6 +208,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       lines.push(`💰 ${amount} ${currency}`);
       if (body.promoCode) lines.push(`🏷️ Промокод: ${esc(body.promoCode)}`);
       lines.push(`💳 Очікує оплати`);
+      if (reservation_id) lines.push('', `🔖 <code>${esc(reservation_id)}</code>`);
 
       sendTelegramMessage(lines.join('\n')).catch(() => { });
     } catch { /* */ }
