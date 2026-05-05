@@ -16,12 +16,36 @@ function getOrgId(db: any): string {
 
 function computeAmountCompany(db: any, amount: number, currency: string, paidAt: string): number {
   if (currency === 'CZK') return amount;
-  const rate = db.prepare(`
+
+  // Prefer the latest rate effective ON or BEFORE the operation date.
+  let rate = db.prepare(`
     SELECT rate FROM finance_exchange_rates
     WHERE from_currency = ? AND to_currency = 'CZK' AND effective_from <= ?
     ORDER BY effective_from DESC LIMIT 1
   `).get(currency, paidAt) as { rate: number } | undefined;
-  return amount * (rate?.rate || 1);
+
+  // No historical rate yet — fall back to the latest known rate of any
+  // date so we never silently treat a foreign-currency op as 1:1 (EUR
+  // 100 → 100 CZK was a real bug that under-reported income by ~25×).
+  if (!rate) {
+    rate = db.prepare(`
+      SELECT rate FROM finance_exchange_rates
+      WHERE from_currency = ? AND to_currency = 'CZK'
+      ORDER BY effective_from DESC LIMIT 1
+    `).get(currency) as { rate: number } | undefined;
+    if (rate) {
+      console.warn(`[finance] computeAmountCompany: no rate for ${currency}→CZK on ${paidAt}, using latest available rate ${rate.rate}`);
+    }
+  }
+
+  if (!rate) {
+    // Still nothing — refuse to silently zero-out or 1:1-pretend the op.
+    // The handler-level catch turns this into a 400 so the operator sees
+    // it and adds a rate in /finance/settings → Курси валют.
+    throw new Error(`No ${currency}→CZK exchange rate configured. Add one at /finance/settings → Курси валют before saving this operation.`);
+  }
+
+  return amount * rate.rate;
 }
 
 function getTagsFor(db: any, operationId: string): string[] {
