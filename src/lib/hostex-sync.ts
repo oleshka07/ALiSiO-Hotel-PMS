@@ -306,26 +306,14 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       WHERE id = ?
     `).run(...params);
 
-    // Auto-create or update payment if prepaid
-    if (paymentInfo.isPrepaid && totalCzk > 0) {
-      const existingPay = db.prepare(
-        "SELECT id, amount FROM fin_operations WHERE reservation_id = ? AND source = 'hostex' LIMIT 1"
-      ).get(existing.id) as { id: string; amount: number } | undefined;
-
-      if (!existingPay) {
-        // First time — create auto-payment
-        createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
-      } else if (existingPay.amount !== totalCzk) {
-        // Total changed (rate update / nights change / price correction) — keep amounts in sync
-        db.prepare(
-          "UPDATE fin_operations SET amount = ?, updated_at = datetime('now') WHERE id = ?"
-        ).run(totalCzk, existingPay.id);
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { recalcReservationPaymentStatus } = require('@/modules/finance/api/operations.handlers');
-        recalcReservationPaymentStatus(db, existing.id);
-        console.log(`[Hostex Sync] Auto-payment updated: ${existingPay.amount} → ${totalCzk} CZK (res: ${existing.id})`);
-      }
-    }
+    // Channel-mediated «sigals» (Hostex prepaid → fin_operation) removed.
+    // Reservation.payment_status='paid' is set independently above from
+    // Hostex's own is_prepaid flag — that's what PMS check-in reads.
+    // Real money lands in fin_operations only when the bank statement
+    // arrives (KB IMAP / manual import) and finance can attribute it to
+    // a reservation via the Booking/Airbnb statement upload flow.
+    // Legacy hostex-sourced ops created before this change stay in the
+    // DB and will be cleaned up by a follow-up migration.
 
     // PR #15: upsert clearing receivable for channel-sourced bookings
     try {
@@ -396,9 +384,9 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       isMultiRoom, multiRoomMarker,
     );
 
-    if (paymentInfo.isPrepaid && totalCzk > 0) {
-      createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
-    }
+    // No auto-payment fin_operation creation — see comment in the «existing
+    // reservation» branch above. Hostex prepaid flag drives reservation
+    // payment_status; real money is recorded only on bank settlement.
 
     // PR #15: upsert clearing receivable for channel-sourced bookings
     try {
@@ -495,30 +483,6 @@ function findOrCreateGuest(_db: any, res: HostexReservation): string {
     phone,
     country,
   }).id;
-}
-
-// ─── Payment auto-creation ────────────────────────────────
-
-function createAutoPayment(_db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
-  const paidAt = bookedAt ? bookedAt.split('T')[0] : new Date().toISOString().split('T')[0];
-  const notes = `Авто-оплата через ${channelType === 'airbnb' ? 'Airbnb' : channelType === 'booking.com' ? 'Booking.com' : channelType}`;
-  // PR #6: payments table replaced by fin_operations. Use finance bridge.
-  // Lazy-import to avoid circular dependencies in Turbopack.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createPaymentOperation } = require('@/modules/finance/api/payment-bridge');
-  createPaymentOperation({
-    reservationId,
-    amount: amountCzk,
-    currency: 'CZK',
-    method: 'booking_platform',
-    paymentSubtype: 'full',
-    source: 'hostex',
-    channelType,                       // 'booking.com' / 'airbnb' / 'vrbo' — drives clearing-account routing
-    paidAt,
-    status: 'completed',
-    comment: notes,
-    sourceRef: `hostex:${reservationId}`,
-  });
 }
 
 // ─── Status mapping ───────────────────────────────────────
