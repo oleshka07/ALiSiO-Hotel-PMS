@@ -80,10 +80,6 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const search = sp.get('search');
     const reservationId = sp.get('reservation_id');
     const source = sp.get('source');
-    // include_pms_signals: ?include_pms_signals=1 to see Hostex/Teya/widget
-    // payment signals (default off — these are awaiting bank confirmation
-    // and shouldn't pollute the operations list).
-    const includePmsSignals = sp.get('include_pms_signals') === '1';
     // needs_review=1 → only ops the resolver flagged for admin triage.
     const needsReviewOnly = sp.get('needs_review') === '1';
     const page = Math.max(1, parseInt(sp.get('page') || '1', 10));
@@ -91,7 +87,6 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
 
     const where: string[] = ['o.organization_id = ?'];
     const params: any[] = [orgId];
-    if (!includePmsSignals) where.push('o.is_pms_signal = 0');
     if (needsReviewOnly) where.push('o.needs_review = 1');
     if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
@@ -187,9 +182,6 @@ interface CreateOperationInput {
   source?: string;
   source_ref?: string | null;
   tag_ids?: string[];
-  /** 1 → "PMS payment signal" (Hostex/Teya/widget). Hidden from
-   *  /finance/operations + cashflow + default P&L. See PR #A. */
-  is_pms_signal?: number;
   /** 1 → admin needs to triage (account resolver fell back). See PR #C. */
   needs_review?: number;
 }
@@ -232,8 +224,8 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
        category_id, project_id, counterparty_id,
        reservation_id, status, method, payment_subtype,
        comment, is_planned, source, source_ref, created_by,
-       is_pms_signal, needs_review)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       needs_review)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, orgId, op_type,
     input.account_from_id || null, input.account_to_id || null,
@@ -246,7 +238,6 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
     input.reservation_id || null, status, input.method || null, input.payment_subtype || null,
     input.comment || null, input.is_planned ? 1 : 0, source, input.source_ref || null,
     createdBy || null,
-    input.is_pms_signal ? 1 : 0,
     input.needs_review ? 1 : 0,
   );
 
@@ -453,29 +444,22 @@ function getTagIds(db: any, operationId: string): string[] {
 // Public helpers reused across modules ───────────────────────────────
 
 export function getReservationPaymentTotals(db: any, reservationId: string): { paid: number; refunded: number } {
-  // Dedup signal vs real: when a real (bank-imported) income op exists
-  // for the reservation, ignore the PMS signal — they represent the same
-  // money flow (Hostex prepayment → eventual bank payout). Without this,
-  // payment_status would tip into "overpaid" once the bank statement
-  // creates the second op.
-  const realRow = db.prepare(`
+  // Sum every real income / refund op for the reservation. The signal-vs-
+  // real dedup is no longer needed: signals stopped being created in
+  // PR clean-1, legacy ones were deleted in PR clean-2, the column itself
+  // is dropped in this PR. PMS check-in for channel-prepaid bookings now
+  // relies on reservation.is_prepaid (set by hostex-sync), not on any
+  // fin_operation existing here — and recalcReservationPaymentStatus
+  // already early-returns for is_prepaid=1.
+  const paidRow = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS s FROM fin_operations
-    WHERE reservation_id = ? AND op_type = 'income' AND status = 'completed' AND is_pms_signal = 0
+    WHERE reservation_id = ? AND op_type = 'income' AND status = 'completed'
   `).get(reservationId) as { s: number };
-  let paidTotal = realRow.s;
-  if (paidTotal === 0) {
-    // No real money yet — fall back to signal so PMS check-in still works.
-    const signalRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS s FROM fin_operations
-      WHERE reservation_id = ? AND op_type = 'income' AND status = 'completed' AND is_pms_signal = 1
-    `).get(reservationId) as { s: number };
-    paidTotal = signalRow.s;
-  }
   const refundRow = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS s FROM fin_operations
     WHERE reservation_id = ? AND op_type = 'expense' AND payment_subtype = 'refund' AND status = 'completed'
   `).get(reservationId) as { s: number };
-  return { paid: paidTotal, refunded: refundRow.s };
+  return { paid: paidRow.s, refunded: refundRow.s };
 }
 
 export function recalcReservationPaymentStatus(db: any, reservationId: string): void {

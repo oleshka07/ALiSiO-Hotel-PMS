@@ -3262,59 +3262,37 @@ function runMigrations(database: any) {
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
-  // Finance PR #A: is_pms_signal flag on fin_operations
-  //
-  // Splits "PMS-internal payment signals" (Hostex auto-payment from
-  // Booking/Airbnb prepaid bookings, Teya widget callbacks) from real
-  // money movements (bank import, cash, manual entry).
-  //
-  // Why: a Booking prepaid reservation arrives from Hostex with a fin_op
-  // marking the reservation as paid (so PMS allows check-in), BUT the
-  // real money is at the platform — we'll only see it on our bank when
-  // Booking pays us out a week later. Same for Teya widget — guest paid,
-  // money is at Teya, comes to bank later.
-  //
-  // is_pms_signal=1 → "expected income, money not on bank yet". These
-  // operations stay in DB so PMS check-in works (recalcReservationPaymentStatus
-  // sums them as paid), but they're hidden from /finance/operations,
-  // cashflow, and the default P&L view. P&L forecast mode adds them back.
-  //
-  // is_pms_signal=0 → real money. Bank imports, cash, manual entries.
+  // PR #C: needs_review flag for ops where the channel→account resolver
+  // had to fall back. Surfaces a queue for the admin to triage.
   // ═══════════════════════════════════════════════════════════════════
   try {
     const cols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
-    if (!cols.some((c) => c.name === 'is_pms_signal')) {
-      database.exec("ALTER TABLE fin_operations ADD COLUMN is_pms_signal INTEGER NOT NULL DEFAULT 0");
-      database.exec("CREATE INDEX IF NOT EXISTS idx_fop_is_pms_signal ON fin_operations(is_pms_signal)");
-    }
-    // PR #C: needs_review flag for ops where the channel→account resolver
-    // had to fall back. Surfaces a queue for the admin to triage.
     if (!cols.some((c) => c.name === 'needs_review')) {
       database.exec("ALTER TABLE fin_operations ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
       database.exec("CREATE INDEX IF NOT EXISTS idx_fop_needs_review ON fin_operations(needs_review)");
     }
-  } catch (e: any) { console.log('[DB] PR #A/C fin_operations columns:', e.message); }
+  } catch (e: any) { console.log('[DB] PR #C needs_review column:', e.message); }
 
-  // Retro-migrate: existing operations from Hostex / Teya / widget paths
-  // are by definition signals (money was at platform, may or may not yet
-  // be on bank). One-shot via fin_system_state guard.
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #F: drop is_pms_signal column.
+  //
+  // Channel-mediated «expected income» signals stopped being created in
+  // clean-1 (Hostex sync) and the legacy rows were deleted in clean-2.
+  // The column itself is now obsolete — every fin_operations row is real
+  // money. This drops it idempotently (re-runs are no-op when the column
+  // is already gone).
+  //
+  // Requires SQLite ≥ 3.35 (March 2021) for ALTER TABLE DROP COLUMN.
+  // better-sqlite3 ships with a recent enough SQLite, so this is safe.
+  // ═══════════════════════════════════════════════════════════════════
   try {
-    const already = database.prepare(
-      "SELECT value FROM fin_system_state WHERE key = 'pr_A_pms_signal_backfilled'"
-    ).get() as { value: string } | undefined;
-    if (!already) {
-      const r = database.prepare(`
-        UPDATE fin_operations
-        SET is_pms_signal = 1
-        WHERE source IN ('hostex', 'teia', 'teya', 'booking_widget', 'guest_page')
-          AND is_pms_signal = 0
-      `).run();
-      database.prepare(
-        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('pr_A_pms_signal_backfilled', ?, datetime('now'))"
-      ).run(`tagged ${r.changes} rows as PMS signals`);
-      if (r.changes > 0) console.log(`[DB] PR #A: tagged ${r.changes} legacy fin_operations as is_pms_signal=1`);
+    const cols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
+    if (cols.some((c) => c.name === 'is_pms_signal')) {
+      database.exec("DROP INDEX IF EXISTS idx_fop_is_pms_signal");
+      database.exec("ALTER TABLE fin_operations DROP COLUMN is_pms_signal");
+      console.log('[DB] Cleanup #F: dropped is_pms_signal column');
     }
-  } catch (e: any) { console.log('[DB] PR #A backfill:', e.message); }
+  } catch (e: any) { console.log('[DB] Cleanup #F drop is_pms_signal:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
   // PR #36: supabase_id columns on investor tables for idempotent re-import
@@ -3497,43 +3475,10 @@ function runMigrations(database: any) {
     console.log('[DB] Cleanup #D needs_review backfill:', e.message);
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #E: delete legacy Hostex signal fin_operations.
-  //
-  // Hostex sync used to auto-create one fin_operation per prepaid
-  // booking (source='hostex', is_pms_signal=1). That creation was
-  // removed in PR clean-1. The accumulated legacy rows were redundant —
-  // they double-bookkept money that the bank statement records as the
-  // real income — and silently inflated balances / month KPI / project
-  // P&L whenever a query forgot the is_pms_signal=0 filter.
-  //
-  // Reservation.payment_status for Hostex prepaid bookings is set
-  // independently from Hostex's own is_prepaid flag (hostex-sync.ts
-  // line 249), so deleting these rows does not affect PMS check-in.
-  // recalcReservationPaymentStatus also now early-returns for
-  // is_prepaid=1 reservations, so the cascade can't flip them back.
-  //
-  // Idempotent: re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    // Detach any bank-transaction matches first, otherwise the FK update
-    // leaves dangling pointers when the op disappears.
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations WHERE source = 'hostex' AND is_pms_signal = 1
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source = 'hostex' AND is_pms_signal = 1
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #E: deleted ${result.changes} legacy Hostex signal fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #E delete legacy signals:', e.message);
-  }
+  // (Cleanup #E lived here — deleted legacy Hostex signal fin_operations.
+  //  It served its purpose during clean-2 deploy. Since clean-3 drops the
+  //  is_pms_signal column entirely, the migration is a no-op and was
+  //  removed to avoid noisy «no such column» errors on every startup.)
 
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format

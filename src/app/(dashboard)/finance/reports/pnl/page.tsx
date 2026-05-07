@@ -61,9 +61,6 @@ export default function PnlMatrixPage() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(defaultRange());
   const [basis, setBasis] = useState<'paid' | 'accrued'>('accrued');
-  // Forecast mode adds is_pms_signal=1 ops (Hostex/Teya prepayments awaiting
-  // bank confirmation) to the matrix as expected revenue.
-  const [forecast, setForecast] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drillDown, setDrillDown] = useState<{ month: string; categoryId: string | null; categoryName: string } | null>(null);
 
@@ -71,12 +68,11 @@ export default function PnlMatrixPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ from: range.from, to: range.to, basis });
-      if (forecast) params.set('include_pms_signals', '1');
       const res = await fetch(`/api/finance/pnl-matrix?${params}`);
       setData(await res.json());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [range, basis, forecast]);
+  }, [range, basis]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -97,35 +93,14 @@ export default function PnlMatrixPage() {
           <button onClick={() => setBasis('accrued')} style={{ ...tabBtn, ...(basis === 'accrued' ? tabActive : {}) }}>По нарахуванню</button>
           <button onClick={() => setBasis('paid')} style={{ ...tabBtn, ...(basis === 'paid' ? tabActive : {}) }}>По факту</button>
         </div>
-        <button
-          onClick={() => setForecast((v) => !v)}
-          title={forecast
-            ? 'Прогноз: показані Hostex/Teya передплати які ще не на банку'
-            : 'Факт: тільки реальні гроші. Натисніть щоб додати очікувані надходження.'}
-          style={{
-            padding: '6px 10px', fontSize: 12, fontWeight: 600,
-            border: forecast ? '1px solid #22c55e' : '1px solid var(--border-primary)',
-            background: forecast ? 'rgba(34,197,94,0.15)' : 'var(--bg-secondary)',
-            color: forecast ? '#16a34a' : 'var(--text-primary)',
-            borderRadius: 8, cursor: 'pointer',
-          }}>
-          {forecast ? '📈 Прогноз' : '✓ Факт'}
-        </button>
         <input type="month" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
         <span style={{ color: 'var(--text-secondary)' }}>—</span>
         <input type="month" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
         <ExportButton
           endpoint="/api/finance/export/pnl"
-          params={{ from: range.from, to: range.to, basis, ...(forecast ? { include_pms_signals: '1' } : {}) }}
+          params={{ from: range.from, to: range.to, basis }}
         />
       </div>
-      {forecast && (
-        <div style={{ marginTop: 12, padding: 10, background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, fontSize: 12, color: '#16a34a' }}>
-          📈 <b>Прогноз:</b> матриця включає Hostex/Teya передплати які ще не дійшли до банку.
-          Цифри показують очікуваний P&amp;L з урахуванням броней що вже у системі.
-          Перемкніть на «Факт» щоб бачити лише реалізовані гроші.
-        </div>
-      )}
 
       {loading || !data ? (
         <div style={{ padding: 80, textAlign: 'center', color: 'var(--text-secondary)' }}>Завантаження…</div>

@@ -9,11 +9,9 @@ import { createPaymentOperation } from '@/modules/finance/api/payment-bridge';
 // it used to return every payment system-wide (dump-all bug surfaced when
 // GroupViewModal called it with group_id which was silently ignored).
 //
-// PMS-signal dedup: when an income op for the same reservation has both a
-// signal (Hostex/Teya prepayment) AND a real bank op, we return only the
-// real one — preventing BookingViewModal/GroupViewModal from double-counting.
-// For reservations that have ONLY a signal (no bank yet), we still return
-// it so PMS check-in flow shows "Оплачено = total".
+// As of clean-3 there are no signal vs real duplicates any more — every
+// fin_operation row represents real money. The dedup logic that used to
+// live here is gone with the is_pms_signal column.
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
@@ -38,26 +36,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       params.push(groupId);
     }
 
-    // Dedup: include row when it's REAL (is_pms_signal=0), OR when it's
-    // a signal AND no real op exists for the same reservation. Avoids the
-    // doubled-paid display once a bank statement creates a real op next
-    // to the existing Hostex signal.
-    where.push(`(
-      o.is_pms_signal = 0
-      OR NOT EXISTS (
-        SELECT 1 FROM fin_operations o2
-        WHERE o2.reservation_id = o.reservation_id
-          AND o2.status = 'completed'
-          AND o2.op_type = 'income'
-          AND o2.is_pms_signal = 0
-      )
-    )`);
-
     const rows = db.prepare(`
       SELECT o.id, o.reservation_id, o.amount, o.currency, o.method,
              o.payment_subtype AS type,
              o.status, o.paid_at, o.comment AS notes, o.source_ref,
-             o.op_type, o.is_pms_signal
+             o.op_type
       FROM fin_operations o
       WHERE ${where.join(' AND ')}
       ORDER BY o.paid_at DESC
