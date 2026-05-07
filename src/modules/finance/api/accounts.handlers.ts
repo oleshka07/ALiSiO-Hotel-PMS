@@ -12,20 +12,15 @@ function getOrgId(db: any): string {
 
 function selectAccountsWithBalance(db: any, orgId: string, opts: { includeArchived?: boolean } = {}): any[] {
   const where = opts.includeArchived ? 'WHERE fa.organization_id = ?' : 'WHERE fa.organization_id = ? AND fa.is_active = 1';
-  // Exclude is_pms_signal=1 ops from the balance — they represent channel
-  // prepayments (Hostex/Teya/widget) waiting for the bank statement to
-  // settle. Including them would inflate clearing-account balances by the
-  // value of every outstanding receivable, making «Booking.com (CZK)»
-  // look as if all expected money has already arrived.
   return db.prepare(`
     SELECT
       fa.*,
       (
         fa.initial_balance
         + COALESCE((SELECT SUM(amount) FROM fin_operations
-                     WHERE account_to_id = fa.id AND status = 'completed' AND is_pms_signal = 0), 0)
+                     WHERE account_to_id = fa.id AND status = 'completed'), 0)
         - COALESCE((SELECT SUM(amount) FROM fin_operations
-                     WHERE account_from_id = fa.id AND status = 'completed' AND is_pms_signal = 0), 0)
+                     WHERE account_from_id = fa.id AND status = 'completed'), 0)
       ) as balance
     FROM finance_accounts fa
     ${where}

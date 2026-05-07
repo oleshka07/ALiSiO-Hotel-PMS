@@ -5,12 +5,12 @@ import { getDb } from '@core/db';
 // Helpers: SQL fragments that filter fin_operations by semantic slice.
 // A "payment" operation = income or refund tied to a reservation (source IN ('booking_widget','teia','hostex','manual') with reservation_id).
 // A "regular expense" = op_type='expense' without payment_subtype (not a refund).
+//
+// The is_pms_signal filter that used to live here is gone — channel
+// prepayments aren't recorded as fin_operations any more (see PR
+// clean-1/2/3). Every row in the table is real money.
 
-// All these helpers exclude is_pms_signal=1 operations. Those are PMS
-// payment signals (Hostex/Teya/widget), not real money. PR #D adds an
-// includeSignals override for forecast view.
-
-function monthRevenueSql(month: string, db: any, includeSignals = false): number {
+function monthRevenueSql(month: string, db: any): number {
   // Net revenue from reservation-linked operations (income minus refunds) for a given month
   const row = db.prepare(`
     SELECT COALESCE(SUM(
@@ -21,12 +21,11 @@ function monthRevenueSql(month: string, db: any, includeSignals = false): number
     FROM fin_operations
     WHERE reservation_id IS NOT NULL AND status = 'completed'
       AND strftime('%Y-%m', paid_at) = ?
-      ${includeSignals ? '' : 'AND is_pms_signal = 0'}
   `).get(month) as { total: number };
   return row.total;
 }
 
-function monthExpensesSql(month: string, db: any, includeRefunds = false, includeSignals = false): number {
+function monthExpensesSql(month: string, db: any, includeRefunds = false): number {
   // P&L expenses (COGS+OPEX+Taxes) — excluding reservation-linked refund ops and CAPEX
   const row = db.prepare(`
     SELECT COALESCE(SUM(o.amount), 0) AS total
@@ -36,7 +35,6 @@ function monthExpensesSql(month: string, db: any, includeRefunds = false, includ
       AND strftime('%Y-%m', o.paid_at) = ?
       AND (o.reservation_id IS NULL ${includeRefunds ? 'OR o.payment_subtype = \'refund\'' : ''})
       AND (ec.std_group IN ('COGS', 'OPEX', 'Taxes') AND ec.include_in_pnl = 1)
-      ${includeSignals ? '' : 'AND o.is_pms_signal = 0'}
   `).get(month) as { total: number };
   return row.total;
 }
@@ -526,13 +524,10 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
     const fromDate = `${from}-01`;
     const toDate = `${to}-31`;
 
-    // Cashflow ALWAYS excludes PMS payment signals — money is real only
-    // when on bank/cash. is_pms_signal=1 ops live until reconciliation.
     const where: string[] = [
       "o.status = 'completed'",
       `strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?`,
       'o.organization_id = ?',
-      'o.is_pms_signal = 0',
     ];
     const params: any[] = [from, to, org];
     if (accountId) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(accountId, accountId); }
@@ -609,8 +604,8 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
       const plh = accountIds.map(() => '?').join(',');
       const prior = db.prepare(`
         SELECT
-          COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_to_id IN (${plh}) AND status='completed' AND paid_at < ? AND is_pms_signal = 0), 0)
-          - COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_from_id IN (${plh}) AND status='completed' AND paid_at < ? AND is_pms_signal = 0), 0)
+          COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_to_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
+          - COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_from_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
           AS delta
       `).get(...accountIds, fromDate, ...accountIds, fromDate) as { delta: number };
       runningBalance += prior.delta;
@@ -647,9 +642,6 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
     const from = searchParams.get('from') || defaultFrom;
     const to = searchParams.get('to') || defaultTo;
     const basis = searchParams.get('basis') === 'paid' ? 'paid_at' : 'accrued_at';
-    // ?include_pms_signals=1 → forecast mode (PR #D toggle). Adds Hostex/
-    // Teya/widget signals as expected revenue. Default mode shows real money only.
-    const includeSignals = searchParams.get('include_pms_signals') === '1';
 
     const months = generateMonthList(from, to);
 
@@ -666,7 +658,6 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
         AND strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?
         AND o.organization_id = ?
         AND o.op_type != 'transfer'
-        ${includeSignals ? '' : 'AND o.is_pms_signal = 0'}
       GROUP BY COALESCE(ec.id, ''), o.op_type, month
     `).all(from, to, org) as any[];
 

@@ -33,10 +33,7 @@ export async function getCalendarMonth(request: NextRequest): Promise<NextRespon
     const today = new Date().toISOString().substring(0, 10);
 
     // 1) Fetch all operations in the month (completed + pending).
-    //    Skip is_pms_signal=1 — they don't move money in our accounts, so
-    //    showing them on the calendar would distort the running-balance
-    //    forecast that drives the cash-gap warning.
-    const where: string[] = ['o.organization_id = ?', "o.paid_at BETWEEN ? AND ?", 'o.is_pms_signal = 0'];
+    const where: string[] = ['o.organization_id = ?', "o.paid_at BETWEEN ? AND ?"];
     const params: any[] = [orgId, firstDay, lastDay];
     if (accountId) {
       where.push('(o.account_from_id = ? OR o.account_to_id = ?)');
@@ -65,10 +62,7 @@ export async function getCalendarMonth(request: NextRequest): Promise<NextRespon
     const materializedRefs = new Set(ops.filter((o) => o.source === 'recurring').map((o) => `${o.source_ref}_${o.paid_at.substring(0,10)}`));
     const upcomingRecurring = recurringPreview.filter((r) => !materializedRefs.has(`${r.template_id}_${r.date}`));
 
-    // 3) Compute starting balance — sum across accounts (or specific account)
-    //    Excludes is_pms_signal=1 ops so the cash-gap forecast reflects
-    //    money actually in the account, not channel prepayments still
-    //    waiting for the bank settlement.
+    // 3) Compute starting balance — sum across accounts (or specific account).
     const balanceWhere = accountId ? `fa.id = ?` : `fa.organization_id = ? AND fa.is_active = 1`;
     const balanceParams = accountId ? [accountId] : [orgId];
     const accountRows = db.prepare(`
@@ -76,9 +70,9 @@ export async function getCalendarMonth(request: NextRequest): Promise<NextRespon
         (
           fa.initial_balance
           + COALESCE((SELECT SUM(amount) FROM fin_operations
-                       WHERE account_to_id = fa.id AND status = 'completed' AND is_pms_signal = 0 AND paid_at < ?), 0)
+                       WHERE account_to_id = fa.id AND status = 'completed' AND paid_at < ?), 0)
           - COALESCE((SELECT SUM(amount) FROM fin_operations
-                       WHERE account_from_id = fa.id AND status = 'completed' AND is_pms_signal = 0 AND paid_at < ?), 0)
+                       WHERE account_from_id = fa.id AND status = 'completed' AND paid_at < ?), 0)
         ) AS starting_balance
       FROM finance_accounts fa
       WHERE ${balanceWhere}
