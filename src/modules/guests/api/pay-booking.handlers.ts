@@ -38,9 +38,9 @@ export async function payForBooking(
 
     // ── Calculate remaining amount ──────────────────────────────
     const paid = db.prepare(`
-      SELECT COALESCE(SUM(CASE WHEN type != 'refund' THEN amount ELSE 0 END), 0)
-           - COALESCE(SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END), 0) as net_paid
-      FROM payments WHERE reservation_id = ? AND status = 'completed'
+      SELECT COALESCE(SUM(CASE WHEN op_type = 'income' THEN amount ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN op_type = 'refund' THEN amount ELSE 0 END), 0) as net_paid
+      FROM fin_operations WHERE reservation_id = ? AND status = 'completed'
     `).get(reservation.id) as any;
 
     const netPaid = paid?.net_paid || 0;
