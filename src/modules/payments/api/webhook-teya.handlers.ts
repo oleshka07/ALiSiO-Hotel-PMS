@@ -93,7 +93,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
         eventType, sessionId: refs.sessionId, transactionId: refs.transactionId,
         paymentRef: outcome.effectiveRef || refs.sessionId || refs.transactionId,
         amount: refs.amount, currency: refs.currency,
-        reservationId: outcome.reservationId, operationId: outcome.operationId,
+        reservationId: outcome.reservationId,
         rawPayload: rawBody,
       });
       if (refs.sessionId) {
@@ -178,10 +178,9 @@ function extractPaymentRef(event: any): { sessionId: string; transactionId: stri
 }
 
 interface SuccessOutcome {
-  result: 'recorded' | 'no_match' | 'duplicate';
+  result: 'recorded' | 'no_match';
   effectiveRef?: string;
   reservationId?: string;
-  operationId?: string;
 }
 
 function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOutcome {
@@ -233,7 +232,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
     } catch { /* non-critical */ }
   }
 
-  let recorded: { operationId?: string; reservationId?: string; duplicate?: boolean } | undefined;
+  let recorded: { reservationId?: string } | undefined;
   if (bsoTotal > 0 || soTotal > 0) recorded = recordPayment(db, effectiveRef, amount, currency);
   if (bsoTotal > 0) sendWidgetOrderTG(db, effectiveRef, currency);
   if (soTotal > 0)  sendGuestOrderTG(db, effectiveRef, currency);
@@ -279,14 +278,10 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   if (bsoTotal === 0 && soTotal === 0) {
     return { result: 'no_match', effectiveRef };
   }
-  if (recorded?.duplicate) {
-    return { result: 'duplicate', effectiveRef, reservationId: recorded.reservationId };
-  }
   return {
     result: 'recorded',
     effectiveRef,
     reservationId: recorded?.reservationId,
-    operationId: recorded?.operationId,
   };
 }
 
@@ -309,42 +304,26 @@ function handleRefund(db: any, event: any) {
 }
 
 function recordPayment(
-  db: any, paymentRef: string, amount: number, currency: string,
-): { operationId?: string; reservationId?: string; duplicate?: boolean } | undefined {
+  db: any, paymentRef: string, _amount: number, _currency: string,
+): { reservationId?: string } | undefined {
+  // PMS-side state (booking_service_orders / service_orders / reservations)
+  // is already updated above by the main handler — that's what guests see
+  // as «оплачено» on the guest portal and what PMS check-in reads.
+  //
+  // Finance-side fin_operations creation was removed: Teya widget payments
+  // sit on the Teya merchant account until weekly sweep, and we record
+  // them as facts only when the bank statement arrives via /finance/bank
+  // inbox. Until then, the gross-up vs the bank deposit is handled by the
+  // Teya statement upload flow (clean-7).
   try {
     const order = db.prepare(`
-      SELECT reservation_id, total_price, service_id, options_json, service_date
-      FROM booking_service_orders WHERE payment_id = ?
-      UNION ALL SELECT reservation_id, total_price, service_id, NULL, NULL
-      FROM service_orders WHERE payment_id = ? LIMIT 1
-    `).get(paymentRef, paymentRef) as any;
-    if (!order) return undefined;
-    const amountMajor = amount > 1000 ? amount / 100 : amount;
-    let notes = `Teya online: ${order.service_id}`;
-    if (order.options_json) {
-      try { const opts = JSON.parse(order.options_json); notes += ` ${order.service_date || ''} ${opts.startHour || ''}:00–${(opts.startHour || 0) + (opts.hours || 0)}:00`; } catch { /* ignore */ }
-    }
-    // PR #6: record via finance fin_operations bridge
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createPaymentOperation, hasPaymentOperation } = require('@/modules/finance/api/payment-bridge');
-    if (hasPaymentOperation(order.reservation_id, 'teia', paymentRef)) {
-      return { reservationId: order.reservation_id, duplicate: true };
-    }
-    const { operationId } = createPaymentOperation({
-      reservationId: order.reservation_id,
-      amount: amountMajor,
-      currency,
-      method: 'online',
-      paymentSubtype: 'service',
-      source: 'teia',
-      sourceRef: paymentRef,
-      status: 'completed',
-      comment: notes,
-    });
-    console.log('[Teya Webhook] Payment recorded in finance:', operationId, amountMajor, currency);
-    return { operationId, reservationId: order.reservation_id };
+      SELECT reservation_id FROM booking_service_orders WHERE payment_id = ?
+      UNION ALL
+      SELECT reservation_id FROM service_orders WHERE payment_id = ? LIMIT 1
+    `).get(paymentRef, paymentRef) as { reservation_id?: string } | undefined;
+    return order ? { reservationId: order.reservation_id } : undefined;
   } catch (e: any) {
-    console.error('[Teya Webhook] Failed to record payment:', e.message);
+    console.error('[Teya Webhook] recordPayment lookup failed:', e.message);
     return undefined;
   }
 }
