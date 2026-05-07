@@ -149,6 +149,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     documentType: '', documentNumber: '', nationality: '', address: '',
   });
   const [regLoading, setRegLoading] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const ocrInputRef = useRef<HTMLInputElement>(null);
 
   // WhatsApp number
   const WHATSAPP_NUMBER = '420723565616';
@@ -1342,31 +1344,78 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         </div>
       </BottomSheet>
 
-      {/* ════ REGISTRATION OVERLAY ════ */}
-      {showReg && (
+      {showReg && (() => {
+        const isFirstGuest = regCurrentGuest === 0;
+        const totalSteps = isFirstGuest ? 3 : 2;
+        const isContactStep = isFirstGuest && regStep === 1;
+        const isDataStep = isFirstGuest ? regStep === 2 : regStep === 1;
+        const isConfirmStep = regStep === totalSteps;
+
+        return (
         <div className="gp-reg-overlay">
           <div className="gp-reg-header">
             <button className="gp-reg-back" onClick={() => {
               if (regStep === 1) setShowReg(false);
               else setRegStep(s => s - 1);
             }}>{regStep === 1 ? '✕' : t.back}</button>
-            <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, 3)}</span>
+            <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, totalSteps)}</span>
             <div style={{ width: 48 }} />
           </div>
           <div className="gp-reg-progress">
-            <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
+            <div className="gp-reg-progress-fill" style={{ width: `${(regStep / totalSteps) * 100}%` }} />
           </div>
 
+          {/* Hidden file input for OCR photo */}
+          <input
+            ref={ocrInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setOcrLoading(true);
+              try {
+                const reader = new FileReader();
+                const base64 = await new Promise<string>((resolve) => {
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.readAsDataURL(file);
+                });
+                const res = await fetch(`/api/guest/${token}/ocr`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ image: base64 }),
+                });
+                if (!res.ok) throw new Error('OCR failed');
+                const result = await res.json();
+                if (result.success && result.data) {
+                  const d = result.data;
+                  setRegData(prev => ({
+                    ...prev,
+                    fullName: d.fullName || prev.fullName,
+                    dateOfBirth: d.dateOfBirth || prev.dateOfBirth,
+                    documentType: d.documentType || prev.documentType,
+                    documentNumber: d.documentNumber || prev.documentNumber,
+                    nationality: d.nationality || prev.nationality,
+                    address: d.address || prev.address,
+                  }));
+                  showToast(`✅ ${d.confidence > 70 ? 'Data extracted!' : 'Partial data — please review'}`);
+                } else {
+                  showToast('Could not read document. Please fill in manually.', 'error');
+                }
+              } catch {
+                showToast('OCR error. Please fill in manually.', 'error');
+              }
+              setOcrLoading(false);
+              if (ocrInputRef.current) ocrInputRef.current.value = '';
+            }}
+          />
+
           <div className="gp-reg-body">
-            {/* Step 1: Guest Details */}
-            {regStep === 1 && (
+            {/* Contact step — only 1st guest */}
+            {isContactStep && (
               <>
                 <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
-                <div className="gp-field">
-                  <div className="gp-field-label">{t.fullName} *</div>
-                  <input className="gp-field-input" value={regData.fullName} autoComplete="name"
-                    onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
-                </div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.email} *</div>
                   <input className="gp-field-input" type="email" value={regData.email} autoComplete="email"
@@ -1378,20 +1427,40 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                     onChange={e => setRegData(d => ({ ...d, phone: e.target.value }))} />
                   <div className="gp-field-hint">{t.phoneHint}</div>
                 </div>
+              </>
+            )}
+
+            {/* Data step — OCR, name, DOB, document */}
+            {isDataStep && (
+              <>
+                <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
+                <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
+
+                <button
+                  className="gp-btn gp-btn-outline"
+                  style={{ width: '100%', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                  onClick={() => ocrInputRef.current?.click()}
+                  disabled={ocrLoading}
+                >
+                  {ocrLoading ? (
+                    <><span className="gp-spinner" style={{ width: 18, height: 18 }} /> Scanning...</>
+                  ) : (
+                    <>📷 Register via document photo</>
+                  )}
+                </button>
+
+                <div className="gp-security-notice">{t.securityNotice}</div>
+
+                <div className="gp-field">
+                  <div className="gp-field-label">{t.fullName} *</div>
+                  <input className="gp-field-input" value={regData.fullName} autoComplete="name"
+                    onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
+                </div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.dateOfBirth} *</div>
                   <input className="gp-field-input" type="date" value={regData.dateOfBirth} autoComplete="bday"
                     onChange={e => setRegData(d => ({ ...d, dateOfBirth: e.target.value }))} />
                 </div>
-              </>
-            )}
-
-            {/* Step 2: ID Document */}
-            {regStep === 2 && (
-              <>
-                <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
-                <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
-                <div className="gp-security-notice">{t.securityNotice}</div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.documentType} *</div>
                   <select className="gp-field-input" value={regData.documentType}
@@ -1422,15 +1491,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               </>
             )}
 
-            {/* Step 3: Confirm */}
-            {regStep === 3 && (
+            {/* Confirm step */}
+            {isConfirmStep && (
               <>
                 <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>{t.step3Title}</h2>
                 <div className="gp-confirm-table">
                   {[
                     [t.fullName, regData.fullName],
-                    [t.email, regData.email],
-                    [t.phone, regData.phone || '—'],
+                    ...(isFirstGuest ? [
+                      [t.email, regData.email],
+                      [t.phone, regData.phone || '—'],
+                    ] : []),
                     [t.dateOfBirth, regData.dateOfBirth],
                     [t.documentType, regData.documentType],
                     [t.documentNumber, regData.documentNumber],
@@ -1449,16 +1520,15 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </div>
 
           <div className="gp-reg-footer">
-            {regStep < 3 ? (
+            {!isConfirmStep ? (
               <button className="gp-btn gp-btn-primary" onClick={() => {
-                // Validation
-                if (regStep === 1) {
-                  if (!regData.fullName.trim() || !regData.email.trim() || !regData.dateOfBirth) {
+                if (isContactStep) {
+                  if (!regData.email.trim()) {
                     showToast(t.regError, 'error'); return;
                   }
                 }
-                if (regStep === 2) {
-                  if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
+                if (isDataStep) {
+                  if (!regData.fullName.trim() || !regData.dateOfBirth || !regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
                     showToast(t.regError, 'error'); return;
                   }
                 }
@@ -1473,7 +1543,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ════ BOTTOM TAB BAR ════ */}
       <div className="gp-tab-bar">

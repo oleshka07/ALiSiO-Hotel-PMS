@@ -3124,6 +3124,19 @@ function runMigrations(database: any) {
     }
   } catch { /* */ }
 
+  // --- Migration: add lock_code, entry_photo_url to units (per-unit guest page override) ---
+  try {
+    const unitCols = database.prepare('PRAGMA table_info(units)').all().map((c: any) => c.name);
+    if (!unitCols.includes('lock_code')) {
+      database.exec('ALTER TABLE units ADD COLUMN lock_code TEXT');
+      console.log('[DB] Added lock_code to units');
+    }
+    if (!unitCols.includes('entry_photo_url')) {
+      database.exec('ALTER TABLE units ADD COLUMN entry_photo_url TEXT');
+      console.log('[DB] Added entry_photo_url to units');
+    }
+  } catch { /* */ }
+
   // ═══════════════════════════════════════════════════════════════════
   // PR #15: Clearing accounts + channel receivables
   // ═══════════════════════════════════════════════════════════════════

@@ -49,7 +49,7 @@ export async function getGuestPortal(
     const propertyPhotos = portalRepo.getPropertyPhotos(reservation.property_id);
     const services = portalRepo.getAvailableServices(reservation.property_id, reservation.category_type);
     const orderedServices = portalRepo.getOrderedServices(reservation.id);
-    const guestPageConfig = portalRepo.getGuestPageConfig(reservation.unit_type_id, reservation.property_id);
+    const guestPageConfig = portalRepo.getGuestPageConfig(reservation.unit_type_id, reservation.property_id, reservation.unit_id);
 
     const propertyName = reservation.property_name || 'Kemp Carlsbad';
 

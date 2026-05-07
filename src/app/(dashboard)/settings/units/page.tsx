@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 import {
   ChevronRight,
   Plus,
@@ -17,6 +18,8 @@ import {
   Home,
   Loader2,
   AlertTriangle,
+  Key,
+  Camera,
 } from 'lucide-react';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -45,6 +48,8 @@ interface UnitFromAPI {
   building_id?: string;
   building_name?: string;
   building_code?: string;
+  lock_code?: string;
+  entry_photo_url?: string;
 }
 
 interface UnitTypeFromAPI {
@@ -154,7 +159,7 @@ export default function SettingsUnitsPage() {
   // Edit Unit modal
   const [editUnitModal, setEditUnitModal] = useState(false);
   const [editingUnit, setEditingUnit] = useState<UnitFromAPI | null>(null);
-  const [unitForm, setUnitForm] = useState({ name: '', code: '', beds: 0, zone: '', unit_type_id: '', building_id: '', room_status: 'available', cleaning_status: 'clean' });
+  const [unitForm, setUnitForm] = useState({ name: '', code: '', beds: 0, zone: '', unit_type_id: '', building_id: '', room_status: 'available', cleaning_status: 'clean', lock_code: '', entry_photo_url: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -269,6 +274,8 @@ export default function SettingsUnitsPage() {
       building_id: unit.building_id || '',
       room_status: unit.room_status,
       cleaning_status: unit.cleaning_status,
+      lock_code: unit.lock_code || '',
+      entry_photo_url: unit.entry_photo_url || '',
     });
     setError('');
     setEditUnitModal(true);
@@ -293,6 +300,8 @@ export default function SettingsUnitsPage() {
         building_id: unitForm.building_id || null,
         room_status: unitForm.room_status,
         cleaning_status: unitForm.cleaning_status,
+        lock_code: unitForm.lock_code || null,
+        entry_photo_url: unitForm.entry_photo_url || null,
       };
       if (!editingUnit) {
         // For creating, need property_id and category_id
@@ -557,6 +566,12 @@ export default function SettingsUnitsPage() {
                                   {unit.zone && ` · ${unit.zone}`}
                                   {unit.unit_type_name && ` · ${unit.unit_type_name}`}
                                 </div>
+                                {unit.lock_code && (
+                                  <div style={{ fontSize: 11, color: 'var(--accent-success)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                    <Key size={10} /> Код: {unit.lock_code}
+                                    {unit.entry_photo_url && <><Camera size={10} style={{ marginLeft: 6 }} /> Фото</>}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="settings-tree-item-actions">
@@ -654,6 +669,28 @@ export default function SettingsUnitsPage() {
                 <option value="dirty">Брудний</option>
                 <option value="in_progress">Прибирається</option>
               </select>
+            </div>
+          </div>
+
+          {/* Guest page: Entry code & photo */}
+          <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Key size={14} /> Гостьова сторінка — код заїзду
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Код замка</label>
+                <input className="form-input" value={unitForm.lock_code} onChange={(e) => setUnitForm((p) => ({ ...p, lock_code: e.target.value }))} placeholder="Напр.: 4971#" />
+              </div>
+            </div>
+            <ImageUploadField
+              label="Фото входу / лок-бокса"
+              value={unitForm.entry_photo_url}
+              onChange={(url) => setUnitForm((p) => ({ ...p, entry_photo_url: url }))}
+              folder="entry-photos"
+            />
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>
+              💡 Якщо порожньо — буде використано код/фото з налаштувань типу кімнати (Guest Page Settings)
             </div>
           </div>
         </Modal>
