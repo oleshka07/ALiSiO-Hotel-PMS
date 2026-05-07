@@ -3,7 +3,7 @@ import { getDb } from '@core/db';
 export function listUnits(filters: { category?: string; unitType?: string } = {}) {
   let query = `
     SELECT
-      u.id, u.name, u.code, u.beds, u.zone, u.room_status, u.cleaning_status, u.sort_order, u.is_active,
+      u.id, u.name, u.code, u.beds, u.zone, u.room_status, u.cleaning_status, u.sort_order, u.is_active, u.lock_code, u.entry_photo_url,
       c.id as category_id, c.name as category_name, c.type as category_type, c.icon as category_icon, c.color as category_color,
       ut.id as unit_type_id, ut.name as unit_type_name, ut.code as unit_type_code, ut.max_adults, ut.base_occupancy,
       b.id as building_id, b.name as building_name, b.code as building_code
