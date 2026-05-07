@@ -62,6 +62,10 @@ export async function payForBooking(
     console.log(`[Guest Pay Booking] ${guestName} | ${description} | remaining: ${remaining} ${reservation.currency}`);
 
     // ── Create Teya session ────────────────────────────────────
+    // NOTE: We do NOT pass successUrl/cancelUrl to Teya because their v2 API
+    // rejects `{CHECKOUT_SESSION_ID}` template variables in URLs. Instead we
+    // rely on the Teya webhook (payment.succeeded.v1) to update the reservation
+    // status, and on the client-side redirect after the hosted checkout closes.
     const session = await createPaymentSession({
       kind: 'booking_balance',
       amount: remaining,
@@ -77,9 +81,15 @@ export async function payForBooking(
         source: 'guest_booking_payment',
         token,
       },
-      successUrl: `${baseUrl}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
+      successUrl: `${baseUrl}/api/booking/payment-return?status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
       cancelUrl: `${baseUrl}/guest/${token}?payment=cancelled`,
     });
+
+    // Update reservation payment_id for webhook matching
+    try {
+      const db2 = getDb();
+      db2.prepare('UPDATE reservations SET payment_id = ? WHERE id = ?').run(session.sessionId, reservation.id);
+    } catch { /* non-critical */ }
 
     // ── Telegram notification ──────────────────────────────────
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
