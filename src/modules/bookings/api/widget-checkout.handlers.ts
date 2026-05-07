@@ -164,8 +164,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         };
 
         db.prepare(`
-          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, notes)
-          VALUES (?, ?, ?, ?, ?, 'pending', ?)
+          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, notes)
+          VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?)
         `).run(
           orderId, reservation_id || 'system_fallback', service_id, h, amount, JSON.stringify(notesObj)
         );
@@ -259,13 +259,17 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       if (orderId) {
         try {
+          // Update the payment_id COLUMN (used by Teya webhook to match orders)
+          // AND keep notes JSON in sync for debugging
           const so = db.prepare("SELECT notes FROM service_orders WHERE id = ?").get(orderId) as any;
           if (so && so.notes) {
             const parsed = JSON.parse(so.notes);
             parsed.payment_id = session.sessionId;
-            db.prepare('UPDATE service_orders SET notes = ? WHERE id = ?').run(JSON.stringify(parsed), orderId);
+            db.prepare('UPDATE service_orders SET payment_id = ?, payment_status = \'pending\', notes = ? WHERE id = ?').run(session.sessionId, JSON.stringify(parsed), orderId);
+          } else {
+            db.prepare('UPDATE service_orders SET payment_id = ?, payment_status = \'pending\' WHERE id = ?').run(session.sessionId, orderId);
           }
-        } catch { /* */ }
+        } catch (e: any) { console.error('[Checkout Session] Update order payment_id error:', e.message); }
       }
 
       return NextResponse.json({
