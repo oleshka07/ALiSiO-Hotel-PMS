@@ -88,6 +88,14 @@ function DashboardDesktop() {
   const [loading, setLoading] = useState(true);
   const onMenuClick = useMobileMenu();
 
+  /** DD.MM.YYYY */
+  const fmtDate = (iso: string | null | undefined) => {
+    if (!iso) return '—';
+    const parts = iso.split('-');
+    if (parts.length !== 3) return iso;
+    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  };
+
   const loadServiceOrders = (date: string, period: string) => {
     fetch(`/api/service-orders?date=${date}&period=${period}`)
       .then(r => r.json())
@@ -229,8 +237,8 @@ function DashboardDesktop() {
                       <td style={{ fontWeight: 600 }}>{o.serviceName}</td>
                       <td>{o.guestName || '—'}</td>
                       <td>
-                        {o.serviceDate}
-                        {o.startHour != null && <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>{o.startHour}:00–{o.endHour}:00</span>}
+                        {fmtDate(o.serviceDate)}
+                        {o.startHour != null && <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>{String(o.startHour).padStart(2,'0')}:00–{String(o.endHour).padStart(2,'0')}:00</span>}
                       </td>
                       <td>{o.unitName ? <span className="badge badge-primary">{o.unitName}</span> : '—'}</td>
                       <td style={{ fontWeight: 600 }}>{o.totalPrice} Kč</td>
@@ -324,7 +332,7 @@ function DashboardDesktop() {
                         <tr key={a.id}>
                           <td style={{ fontWeight: 500 }}>{a.first_name} {a.last_name}</td>
                           <td><span className="badge badge-primary">{a.unit_code}</span></td>
-                          <td>{a.check_in}</td>
+                          <td>{fmtDate(a.check_in)}</td>
                           <td>{a.nights}</td>
                           <td><span className={`badge ${STATUS_MAP[a.status]?.badge || 'badge-info'}`}>{STATUS_MAP[a.status]?.label || a.status}</span></td>
                         </tr>
@@ -348,7 +356,7 @@ function DashboardDesktop() {
                           </div>
                         </div>
                         <div className="dashboard-event-card-right">
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{a.check_in}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(a.check_in)}</div>
                           <span className={`badge ${STATUS_MAP[a.status]?.badge || 'badge-info'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
                             {STATUS_MAP[a.status]?.label || a.status}
                           </span>
@@ -384,7 +392,7 @@ function DashboardDesktop() {
                         <tr key={d.id}>
                           <td style={{ fontWeight: 500 }}>{d.first_name} {d.last_name}</td>
                           <td><span className="badge badge-primary">{d.unit_code}</span></td>
-                          <td>{d.check_out}</td>
+                          <td>{fmtDate(d.check_out)}</td>
                           <td><span className={`badge ${CLEAN_MAP[d.cleaning_status]?.badge || 'badge-info'}`}>{CLEAN_MAP[d.cleaning_status]?.label || d.cleaning_status}</span></td>
                         </tr>
                       ))}
@@ -406,7 +414,7 @@ function DashboardDesktop() {
                           </div>
                         </div>
                         <div className="dashboard-event-card-right">
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{d.check_out}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(d.check_out)}</div>
                           <span className={`badge ${CLEAN_MAP[d.cleaning_status]?.badge || 'badge-info'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
                             {CLEAN_MAP[d.cleaning_status]?.label || d.cleaning_status}
                           </span>
