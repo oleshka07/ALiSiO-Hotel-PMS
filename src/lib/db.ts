@@ -3484,6 +3484,44 @@ function runMigrations(database: any) {
     console.log('[DB] Cleanup #D needs_review backfill:', e.message);
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #E: delete legacy Hostex signal fin_operations.
+  //
+  // Hostex sync used to auto-create one fin_operation per prepaid
+  // booking (source='hostex', is_pms_signal=1). That creation was
+  // removed in PR clean-1. The accumulated legacy rows were redundant —
+  // they double-bookkept money that the bank statement records as the
+  // real income — and silently inflated balances / month KPI / project
+  // P&L whenever a query forgot the is_pms_signal=0 filter.
+  //
+  // Reservation.payment_status for Hostex prepaid bookings is set
+  // independently from Hostex's own is_prepaid flag (hostex-sync.ts
+  // line 249), so deleting these rows does not affect PMS check-in.
+  // recalcReservationPaymentStatus also now early-returns for
+  // is_prepaid=1 reservations, so the cascade can't flip them back.
+  //
+  // Idempotent: re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    // Detach any bank-transaction matches first, otherwise the FK update
+    // leaves dangling pointers when the op disappears.
+    database.prepare(`
+      UPDATE bank_transactions SET matched_operation_id = NULL
+      WHERE matched_operation_id IN (
+        SELECT id FROM fin_operations WHERE source = 'hostex' AND is_pms_signal = 1
+      )
+    `).run();
+    const result = database.prepare(`
+      DELETE FROM fin_operations
+      WHERE source = 'hostex' AND is_pms_signal = 1
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #E: deleted ${result.changes} legacy Hostex signal fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #E delete legacy signals:', e.message);
+  }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.

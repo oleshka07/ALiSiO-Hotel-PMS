@@ -479,8 +479,19 @@ export function getReservationPaymentTotals(db: any, reservationId: string): { p
 }
 
 export function recalcReservationPaymentStatus(db: any, reservationId: string): void {
-  const res = db.prepare('SELECT id, total_price FROM reservations WHERE id = ?').get(reservationId) as { id: string; total_price: number } | undefined;
+  const res = db.prepare(
+    'SELECT id, total_price, is_prepaid FROM reservations WHERE id = ?',
+  ).get(reservationId) as { id: string; total_price: number; is_prepaid: number } | undefined;
   if (!res) return;
+
+  // Channel-prepaid reservations (Booking / Airbnb / VRBO with is_prepaid=1
+  // from Hostex) are paid by definition — the platform already collected
+  // the money on the guest's behalf. Real cash arrives later as a bank
+  // payout but we don't want a partial bank op (e.g. tourist tax cleared
+  // separately, or a service add-on) to flip the booking back to
+  // 'partial' or 'unpaid'. PMS check-in trusts the platform flag.
+  if (res.is_prepaid === 1) return;
+
   const { paid, refunded } = getReservationPaymentTotals(db, reservationId);
   const net = paid - refunded;
   const total = Number(res.total_price) || 0;
