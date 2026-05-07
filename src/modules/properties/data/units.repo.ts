@@ -98,12 +98,12 @@ export function bulkCreateUnits(input: BulkCreateUnitsInput) {
 export function updateUnit(id: string, fields: Record<string, unknown>) {
   const db = getDb();
 
-  const nullableFields = ['building_id', 'floor', 'zone', 'notes'];
+  const nullableFields = ['building_id', 'floor', 'zone', 'notes', 'lock_code', 'entry_photo_url'];
   for (const f of nullableFields) {
     if (fields[f] === '') fields[f] = null;
   }
 
-  const allowed = ['name', 'code', 'unit_type_id', 'category_id', 'building_id', 'floor', 'zone', 'beds', 'room_status', 'cleaning_status', 'notes', 'sort_order', 'is_active'];
+  const allowed = ['name', 'code', 'unit_type_id', 'category_id', 'building_id', 'floor', 'zone', 'beds', 'room_status', 'cleaning_status', 'notes', 'sort_order', 'is_active', 'lock_code', 'entry_photo_url'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
