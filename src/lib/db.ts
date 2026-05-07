@@ -3480,6 +3480,43 @@ function runMigrations(database: any) {
   //  is_pms_signal column entirely, the migration is a no-op and was
   //  removed to avoid noisy «no such column» errors on every startup.)
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #G: purge auto-created fin_operations.
+  //
+  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
+  // return), four code paths created fin_operations on every guest tap
+  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
+  // had never manually entered. The actual money still lives at the
+  // platform / Teya merchant until the bank statement arrives, so these
+  // rows were essentially a parallel ledger that diverged from reality.
+  //
+  // After clean-5 no NEW rows are created. This migration sweeps the
+  // accumulated ones — sources hostex / teia / booking_widget. Manual
+  // cash entries (source='manual') and bank-import rows (source='bank'
+  // / 'manual_bank' / 'kb_inbox') are preserved.
+  //
+  // Bank-transaction match pointers are nulled before the DELETE so the
+  // FK does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    database.prepare(`
+      UPDATE bank_transactions SET matched_operation_id = NULL
+      WHERE matched_operation_id IN (
+        SELECT id FROM fin_operations
+        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+      )
+    `).run();
+    const result = database.prepare(`
+      DELETE FROM fin_operations
+      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
+  }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
