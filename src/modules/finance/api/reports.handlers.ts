@@ -10,12 +10,17 @@ import { getDb } from '@core/db';
 // prepayments aren't recorded as fin_operations any more (see PR
 // clean-1/2/3). Every row in the table is real money.
 
+// All cross-currency aggregations sum amount_company (CZK base) so a
+// future EUR / USD operation does not silently under-report by ~25×.
+// computeAmountCompany locks the rate at op-creation time, so historical
+// figures stay stable even if FX moves.
+
 function monthRevenueSql(month: string, db: any): number {
   // Net revenue from reservation-linked operations (income minus refunds) for a given month
   const row = db.prepare(`
     SELECT COALESCE(SUM(
-      CASE WHEN op_type = 'income' THEN amount
-           WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount
+      CASE WHEN op_type = 'income' THEN amount_company
+           WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
            ELSE 0 END
     ), 0) AS total
     FROM fin_operations
@@ -28,7 +33,7 @@ function monthRevenueSql(month: string, db: any): number {
 function monthExpensesSql(month: string, db: any, includeRefunds = false): number {
   // P&L expenses (COGS+OPEX+Taxes) — excluding reservation-linked refund ops and CAPEX
   const row = db.prepare(`
-    SELECT COALESCE(SUM(o.amount), 0) AS total
+    SELECT COALESCE(SUM(o.amount_company), 0) AS total
     FROM fin_operations o
     LEFT JOIN expense_categories ec ON ec.id = o.category_id
     WHERE o.op_type = 'expense'
@@ -240,7 +245,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
 
     // Expenses grouped by pnl_line × project_id (using fin_operations)
     const expByLineAndBU = db.prepare(`
-      SELECT ec.pnl_line, o.project_id AS business_unit_id, SUM(o.amount) as total
+      SELECT ec.pnl_line, o.project_id AS business_unit_id, SUM(o.amount_company) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
         AND strftime('%Y-%m', o.paid_at) = ?
@@ -260,7 +265,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
     }
 
     const sharedByAllocMethod = db.prepare(`
-      SELECT ec.alloc_method, SUM(o.amount) as total
+      SELECT ec.alloc_method, SUM(o.amount_company) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
         AND strftime('%Y-%m', o.paid_at) = ? AND o.project_id = 'bu_shared'
@@ -419,7 +424,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
 
     const outflows = months.map(m => {
       const row = db.prepare(`
-        SELECT COALESCE(SUM(o.amount), 0) as total
+        SELECT COALESCE(SUM(o.amount_company), 0) as total
         FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
         WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
           AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
@@ -439,7 +444,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     `).all(month) as any[];
 
     const outflowsByCategory = db.prepare(`
-      SELECT ec.name, ec.icon, ec.color, COALESCE(SUM(o.amount), 0) as total
+      SELECT ec.name, ec.icon, ec.color, COALESCE(SUM(o.amount_company), 0) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
         AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
@@ -447,7 +452,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     `).all(month) as any[];
 
     const outflowsByBU = db.prepare(`
-      SELECT bu.name, COALESCE(SUM(o.amount), 0) as total
+      SELECT bu.name, COALESCE(SUM(o.amount_company), 0) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
       LEFT JOIN business_units bu ON o.project_id = bu.id
       WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
@@ -538,7 +543,7 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
         ec.id AS cat_id, ec.name AS cat_name, ec.icon AS cat_icon,
         ec.classifier, ec.op_type AS cat_op_type, ec.parent_id,
         o.op_type, strftime('%Y-%m', o.${basis}) AS month,
-        SUM(o.amount) AS total
+        SUM(o.amount_company) AS total
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON ec.id = o.category_id
       WHERE ${where.join(' AND ')}
@@ -651,7 +656,7 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
         COALESCE(ec.classifier, 'other') AS classifier,
         ec.op_type AS cat_op_type, ec.parent_id,
         o.op_type, strftime('%Y-%m', o.${basis}) AS month,
-        SUM(o.amount) AS total
+        SUM(o.amount_company) AS total
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON ec.id = o.category_id
       WHERE o.status = 'completed'
@@ -777,7 +782,7 @@ export async function getFinancialIndicators(request: NextRequest): Promise<Next
         : `ec.classifier = ?`;
       const params = opType ? [opType, cls] : [cls];
       const row = db.prepare(`
-        SELECT COALESCE(SUM(o.amount), 0) AS total FROM fin_operations o
+        SELECT COALESCE(SUM(o.amount_company), 0) AS total FROM fin_operations o
         LEFT JOIN expense_categories ec ON ec.id = o.category_id
         WHERE o.status = 'completed'
           AND strftime('%Y-%m', o.paid_at) = ?
@@ -787,7 +792,7 @@ export async function getFinancialIndicators(request: NextRequest): Promise<Next
     };
 
     const revRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS total FROM fin_operations
+      SELECT COALESCE(SUM(amount_company), 0) AS total FROM fin_operations
       WHERE status = 'completed' AND op_type = 'income' AND strftime('%Y-%m', paid_at) = ?
     `).get(month) as { total: number };
     const revenue = revRow.total;
@@ -880,7 +885,7 @@ export async function getProjectProfitability(request: NextRequest): Promise<Nex
 
     const rows = db.prepare(`
       SELECT bu.id AS project_id, bu.name AS project_name, bu.is_shared,
-             o.op_type, strftime('%Y-%m', o.${basis}) AS month, SUM(o.amount) AS total
+             o.op_type, strftime('%Y-%m', o.${basis}) AS month, SUM(o.amount_company) AS total
       FROM fin_operations o
       JOIN business_units bu ON bu.id = o.project_id
       WHERE o.status = 'completed' AND o.organization_id = ?
@@ -998,7 +1003,7 @@ export async function getPlanFactReport(request: NextRequest): Promise<NextRespo
     const budgets = db.prepare(`SELECT * FROM fin_budgets WHERE organization_id = ? AND year = ? AND month = ?`).all(org, year, month) as any[];
     const keyCol = by === 'project' ? 'project_id' : 'category_id';
     const facts = db.prepare(`
-      SELECT ${keyCol} AS key, o.op_type, SUM(o.amount) AS total
+      SELECT ${keyCol} AS key, o.op_type, SUM(o.amount_company) AS total
       FROM fin_operations o
       WHERE o.status = 'completed' AND o.organization_id = ?
         AND strftime('%Y-%m', o.paid_at) = ? AND o.op_type != 'transfer'
