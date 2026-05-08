@@ -681,7 +681,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   if (!isPaid) {
     return (
       <div className="gp-root">
-        <PaymentGateScreen data={data} t={t} lang={lang} token={token} />
+        <PaymentGateScreen data={data} t={t} lang={lang} setLang={setLang} token={token} />
       </div>
     );
   }
