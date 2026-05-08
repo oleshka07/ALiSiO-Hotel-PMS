@@ -40,6 +40,7 @@
   padding-bottom: 16px;
   min-height: 500px;
   scrollbar-width: thin;
+  max-width: calc(100vw - var(--sidebar-width) - 48px);
 }
 
 .kanban-board::-webkit-scrollbar {
@@ -389,6 +390,7 @@
 @media (max-width: 768px) {
   .kanban-board {
     padding: 0 4px 16px;
+    max-width: calc(100vw - 16px);
   }
   
   .kanban-column {
