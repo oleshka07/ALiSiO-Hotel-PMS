@@ -187,9 +187,9 @@ export async function createBookingDraft(req: Request) {
         db.prepare(`
           INSERT INTO service_orders (
             id, reservation_id, service_id, quantity, total_price,
-            status, payment_status, notes, created_at
-          ) VALUES (?, ?, ?, ?, ?, 'pending', 'unpaid', 'Booked via widget', datetime('now'))
-        `).run(orderId, reservationId, extra.id, extra.quantity || 1, extra.price || 0);
+            status, payment_status, service_date, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, 'pending', 'unpaid', ?, 'Booked via widget', datetime('now'))
+        `).run(orderId, reservationId, extra.id, extra.quantity || 1, extra.price || 0, body.check_in || null);
       } catch (e: any) {
         // service_orders table might use different schema — try booking_service_orders
         try {
