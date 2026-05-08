@@ -101,7 +101,7 @@ export async function listServiceOrders(req: NextRequest) {
 
     const gOrders = guestOrders.map(o => {
       let startHour = null, endHour = null;
-      if (o.notes) {
+      if (o.notes && o.service_type === 'slot') {
         try {
           const n = JSON.parse(o.notes);
           if (n.startHour != null) { startHour = n.startHour; endHour = n.startHour + (n.hours || 1); }

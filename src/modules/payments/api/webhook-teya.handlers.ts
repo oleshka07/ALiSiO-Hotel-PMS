@@ -379,7 +379,7 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const orders = db.prepare(`
-      SELECT so.*, ads.name as service_name, ads.name_en,
+      SELECT so.*, ads.name as service_name, ads.name_en, ads.service_type,
              r.id AS reservation_id, r.check_in, r.check_out, r.is_multi_room,
              g.first_name, g.last_name, u.name as unit_name
       FROM service_orders so JOIN additional_services ads ON so.service_id = ads.id
@@ -393,7 +393,7 @@ function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
     const itemLines = orders.map((o: any) => {
       const dateTag = o.service_date ? ` · 📅 ${o.service_date}` : '';
       let timeTag = '';
-      if (o.notes) { try { const n = JSON.parse(o.notes); if (n.startHour != null) timeTag = ` ⏰ ${String(n.startHour).padStart(2,'0')}:00–${String(n.startHour + (n.hours || 1)).padStart(2,'0')}:00`; } catch { /* */ } }
+      if (o.notes && o.service_type === 'slot') { try { const n = JSON.parse(o.notes); if (n.startHour != null) timeTag = ` ⏰ ${String(n.startHour).padStart(2,'0')}:00–${String(n.startHour + (n.hours || 1)).padStart(2,'0')}:00`; } catch { /* */ } }
       return `  • ${esc(o.name_en || o.service_name)} ×${o.quantity}${dateTag}${timeTag} — ${o.total_price} ${currency}`;
     });
     const text = [
