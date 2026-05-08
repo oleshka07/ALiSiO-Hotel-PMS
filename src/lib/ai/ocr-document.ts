@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 export interface OcrResult {
   firstName: string;
   lastName: string;
+  fullName: string;
   dateOfBirth: string | null;
   documentNumber: string | null;
   documentType: 'id_card' | 'passport' | 'driving_license' | 'other';
@@ -63,9 +64,13 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
 
   const parsed = JSON.parse(cleaned);
+  const firstName = parsed.firstName || 'Unknown';
+  const lastName = parsed.lastName || '';
+  console.log(`[OCR] Extracted: ${firstName} ${lastName} | confidence: ${parsed.confidence} | doc: ${parsed.documentType}`);
   return {
-    firstName: parsed.firstName || 'Unknown',
-    lastName: parsed.lastName || '',
+    firstName,
+    lastName,
+    fullName: `${firstName} ${lastName}`.trim(),
     dateOfBirth: parsed.dateOfBirth || null,
     documentNumber: parsed.documentNumber || null,
     documentType: parsed.documentType || 'other',
