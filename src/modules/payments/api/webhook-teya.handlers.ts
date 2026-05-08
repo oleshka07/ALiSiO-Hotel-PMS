@@ -196,9 +196,12 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   const result2 = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(paymentRef);
   const result3 = db.prepare("UPDATE reservations SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now') WHERE id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ?) AND status = 'tentative'").run(paymentRef);
   const result4 = db.prepare("UPDATE reservations SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now') WHERE payment_id = ? AND status = 'tentative'").run(paymentRef);
+  // Also handle booking payments from guest page (reservation already 'confirmed' but payment_status='unpaid')
+  const result5 = db.prepare("UPDATE reservations SET payment_status = 'paid', updated_at = datetime('now') WHERE payment_id = ? AND payment_status IN ('unpaid', 'payment_requested')").run(paymentRef);
   db.prepare("UPDATE service_time_slots SET booking_session_id = NULL, notes = 'paid' WHERE booking_session_id = ?").run(paymentRef);
 
-  console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes + result4.changes });
+  const totalResChanges = result3.changes + result4.changes + result5.changes;
+  console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: totalResChanges });
 
   // Track changes from BOTH primary + fallback paths so the gates below
   // fire even when Teya labelled the order with transactionId rather than
