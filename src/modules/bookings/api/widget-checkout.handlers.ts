@@ -154,6 +154,50 @@ export async function createWidgetCheckoutSession(req: Request) {
         orderId = `so_${Date.now()}`;
         const h = hours || 2;
         const sHour = start_hour || 14;
+
+        // ── Block time slots (availability check + booking) ──────
+        // Without this, two guests could book the same sauna hour.
+        const hasSlotTable = db.prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='service_time_slots'"
+        ).get();
+
+        if (hasSlotTable) {
+          // Check availability first
+          for (let i = 0; i < h; i++) {
+            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
+            const conflict = db.prepare(
+              `SELECT id FROM service_time_slots
+               WHERE service_id = ? AND date = ? AND start_time = ? AND booked_count >= max_capacity`
+            ).get(service_id, service_date, slotTime) as any;
+            if (conflict) {
+              return NextResponse.json(
+                { error: `Slot ${slotTime} on ${service_date} is already booked` },
+                { status: 409, headers: CORS_HEADERS }
+              );
+            }
+          }
+
+          // Block the slots
+          for (let i = 0; i < h; i++) {
+            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
+            const slotEnd = `${String(sHour + i + 1).padStart(2, '0')}:00`;
+            const existing = db.prepare(
+              `SELECT id FROM service_time_slots WHERE service_id = ? AND date = ? AND start_time = ?`
+            ).get(service_id, service_date, slotTime) as any;
+
+            if (existing) {
+              db.prepare(
+                'UPDATE service_time_slots SET booked_count = booked_count + 1, reservation_id = ? WHERE id = ?'
+              ).run(reservation_id || null, existing.id);
+            } else {
+              db.prepare(
+                `INSERT INTO service_time_slots (id, service_id, date, start_time, end_time, max_capacity, booked_count, reservation_id)
+                 VALUES (?, ?, ?, ?, ?, 1, 1, ?)`
+              ).run(`slot_${Date.now()}_${i}`, service_id, service_date, slotTime, slotEnd, reservation_id || null);
+            }
+          }
+        }
+
         const notesObj = {
           service_date,
           startHour: sHour,
@@ -270,6 +314,21 @@ export async function createWidgetCheckoutSession(req: Request) {
             db.prepare('UPDATE service_orders SET payment_id = ?, payment_status = \'pending\' WHERE id = ?').run(session.sessionId, orderId);
           }
         } catch (e: any) { console.error('[Checkout Session] Update order payment_id error:', e.message); }
+      }
+
+      // Link time slots to session ID so cancel/expiry can release them
+      if (service_id && service_date) {
+        try {
+          const h = hours || 2;
+          const sHour = start_hour || 14;
+          for (let i = 0; i < h; i++) {
+            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
+            db.prepare(
+              `UPDATE service_time_slots SET booking_session_id = ?
+               WHERE service_id = ? AND date = ? AND start_time = ?`
+            ).run(session.sessionId, service_id, service_date, slotTime);
+          }
+        } catch { /* non-critical */ }
       }
 
       return NextResponse.json({
