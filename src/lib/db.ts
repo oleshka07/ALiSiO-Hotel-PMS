@@ -3481,6 +3481,50 @@ function runMigrations(database: any) {
   //  removed to avoid noisy «no such column» errors on every startup.)
 
   // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
+  //
+  // After clean-6 the /finance/operations list still contained ~67
+  // source='manual' rows with NULL account_to_id AND NULL account_from_id
+  // (legacy migration artefacts from old `income/expenses/transfers/
+  // payments` tables that pre-dated proper account assignment), plus one
+  // Finmap wizard import experiment and a -50,005,000 CZK «Test
+  // Transaction». None represent real money — NULL accounts make every
+  // balance / P&L aggregation skip them anyway. They only pollute the
+  // operations list.
+  //
+  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
+  // unattributed). Manual ops with a real account_to / account_from stay
+  // untouched even if they look auto-imported — operator can hide those
+  // individually via the row UI.
+  //
+  // Bank-transaction matched_operation_id nulled before DELETE so the FK
+  // does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const idsToWipe = database.prepare(`
+      SELECT id FROM fin_operations
+      WHERE source = 'wizard_import'
+         OR (source = 'manual'
+             AND account_to_id IS NULL
+             AND account_from_id IS NULL)
+         OR comment LIKE '%Test Transaction%'
+    `).all() as Array<{ id: string }>;
+    if (idsToWipe.length > 0) {
+      const placeholders = idsToWipe.map(() => '?').join(',');
+      const ids = idsToWipe.map((r) => r.id);
+      database.prepare(
+        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
+      ).run(...ids);
+      const result = database.prepare(
+        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
+      ).run(...ids);
+      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Cleanup #G: purge auto-created fin_operations.
   //
   // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
