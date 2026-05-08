@@ -208,10 +208,10 @@ export async function createWidgetCheckoutSession(req: Request) {
         };
 
         db.prepare(`
-          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, notes)
-          VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?)
+          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
+          VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)
         `).run(
-          orderId, reservation_id || 'system_fallback', service_id, h, amount, JSON.stringify(notesObj)
+          orderId, reservation_id || 'system_fallback', service_id, h, amount, service_date || null, JSON.stringify(notesObj)
         );
       } catch (dbErr: any) {
         console.error('[Checkout Session] DB error inserting service_orders:', dbErr.message);
