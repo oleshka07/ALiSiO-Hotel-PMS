@@ -79,11 +79,12 @@ export default function BookingViewModal({
   // Sub-bookings state
   const [subBookings, setSubBookings] = useState<any[]>([]);
   const [showGroupForm, setShowGroupForm] = useState(false);
-  const [groupForm, setGroupForm] = useState({ label: '', adults: 1, children: 0, subtotal: 0, notes: '' });
+  const [groupForm, setGroupForm] = useState({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' });
   const [savingGroup, setSavingGroup] = useState(false);
   const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set());
   const [editingLineItems, setEditingLineItems] = useState<string | null>(null);
   const [newLineItem, setNewLineItem] = useState({ description: '', quantity: 1, unit_price: 0 });
+  const [availableUnits, setAvailableUnits] = useState<{ id: string; name: string; code: string; category_name: string }[]>([]);
 
   // Invoice-to-company override (rendered as Odberatel block in faktura HTML).
   const bAny = b as any;
@@ -146,6 +147,14 @@ export default function BookingViewModal({
     } catch { setSubBookings([]); }
   };
   useEffect(() => { fetchSubBookings(); }, [b?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load available units for unit selector
+  useEffect(() => {
+    fetch('/api/units')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setAvailableUnits(data); })
+      .catch(() => {});
+  }, []);
 
   const handleReissue = async () => {
     const isFresh = !invoice;
@@ -690,8 +699,12 @@ export default function BookingViewModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {subBookings.length === 0 && !showGroupForm && (
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>
-                  <p style={{ marginBottom: 12 }}>Це бронювання не має підгруп</p>
-                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16 }}>Додайте групи для розбивки вартості між кількома гостями/кімнатами</p>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>🏠</div>
+                  <p style={{ marginBottom: 8, fontWeight: 600, color: 'var(--text-secondary)' }}>Мульти-групове бронювання</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4, maxWidth: 360, margin: '0 auto 16px' }}>
+                    Додайте групи гостей — кожна група прив'язується до свого юніту (кімната, будинок, місце на кемпінгу).
+                    Юніт автоматично блокується в календарі на ті ж дати.
+                  </p>
                 </div>
               )}
 
@@ -718,9 +731,15 @@ export default function BookingViewModal({
                       <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700, minWidth: 20 }}>#{idx + 1}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{sb.label || 'Без назви'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                          {sb.adults} дор.{sb.children > 0 ? `, ${sb.children} діт.` : ''}
-                          {sb.child_unit_name ? ` · ${sb.child_unit_name}` : ''}
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span>👥 {sb.adults} дор.{sb.children > 0 ? `, ${sb.children} діт.` : ''}</span>
+                          {sb.child_unit_name ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 6, background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 11, fontWeight: 600 }}>
+                              📅 {sb.child_unit_name} <span style={{ fontSize: 9, opacity: 0.7 }}>(в календарі)</span>
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>— той самий юніт</span>
+                          )}
                         </div>
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
@@ -846,18 +865,32 @@ export default function BookingViewModal({
                 </div>
               )}
 
-              {/* Add group form */}
               {showGroupForm ? (
                 <div style={{
                   border: '1px solid var(--accent-primary)', borderRadius: 10,
                   padding: 14, background: 'var(--bg-secondary)',
                 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Нова група</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>➕ Нова група гостей</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>🏠 Юніт (кімната / місце) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                      <select value={groupForm.unitId} onChange={e => setGroupForm(p => ({ ...p, unitId: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }}>
+                        <option value="">— Той самий юніт що й master ({(b as any).unit_name}) —</option>
+                        {availableUnits.filter(u => u.id !== (b as any).unit_id).map(u => (
+                          <option key={u.id} value={u.id}>{u.name} ({u.code}) — {u.category_name}</option>
+                        ))}
+                      </select>
+                      {groupForm.unitId && (
+                        <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          📅 Цей юніт буде заблоковано в календарі на {(b as any).check_in} — {(b as any).check_out}
+                        </div>
+                      )}
+                    </div>
                     <div style={{ gridColumn: '1 / -1' }}>
                       <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Назва групи</label>
                       <input value={groupForm.label} onChange={e => setGroupForm(p => ({ ...p, label: e.target.value }))}
-                        placeholder="Напр. Motorhome Family" style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                        placeholder="Напр. Сім'я Петренко — Mirror 1" style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
                     </div>
                     <div>
                       <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Дорослі</label>
@@ -870,7 +903,7 @@ export default function BookingViewModal({
                         style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Вартість (CZK)</label>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>💰 Вартість цієї групи (CZK)</label>
                       <input type="number" min={0} value={groupForm.subtotal} onChange={e => setGroupForm(p => ({ ...p, subtotal: Number(e.target.value) }))}
                         style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
                     </div>
@@ -881,7 +914,7 @@ export default function BookingViewModal({
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-                    <button onClick={() => { setShowGroupForm(false); setGroupForm({ label: '', adults: 1, children: 0, subtotal: 0, notes: '' }); }}
+                    <button onClick={() => { setShowGroupForm(false); setGroupForm({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' }); }}
                       style={{ padding: '6px 14px', fontSize: 12, background: 'none', border: '1px solid var(--border-primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)' }}
                     >Скасувати</button>
                     <button
@@ -892,13 +925,14 @@ export default function BookingViewModal({
                           const res = await fetch(`/api/bookings/${b.id}/sub-bookings`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(groupForm),
+                            body: JSON.stringify({ ...groupForm, unitId: groupForm.unitId || undefined }),
                           });
                           if (res.ok) {
-                            showToast('Групу додано');
+                            showToast(groupForm.unitId ? '✅ Групу додано — юніт заблоковано в календарі' : '✅ Групу додано');
                             setShowGroupForm(false);
-                            setGroupForm({ label: '', adults: 1, children: 0, subtotal: 0, notes: '' });
+                            setGroupForm({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' });
                             fetchSubBookings();
+                            if (onFetchBookings) onFetchBookings();
                           } else {
                             const err = await res.json();
                             showToast(err.error || 'Помилка');
@@ -908,7 +942,7 @@ export default function BookingViewModal({
                       style={{ padding: '6px 14px', fontSize: 12, background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                     >
                       {savingGroup ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
-                      Додати
+                      Додати групу
                     </button>
                   </div>
                 </div>
