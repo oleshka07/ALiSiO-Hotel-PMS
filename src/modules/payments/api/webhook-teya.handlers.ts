@@ -393,7 +393,7 @@ function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
     const itemLines = orders.map((o: any) => {
       const dateTag = o.service_date ? ` · 📅 ${o.service_date}` : '';
       let timeTag = '';
-      if (o.notes && o.service_type === 'slot') { try { const n = JSON.parse(o.notes); if (n.startHour != null) timeTag = ` ⏰ ${String(n.startHour).padStart(2,'0')}:00–${String(n.startHour + (n.hours || 1)).padStart(2,'0')}:00`; } catch { /* */ } }
+      if (o.notes && o.service_type === 'slot_booking') { try { const n = JSON.parse(o.notes); if (n.startHour != null) timeTag = ` ⏰ ${String(n.startHour).padStart(2,'0')}:00–${String(n.startHour + (n.hours || 1)).padStart(2,'0')}:00`; } catch { /* */ } }
       return `  • ${esc(o.name_en || o.service_name)} ×${o.quantity}${dateTag}${timeTag} — ${o.total_price} ${currency}`;
     });
     const text = [

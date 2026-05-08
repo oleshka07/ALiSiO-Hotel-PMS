@@ -101,10 +101,12 @@ export async function listServiceOrders(req: NextRequest) {
 
     const gOrders = guestOrders.map(o => {
       let startHour = null, endHour = null;
-      if (o.notes && o.service_type === 'slot') {
+      let notesDate: string | null = null;
+      if (o.notes && o.service_type === 'slot_booking') {
         try {
           const n = JSON.parse(o.notes);
           if (n.startHour != null) { startHour = n.startHour; endHour = n.startHour + (n.hours || 1); }
+          if (n.service_date) notesDate = n.service_date;
         } catch { /* ignore */ }
       }
       return {
@@ -114,7 +116,7 @@ export async function listServiceOrders(req: NextRequest) {
         serviceId: o.service_id,
         serviceName: o.name_en || o.service_name,
         serviceType: o.service_type,
-        serviceDate: o.service_date || o.check_in,
+        serviceDate: o.service_date || notesDate || o.check_in,
         startHour,
         endHour,
         quantity: o.quantity,
