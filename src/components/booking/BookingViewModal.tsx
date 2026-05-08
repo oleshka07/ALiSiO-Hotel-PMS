@@ -150,11 +150,13 @@ export default function BookingViewModal({
   };
 
   const total = b.total_price || 0;
-  const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
-  const remaining = Math.max(0, total - paid);
-  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
+  const paidFromOps = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
   const isPaid = b.payment_status === 'paid' || b.payment_status === 'prepaid';
+  // If DB says paid but no fin_operations exist (prepaid OTA, Teya widget), show full bar
+  const paid = isPaid && paidFromOps === 0 ? total : paidFromOps;
+  const remaining = Math.max(0, total - paid);
+  const pct = isPaid ? 100 : total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
   const isRegistered = b.registration_status === 'registered';
   const canCheckIn = isPaid && isRegistered;
   const regNeeded = b.adults || 1;
