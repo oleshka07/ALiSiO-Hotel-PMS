@@ -71,6 +71,8 @@ interface ServiceOrder {
   paymentStatus: string;
   guestName: string | null;
   unitName: string | null;
+  menuItemName?: string | null;
+  quantity?: number;
   createdAt: string;
 }
 
@@ -234,7 +236,10 @@ function DashboardDesktop() {
                 <tbody>
                   {serviceOrders.map(o => (
                     <tr key={o.id} style={{ opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
-                      <td style={{ fontWeight: 600 }}>{o.serviceName}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {o.serviceName}
+                        {o.menuItemName && <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)' }}>🍽 {o.menuItemName}{(o.quantity || 0) > 1 ? ` ×${o.quantity}` : ''}</div>}
+                      </td>
                       <td>{o.guestName || '—'}</td>
                       <td>
                         {fmtDate(o.serviceDate)}
@@ -281,7 +286,10 @@ function DashboardDesktop() {
                       <Flame size={18} style={{ color: '#f59e0b' }} />
                     </div>
                     <div className="dashboard-event-card-info">
-                      <div className="dashboard-event-card-name">{o.serviceName}</div>
+                      <div className="dashboard-event-card-name">
+                        {o.serviceName}
+                        {o.menuItemName && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>🍽 {o.menuItemName}</span>}
+                      </div>
                       <div className="dashboard-event-card-detail">
                         {o.guestName || 'Клієнт'}
                         {o.startHour != null && ` · ${o.startHour}:00–${o.endHour}:00`}

@@ -338,33 +338,42 @@ function recordPayment(
 
 function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
   try {
-    const order = db.prepare(`
+    const orders = db.prepare(`
       SELECT bso.*, ads.name as service_name, ads.name_en,
+             mi.name_en as menu_item_name,
              r.id AS reservation_id, r.check_in, r.check_out, r.is_multi_room,
              g.first_name, g.last_name, u.name as unit_name
       FROM booking_service_orders bso
       JOIN additional_services ads ON bso.service_id = ads.id
+      LEFT JOIN menu_items mi ON bso.menu_item_id = mi.id
       LEFT JOIN reservations r ON bso.reservation_id = r.id
       LEFT JOIN guests g ON r.guest_id = g.id
       LEFT JOIN units u ON r.unit_id = u.id
-      WHERE bso.payment_id = ? LIMIT 1
-    `).get(paymentRef) as any;
-    if (!order) return;
+      WHERE bso.payment_id = ?
+    `).all(paymentRef) as any[];
+    if (!orders.length) return;
+    const first = orders[0];
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
-    let timeInfo = '';
-    if (order.options_json) { try { const opts = JSON.parse(order.options_json); timeInfo = `\n⏰ ${order.service_date} ${opts.startHour}:00–${opts.startHour + opts.hours}:00`; } catch { /* ignore */ } }
-    const guestName = order.first_name ? `${esc(order.first_name)} ${esc(order.last_name)}` : 'Зовнішній клієнт';
+    const guestName = first.first_name ? `${esc(first.first_name)} ${esc(first.last_name)}` : 'Зовнішній клієнт';
+    const grandTotal = orders.reduce((s: number, o: any) => s + (o.total_price || 0), 0);
+    const itemLines = orders.map((o: any) => {
+      const name = o.menu_item_name || o.name_en || o.service_name;
+      let timeTag = '';
+      if (o.options_json) { try { const opts = JSON.parse(o.options_json); timeTag = ` ⏰ ${String(opts.startHour).padStart(2,'0')}:00–${String(opts.startHour + opts.hours).padStart(2,'0')}:00`; } catch { /* */ } }
+      const dateTag = o.service_date ? ` · 📅 ${o.service_date}` : '';
+      return `  • ${esc(name)} ×${o.quantity}${dateTag}${timeTag} — ${o.total_price} ${currency || 'CZK'}`;
+    });
     const text = [
       `💳 <b>Оплата послуги підтверджена</b>`, ``,
       `👤 ${guestName}`,
-      order.unit_name ? `🏠 ${esc(order.unit_name)}` : '',
-      order.is_multi_room ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.` : '',
-      `✨ ${esc(order.name_en || order.service_name)}${timeInfo}`,
-      `💰 ${order.total_price} ${currency || 'CZK'} — ✅ Оплачено`,
-      order.reservation_id ? `\n🔖 <code>${esc(order.reservation_id)}</code>` : '',
+      first.unit_name ? `🏠 ${esc(first.unit_name)}` : '',
+      first.is_multi_room ? `\n⚠️ <b>MULTI-ROOM</b>` : '',
+      ``, ...itemLines, ``,
+      orders.length > 1 ? `💰 Разом: ${grandTotal} ${currency || 'CZK'} — ✅ Оплачено` : `💰 ${grandTotal} ${currency || 'CZK'} — ✅ Оплачено`,
+      first.reservation_id ? `\n🔖 <code>${esc(first.reservation_id)}</code>` : '',
     ].filter(Boolean).join('\n');
-    sendTelegramMessage(text).catch(() => {});
-  } catch { /* non-critical */ }
+    sendTelegramMessage(text).catch((e: any) => console.error('[Teya Webhook] Widget TG send failed:', e.message));
+  } catch (e: any) { console.error('[Teya Webhook] sendWidgetOrderTG error:', e.message); }
 }
 
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
@@ -382,8 +391,10 @@ function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
     const grandTotal = orders.reduce((s: number, o: any) => s + (o.total_price || 0), 0);
     const itemLines = orders.map((o: any) => {
-      const dateTag = o.service_date ? ` · ${o.service_date}` : '';
-      return `  • ${esc(o.name_en || o.service_name)} ×${o.quantity}${dateTag} — ${o.total_price} ${currency}`;
+      const dateTag = o.service_date ? ` · 📅 ${o.service_date}` : '';
+      let timeTag = '';
+      if (o.notes) { try { const n = JSON.parse(o.notes); if (n.startHour != null) timeTag = ` ⏰ ${String(n.startHour).padStart(2,'0')}:00–${String(n.startHour + (n.hours || 1)).padStart(2,'0')}:00`; } catch { /* */ } }
+      return `  • ${esc(o.name_en || o.service_name)} ×${o.quantity}${dateTag}${timeTag} — ${o.total_price} ${currency}`;
     });
     const text = [
       `💳 <b>Оплата підтверджена</b>`, ``,

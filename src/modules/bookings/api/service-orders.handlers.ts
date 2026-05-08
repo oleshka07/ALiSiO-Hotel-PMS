@@ -23,12 +23,14 @@ export async function listServiceOrders(req: NextRequest) {
         bso.id, bso.reservation_id, bso.service_id, bso.quantity,
         bso.service_date, bso.options_json, bso.unit_price, bso.total_price,
         bso.status, bso.payment_status, bso.promo_code, bso.created_at,
-        bso.completed_at,
+        bso.completed_at, bso.menu_item_id,
         ads.name as service_name, ads.name_en, ads.service_type,
+        mi.name_en as menu_item_name,
         g.first_name, g.last_name,
         u.name as unit_name
       FROM booking_service_orders bso
       JOIN additional_services ads ON bso.service_id = ads.id
+      LEFT JOIN menu_items mi ON bso.menu_item_id = mi.id
       LEFT JOIN reservations r ON bso.reservation_id = r.id
       LEFT JOIN guests g ON r.guest_id = g.id
       LEFT JOIN units u ON r.unit_id = u.id
@@ -63,6 +65,7 @@ export async function listServiceOrders(req: NextRequest) {
         paymentStatus: o.payment_status,
         completedAt: o.completed_at,
         promoCode: o.promo_code,
+        menuItemName: o.menu_item_name || null,
         guestName: o.first_name ? `${o.first_name} ${o.last_name}` : null,
         unitName: o.unit_name,
         createdAt: o.created_at,
