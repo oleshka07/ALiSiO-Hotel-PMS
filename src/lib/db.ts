@@ -3883,6 +3883,73 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 receivables backfill:', e.message); }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Sub-Bookings: multi-group booking architecture.
+  //
+  // Adds parent_id to reservations for parent↔child linking (child
+  // reservation = same dates/guest, different unit, auto-mirrors
+  // status/payment from parent). reservation_sub_bookings holds per-
+  // group metadata (label, adults, subtotal). reservation_line_items
+  // provides optional price breakdown per sub-booking.
+  //
+  // Old reservation_groups table stays (empty, 0 rows) — no data to
+  // migrate, but keeping the DDL so the existing group_id FK doesn't
+  // complain. group_id on reservations is deprecated (always NULL for
+  // new bookings).
+  // ═══════════════════════════════════════════════════════════════════
+
+  // --- Migration: add parent_id to reservations ---
+  try {
+    const resCols = database.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];
+    if (!resCols.some((c: any) => c.name === 'parent_id')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN parent_id TEXT REFERENCES reservations(id) ON DELETE CASCADE");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_reservations_parent ON reservations(parent_id)");
+      console.log('[DB] Sub-Bookings: added parent_id column to reservations');
+    }
+  } catch (e: any) { console.log('[DB] Sub-Bookings parent_id migration:', e.message); }
+
+  // --- Migration: create reservation_sub_bookings table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS reservation_sub_bookings (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      child_reservation_id TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      label TEXT NOT NULL DEFAULT '',
+      adults INTEGER NOT NULL DEFAULT 1,
+      children INTEGER NOT NULL DEFAULT 0,
+      infants INTEGER NOT NULL DEFAULT 0,
+      subtotal REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_sub_bookings_res ON reservation_sub_bookings(reservation_id)');
+
+  // --- Migration: create reservation_line_items table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS reservation_line_items (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      sub_booking_id TEXT NOT NULL REFERENCES reservation_sub_bookings(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      category TEXT DEFAULT 'other',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_line_items_sub ON reservation_line_items(sub_booking_id)');
+
+  // --- Migration: add sub_booking_id to reservation_guests ---
+  try {
+    const rgCols2 = database.prepare("PRAGMA table_info(reservation_guests)").all() as { name: string }[];
+    if (!rgCols2.some((c: any) => c.name === 'sub_booking_id')) {
+      database.exec("ALTER TABLE reservation_guests ADD COLUMN sub_booking_id TEXT REFERENCES reservation_sub_bookings(id)");
+      console.log('[DB] Sub-Bookings: added sub_booking_id to reservation_guests');
+    }
+  } catch (e: any) { console.log('[DB] Sub-Bookings sub_booking_id migration:', e.message); }
+
 }
 
 

@@ -18,10 +18,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = new URL(request.url);
     const reservationId = searchParams.get('reservation_id');
     const groupId = searchParams.get('group_id');
+    const parentId = searchParams.get('parent_id');
 
-    if (!reservationId && !groupId) {
+    if (!reservationId && !groupId && !parentId) {
       return NextResponse.json(
-        { error: 'reservation_id or group_id query param is required' },
+        { error: 'reservation_id, parent_id, or group_id query param is required' },
         { status: 400 },
       );
     }
@@ -29,9 +30,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const where: string[] = ["o.reservation_id IS NOT NULL", "o.status = 'completed'"];
     const params: any[] = [];
     if (reservationId) {
-      where.push('o.reservation_id = ?');
-      params.push(reservationId);
+      // Include payments for this reservation AND all its children
+      where.push('(o.reservation_id = ? OR o.reservation_id IN (SELECT id FROM reservations WHERE parent_id = ?))');
+      params.push(reservationId, reservationId);
+    } else if (parentId) {
+      where.push('(o.reservation_id = ? OR o.reservation_id IN (SELECT id FROM reservations WHERE parent_id = ?))');
+      params.push(parentId, parentId);
     } else if (groupId) {
+      // Legacy: group_id from old reservation_groups
       where.push('o.reservation_id IN (SELECT id FROM reservations WHERE group_id = ?)');
       params.push(groupId);
     }

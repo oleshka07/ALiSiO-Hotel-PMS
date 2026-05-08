@@ -63,6 +63,8 @@ interface BookingRow {
   unit_type_id: string;
   unit_type_name: string;
   group_id: string | null;
+  parent_id: string | null;
+  sub_booking_count: number;
   commission_amount: number;
   guest_page_token: string | null;
   internal_notes: string | null;
@@ -1096,7 +1098,7 @@ function BookingsDesktop() {
                 const b = row.data;
                 return (
                   <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => openViewBooking(b)}>
-                    <td style={{ fontWeight: 500 }}>{b.first_name} {b.last_name}</td>
+                    <td style={{ fontWeight: 500 }}>{b.first_name} {b.last_name}{b.sub_booking_count > 0 && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontWeight: 700 }}>👥 {b.sub_booking_count}</span>}</td>
                     <td><span className="badge badge-primary">{b.unit_name}</span></td>
                     <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
                     <td><span className="flex items-center gap-2" style={{ fontSize: 12 }}><Users size={12} /> {b.adults}{b.children > 0 && <span style={{ color: 'var(--text-tertiary)' }}>+{b.children}</span>}</span></td>
