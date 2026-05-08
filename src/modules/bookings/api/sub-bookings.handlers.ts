@@ -20,6 +20,8 @@ export async function listSubBookings(_request: NextRequest, { params }: { param
       SELECT sb.*,
         cr.unit_id as child_unit_id,
         cr.status as child_status,
+        cr.payment_status as child_payment_status,
+        cr.guest_page_token as child_guest_page_token,
         u.name as child_unit_name, u.code as child_unit_code
       FROM reservation_sub_bookings sb
       LEFT JOIN reservations cr ON sb.child_reservation_id = cr.id

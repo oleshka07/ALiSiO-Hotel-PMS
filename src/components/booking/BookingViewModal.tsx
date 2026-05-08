@@ -745,12 +745,33 @@ export default function BookingViewModal({
                       <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
                         {Number(sb.subtotal).toLocaleString()} CZK
                       </div>
+                      {/* Payment status badge for child */}
+                      {sb.child_payment_status && (
+                        <span style={{
+                          fontSize: 10, padding: '2px 6px', borderRadius: 6, fontWeight: 600,
+                          color: sb.child_payment_status === 'paid' ? '#22c55e' : '#f59e0b',
+                          background: sb.child_payment_status === 'paid' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                        }}>
+                          {sb.child_payment_status === 'paid' ? '✅' : '⏳'}
+                        </span>
+                      )}
+                      {/* Guest page link */}
+                      {sb.child_guest_page_token && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); window.open(`/guest/${sb.child_guest_page_token}`, '_blank'); }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', padding: 4 }}
+                          title="Гостьова сторінка цієї групи"
+                        >
+                          <ExternalLink size={14} />
+                        </button>
+                      )}
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           if (!confirm(`Видалити групу «${sb.label}»?`)) return;
                           await fetch(`/api/bookings/${b.id}/sub-bookings/${sb.id}`, { method: 'DELETE' });
                           fetchSubBookings();
+                          if (onFetchBookings) onFetchBookings();
                           showToast('Групу видалено');
                         }}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}
@@ -831,6 +852,39 @@ export default function BookingViewModal({
                         )}
 
                         {sb.notes && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8, fontStyle: 'italic' }}>💬 {sb.notes}</div>}
+
+                        {/* Guest page link for child reservation */}
+                        {sb.child_guest_page_token && (
+                          <div style={{
+                            marginTop: 10, padding: '8px 10px', borderRadius: 8,
+                            background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
+                            display: 'flex', alignItems: 'center', gap: 8,
+                          }}>
+                            <ExternalLink size={13} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Гостьова сторінка цієї групи</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                /guest/{sb.child_guest_page_token}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const url = `${window.location.origin}/guest/${sb.child_guest_page_token}`;
+                                navigator.clipboard.writeText(url);
+                                showToast('🔗 Посилання скопійовано');
+                              }}
+                              style={{ padding: '3px 8px', fontSize: 10, background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}
+                            >
+                              <Copy size={10} /> Копіювати
+                            </button>
+                            <button
+                              onClick={() => window.open(`/guest/${sb.child_guest_page_token}`, '_blank')}
+                              style={{ padding: '3px 8px', fontSize: 10, background: 'none', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              Відкрити
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
