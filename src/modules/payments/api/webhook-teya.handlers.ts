@@ -410,7 +410,7 @@ function sendBookingPaymentTG(db: any, paymentRef: string, amount: number, curre
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE r.payment_id = ?
     `).get(paymentRef) as any;
-    if (!res) return;
+    if (!res) { console.log('[Teya Webhook] sendBookingPaymentTG: no reservation found for', paymentRef); return; }
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
     const displayAmount = amount > 100 ? Math.round(amount / 100) : amount; // Teya sends minor units
     const text = [
@@ -422,6 +422,7 @@ function sendBookingPaymentTG(db: any, paymentRef: string, amount: number, curre
       ``,
       `🔖 <code>${esc(res.id)}</code>`,
     ].filter(Boolean).join('\n');
-    sendTelegramMessage(text).catch(() => {});
-  } catch { /* non-critical */ }
+    console.log('[Teya Webhook] Sending booking payment TG for', res.first_name, res.last_name);
+    sendTelegramMessage(text).catch((e: any) => console.error('[Teya Webhook] TG send failed:', e.message));
+  } catch (e: any) { console.error('[Teya Webhook] sendBookingPaymentTG error:', e.message); }
 }
