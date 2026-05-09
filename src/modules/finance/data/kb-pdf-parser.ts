@@ -91,54 +91,105 @@ interface RawBlock {
  * Anchor: the amount line at end of each block (last string matching
  * AMOUNT_RE before the next date or end of body).
  */
+// Multi-page boilerplate that pdf-parse leaves in mid-body for KB
+// statements that span >1 page. We need to skip these so they don't
+// look like description-block lines for the previous transaction.
+const BOILERPLATE_RES: RegExp[] = [
+  /^VÝPIS\s+DENNÍ/i,
+  /^Strana:/i,
+  /^Datum\s+výpisu:/i,
+  /^Číslo\s+výpisu:/i,
+  /^Zaslání:/i,
+  /^k\s+účtu:/i,
+  /^IBAN:/i,
+  /^typ:/i,
+  /^měna:/i,
+  /^Cheb$/i,
+  /^Dragounská\b/i,
+  /^\d{3,4}\s\d{2}\s+Cheb$/i,
+  /^tel\.:/i,
+  /^www\.kb\.cz$/i,
+  /^BIC\s*\/\s*SWIFT/i,
+  /^KEMP\s+CARLSBAD/i,
+  /^CHEBSKÁ/i,
+  /^\d{3,4}\s\d{2}\s+KARLOVY\s+VARY/i,
+  /^Počáteční\s+zůstatek$/i,
+  /^Konečný\s+zůstatek$/i,
+  /^Datum$/i,
+  /^zúčtování$/i,
+  /^transakce$/i,
+  /^Popis\s+transakce$/i,
+  /^Identifikace\s+transakce$/i,
+  /^Název\s+protiúčtu/i,
+  /^Protiúčet\s+a\s+kód/i,
+  /^VS$/i,
+  /^KS$/i,
+  /^SS$/i,
+  /^Připsáno$/i,
+  /^Odepsáno$/i,
+  /^Pokračování\s+na/i,
+  /^DN\d{6}_/i,                  // "DN260504_4C6-0001135-2 ID: 0481374969"
+  /^Komerční\s+banka/i,
+  /^se\s+sídlem:/i,
+  /^zapsaná/i,
+  /^Děkujeme/i,
+  /^Vklad\s+na/i,
+  /^Rekapitulace\s+transakcí/i,
+  /^Celkový\s+počet/i,
+  /^Obraty\s+na/i,
+];
+
+function isBoilerplate(line: string): boolean {
+  return BOILERPLATE_RES.some((re) => re.test(line));
+}
+
 function parseBlocks(lines: string[]): RawBlock[] {
+  // Strip boilerplate lines — keeps multi-page statements parseable.
+  const clean = lines.filter((l) => !isBoilerplate(l));
+
   const blocks: RawBlock[] = [];
   let i = 0;
-  const n = lines.length;
+  const n = clean.length;
   while (i < n) {
     // Find a settlement date.
-    if (!DATE_RE.test(lines[i])) { i++; continue; }
-    const settlementDate = isoDate(lines[i])!;
+    if (!DATE_RE.test(clean[i])) { i++; continue; }
+    const settlementDate = isoDate(clean[i])!;
     let j = i + 1;
     let transactionDate: string | null = null;
-    if (j < n && DATE_RE.test(lines[j])) {
-      transactionDate = isoDate(lines[j]);
+    if (j < n && DATE_RE.test(clean[j])) {
+      transactionDate = isoDate(clean[j]);
       j++;
     }
-    // Type line — all caps, may have / or dash.
+    // Type line — all caps, may have / or dash. Optional.
     let type = '';
-    if (j < n && TYPE_RE.test(lines[j])) {
-      type = lines[j];
+    if (j < n && TYPE_RE.test(clean[j])) {
+      type = clean[j];
       j++;
     }
     // Collect raw lines until next date OR end OR amount line that's followed by a date.
     const rawLines: string[] = [];
     let amountLineIndex = -1;
     while (j < n) {
-      const line = lines[j];
+      const line = clean[j];
       if (DATE_RE.test(line)) {
-        // Next block starts here. Look back for amount.
+        // Next block starts here.
         break;
       }
       if (AMOUNT_RE.test(line)) {
-        // Could be amount; we accept the LAST AMOUNT_RE match before next date.
         amountLineIndex = j;
       }
       rawLines.push(line);
       j++;
     }
     if (amountLineIndex === -1) {
-      // No amount in this block — skip (probably table header / footer rows).
+      // No amount — orphan settlement date. Skip.
       i = j;
       continue;
     }
-    const amountStr = lines[amountLineIndex];
+    const amountStr = clean[amountLineIndex];
     const amount = parseAmount(amountStr);
-    // Sign: AMOUNT_RE only allows leading "-". Positive amounts come from
-    // the "Připsáno" column (credit), negatives from "Odepsáno" (debit).
     const signedAmount = /^-/.test(amountStr.trim()) ? -Math.abs(amount) : Math.abs(amount);
-    // Strip the amount line itself out of the description payload.
-    const desc = rawLines.filter((_, idx) => rawLines[idx] !== amountStr);
+    const desc = rawLines.filter((l) => l !== amountStr);
     blocks.push({ settlementDate, transactionDate, type, rawLines: desc, signedAmount });
     i = j;
   }
@@ -207,19 +258,54 @@ export async function parseKbPdf(buf: Buffer): Promise<ParsedStatement> {
     throw new Error('KB PDF: opening or closing balance not detected — format may have changed');
   }
 
-  // Locate the transaction zone — starts at "POČÁTEČNÍ ZŮSTATEK" header
-  // (recap line, all caps) and ends at "KONEČNÝ ZŮSTATEK" recap line.
+  // Locate the transaction zone. Mixed-case "Počáteční zůstatek" appears
+  // in the summary box at the very top of every page; the transaction
+  // table starts at the all-caps "POČÁTEČNÍ ZŮSTATEK" header. Match that
+  // case-sensitively to avoid grabbing the summary marker. The all-caps
+  // KONEČNÝ ZŮSTATEK at the bottom is unique and only appears once.
   const allLines = text.split(/\r?\n/).map((s: string) => s.trim()).filter((l: string) => l.length > 0);
-  const startIdx = allLines.findIndex((l: string) => /^POČÁTEČNÍ\s+ZŮSTATEK/i.test(l));
-  const endIdx = allLines.findIndex((l: string) => /^KONEČNÝ\s+ZŮSTATEK/i.test(l));
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    throw new Error('KB PDF: transaction zone markers not found — format may have changed');
-  }
-  const body = allLines.slice(startIdx + 1, endIdx);
 
+  const findFirst = (re: RegExp) => allLines.findIndex((l: string) => re.test(l));
+  const findLast = (re: RegExp) => {
+    for (let k = allLines.length - 1; k >= 0; k--) if (re.test(allLines[k])) return k;
+    return -1;
+  };
+
+  // All-caps marker — this is the table header line.
+  let startIdx = findFirst(/^POČÁTEČNÍ\s+ZŮSTATEK\b/);
+  // Fallback: some pdf-parse runs concatenate "POČÁTEČNÍ ZŮSTATEK 5 432,43"
+  // onto a single token. Accept that too.
+  if (startIdx === -1) startIdx = findFirst(/POČÁTEČNÍ\s+ZŮSTATEK/);
+  // Last resort: walk past the summary "Počáteční zůstatek" line so we
+  // anchor on the second occurrence (mixed case in summary, all-caps in
+  // table header would otherwise both match).
+  if (startIdx === -1) {
+    const first = findFirst(/Počáteční\s+zůstatek/i);
+    if (first >= 0) {
+      startIdx = allLines.findIndex((l: string, idx: number) => idx > first && /Počáteční\s+zůstatek/i.test(l));
+    }
+  }
+
+  const endIdx = findLast(/^KONEČNÝ\s+ZŮSTATEK\b/) >= 0 ? findLast(/^KONEČNÝ\s+ZŮSTATEK\b/) : findLast(/KONEČNÝ\s+ZŮSTATEK/);
+
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    throw new Error(
+      `KB PDF: transaction zone markers not found (startIdx=${startIdx}, endIdx=${endIdx}, lines=${allLines.length}). ` +
+      `First 200 chars: «${text.substring(0, 200).replace(/\s+/g, ' ')}»`,
+    );
+  }
+
+  const body = allLines.slice(startIdx + 1, endIdx);
   const blocks = parseBlocks(body);
   if (blocks.length === 0) {
-    throw new Error('KB PDF: zero transactions detected — possible format change or empty statement');
+    // Diagnostic-rich error so the operator (and the next dev) can see
+    // exactly what shape the PDF had instead of guessing.
+    const sample = body.slice(0, 30).map((l) => l.length > 80 ? l.substring(0, 77) + '…' : l).join(' | ');
+    throw new Error(
+      `KB PDF: zero transactions detected. body lines=${body.length}, ` +
+      `currency=${currency}, iban=${iban || 'none'}, opening=${opening_balance}. ` +
+      `First body lines: «${sample}»`,
+    );
   }
 
   const transactions: ParsedTransaction[] = blocks.map((b) => {
