@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/pdf-parse": "^1.1.5",
     "@types/pdfkit": "^0.17.6",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
@@ -20,6 +21,7 @@
     "next": "16.1.6",
     "nodemailer": "^8.0.5",
     "openai": "^6.32.0",
+    "pdf-parse": "^2.4.5",
     "pdfkit": "^0.18.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
