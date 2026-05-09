@@ -51,18 +51,23 @@ export default function InvestmentsTab() {
 
   async function save() {
     if (!editing?.investor_id || !editing?.project_id || !editing?.amount || !editing?.invested_at) {
-      alert('investor_id, project_id, amount, invested_at — обовʼязкові');
+      alert('Інвестор, проєкт, сума, дата — обовʼязкові');
       return;
     }
     try {
       const url = editing.id ? `/api/finance/investor-investments/${editing.id}` : '/api/finance/investor-investments';
       const method = editing.id ? 'PUT' : 'POST';
+      console.log('[Investments] save →', method, url, editing);
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) });
-      const j = await res.json();
-      if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+      const j = await res.json().catch(() => ({}));
+      console.log('[Investments] response', res.status, j);
+      if (!res.ok) { alert(`Помилка ${res.status}: ${j.error || res.statusText}`); return; }
       setEditing(null);
-      fetchAll();
-    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+      await fetchAll();
+    } catch (e: any) {
+      console.error('[Investments] save error', e);
+      alert(`Помилка: ${e.message}`);
+    }
   }
 
   async function remove(id: string) {

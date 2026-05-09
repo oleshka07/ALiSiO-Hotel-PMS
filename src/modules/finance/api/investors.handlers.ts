@@ -204,7 +204,7 @@ export async function updateInvestment(
     const body = await request.json();
     const fields: string[] = [];
     const params: any[] = [];
-    for (const k of ['amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'project_id']) {
+    for (const k of ['investor_id', 'project_id', 'amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active']) {
       if (body[k] !== undefined) { fields.push(`${k} = ?`); params.push(body[k]); }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
