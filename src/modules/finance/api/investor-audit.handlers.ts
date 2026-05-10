@@ -157,6 +157,190 @@ export async function getInvestorAudit(_request: NextRequest): Promise<NextRespo
   }
 }
 
+// ─── Cascade delete a business_unit and all its investor data ──────
+//
+// Used to fully remove an investor object (e.g. when the underlying BU
+// was created in error or is being replaced). Cleans:
+//   - investor_payouts + their dividend fin_operations
+//   - investor_investments
+//   - property_monthly_metrics / property_monthly_reports / property_work_stages
+//   - investor_property_details
+//   - business_units row itself
+//
+// NOT touched: regular fin_operations with project_id=<buId> (we report
+// their count back to the caller as a warning so admin can clear them
+// separately if desired).
+//
+
+const CASCADE_TABLES_BY_PROJECT_ID = [
+  'investor_investments',
+  'property_monthly_metrics',
+  'property_monthly_reports',
+  'property_work_stages',
+  'investor_property_details',
+] as const;
+
+interface CascadePreview {
+  bu: { id: string; name: string; is_supabase_imported: boolean };
+  counts: {
+    investor_investments: number;
+    investor_payouts: number;
+    dividend_fin_operations: number;     // will be deleted with payouts
+    property_monthly_metrics: number;
+    property_monthly_reports: number;
+    property_work_stages: number;
+    investor_property_details: number;
+    fin_operations_left_dangling: number; // NOT deleted — admin must handle
+    fin_budgets_left_dangling: number;    // NOT deleted
+  };
+  totals: {
+    investor_amount: number;             // sum of investor_investments.amount
+    payout_amount: number;               // sum of investor_payouts.amount
+  };
+}
+
+function buildCascadePreview(db: any, buId: string): CascadePreview | null {
+  const bu = db.prepare("SELECT id, name FROM business_units WHERE id = ?").get(buId) as { id: string; name: string } | undefined;
+  if (!bu) return null;
+
+  const counts = {
+    investor_investments: 0,
+    investor_payouts: 0,
+    dividend_fin_operations: 0,
+    property_monthly_metrics: 0,
+    property_monthly_reports: 0,
+    property_work_stages: 0,
+    investor_property_details: 0,
+    fin_operations_left_dangling: 0,
+    fin_budgets_left_dangling: 0,
+  };
+
+  for (const t of CASCADE_TABLES_BY_PROJECT_ID) {
+    const r = db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id = ?`).get(buId) as { n: number };
+    counts[t] = r.n;
+  }
+  const payoutCount = db.prepare("SELECT COUNT(*) AS n FROM investor_payouts WHERE project_id = ?").get(buId) as { n: number };
+  counts.investor_payouts = payoutCount.n;
+
+  // Dividend fin_operations linked via investor_payouts.fin_operation_id
+  const divOps = db.prepare(`
+    SELECT COUNT(*) AS n FROM fin_operations
+    WHERE id IN (SELECT fin_operation_id FROM investor_payouts WHERE project_id = ? AND fin_operation_id IS NOT NULL)
+  `).get(buId) as { n: number };
+  counts.dividend_fin_operations = divOps.n;
+
+  // fin_operations that DIRECTLY reference this BU as project_id (and are NOT dividend ones)
+  const danglingOps = db.prepare(`
+    SELECT COUNT(*) AS n FROM fin_operations
+    WHERE project_id = ?
+      AND id NOT IN (SELECT fin_operation_id FROM investor_payouts WHERE project_id = ? AND fin_operation_id IS NOT NULL)
+  `).get(buId, buId) as { n: number };
+  counts.fin_operations_left_dangling = danglingOps.n;
+
+  const danglingBudgets = db.prepare("SELECT COUNT(*) AS n FROM fin_budgets WHERE project_id = ?").get(buId) as { n: number };
+  counts.fin_budgets_left_dangling = danglingBudgets.n;
+
+  const investorAmount = db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM investor_investments WHERE project_id = ?").get(buId) as { s: number };
+  const payoutAmount = db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM investor_payouts WHERE project_id = ?").get(buId) as { s: number };
+
+  return {
+    bu: { id: bu.id, name: bu.name, is_supabase_imported: bu.id.startsWith('bu_sb_') },
+    counts,
+    totals: {
+      investor_amount: investorAmount.s,
+      payout_amount: payoutAmount.s,
+    },
+  };
+}
+
+/**
+ * GET /api/finance/investors/audit/cascade-delete/[buId]
+ * Returns a preview of what would be deleted by the cascade DELETE.
+ */
+export async function previewCascadeDelete(
+  _request: NextRequest,
+  context: { params: Promise<{ buId: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { buId } = await context.params;
+    const preview = buildCascadePreview(db, buId);
+    if (!preview) return NextResponse.json({ error: 'Business unit not found' }, { status: 404 });
+    return NextResponse.json(preview);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/finance/investors/audit/cascade-delete/[buId]
+ * Body: { confirm_name: string }
+ *
+ * Performs the cascade delete in a transaction. confirm_name MUST match
+ * the BU's current name exactly — typo-protection against accidents.
+ */
+export async function executeCascadeDelete(
+  request: NextRequest,
+  context: { params: Promise<{ buId: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { buId } = await context.params;
+    const body = await request.json().catch(() => ({}));
+    const confirmName = (body?.confirm_name || '').trim();
+
+    const preview = buildCascadePreview(db, buId);
+    if (!preview) return NextResponse.json({ error: 'Business unit not found' }, { status: 404 });
+    if (confirmName !== preview.bu.name) {
+      return NextResponse.json(
+        { error: `confirm_name must equal "${preview.bu.name}"`, expected: preview.bu.name, got: confirmName },
+        { status: 400 },
+      );
+    }
+
+    const deleted = {
+      dividend_fin_operations: 0,
+      investor_payouts: 0,
+      investor_investments: 0,
+      property_monthly_metrics: 0,
+      property_monthly_reports: 0,
+      property_work_stages: 0,
+      investor_property_details: 0,
+      business_units: 0,
+    };
+
+    const tx = db.transaction(() => {
+      // 1. Dividend fin_operations linked via investor_payouts.fin_operation_id
+      const divOps = db.prepare(`
+        DELETE FROM fin_operations
+        WHERE id IN (SELECT fin_operation_id FROM investor_payouts WHERE project_id = ? AND fin_operation_id IS NOT NULL)
+      `).run(buId);
+      deleted.dividend_fin_operations = divOps.changes;
+
+      // 2-7. Tables keyed on project_id
+      const payouts = db.prepare("DELETE FROM investor_payouts WHERE project_id = ?").run(buId);
+      deleted.investor_payouts = payouts.changes;
+      for (const t of CASCADE_TABLES_BY_PROJECT_ID) {
+        const r = db.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(buId);
+        deleted[t] = r.changes;
+      }
+
+      // 8. Business unit itself
+      const bu = db.prepare("DELETE FROM business_units WHERE id = ?").run(buId);
+      deleted.business_units = bu.changes;
+    });
+    tx();
+
+    return NextResponse.json({
+      ok: true,
+      deleted,
+      preview, // echo for the caller to display
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 /**
  * POST /api/finance/investors/audit/relink
  * Body: { project_id, unit_id }
