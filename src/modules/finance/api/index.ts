@@ -321,6 +321,7 @@ import {
   upsertMonthlyMetric as _upsertMonthlyMetric, deleteMonthlyMetric as _deleteMonthlyMetric,
   createPayout as _createPayout, deletePayout as _deletePayout,
   createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
+  unlinkInvestorProperty as _unlinkInvestorProperty,
   upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
   sendDigestTelegram as _sendDigestTelegram,
 } from './investors.handlers';
@@ -336,6 +337,7 @@ export const createPayout        = withPermission('manage_investors', _createPay
 export const deletePayout        = withPermission('manage_investors', _deletePayout);
 export const createInvestorProperty = withPermission('manage_investors', _createInvestorProperty);
 export const updateInvestorProperty = withPermission('manage_investors', _updateInvestorProperty);
+export const unlinkInvestorProperty = withPermission('manage_investors', _unlinkInvestorProperty);
 export const upsertMonthlyReport    = withPermission('manage_investors', _upsertMonthlyReport);
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);

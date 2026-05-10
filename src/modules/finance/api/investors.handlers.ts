@@ -689,6 +689,53 @@ export async function updateInvestorProperty(
   }
 }
 
+/**
+ * DELETE /api/finance/investor-properties/[id]
+ *
+ * Detaches a business_unit from the investor module: removes
+ * investor_property_details, property_work_stages, property_monthly_metrics,
+ * property_monthly_reports rows that reference it. Leaves the business_unit
+ * itself (and its fin_operations / fin_budgets) alone — finance side stays.
+ *
+ * Refuses (409) if any active investor_investments still reference the BU
+ * — admin must remove those first via the audit-page cascade delete.
+ */
+export async function unlinkInvestorProperty(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+
+    const bu = db.prepare("SELECT id, name FROM business_units WHERE id = ?").get(id) as { id: string; name: string } | undefined;
+    if (!bu) return NextResponse.json({ error: 'Business unit not found' }, { status: 404 });
+
+    const activeInvCount = (db.prepare(
+      "SELECT COUNT(*) AS n FROM investor_investments WHERE project_id = ? AND is_active = 1"
+    ).get(id) as { n: number }).n;
+    if (activeInvCount > 0) {
+      return NextResponse.json(
+        { error: `Лишилися активні інвестиції (${activeInvCount}). Спочатку зробіть cascade delete на /finance/investors/audit.` },
+        { status: 409 },
+      );
+    }
+
+    const deleted = { details: 0, work_stages: 0, monthly_metrics: 0, monthly_reports: 0 };
+    const tx = db.transaction(() => {
+      deleted.details        = db.prepare("DELETE FROM investor_property_details WHERE project_id = ?").run(id).changes;
+      deleted.work_stages    = db.prepare("DELETE FROM property_work_stages WHERE project_id = ?").run(id).changes;
+      deleted.monthly_metrics = db.prepare("DELETE FROM property_monthly_metrics WHERE project_id = ?").run(id).changes;
+      deleted.monthly_reports = db.prepare("DELETE FROM property_monthly_reports WHERE project_id = ?").run(id).changes;
+    });
+    tx();
+
+    return NextResponse.json({ ok: true, deleted, bu: { id: bu.id, name: bu.name } });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 // ─── Property monthly reports CRUD ──────────────────────
 
 export async function listMonthlyReports(request: NextRequest): Promise<NextResponse> {

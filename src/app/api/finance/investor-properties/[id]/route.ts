@@ -1,2 +1,3 @@
-import { updateInvestorProperty } from '@finance';
+import { updateInvestorProperty, unlinkInvestorProperty } from '@finance';
 export const PUT = updateInvestorProperty;
+export const DELETE = unlinkInvestorProperty;
