@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
 
 interface AuditData {
   generated_at: string;
@@ -69,9 +69,28 @@ const ROLE_COLOR: Record<string, string> = {
   'orphan (empty)': '#94a3b8',
 };
 
+interface CascadePreview {
+  bu: { id: string; name: string; is_supabase_imported: boolean };
+  counts: {
+    investor_investments: number;
+    investor_payouts: number;
+    dividend_fin_operations: number;
+    property_monthly_metrics: number;
+    property_monthly_reports: number;
+    property_work_stages: number;
+    investor_property_details: number;
+    fin_operations_left_dangling: number;
+    fin_budgets_left_dangling: number;
+  };
+  totals: { investor_amount: number; payout_amount: number };
+}
+
 export default function InvestorAuditPage() {
   const [data, setData] = useState<AuditData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cascadeTarget, setCascadeTarget] = useState<CascadePreview | null>(null);
+  const [cascadeLoading, setCascadeLoading] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
 
   const reload = () => {
     fetch('/api/finance/investors/audit')
@@ -93,6 +112,51 @@ export default function InvestorAuditPage() {
     if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
     alert(`✓ Привʼязано до «${j.unit?.name}». Оновлено ${j.updated_rows} рядків.`);
     reload();
+  }
+
+  async function openCascadeDelete(buId: string) {
+    setCascadeLoading(true);
+    setConfirmName('');
+    try {
+      const res = await fetch(`/api/finance/investors/audit/cascade-delete/${buId}`);
+      const j = await res.json();
+      if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+      setCascadeTarget(j);
+    } catch (e: any) {
+      alert(`Помилка: ${e.message}`);
+    } finally {
+      setCascadeLoading(false);
+    }
+  }
+
+  async function executeCascadeDelete() {
+    if (!cascadeTarget) return;
+    if (confirmName !== cascadeTarget.bu.name) {
+      alert('Назва не співпадає');
+      return;
+    }
+    setCascadeLoading(true);
+    try {
+      const res = await fetch(`/api/finance/investors/audit/cascade-delete/${cascadeTarget.bu.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_name: confirmName }),
+      });
+      const j = await res.json();
+      if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+      const d = j.deleted;
+      alert(`✓ Видалено «${cascadeTarget.bu.name}»:\n` +
+        `• ${d.business_units} business_unit\n` +
+        `• ${d.investor_investments} лотів, ${d.investor_payouts} виплат (+ ${d.dividend_fin_operations} fin_ops)\n` +
+        `• ${d.property_monthly_metrics} метрик, ${d.property_monthly_reports} звітів, ${d.property_work_stages} етапів, ${d.investor_property_details} property_details`);
+      setCascadeTarget(null);
+      setConfirmName('');
+      reload();
+    } catch (e: any) {
+      alert(`Помилка: ${e.message}`);
+    } finally {
+      setCascadeLoading(false);
+    }
   }
 
   if (error) return <div style={{ padding: 40, color: '#dc2626' }}>{error}</div>;
@@ -134,20 +198,20 @@ export default function InvestorAuditPage() {
       {/* Investor-related business_units */}
       <Section title={`🟢 Інвесторські business_units (${investorBus.length})`}
                subtitle="Ці рядки мають investor_investments / payouts / metrics. Якщо в колонці «fin_ops» ≠ 0 — вони ЗМІШАНІ й забруднюють фінансові звіти.">
-        <BuTable rows={investorBus} glampingUnits={data.glamping_units} onRelink={relinkBu} />
+        <BuTable rows={investorBus} glampingUnits={data.glamping_units} onRelink={relinkBu} onCascadeDelete={openCascadeDelete} />
       </Section>
 
       {/* Finance-only business_units */}
       <Section title={`🔵 Тільки фінансові business_units (${financeBus.length})`}
                subtitle="Чисті фінансові buckets — Глемпинг, Кемпинг, Резорт, Ресторан, Сауна тощо. Без інвесторських даних.">
-        <BuTable rows={financeBus} glampingUnits={data.glamping_units} onRelink={relinkBu} />
+        <BuTable rows={financeBus} glampingUnits={data.glamping_units} onRelink={relinkBu} onCascadeDelete={openCascadeDelete} />
       </Section>
 
       {/* Orphans */}
       {orphanBus.length > 0 && (
         <Section title={`⚪ Порожні business_units (${orphanBus.length})`}
                  subtitle="Ні фінансових операцій, ні інвестицій. Можна архівувати без шкоди.">
-          <BuTable rows={orphanBus} glampingUnits={data.glamping_units} onRelink={relinkBu} compact />
+          <BuTable rows={orphanBus} glampingUnits={data.glamping_units} onRelink={relinkBu} onCascadeDelete={openCascadeDelete} compact />
         </Section>
       )}
 
@@ -200,6 +264,89 @@ export default function InvestorAuditPage() {
         </table>
       </Section>
 
+      {/* Cascade delete confirmation modal */}
+      {cascadeTarget && (
+        <div
+          onClick={() => !cascadeLoading && setCascadeTarget(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: 12, padding: 24, minWidth: 520, maxWidth: 640, border: '1px solid var(--border-primary)' }}>
+            <h2 style={{ margin: 0, marginBottom: 6, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Trash2 size={20} /> Cascade Delete: {cascadeTarget.bu.name}
+            </h2>
+            <p style={{ marginTop: 0, color: 'var(--text-secondary)', fontSize: 13 }}>
+              Незворотна операція. Видалить business_unit і всі привʼязані інвесторські дані.
+            </p>
+
+            <div style={{ background: 'var(--bg-secondary)', padding: 14, borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Буде видалено:</div>
+              <ul style={{ margin: 0, paddingLeft: 20, color: 'var(--text-primary)' }}>
+                <li>business_unit «<b>{cascadeTarget.bu.name}</b>» {cascadeTarget.bu.is_supabase_imported && <span style={{ color: '#f59e0b' }}>(supabase)</span>}</li>
+                <li>{cascadeTarget.counts.investor_investments} лот(ів) на сумарно <b>{cascadeTarget.totals.investor_amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })}</b></li>
+                <li>{cascadeTarget.counts.investor_payouts} виплат(и) на сумарно <b>{cascadeTarget.totals.payout_amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })}</b> + {cascadeTarget.counts.dividend_fin_operations} дивідендних fin_operations</li>
+                <li>{cascadeTarget.counts.property_monthly_metrics} manual-метрик</li>
+                <li>{cascadeTarget.counts.property_monthly_reports} місячних звітів</li>
+                <li>{cascadeTarget.counts.property_work_stages} етапів робіт</li>
+                <li>{cascadeTarget.counts.investor_property_details} property_details (airbnb_url, image, location)</li>
+              </ul>
+            </div>
+
+            {(cascadeTarget.counts.fin_operations_left_dangling > 0 || cascadeTarget.counts.fin_budgets_left_dangling > 0) && (
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid #f59e0b', padding: 12, borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
+                <b>⚠ Залишиться (НЕ видаляється автоматично):</b>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                  {cascadeTarget.counts.fin_operations_left_dangling > 0 && (
+                    <li>{cascadeTarget.counts.fin_operations_left_dangling} fin_operations з <code>project_id={cascadeTarget.bu.id}</code> (стануть «осиротілими» — зачистіть вручну в Operations якщо треба)</li>
+                  )}
+                  {cascadeTarget.counts.fin_budgets_left_dangling > 0 && (
+                    <li>{cascadeTarget.counts.fin_budgets_left_dangling} fin_budgets — теж залишаться</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                Введіть точну назву <code>{cascadeTarget.bu.name}</code> для підтвердження:
+              </label>
+              <input
+                type="text"
+                value={confirmName}
+                onChange={(e) => setConfirmName(e.target.value)}
+                disabled={cascadeLoading}
+                autoFocus
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-primary)', borderRadius: 6, background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: 14 }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setCascadeTarget(null)}
+                disabled={cascadeLoading}
+                style={{ padding: '8px 16px', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+              >
+                Відміна
+              </button>
+              <button
+                type="button"
+                onClick={executeCascadeDelete}
+                disabled={cascadeLoading || confirmName !== cascadeTarget.bu.name}
+                style={{
+                  padding: '8px 16px',
+                  background: confirmName === cascadeTarget.bu.name ? '#dc2626' : '#94a3b8',
+                  border: 'none', color: '#fff', borderRadius: 6,
+                  cursor: confirmName === cascadeTarget.bu.name && !cascadeLoading ? 'pointer' : 'not-allowed',
+                  fontSize: 13, fontWeight: 600,
+                }}
+              >
+                {cascadeLoading ? 'Видаляю…' : 'Видалити назавжди'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Polluted fin_operations sample */}
       {data.polluted_fin_operations_sample.length > 0 && (
         <Section title={`⚠ Приклад fin_operations що пливуть на інвесторських BUs (${data.polluted_fin_operations_sample.length})`}
@@ -249,10 +396,11 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
   );
 }
 
-function BuTable({ rows, glampingUnits, onRelink, compact }: {
+function BuTable({ rows, glampingUnits, onRelink, onCascadeDelete, compact }: {
   rows: AuditData['business_units'];
   glampingUnits: AuditData['glamping_units'];
   onRelink: (projectId: string, unitId: string) => Promise<void>;
+  onCascadeDelete: (buId: string) => Promise<void>;
   compact?: boolean;
 }) {
   const [relinkingId, setRelinkingId] = React.useState<string | null>(null);
@@ -269,6 +417,7 @@ function BuTable({ rows, glampingUnits, onRelink, compact }: {
         {!compact && <th style={{ ...th, textAlign: 'right' }}>metrics</th>}
         {!compact && <th style={{ ...th, textAlign: 'right' }}>budgets</th>}
         <th style={th}>matched unit</th>
+        <th style={{ ...th, width: 1 }}></th>
       </tr></thead>
       <tbody>
         {rows.map((bu) => {
@@ -317,6 +466,21 @@ function BuTable({ rows, glampingUnits, onRelink, compact }: {
                     <AlertTriangle size={12} /> —
                   </span>
                 )}
+              </td>
+              <td style={{ ...td, textAlign: 'right' }}>
+                <button
+                  type="button"
+                  onClick={() => onCascadeDelete(bu.id)}
+                  title="Cascade delete (BU + всі інвесторські дані)"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '4px 8px', background: 'transparent',
+                    border: '1px solid #dc2626', color: '#dc2626',
+                    borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={12} /> Видалити
+                </button>
               </td>
             </tr>
           );

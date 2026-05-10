@@ -308,9 +308,13 @@ export {
   listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
   getAutoRevenueForMonth,
 } from './investors.handlers';
-export { getInvestorAudit } from './investor-audit.handlers';
-import { relinkProjectToUnit as _relinkProjectToUnit } from './investor-audit.handlers';
+export { getInvestorAudit, previewCascadeDelete } from './investor-audit.handlers';
+import {
+  relinkProjectToUnit as _relinkProjectToUnit,
+  executeCascadeDelete as _executeCascadeDelete,
+} from './investor-audit.handlers';
 export const relinkProjectToUnit = withPermission('manage_investors', _relinkProjectToUnit);
+export const executeCascadeDelete = withPermission('manage_investors', _executeCascadeDelete);
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
