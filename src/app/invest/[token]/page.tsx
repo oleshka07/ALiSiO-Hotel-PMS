@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Wallet, TrendingUp, Clock, BarChart3, Activity, Building, ExternalLink } from 'lucide-react';
+import { Wallet, TrendingUp, Clock, Activity, ExternalLink, CheckCircle } from 'lucide-react';
 
 interface PortalData {
   investor: { id: string; name: string; email: string | null; status: string };
@@ -29,6 +29,11 @@ interface PortalData {
     project_id: string; project_name: string; year_month: string;
     adr: number | null; general_comment: string | null;
     market_insight: string | null; photo_url: string | null;
+  }>;
+  payouts: Array<{
+    id: string; paid_at: string; amount: number; currency: string;
+    project_id: string | null; project_name: string | null;
+    period_year_month: string | null; comment: string | null;
   }>;
 }
 
@@ -135,11 +140,12 @@ export default function InvestorPortalPage() {
         </div>
 
         {/* KPI cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
-          <KpiCard label="Вкладений капітал" value={fmt(t.invested, t.currency)} sub={`${(t.paid_out / t.invested * 100).toFixed(1)}% повернуто`} barPct={t.invested > 0 ? (t.paid_out / t.invested * 100) : 0} icon={<Wallet />} color="#3b82f6" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <KpiCard label="Вкладений капітал" value={fmt(t.invested, t.currency)} sub={t.invested > 0 ? `${(t.paid_out / t.invested * 100).toFixed(1)}% повернуто` : undefined} barPct={t.invested > 0 ? (t.paid_out / t.invested * 100) : 0} icon={<Wallet />} color="#3b82f6" />
+          <KpiCard label="Виплачено" value={fmt(t.paid_out, t.currency)} sub={`${data.payouts.length} ${data.payouts.length === 1 ? 'виплата' : 'виплат'}`} icon={<CheckCircle />} color="#22c55e" />
           <KpiCard label="До виплати" value={fmt(t.pending, t.currency)} sub="Нараховано за поточний період" icon={<Clock />} color={t.pending >= 0 ? '#f59e0b' : '#ef4444'} highlight />
           <KpiCard label="Прибутковість" value={t.annualised_yield_pct != null ? `${t.annualised_yield_pct}%` : '—'} sub="Середній річний відсоток" icon={<Activity />} color="#22c55e" />
-          <KpiCard label="Термін окупності" value={t.payback_years ? `${t.payback_years} років` : '—'} sub="Базований на поточних темпах" icon={<TrendingUp />} color="#6366f1" />
+          <KpiCard label="Термін окупності" value={t.payback_years ? `${t.payback_years} років` : '—'} sub="Базований на середніх темпах" icon={<TrendingUp />} color="#6366f1" />
         </div>
 
         {/* Asset allocation table */}
@@ -204,8 +210,15 @@ export default function InvestorPortalPage() {
 
         {/* Income by source — derived from real reservations × equity */}
         {data.income_by_source.length > 0 && (
-          <Card title="Дохід за джерелами" subtitle="Ваша частка з реальних бронювань (після виїзду)" style={{ marginTop: 16 }}>
+          <Card title="Дохід за джерелами" subtitle="Розподіл за кількістю бронювань (по виїзду)" style={{ marginTop: 16 }}>
             <SourceBreakdown items={data.income_by_source} />
+          </Card>
+        )}
+
+        {/* Payouts history */}
+        {data.payouts.length > 0 && (
+          <Card title="Історія виплат" subtitle={`${data.payouts.length} ${data.payouts.length === 1 ? 'запис' : 'записів'}`} style={{ marginTop: 16 }}>
+            <PayoutsTable items={data.payouts} />
           </Card>
         )}
 
@@ -299,39 +312,74 @@ function CapitalGrowthChart({ data, currency }: { data: { month: string; profit_
 }
 
 function SourceBreakdown({ items }: { items: Array<{ source: string; currency: string; total_share: number; reservations: number }> }) {
-  const total = items.reduce((s, x) => s + x.total_share, 0);
-  if (total === 0) return <div style={{ color: '#94a3b8', padding: 20, textAlign: 'center' }}>Поки немає даних</div>;
+  // Aggregate by source across currencies — we only display reservation counts.
+  const aggregated = new Map<string, number>();
+  for (const it of items) {
+    aggregated.set(it.source, (aggregated.get(it.source) || 0) + it.reservations);
+  }
+  const rows = [...aggregated.entries()]
+    .map(([source, reservations]) => ({ source, reservations }))
+    .sort((a, b) => b.reservations - a.reservations);
+  const totalRes = rows.reduce((s, x) => s + x.reservations, 0);
+  if (totalRes === 0) return <div style={{ color: '#94a3b8', padding: 20, textAlign: 'center' }}>Поки немає даних</div>;
   return (
     <div>
       <div style={{ display: 'flex', height: 18, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
-        {items.map((it, i) => {
+        {rows.map((it) => {
           const meta = SOURCE_LABEL[it.source] || { label: it.source, color: '#64748b' };
-          const pct = (it.total_share / total) * 100;
+          const pct = (it.reservations / totalRes) * 100;
           return (
-            <div key={`${it.source}-${it.currency}-${i}`} style={{ width: `${pct}%`, background: meta.color }}
-                 title={`${meta.label} (${it.currency}): ${pct.toFixed(1)}%`} />
+            <div key={it.source} style={{ width: `${pct}%`, background: meta.color }}
+                 title={`${meta.label}: ${pct.toFixed(1)}% (${it.reservations} брон.)`} />
           );
         })}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-        {items.map((it, i) => {
+        {rows.map((it) => {
           const meta = SOURCE_LABEL[it.source] || { label: it.source, color: '#64748b' };
-          const pct = (it.total_share / total) * 100;
+          const pct = (it.reservations / totalRes) * 100;
           return (
-            <div key={`${it.source}-${it.currency}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            <div key={it.source} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
               <span style={{ width: 10, height: 10, background: meta.color, borderRadius: 2 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, color: '#0f172a' }}>{meta.label}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 600, color: '#0f172a' }}>{it.total_share.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {it.currency}</div>
-                <div style={{ fontSize: 10, color: '#64748b' }}>{pct.toFixed(0)}% · {it.reservations} брон.</div>
+                <div style={{ fontWeight: 600, color: '#0f172a' }}>{pct.toFixed(0)}%</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>{it.reservations} брон.</div>
               </div>
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function PayoutsTable({ items }: { items: PortalData['payouts'] }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr style={{ background: '#f8fafc' }}>
+          <th style={th}>Дата</th>
+          <th style={th}>Об&apos;єкт</th>
+          <th style={th}>Період</th>
+          <th style={{ ...th, textAlign: 'right' }}>Сума</th>
+          <th style={th}>Коментар</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((p) => (
+          <tr key={p.id} style={{ borderTop: '1px solid #e2e8f0' }}>
+            <td style={{ ...td, color: '#0f172a' }}>{p.paid_at}</td>
+            <td style={{ ...td, color: '#0f172a' }}>{p.project_name || '—'}</td>
+            <td style={{ ...td, color: '#64748b' }}>{p.period_year_month || '—'}</td>
+            <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>{fmt(p.amount, p.currency)}</td>
+            <td style={{ ...td, color: '#64748b' }}>{p.comment || ''}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
