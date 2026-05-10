@@ -552,13 +552,19 @@ export async function listInvestorProperties(request: NextRequest): Promise<Next
   try {
     const db = getDb();
     const orgId = getOrgId(db);
-    // Default: show only business_units that actually have investor data
-    // (active investments OR explicitly attached property_details). Set
-    // ?all=1 to see every business_unit (e.g. for picking a new one).
+    // Default: show business_units that have ANY investor footprint —
+    // either an active investment OR an explicitly attached
+    // investor_property_details row. The latter is what
+    // createInvestorProperty inserts, so a freshly-created object appears
+    // here immediately even before any investment is attached.
+    // Set ?all=1 to see every business_unit (e.g. picking a new one).
     const showAll = request.nextUrl.searchParams.get('all') === '1';
     const where: string[] = ['bu.organization_id = ?'];
     if (!showAll) {
-      where.push(`EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id AND is_active = 1)`);
+      where.push(`(
+        EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id AND is_active = 1)
+        OR EXISTS (SELECT 1 FROM investor_property_details WHERE project_id = bu.id)
+      )`);
     }
     const rows = db.prepare(`
       SELECT
