@@ -80,10 +80,6 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const search = sp.get('search');
     const reservationId = sp.get('reservation_id');
     const source = sp.get('source');
-    // method filter — supports CSV: ?method=card,bank_transfer for hunting
-    // legacy «PMS marker» operations that were created before
-    // POST /api/payments started skipping fin_op for non-cash methods.
-    const methodCsv = sp.get('method');
     // needs_review=1 → only ops the resolver flagged for admin triage.
     const needsReviewOnly = sp.get('needs_review') === '1';
     const page = Math.max(1, parseInt(sp.get('page') || '1', 10));
@@ -102,13 +98,6 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     if (status && (STATUSES as readonly string[]).includes(status)) { where.push('o.status = ?'); params.push(status); }
     if (reservationId) { where.push('o.reservation_id = ?'); params.push(reservationId); }
     if (source) { where.push('o.source = ?'); params.push(source); }
-    if (methodCsv) {
-      const methods = methodCsv.split(',').map((s) => s.trim()).filter(Boolean);
-      if (methods.length > 0) {
-        where.push(`o.method IN (${methods.map(() => '?').join(',')})`);
-        params.push(...methods);
-      }
-    }
     if (tagId) {
       where.push('o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id = ?)');
       params.push(tagId);
