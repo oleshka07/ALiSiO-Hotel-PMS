@@ -425,11 +425,30 @@ export default function BookingViewModal({
                     </select>
                     <input className="form-input" placeholder="Примітка" style={{ flex: 2, fontSize: 13 }} value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
+                  {payForm.method !== 'cash' && (
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '6px 8px', background: 'rgba(99,102,241,0.08)', borderRadius: 6, lineHeight: 1.4 }}>
+                      ℹ️ Це <b>позначка статусу</b> — реальна транзакція з'явиться в Операціях, коли надійде з {payForm.method === 'card' ? 'Teya sync' : payForm.method === 'bank_transfer' ? 'банківської виписки' : payForm.method === 'booking_platform' ? 'виписки платформи' : 'фактичного джерела'}. Оплата картою / банком / платформою тут не створює подвійних записів у фінансах.
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
                     <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
-                      onClick={async () => { await fetch('/api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }) }); setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' }); setShowPayForm(false); onFetchPayments(b.id); onFetchBookings(); showToast('Платіж додано!'); }}>
-                      <Save size={12} /> Зберегти
+                      onClick={async () => {
+                        const res = await fetch('/api/payments', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
+                        setShowPayForm(false);
+                        onFetchPayments(b.id);
+                        onFetchBookings();
+                        const msg = data?.kind === 'marker'
+                          ? '✅ Позначка збережена. Реальна транзакція з\'явиться через Teya / банк.'
+                          : 'Платіж додано!';
+                        showToast(msg);
+                      }}>
+                      <Save size={12} /> {payForm.method === 'cash' ? 'Зберегти платіж' : 'Позначити як оплачено'}
                     </button>
                   </div>
                   {remaining > 0 && (

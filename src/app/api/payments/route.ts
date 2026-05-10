@@ -57,24 +57,76 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 }
 
+// Methods that represent real money in our hands at the moment of click —
+// only `cash` qualifies. Card / bank / platform / invoice / online are
+// PMS-side markers: the actual money still has to arrive via Teya sync,
+// bank statement import, or channel statement, and creating a fin_operation
+// here would double-count the same money once the real source lands.
+const CASH_METHODS = new Set(['cash']);
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    const db = getDb();
     const body = await request.json();
     const { reservation_id, amount, method = 'cash', type = 'partial', notes, paid_at } = body;
     if (!reservation_id || !amount) {
       return NextResponse.json({ error: 'reservation_id and amount are required' }, { status: 400 });
     }
-    const { operationId } = createPaymentOperation({
-      reservationId: reservation_id,
-      amount: Math.abs(Number(amount)),
+
+    // Cash on hand → real money, create the fin_operation as before.
+    if (CASH_METHODS.has(method)) {
+      const { operationId } = createPaymentOperation({
+        reservationId: reservation_id,
+        amount: Math.abs(Number(amount)),
+        method,
+        paymentSubtype: type,
+        source: 'manual',
+        status: 'completed',
+        paidAt: paid_at || new Date().toISOString(),
+        comment: notes || null,
+      });
+      return NextResponse.json({ id: operationId, ok: true, kind: 'fin_operation' }, { status: 201 });
+    }
+
+    // Marker path — no fin_operation. Only update reservation.payment_status
+    // and write an audit row to booking_activity_log so the operator has a
+    // trail of who marked what.
+    const res = db.prepare(
+      'SELECT id, total_price, payment_status, is_prepaid FROM reservations WHERE id = ?',
+    ).get(reservation_id) as { id: string; total_price: number; payment_status: string; is_prepaid: number } | undefined;
+    if (!res) return NextResponse.json({ error: 'reservation not found' }, { status: 404 });
+
+    // Channel-prepaid reservations (Hostex Booking/Airbnb/VRBO with is_prepaid=1)
+    // are paid by the platform — never downgrade their status from a marker.
+    let statusChanged = false;
+    if (res.is_prepaid !== 1) {
+      let nextStatus = res.payment_status;
+      if (type === 'full')              nextStatus = 'paid';
+      else if (type === 'refund')       nextStatus = 'unpaid';
+      else if (type === 'deposit')      nextStatus = 'partial';
+      else if (type === 'partial')      nextStatus = 'partial';
+      if (nextStatus !== res.payment_status) {
+        db.prepare('UPDATE reservations SET payment_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
+          .run(nextStatus, reservation_id);
+        statusChanged = true;
+      }
+    }
+
+    try {
+      const detailsLine = `${method} ${type} ${Math.abs(Number(amount))}${notes ? ' — ' + notes : ''}`;
+      db.prepare(
+        "INSERT INTO booking_activity_log (id, reservation_id, action, details) VALUES (?, ?, 'payment_marker', ?)",
+      ).run(`al_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, reservation_id, detailsLine);
+    } catch { /* non-critical */ }
+
+    return NextResponse.json({
+      ok: true,
+      kind: 'marker',
       method,
-      paymentSubtype: type,
-      source: 'manual',
-      status: 'completed',
-      paidAt: paid_at || new Date().toISOString(),
-      comment: notes || null,
-    });
-    return NextResponse.json({ id: operationId, ok: true }, { status: 201 });
+      statusChanged,
+      message:
+        'Позначка збережена. Реальна транзакція з\'явиться в Операціях коли надійде з Teya / банку / платформи.',
+    }, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
