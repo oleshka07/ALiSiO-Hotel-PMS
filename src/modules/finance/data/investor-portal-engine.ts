@@ -15,7 +15,7 @@
 // driven by our SQLite schema (PR #31).
 //
 
-import { buildProjectToUnitMap, getInvestorIncomeBySource, type InvestorSourceBreakdown } from './auto-revenue-engine';
+import { getInvestorIncomeBySource, type InvestorSourceBreakdown } from './auto-revenue-engine';
 
 export interface InvestorPortalData {
   investor: {
@@ -68,14 +68,16 @@ export interface InvestorPortalData {
     market_insight: string | null;
     photo_url: string | null;
   }>;
-}
-
-const NOW = () => new Date();
-
-function monthsBetween(from: string, to: Date): number {
-  const f = new Date(from + 'T00:00:00Z');
-  const t = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
-  return Math.max(1, (t.getUTCFullYear() - f.getUTCFullYear()) * 12 + (t.getUTCMonth() - f.getUTCMonth()) + 1);
+  payouts: Array<{
+    id: string;
+    paid_at: string;
+    amount: number;
+    currency: string;
+    project_id: string | null;
+    project_name: string | null;
+    period_year_month: string | null;
+    comment: string | null;
+  }>;
 }
 
 function deriveStatus(stages: Array<{ pct: number }>): string {
@@ -101,12 +103,18 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     ORDER BY ii.invested_at
   `).all(investor.id) as any[];
 
-  // All payouts (across all properties)
+  // All payouts (across all properties), with project_name for UI
   const payouts = db.prepare(`
-    SELECT * FROM investor_payouts WHERE investor_id = ? ORDER BY paid_at
+    SELECT p.*, bu.name AS project_name
+    FROM investor_payouts p
+    LEFT JOIN business_units bu ON bu.id = p.project_id
+    WHERE p.investor_id = ?
+    ORDER BY p.paid_at DESC
   `).all(investor.id) as any[];
 
-  // Pre-load monthly metrics for all relevant projects
+  // Pre-load monthly metrics for all relevant projects.
+  // ONLY manual `property_monthly_metrics` — no auto-revenue fallback. If
+  // admin has not entered a metric for a month, that month does not count.
   const projectIds = [...new Set(investments.map((i) => i.project_id))];
   let metricsRows: any[] = [];
   if (projectIds.length > 0) {
@@ -122,38 +130,6 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   for (const m of metricsRows) {
     if (!metricsByProject.has(m.project_id)) metricsByProject.set(m.project_id, []);
     metricsByProject.get(m.project_id)!.push(m);
-  }
-
-  // Auto-revenue fallback: for each project, sum reservations.total_price by
-  // checkout month (only departed). Manual metrics override when present.
-  const orgIdRow = db.prepare("SELECT organization_id FROM investors WHERE id = ?").get(investor.id) as { organization_id: string };
-  const projectToUnit = buildProjectToUnitMap(db, orgIdRow.organization_id);
-  const today = new Date().toISOString().substring(0, 10);
-  for (const projectId of projectIds) {
-    const unit = projectToUnit.get(projectId);
-    if (!unit) continue;
-    const autoRows = db.prepare(`
-      SELECT substr(check_out, 1, 7) AS year_month,
-             COALESCE(SUM(total_price), 0) AS revenue
-      FROM reservations
-      WHERE unit_id = ? AND check_out <= ?
-        AND status NOT IN ('cancelled', 'no_show', 'draft')
-      GROUP BY substr(check_out, 1, 7)
-    `).all(unit.id, today) as { year_month: string; revenue: number }[];
-
-    const existing = metricsByProject.get(projectId) || [];
-    const existingMonths = new Set(existing.map((m: any) => m.year_month));
-    for (const a of autoRows) {
-      if (existingMonths.has(a.year_month)) continue;        // manual wins
-      existing.push({
-        project_id: projectId,
-        year_month: a.year_month,
-        occupancy_pct: null,
-        revenue: a.revenue,
-      });
-    }
-    existing.sort((a: any, b: any) => a.year_month.localeCompare(b.year_month));
-    metricsByProject.set(projectId, existing);
   }
 
   // Pre-load work_stages
@@ -219,29 +195,36 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     let lastOccupancy = 0;
     let lastMonth = '';
     let occSum = 0, occCount = 0;
+    let metricMonthsCount = 0;        // months with a manual metric (any revenue, including 0)
     for (const m of metrics) {
       allMonthsSet.add(m.year_month);
       accProfit += (m.revenue || 0) * eq;
       lastRev = m.revenue || 0;
       lastOccupancy = m.occupancy_pct || 0;
       lastMonth = m.year_month;
+      metricMonthsCount += 1;
       if (m.occupancy_pct != null) { occSum += m.occupancy_pct; occCount++; }
     }
-    const monthlyProfit = lastRev * eq; // most recent month's projected profit
+
+    // Average monthly profit across the metric period — used for ROI,
+    // annualised yield and payback (per user spec: "середній річний відсоток"
+    // and "термін окупності" derived from average, not last-month spike).
+    const avgMonthlyProfit = metricMonthsCount > 0 ? accProfit / metricMonthsCount : 0;
 
     // Payouts to this property
     const propertyPayouts = payouts.filter((p) => p.project_id === inv.project_id);
     const paidOutForProperty = propertyPayouts.reduce((s, p) => s + (p.amount || 0), 0);
 
     const pending = +(accProfit - paidOutForProperty).toFixed(2);
-    const monthsSince = monthsBetween(inv.invested_at, NOW());
-    const annualMonthly = (accProfit / monthsSince) * 12;
-    const roiPct = inv.amount > 0 ? +(annualMonthly / inv.amount * 100).toFixed(2) : null;
-    const paybackYears = monthlyProfit > 0 ? +(inv.amount / monthlyProfit / 12).toFixed(1) : null;
+    const annualProfit = avgMonthlyProfit * 12;
+    const roiPct = inv.amount > 0 && annualProfit > 0
+      ? +(annualProfit / inv.amount * 100).toFixed(2) : null;
+    const paybackYears = avgMonthlyProfit > 0
+      ? +(inv.amount / annualProfit).toFixed(1) : null;
 
     totalInvested += inv.amount;
     totalAccumulatedProfit += accProfit;
-    totalMonthlyProfit += monthlyProfit;
+    totalMonthlyProfit += avgMonthlyProfit;
     if (occCount > 0) {
       weightedOccupancyNum += (occSum / occCount) * inv.amount;
       weightedOccupancyDen += inv.amount;
@@ -256,7 +239,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       currency: inv.currency,
       invested_at: inv.invested_at,
       status: det?.status || deriveStatus(stages),
-      monthly_profit: +monthlyProfit.toFixed(2),
+      monthly_profit: +avgMonthlyProfit.toFixed(2),
       accumulated_profit: +accProfit.toFixed(2),
       paid_out: +paidOutForProperty.toFixed(2),
       pending,
@@ -264,7 +247,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       payback_years: paybackYears,
       last_metric_month: lastMonth || null,
       last_metric_occupancy: occCount > 0 ? +lastOccupancy.toFixed(1) : null,
-      last_metric_revenue: occCount > 0 ? +lastRev.toFixed(2) : null,
+      last_metric_revenue: metricMonthsCount > 0 ? +lastRev.toFixed(2) : null,
       work_stages: stages,
       airbnb_url: det?.airbnb_url || null,
     });
@@ -272,10 +255,13 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
 
   totalPaidOut = payouts.reduce((s, p) => s + (p.amount || 0), 0);
   const pendingTotal = +(totalAccumulatedProfit - totalPaidOut).toFixed(2);
-  const annualisedYield = totalInvested > 0 && totalMonthlyProfit > 0
-    ? +(totalMonthlyProfit * 12 / totalInvested * 100).toFixed(2) : null;
+  // totalMonthlyProfit is now the SUM of per-property avg-monthly-profits.
+  // Annualised yield + payback derive from this average, not last-month spike.
+  const totalAnnualProfit = totalMonthlyProfit * 12;
+  const annualisedYield = totalInvested > 0 && totalAnnualProfit > 0
+    ? +(totalAnnualProfit / totalInvested * 100).toFixed(2) : null;
   const paybackYears = totalMonthlyProfit > 0
-    ? +(totalInvested / totalMonthlyProfit / 12).toFixed(1) : null;
+    ? +(totalInvested / totalAnnualProfit).toFixed(1) : null;
   const avgOccupancy = weightedOccupancyDen > 0
     ? +(weightedOccupancyNum / weightedOccupancyDen).toFixed(1) : null;
 
@@ -336,6 +322,16 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       project_id: r.project_id, project_name: r.project_name,
       year_month: r.year_month, adr: r.adr,
       general_comment: r.general_comment, market_insight: r.market_insight, photo_url: r.photo_url,
+    })),
+    payouts: payouts.map((p) => ({
+      id: p.id,
+      paid_at: p.paid_at,
+      amount: p.amount,
+      currency: p.currency,
+      project_id: p.project_id,
+      project_name: p.project_name,
+      period_year_month: p.period_year_month,
+      comment: p.comment,
     })),
   };
 }
