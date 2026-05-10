@@ -61,6 +61,10 @@ export default function OperationsPage() {
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
+  // «Legacy markers» mode: surface manual non-cash ops that pre-date the
+  // POST /api/payments fix (PR #19). Helps the operator find and delete
+  // them so they don't double-count once the real Teya / bank txn arrives.
+  const [legacyMarkers, setLegacyMarkers] = useState(false);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
 
   const fetchOps = useCallback(async () => {
@@ -68,6 +72,10 @@ export default function OperationsPage() {
     const params = new URLSearchParams({ from, to, pageSize: '500' });
     if (filterType) params.set('op_type', filterType);
     if (search.trim()) params.set('search', search.trim());
+    if (legacyMarkers) {
+      params.set('source', 'manual');
+      params.set('method', 'card,bank_transfer,booking_platform,invoice,online');
+    }
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
@@ -86,7 +94,7 @@ export default function OperationsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [from, to, filterType, search]);
+  }, [from, to, filterType, search, legacyMarkers]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -223,6 +231,24 @@ export default function OperationsPage() {
                 style={{ ...input, paddingLeft: 30, width: '100%' }}
               />
             </div>
+            <label
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px',
+                border: '1px solid var(--border-primary)', borderRadius: 6, fontSize: 13,
+                background: legacyMarkers ? 'rgba(245,158,11,0.12)' : 'var(--bg-primary)',
+                color: legacyMarkers ? '#92400e' : 'var(--text-primary)', cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+              title="Знайти manual ops методу card / bank / platform / invoice / online — це legacy записи з PMS, які тепер не повинні створюватись. Видали їх щоб уникнути подвоєння з реальною Teya/банк транзакцією."
+            >
+              <input
+                type="checkbox"
+                checked={legacyMarkers}
+                onChange={(e) => setLegacyMarkers(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              ⚠️ Legacy markers
+            </label>
           </div>
 
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
