@@ -15,6 +15,9 @@ interface Investment {
   invested_at: string;
   model_description: string | null;
   is_active: number;
+  target_apy: number | null;       // 0.12 = 12%
+  target_occupancy: number | null; // 0.50 = 50%
+  cashback_schedule_json: string | null;
 }
 
 interface Investor { id: string; name: string }
@@ -162,6 +165,29 @@ export default function InvestmentsTab() {
               <div style={{ flex: 1 }}><Field label="Equity %"><input type="number" step="0.01" style={input} value={editing.equity_pct ?? ''} onChange={(e) => setEditing({ ...editing, equity_pct: e.target.value ? parseFloat(e.target.value.replace(',', '.')) : null })} /></Field></div>
             </div>
             <Field label="Дата інвестиції *"><input type="date" style={input} value={editing.invested_at || ''} onChange={(e) => setEditing({ ...editing, invested_at: e.target.value })} /></Field>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <Field label="Target APY (0.12 = 12%)">
+                  <input type="number" step="0.001" style={input}
+                    value={editing.target_apy ?? ''}
+                    placeholder="0.12"
+                    onChange={(e) => setEditing({ ...editing, target_apy: e.target.value ? parseFloat(e.target.value.replace(',', '.')) : null })} />
+                </Field>
+              </div>
+              <div style={{ flex: 1 }}>
+                <Field label="Target occupancy (0.50 = 50%)">
+                  <input type="number" step="0.01" style={input}
+                    value={editing.target_occupancy ?? ''}
+                    placeholder="0.50"
+                    onChange={(e) => setEditing({ ...editing, target_occupancy: e.target.value ? parseFloat(e.target.value.replace(',', '.')) : null })} />
+                </Field>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: -4, marginBottom: 8 }}>
+              Цілі для porfolio-індикатора. Якщо APY не виставити — порівняння буде з fallback 12%.
+            </div>
+
             <Field label="Опис моделі (опц.)"><textarea style={{ ...input, minHeight: 60 }} value={editing.model_description || ''} onChange={(e) => setEditing({ ...editing, model_description: e.target.value || null })} /></Field>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, alignItems: 'center' }}>
               {(() => {
