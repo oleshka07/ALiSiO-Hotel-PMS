@@ -316,6 +316,22 @@ import {
 } from './investor-notes.handlers';
 export const upsertMonthlyNote = withPermission('manage_investors', _upsertMonthlyNote);
 export const deleteMonthlyNote = withPermission('manage_investors', _deleteMonthlyNote);
+
+export { listDocuments, downloadDocument } from './investor-documents.handlers';
+import {
+  uploadDocument as _uploadDocument,
+  deleteDocument as _deleteDocument,
+} from './investor-documents.handlers';
+export const uploadDocument = withPermission('manage_investors', _uploadDocument);
+export const deleteDocument = withPermission('manage_investors', _deleteDocument);
+
+export { listForecastScenarios } from './forecast-scenarios.handlers';
+import {
+  upsertForecastScenario as _upsertForecastScenario,
+  deleteForecastScenario as _deleteForecastScenario,
+} from './forecast-scenarios.handlers';
+export const upsertForecastScenario = withPermission('manage_investors', _upsertForecastScenario);
+export const deleteForecastScenario = withPermission('manage_investors', _deleteForecastScenario);
 import {
   relinkProjectToUnit as _relinkProjectToUnit,
   executeCascadeDelete as _executeCascadeDelete,
