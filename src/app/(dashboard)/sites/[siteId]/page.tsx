@@ -155,7 +155,7 @@ export default function SiteDetailPage() {
 
         {/* Tab content */}
         {activeTab === 'listings'    && <ListingsTab siteId={siteId} siteSlug={site.slug} siteCurrency={site.currency} />}
-        {activeTab === 'services'    && <ServicesTab siteId={siteId} />}
+        {activeTab === 'services'    && <ServicesTab siteId={siteId} siteCurrency={site.currency} />}
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, design_config: cfg } : s)} />}
         {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: cfg } : s)} />}
         {activeTab === 'payments'    && <PaymentsTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, payment_config: cfg } : s)} />}

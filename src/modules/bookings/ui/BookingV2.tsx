@@ -676,11 +676,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       
       // 3. Services total. Included services are free up to their qty.
       const included = offerApplied.bundle.included_services || [];
+      const includedGuestsCount = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2;
+      const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+
       services.forEach(s => {
         if (selectedServiceIds.has(s.id)) {
           const bundleSvc = included.find((inc: any) => inc.service_id === s.id);
           if (bundleSvc && bundleSvc.isIncluded) {
-            // It's free from the bundle
+            servicesTotal += (s.price || 0) * extraGuestsCount;
           } else {
             servicesTotal += (s.price || 0) * guestsCount;
           }
@@ -1612,12 +1615,32 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
           <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
 
-          {offerApplied?.offerType === 'package' && offerApplied.bundle?.included_services?.length > 0 && (
-             <div className="v3-occupancy-notice" style={{ background: 'rgba(47, 79, 43, 0.05)', borderColor: 'rgba(47, 79, 43, 0.2)', color: 'var(--moss)' }}>
-               <span className="v3-occupancy-notice-icon">🎁</span>
-               <span>{t.packageServicesNotice || 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.'}</span>
-             </div>
-          )}
+          {offerApplied?.offerType === 'package' && offerApplied.bundle?.included_services?.some((inc: any) => services.some(s => s.id === inc.service_id)) && (() => {
+             const guestsCount = adults + kids || 1;
+             const includedGuestsCount = offerApplied.bundle.base_guests || selectedUnit?.baseOccupancy || 2;
+             const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+             
+             const extraGuestsText = {
+               uk: `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей. Для додаткових ${extraGuestsCount} гостей послуги розраховуються за стандартним прайсом.`,
+               en: `* Your package covers services for ${includedGuestsCount} guests. Services for ${extraGuestsCount} extra guest${extraGuestsCount === 1 ? '' : 's'} will be charged at the standard rate.`,
+               de: `* Ihr Paket umfasst Dienstleistungen für ${includedGuestsCount} Gäste. Dienstleistungen für ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' Gäste'} werden zum Standardpreis berechnet.`,
+               cs: `* Váš balíček zahrnuje služby pro ${includedGuestsCount} hosty. Služby pro ${extraGuestsCount} další hosty budou účtovány za standardní cenu.`
+             }[lang] || `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей...`;
+
+             return (
+               <div className="v3-occupancy-notice" style={{ background: 'rgba(47, 79, 43, 0.05)', borderColor: 'rgba(47, 79, 43, 0.2)', color: 'var(--moss)' }}>
+                 <span className="v3-occupancy-notice-icon">🎁</span>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                   <span>{t.packageServicesNotice || 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.'}</span>
+                   {extraGuestsCount > 0 && (
+                     <span style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.4 }}>
+                       {extraGuestsText}
+                     </span>
+                   )}
+                 </div>
+               </div>
+             );
+          })()}
 
           {loadingServices ? (
             <div className="v3-house-list">
@@ -1656,14 +1679,27 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         <div className="v3-service-reason">{tName(s, 'description', lang)}</div>
                         <div className="v3-service-price-row">
                           {(() => {
+                            const guestsCount = adults + kids || 1;
                             const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
                             const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
                             const isFree = incSvc && incSvc.isIncluded;
-                            return isFree ? (
-                              <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>
-                            ) : (
-                              <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>
-                            );
+                            
+                            const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+                            const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+                            const includedForBaseText = {
+                              uk: `Включено для ${includedGuestsCount} + `,
+                              en: `Included for ${includedGuestsCount} + `,
+                              de: `Für ${includedGuestsCount} inkl. + `,
+                              cs: `Zahrnuto pro ${includedGuestsCount} + `
+                            }[lang] || `Включено для ${includedGuestsCount} + `;
+
+                            if (isFree) {
+                              if (extraGuestsCount > 0) {
+                                return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{includedForBaseText}{formatPrice(s.price * extraGuestsCount, siteCurrency)}</span>;
+                              }
+                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>;
+                            }
+                            return <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>;
                           })()}
                           <div className="v3-service-toggle"></div>
                         </div>
@@ -1683,18 +1719,23 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               onClick={() => goToStep(5)}
             >
               <span>
-                {selectedServiceIds.size > 0 ? (() => {
-                  const guestsCount = adults + kids || 1;
-                  const servicesTotal = services
-                    .filter(s => selectedServiceIds.has(s.id))
+                {services.filter(s => selectedServiceIds.has(s.id)).length > 0 ? (() => {
+                  const validSelectedServices = services.filter(s => selectedServiceIds.has(s.id));
+                  const servicesTotal = validSelectedServices
                     .reduce((sum, s) => {
                        const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
                        const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
-                       if (incSvc && incSvc.isIncluded) return sum;
+                       const guestsCount = adults + kids || 1;
+                       const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+                       const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+                       
+                       if (incSvc && incSvc.isIncluded) {
+                         return sum + (s.price || 0) * extraGuestsCount;
+                       }
                        return sum + (s.price || 0) * guestsCount;
                     }, 0);
-                  return `Підтвердити вибір (${selectedServiceIds.size})${servicesTotal > 0 ? ` · +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
-                })() : 'Перейти до оплати'}
+                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` · +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
+                })() : t.next}
               </span>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1715,7 +1756,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                 <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
-                <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
+                <span className="v3-breakdown-val">
+                  {offerApplied?.offerType === 'package' 
+                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>
+                    : formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)
+                  }
+                </span>
               </div>
               {checkIn && checkOut && (
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
@@ -1723,20 +1769,43 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               )}
             </div>
+
+            {offerApplied?.offerType === 'package' && offerApplied.bundle && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
+              </div>
+            )}
+            {offerApplied && offerApplied.offerType !== 'package' && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>🏷️ {t.couponCode || 'Промокод'} ({offerApplied.code})</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>
+                  -{offerApplied.offerType === 'percentage' ? `${offerApplied.offerAmount}%` : formatPrice(offerApplied.offerAmount, siteCurrency)}
+                </span>
+              </div>
+            )}
             {services.filter(s => selectedServiceIds.has(s.id)).map(s => {
               const guestsCount = adults + kids || 1;
               const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
               const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
               const isFree = incSvc && incSvc.isIncluded;
+              const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+              const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+              const extraTxt = { uk: 'додаткові', en: 'extra', de: 'weitere', cs: 'další' }[lang] || 'додаткові';
+
+              const includedForText = { uk: 'Включено для', en: 'Included for', de: 'Inklusive für', cs: 'Zahrnuto pro' }[lang] || 'Включено для';
               return (
                 <div key={s.id} className="v3-breakdown-row">
-                  <span>{tName(s, 'name', lang)} × {guestsCount}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `× ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
+                  </div>
                   <span className="v3-breakdown-val">
-                    {isFree ? (
-                      <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Включено в пакет'}</span>
-                    ) : (
-                      formatPrice(s.price * guestsCount, siteCurrency)
-                    )}
+                    {isFree 
+                      ? (extraGuestsCount > 0 
+                          ? formatPrice(s.price * extraGuestsCount, siteCurrency)
+                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Включено в пакет'}</span>)
+                      : formatPrice(s.price * guestsCount, siteCurrency)
+                    }
                   </span>
                 </div>
               );

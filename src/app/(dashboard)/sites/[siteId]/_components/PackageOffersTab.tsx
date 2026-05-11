@@ -78,7 +78,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
         setBundles(bd.bundles);
         onCountChange?.(bd.bundles.length);
       }
-      if (Array.isArray(sd.services)) setServices(sd.services);
+      if (Array.isArray(sd.services)) setServices(sd.services.filter((s: any) => s.is_enabled));
       if (Array.isArray(ld.listings)) setListings(ld.listings);
     } finally { setLoading(false); }
   }, [siteId, onCountChange]);

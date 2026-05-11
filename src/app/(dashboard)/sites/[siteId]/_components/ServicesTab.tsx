@@ -5,7 +5,7 @@ import { Loader2, ToggleRight, ToggleLeft, Upload, Code2 } from 'lucide-react';
 import { Modal, CopyBtn } from './SiteHelpers';
 import type { SiteService } from '../_types';
 
-export function ServicesTab({ siteId }: { siteId: string }) {
+export function ServicesTab({ siteId, siteCurrency }: { siteId: string, siteCurrency: string }) {
   const [services, setServices] = useState<SiteService[]>([]);
   const [loading, setLoading] = useState(true);
   const [embedSvc, setEmbedSvc] = useState<SiteService | null>(null);
@@ -30,13 +30,22 @@ export function ServicesTab({ siteId }: { siteId: string }) {
     await fetch(`/api/booking-sites/${siteId}/services`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service_id: svc.id, is_enabled: !svc.is_enabled }),
+      body: JSON.stringify({ service_id: svc.id, is_enabled: !svc.is_enabled, price_override: svc.price_override ?? null }),
     });
     fetchServices();
   };
 
   const embedCode = (svcId: string) =>
     `<script src="${typeof window !== 'undefined' ? window.location.origin : ''}/widget/service-embed.js"\n  data-service="${svcId}"\n  data-site="${siteId}">\n</script>`;
+
+  const updatePrice = async (svc: SiteService, newPrice: number | null) => {
+    await fetch(`/api/booking-sites/${siteId}/services`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_id: svc.id, is_enabled: svc.is_enabled, price_override: newPrice }),
+    });
+    fetchServices();
+  };
 
   const uploadPhoto = async (svc: SiteService, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -50,7 +59,7 @@ export function ServicesTab({ siteId }: { siteId: string }) {
         await fetch(`/api/booking-sites/${siteId}/services`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service_id: svc.id, photo_override: url, is_enabled: svc.is_enabled }),
+          body: JSON.stringify({ service_id: svc.id, photo_override: url, is_enabled: svc.is_enabled, price_override: svc.price_override ?? null }),
         });
         fetchServices();
       }
@@ -91,7 +100,28 @@ export function ServicesTab({ siteId }: { siteId: string }) {
                   </label>
                 )}
               </td>
-              <td style={{ fontSize: 13 }}>{svc.price_override ?? svc.price} {svc.currency}</td>
+              <td style={{ fontSize: 13 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="number"
+                    className="form-input"
+                    style={{ width: 70, padding: '4px 8px', fontSize: 13, height: 28 }}
+                    placeholder={String(svc.price)}
+                    defaultValue={svc.price_override ?? ''}
+                    onBlur={(e) => {
+                      const val = e.target.value;
+                      const num = val === '' ? null : Number(val);
+                      if (num !== (svc.price_override ?? null)) {
+                        updatePrice(svc, num);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{siteCurrency}</span>
+                </div>
+              </td>
               <td>
                 <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={() => toggle(svc)}>
                   {svc.is_enabled
