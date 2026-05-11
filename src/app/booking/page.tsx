@@ -46,7 +46,7 @@ interface AvailabilityResponse {
   checkOut: string;
   nights: number;
   units: UnitResult[];
-  promoDiscount: { name: string; discountType: string; discountValue: number } | null;
+  offerDiscount: { name: string; discountType: string; discountValue: number } | null;
   certificate: { code: string; amount: number } | null;
 }
 
@@ -59,7 +59,7 @@ interface ReserveResponse {
   nights: number;
   totalPrice: number;
   originalPrice: number;
-  promoDiscount: number;
+  offerDiscount: number;
   certificateDiscount: number;
   currency: string;
 }
@@ -129,10 +129,10 @@ export default function BookingPage() {
   const [today] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [calMonthOffset, setCalMonthOffset] = useState(0);
 
-  // Promo / Certificate
+  // Coupon / Certificate
   const [promoInput, setPromoInput] = useState('');
   const [certInput, setCertInput] = useState('');
-  const [promoApplied, setPromoApplied] = useState('');
+  const [offerApplied, setOfferApplied] = useState('');
   const [promoMessage, setPromoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Step 2 — Availability + Cart
@@ -243,7 +243,7 @@ export default function BookingPage() {
         nights: resSrv?.nights || ctxCache?.nights || 0,
         totalPrice: resSrv?.total_price || ctxCache?.totalPrice || 0,
         originalPrice: resSrv?.total_price || ctxCache?.totalPrice || 0,
-        promoDiscount: 0,
+        offerDiscount: 0,
         certificateDiscount: 0,
         currency: 'CZK',
       });
@@ -376,8 +376,8 @@ export default function BookingPage() {
   const totalWithDiscount = useMemo(() => {
     if (!selectedUnitData) return 0;
     let total = selectedUnitData.totalPrice + extraPersonTotal + petTotal;
-    if (availability?.promoDiscount) {
-      const pd = availability.promoDiscount;
+    if (availability?.offerDiscount) {
+      const pd = availability.offerDiscount;
       if (pd.discountType === 'percentage') {
         total -= Math.round(total * pd.discountValue / 100);
       } else {
@@ -424,7 +424,7 @@ export default function BookingPage() {
     setError(null);
     try {
       const params = new URLSearchParams({ checkIn, checkOut });
-      if (promoApplied) params.set('promoCode', promoApplied);
+      if (offerApplied) params.set('couponCode', offerApplied);
       if (certInput) params.set('certificateCode', certInput);
       const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
       if (!res.ok) throw new Error('Failed');
@@ -434,13 +434,13 @@ export default function BookingPage() {
       setError(t.errorOccurred);
     }
     setLoadingAvail(false);
-  }, [checkIn, checkOut, promoApplied, certInput, t]);
+  }, [checkIn, checkOut, offerApplied, certInput, t]);
 
-  // ─── Apply Promo ──────
-  const applyPromo = useCallback(async () => {
+  // ─── Apply Coupon ──────
+  const applyCoupon = useCallback(async () => {
     if (!promoInput.trim()) return;
-    setPromoApplied(promoInput.trim());
-    setPromoMessage({ type: 'success', text: t.promoApplied });
+    setOfferApplied(promoInput.trim());
+    setPromoMessage({ type: 'success', text: t.offerApplied });
   }, [promoInput, t]);
 
   // ─── Navigation ──────
@@ -548,7 +548,7 @@ export default function BookingPage() {
           lastName: lastName.trim(),
           email: email.trim() || undefined,
           phone: phone.trim(),
-          promoCode: promoApplied || undefined,
+          couponCode: offerApplied || undefined,
           certificateCode: certInput || undefined,
           siteId: currentSiteId || undefined,
         }),
@@ -584,7 +584,7 @@ export default function BookingPage() {
       setError(e?.message || t.errorOccurred);
     }
     setSubmitting(false);
-  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, promoApplied, certInput, t, fetchServices]);
+  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, offerApplied, certInput, t, fetchServices]);
 
   // ─── Submit Payment (Step 5: create Teya checkout) ──────
   const submitPayment = useCallback(async () => {
@@ -699,7 +699,7 @@ export default function BookingPage() {
     setChildren(0);
     setPromoInput('');
     setCertInput('');
-    setPromoApplied('');
+    setOfferApplied('');
     setPromoMessage(null);
     setAvailability(null);
     setSelectedUnit(null);
@@ -1088,16 +1088,16 @@ export default function BookingPage() {
 
 
 
-                {/* Promo & Certificate */}
+                {/* Coupon & Certificate */}
                 <div className="booking-codes-row">
                   <div className="booking-code-input-group">
                     <input
                       className="booking-code-input"
-                      placeholder={t.promoCode}
+                      placeholder={t.couponCode}
                       value={promoInput}
                       onChange={e => { setPromoInput(e.target.value); setPromoMessage(null); }}
                     />
-                    <button className="booking-code-btn" onClick={applyPromo} type="button">{t.apply}</button>
+                    <button className="booking-code-btn" onClick={applyCoupon} type="button">{t.apply}</button>
                   </div>
                   <div className="booking-code-input-group">
                     <input
@@ -1940,10 +1940,10 @@ export default function BookingPage() {
                       <span>{reservation?.nights}</span>
                     </div>
                   )}
-                  {(reservation?.promoDiscount ?? 0) > 0 && (
+                  {(reservation?.offerDiscount ?? 0) > 0 && (
                     <div className="booking-success-detail-row">
                       <span>{t.discount}</span>
-                      <span style={{ color: 'var(--bk-accent)' }}>-{formatPrice(reservation!.promoDiscount)} Kč</span>
+                      <span style={{ color: 'var(--bk-accent)' }}>-{formatPrice(reservation!.offerDiscount)} Kč</span>
                     </div>
                   )}
                   {servicesTotal > 0 && (
@@ -2036,10 +2036,10 @@ export default function BookingPage() {
                         <span>{t.nights}</span>
                         <span>{reservation.nights}</span>
                       </div>
-                      {reservation.promoDiscount > 0 && (
+                      {reservation.offerDiscount > 0 && (
                         <div className="booking-success-detail-row">
                           <span>{t.discount}</span>
-                          <span style={{ color: 'var(--bk-accent)' }}>−{formatPrice(reservation.promoDiscount)} Kč</span>
+                          <span style={{ color: 'var(--bk-accent)' }}>−{formatPrice(reservation.offerDiscount)} Kč</span>
                         </div>
                       )}
                       <div className="booking-success-detail-row">

@@ -18,16 +18,36 @@ export async function getAvailability(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const checkIn = searchParams.get('checkIn');
     const checkOut = searchParams.get('checkOut');
-    const promoCode = searchParams.get('promoCode') || '';
+    const couponCode = searchParams.get('couponCode') || '';
     const certificateCode = searchParams.get('certificateCode') || '';
+    const ratePlanId = searchParams.get('ratePlanId') || searchParams.get('ratePlan');
     let siteId = searchParams.get('siteId');
     const siteSlug = searchParams.get('siteSlug');
 
-    // Resolve siteId from siteSlug if only slug is provided (embed case)
-    if (!siteId && siteSlug) {
-      const site = db.prepare("SELECT id FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
-      if (site) siteId = site.id;
+    const bundleId = searchParams.get('bundleId') || '';
+
+    // Resolve siteId from siteSlug if only slug is provided
+    let siteIdObj = siteId;
+    if (!siteIdObj && siteSlug) {
+      const site = db.prepare("SELECT id FROM booking_sites WHERE (slug = ? OR id = ?) AND status != 'deleted'").get(siteSlug, siteSlug) as any;
+      if (site) siteIdObj = site.id;
     }
+
+    let activeRatePlan: any = null;
+    let activeBundle: any = null;
+
+    if (siteIdObj) {
+      if (ratePlanId) {
+        activeRatePlan = db.prepare('SELECT * FROM site_rate_plans WHERE id = ? AND site_id = ?').get(ratePlanId, siteIdObj);
+      } else {
+        activeRatePlan = db.prepare('SELECT * FROM site_rate_plans WHERE is_default = 1 AND site_id = ? LIMIT 1').get(siteIdObj);
+      }
+    }
+
+    if (bundleId) {
+      activeBundle = db.prepare('SELECT * FROM voucher_bundles WHERE id = ? OR promo_code = ?').get(bundleId, bundleId);
+    }
+
 
     const hasDates = checkIn && checkOut;
     let ciDate: Date | null = null;
@@ -35,12 +55,56 @@ export async function getAvailability(request: NextRequest) {
     let nights = 0;
 
     if (hasDates) {
-      ciDate = new Date(checkIn!);
-      coDate = new Date(checkOut!);
+      const [cy, cm, cd] = checkIn!.split('-').map(Number);
+      ciDate = new Date(cy, cm - 1, cd);
+      const [coy, com, cod] = checkOut!.split('-').map(Number);
+      coDate = new Date(coy, com - 1, cod);
       if (coDate <= ciDate) {
         return NextResponse.json({ error: 'checkOut must be after checkIn' }, { status: 400, headers: CORS_HEADERS });
       }
       nights = Math.round((coDate.getTime() - ciDate.getTime()) / 86400000);
+
+      if (activeRatePlan) {
+        if (activeRatePlan.min_stay && nights < activeRatePlan.min_stay) {
+           return NextResponse.json({ error: `Мінімум ночей: ${activeRatePlan.min_stay}` }, { status: 400, headers: CORS_HEADERS });
+        }
+        if (activeRatePlan.max_stay && nights > activeRatePlan.max_stay) {
+           return NextResponse.json({ error: `Максимум ночей: ${activeRatePlan.max_stay}` }, { status: 400, headers: CORS_HEADERS });
+        }
+
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const diffDays = Math.round((ciDate.getTime() - today.getTime()) / 86400000);
+        
+        if (activeRatePlan.min_days_before_checkin != null && activeRatePlan.min_days_before_checkin > 0) {
+          if (diffDays < activeRatePlan.min_days_before_checkin) {
+             return NextResponse.json({ error: `Бронювання можливе мінімум за ${activeRatePlan.min_days_before_checkin} днів` }, { status: 400, headers: CORS_HEADERS });
+          }
+        }
+
+        if (diffDays === 0 && activeRatePlan.same_day_cutoff_hour != null) {
+          const now = new Date();
+          if (now.getHours() >= activeRatePlan.same_day_cutoff_hour) {
+             return NextResponse.json({ error: `Бронювання на сьогодні можливе лише до ${activeRatePlan.same_day_cutoff_hour}:00` }, { status: 400, headers: CORS_HEADERS });
+          }
+        }
+
+        if (activeRatePlan.valid_weekdays) {
+          try {
+            const allowedDays = JSON.parse(activeRatePlan.valid_weekdays);
+            if (Array.isArray(allowedDays) && allowedDays.length > 0) {
+              const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+              let current = new Date(ciDate);
+              for (let i = 0; i < nights; i++) {
+                if (!allowedDays.includes(dayMap[current.getDay()])) {
+                   return NextResponse.json({ error: `Цей тариф недоступний для обраних днів тижня` }, { status: 400, headers: CORS_HEADERS });
+                }
+                current.setDate(current.getDate() + 1);
+              }
+            }
+          } catch {}
+        }
+      }
     }
 
     const existingTables = new Set(
@@ -70,9 +134,9 @@ export async function getAvailability(request: NextRequest) {
       WHERE c.type = 'glamping' 
         AND u.is_active = 1 
         AND u.room_status = 'available'
-        ${siteId ? 'AND sl.site_id = ?' : ''}
+        ${siteIdObj ? 'AND sl.site_id = ?' : ''}
       ORDER BY u.sort_order, u.name
-    `).all(...(siteId ? [siteId] : [])) as any[];
+    `).all(...(siteIdObj ? [siteIdObj] : [])) as any[];
 
     const results = [];
 
@@ -107,40 +171,90 @@ export async function getAvailability(request: NextRequest) {
       const STUB_PRICE = 2500;
 
       if (hasDates && ciDate) {
-        if (hasPriceCalendar) {
-          prices = db.prepare(`
-            SELECT pc.date, pc.base_price, pc.weekend_price
-            FROM price_calendar pc
-            WHERE pc.unit_type_id = ? AND pc.date >= ? AND pc.date < ?
-            ORDER BY pc.date ASC
-          `).all(unit.unit_type_id, checkIn, checkOut) as any[];
-        }
-
-        const priceMap = new Map<string, any>();
-        for (const p of prices) priceMap.set(p.date, p);
-
-        const current = new Date(ciDate);
-        for (let i = 0; i < nights; i++) {
-          const dateStr = current.toISOString().split('T')[0];
-          const dayOfWeek = current.getDay();
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
-          const priceEntry = priceMap.get(dateStr);
-
-          let dayPrice = STUB_PRICE;
-          if (priceEntry) {
-            dayPrice = isWeekend && priceEntry.weekend_price != null
-              ? priceEntry.weekend_price
-              : priceEntry.base_price;
+        if (activeBundle && activeBundle.is_active) {
+          // Bundle logic: fixed total price divided by nights
+          const bundlePricePerNight = nights > 0 ? activeBundle.price / activeBundle.nights_included : activeBundle.price;
+          const current = new Date(ciDate);
+          for (let i = 0; i < nights; i++) {
+            const dateStr = current.toISOString().split('T')[0];
+            const dayOfWeek = current.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+            const dayPrice = bundlePricePerNight;
             hasPricing = true;
+            breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
+            totalPrice += dayPrice;
+            current.setDate(current.getDate() + 1);
+          }
+        } else if (activeRatePlan && activeRatePlan.fixed_price != null) {
+          // VIP Tariff: use fixed price for all days
+          const current = new Date(ciDate);
+          for (let i = 0; i < nights; i++) {
+            const dateStr = current.toISOString().split('T')[0];
+            const dayOfWeek = current.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+            const dayPrice = activeRatePlan.fixed_price;
+            hasPricing = true;
+            breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
+            totalPrice += dayPrice;
+            current.setDate(current.getDate() + 1);
+          }
+        } else {
+          if (hasPriceCalendar) {
+            prices = db.prepare(`
+              SELECT pc.date, pc.base_price, pc.weekend_price
+              FROM price_calendar pc
+              WHERE pc.unit_type_id = ? AND pc.date >= ? AND pc.date < ?
+              ORDER BY pc.date ASC
+            `).all(unit.unit_type_id, checkIn, checkOut) as any[];
           }
 
-          breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
-          totalPrice += dayPrice;
-          current.setDate(current.getDate() + 1);
+          const priceMap = new Map<string, any>();
+          for (const p of prices) priceMap.set(p.date, p);
+
+          const current = new Date(ciDate);
+          for (let i = 0; i < nights; i++) {
+            const dateStr = current.toISOString().split('T')[0];
+            const dayOfWeek = current.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+            const priceEntry = priceMap.get(dateStr);
+
+            let dayPrice = STUB_PRICE;
+            if (priceEntry) {
+              dayPrice = isWeekend && priceEntry.weekend_price != null
+                ? priceEntry.weekend_price
+                : priceEntry.base_price;
+              hasPricing = true;
+            }
+
+            if (activeRatePlan && activeRatePlan.pricing_mode === 'dependent' && activeRatePlan.pricing_modifier_percent != null) {
+              const pct = activeRatePlan.pricing_modifier_percent;
+              const mType = activeRatePlan.pricing_modifier_type || 'less';
+              if (mType === 'more') {
+                dayPrice = Math.round(dayPrice * (1 + pct / 100));
+              } else {
+                dayPrice = Math.round(dayPrice * (1 - pct / 100));
+              }
+            }
+
+            breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
+            totalPrice += dayPrice;
+            current.setDate(current.getDate() + 1);
+          }
         }
       }
 
       const avgPricePerNight = nights > 0 ? Math.round(totalPrice / nights) : 0;
+
+      let isAllowedByBundle = true;
+      if (activeBundle && activeBundle.applied_listings) {
+        try {
+          const applied = JSON.parse(activeBundle.applied_listings);
+          if (Array.isArray(applied) && applied.length > 0) {
+            if (!applied.includes(unit.id) && !applied.includes(unit.unit_type_id)) isAllowedByBundle = false;
+          }
+        } catch {}
+      }
+      if (!isAllowedByBundle) continue;
 
       results.push({
         id: unit.id,
@@ -174,21 +288,21 @@ export async function getAvailability(request: NextRequest) {
       });
     }
 
-    let promoDiscount: { name: string; discountType: string; discountValue: number; finalDiscount: number } | null = null;
-    if (promoCode && hasPromotions) {
-      const promo = db.prepare(`
+    let offerDiscount: { name: string; discountType: string; discountValue: number; finalDiscount: number } | null = null;
+    if (couponCode && hasPromotions) {
+      const offer = db.prepare(`
         SELECT * FROM promotions
         WHERE promo_code = ? AND is_active = 1
           AND (date_from IS NULL OR date_from <= ?)
           AND (date_to IS NULL OR date_to >= ?)
           AND (usage_limit IS NULL OR usage_count < usage_limit)
-      `).get(promoCode, checkOut, checkIn) as any;
+      `).get(couponCode, checkOut, checkIn) as any;
 
-      if (promo) {
-        promoDiscount = {
-          name: promo.name,
-          discountType: promo.discount_type,
-          discountValue: promo.discount_value,
+      if (offer) {
+        offerDiscount = {
+          name: offer.name,
+          discountType: offer.discount_type,
+          discountValue: offer.discount_value,
           finalDiscount: 0,
         };
       }
@@ -204,8 +318,16 @@ export async function getAvailability(request: NextRequest) {
       checkOut,
       nights,
       units: results,
-      promoDiscount,
+      offerDiscount,
       certificate,
+      activeRatePlan: activeRatePlan ? {
+        id: activeRatePlan.id,
+        code: activeRatePlan.code,
+        name: activeRatePlan.name,
+        includedServices: (() => {
+          try { return JSON.parse(activeRatePlan.included_services_json || '[]'); } catch { return []; }
+        })()
+      } : null,
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/booking/availability error:', error?.message || error);

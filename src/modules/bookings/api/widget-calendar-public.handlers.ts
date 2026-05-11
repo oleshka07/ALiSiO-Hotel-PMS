@@ -21,6 +21,7 @@ export async function getWidgetCalendar(request: NextRequest) {
     const siteSlug    = searchParams.get('siteSlug');
     const siteId      = searchParams.get('siteId');
     const monthParam  = searchParams.get('month');
+    const ratePlanId  = searchParams.get('ratePlanId') || searchParams.get('ratePlan');
 
     const existingTables = new Set(
       (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
@@ -34,17 +35,28 @@ export async function getWidgetCalendar(request: NextRequest) {
     // ── 1. Resolve site unit IDs (booking-site-aware) ──────────────────────
     // When siteSlug/siteId is given, we restrict to units listed for that site.
     let siteUnitIds: string[] | null = null;
+    let siteIdObj: string | null = null;
 
     if ((siteSlug || siteId) && hasBookingSites && hasSiteListings) {
       let site: any;
       if (siteSlug) {
-        site = db.prepare("SELECT id FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug);
+        site = db.prepare("SELECT id FROM booking_sites WHERE (slug = ? OR id = ?) AND status != 'deleted'").get(siteSlug, siteSlug);
       } else {
         site = db.prepare("SELECT id FROM booking_sites WHERE id = ? AND status != 'deleted'").get(siteId);
       }
       if (site) {
+        siteIdObj = site.id;
         const listings = db.prepare('SELECT unit_id FROM site_listings WHERE site_id = ?').all(site.id) as any[];
         siteUnitIds = listings.map((l: any) => l.unit_id);
+      }
+    }
+
+    let activeRatePlan: any = null;
+    if (siteIdObj) {
+      if (ratePlanId) {
+        activeRatePlan = db.prepare('SELECT * FROM site_rate_plans WHERE id = ? AND site_id = ?').get(ratePlanId, siteIdObj);
+      } else {
+        activeRatePlan = db.prepare('SELECT * FROM site_rate_plans WHERE is_default = 1 AND site_id = ? LIMIT 1').get(siteIdObj);
       }
     }
 
@@ -212,14 +224,53 @@ export async function getWidgetCalendar(request: NextRequest) {
       const bookedCount    = bookedUnitIds.size;
       const availableCount = totalCount - bookedCount;
 
-      const status: 'available' | 'booked' | 'partial' =
+      let status: 'available' | 'booked' | 'partial' =
         availableCount <= 0 ? 'booked' :
         bookedCount > 0 ? 'partial' : 'available';
 
       const pe = priceMap.get(dateStr);
-      const price: number | null = pe
+      let price: number | null = pe
         ? (isWeekend && pe.min_weekend_price != null ? pe.min_weekend_price : pe.min_price)
         : (unitTypes.length > 0 ? STUB_PRICE : null);
+
+      if (activeRatePlan) {
+        if (status !== 'booked') {
+          if (activeRatePlan.valid_weekdays) {
+            try {
+              const allowedDays = JSON.parse(activeRatePlan.valid_weekdays);
+              if (Array.isArray(allowedDays) && allowedDays.length > 0) {
+                const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+                if (!allowedDays.includes(dayMap[new Date(year, month, d).getDay()])) {
+                  status = 'booked';
+                }
+              }
+            } catch {}
+          }
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          
+          if (dateStr === todayStr && activeRatePlan.same_day_cutoff_hour != null) {
+             if (today.getHours() >= activeRatePlan.same_day_cutoff_hour) status = 'booked';
+          }
+          
+          if (activeRatePlan.min_days_before_checkin != null && activeRatePlan.min_days_before_checkin > 0) {
+             today.setHours(0,0,0,0);
+             const checkInDate = new Date(year, month, d);
+             const diffDays = Math.round((checkInDate.getTime() - today.getTime()) / 86400000);
+             if (diffDays < activeRatePlan.min_days_before_checkin) status = 'booked';
+          }
+        }
+        
+        if (price != null) {
+          if (activeRatePlan.pricing_mode === 'dependent' && activeRatePlan.pricing_modifier_percent != null) {
+            const pct = activeRatePlan.pricing_modifier_percent;
+            const mType = activeRatePlan.pricing_modifier_type || 'less';
+            price = mType === 'more' ? Math.round(price * (1 + pct / 100)) : Math.round(price * (1 - pct / 100));
+          } else if (activeRatePlan.fixed_price != null) {
+            price = activeRatePlan.fixed_price;
+          }
+        }
+      }
 
       days.push({ date: dateStr, status, price });
     }

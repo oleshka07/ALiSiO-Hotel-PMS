@@ -62,7 +62,7 @@ export async function listServiceOrders(req: NextRequest) {
         status: computeStatus(o),
         paymentStatus: o.payment_status,
         completedAt: o.completed_at,
-        promoCode: o.promo_code,
+        couponCode: o.promo_code,
         guestName: o.first_name ? `${o.first_name} ${o.last_name}` : null,
         unitName: o.unit_name,
         createdAt: o.created_at,
@@ -79,7 +79,7 @@ export async function listServiceOrders(req: NextRequest) {
     const guestOrders = db.prepare(`
       SELECT
         so.id, so.reservation_id, so.service_id, so.quantity,
-        so.total_price, so.status, so.payment_status, so.created_at, so.notes, so.service_date,
+        so.total_price, so.status, so.payment_status, so.created_at,
         ads.name as service_name, ads.name_en, ads.service_type,
         g.first_name, g.last_name,
         u.name as unit_name,
@@ -96,35 +96,26 @@ export async function listServiceOrders(req: NextRequest) {
       LIMIT 50
     `).all() as any[];
 
-    const gOrders = guestOrders.map(o => {
-      let startHour = null, endHour = null;
-      if (o.notes) {
-        try {
-          const n = JSON.parse(o.notes);
-          if (n.startHour != null) { startHour = n.startHour; endHour = n.startHour + (n.hours || 1); }
-        } catch { /* ignore */ }
-      }
-      return {
-        id: o.id,
-        source: 'guest_page',
-        reservationId: o.reservation_id,
-        serviceId: o.service_id,
-        serviceName: o.name_en || o.service_name,
-        serviceType: o.service_type,
-        serviceDate: o.service_date || o.check_in,
-        startHour,
-        endHour,
-        quantity: o.quantity,
-        totalPrice: o.total_price,
-        status: computeStatus(o),
-        paymentStatus: o.payment_status,
-        completedAt: null,
-        promoCode: null,
-        guestName: `${o.first_name} ${o.last_name}`,
-        unitName: o.unit_name,
-        createdAt: o.created_at,
-      };
-    });
+    const gOrders = guestOrders.map(o => ({
+      id: o.id,
+      source: 'guest_page',
+      reservationId: o.reservation_id,
+      serviceId: o.service_id,
+      serviceName: o.name_en || o.service_name,
+      serviceType: o.service_type,
+      serviceDate: o.service_date || o.check_in,
+      startHour: null,
+      endHour: null,
+      quantity: o.quantity,
+      totalPrice: o.total_price,
+      status: computeStatus(o),
+      paymentStatus: o.payment_status,
+      completedAt: null,
+      couponCode: null,
+      guestName: `${o.first_name} ${o.last_name}`,
+      unitName: o.unit_name,
+      createdAt: o.created_at,
+    }));
 
     return NextResponse.json({
       orders: [...orders, ...gOrders],

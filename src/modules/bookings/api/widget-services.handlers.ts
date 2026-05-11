@@ -129,8 +129,29 @@ export async function getWidgetServices(request: NextRequest) {
       `).all() as any[];
     }
 
+    const ratePlanId = searchParams.get('ratePlanId') || searchParams.get('ratePlan');
+    let includedServices: string[] = [];
+
+    if (ratePlanId) {
+      const ratePlan = db.prepare('SELECT * FROM rate_plans WHERE id = ? OR code = ?').get(ratePlanId, ratePlanId) as any;
+      if (ratePlan && ratePlan.included_services_json) {
+        try {
+          includedServices = JSON.parse(ratePlan.included_services_json);
+        } catch { /* ignore */ }
+      }
+    }
+
     return NextResponse.json({
-      services: services.map(s => formatService(s)),
+      services: services.map(s => {
+        const formatted = formatService(s);
+        // Check if service is included in rate plan
+        const isIncluded = includedServices.includes(s.id) || includedServices.includes(s.code || '');
+        if (isIncluded) {
+          formatted.is_included = true;
+          formatted.price = 0;
+        }
+        return formatted;
+      }),
       hasServices: services.length > 0,
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
@@ -147,7 +168,7 @@ export async function bookWidgetService(request: NextRequest) {
     const { action } = body;
 
     if (action === 'book-slots') {
-      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId, promoCode } = body;
+      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId, couponCode } = body;
 
       if (!serviceId || !date || startHour === undefined || !hours || hours < 2) {
         return NextResponse.json(
@@ -164,30 +185,30 @@ export async function bookWidgetService(request: NextRequest) {
       let pricePerHour = service.price;
 
       let appliedPromo: string | null = null;
-      if (promoCode) {
-        const promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(String(promoCode).toUpperCase().trim()) as any;
-        if (promo) {
+      if (couponCode) {
+        const offer = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(String(couponCode).toUpperCase().trim()) as any;
+        if (offer) {
           let applicable = true;
-          if (promo.applicable_services) {
+          if (offer.applicable_services) {
             try {
-              const svcs = JSON.parse(promo.applicable_services) as string[];
+              const svcs = JSON.parse(offer.applicable_services) as string[];
               if (svcs.length > 0 && !svcs.includes(serviceId)) applicable = false;
             } catch { /* ignore */ }
           }
-          if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) applicable = false;
+          if (offer.max_uses !== null && offer.current_uses >= offer.max_uses) applicable = false;
           const now = new Date().toISOString();
-          if (promo.valid_from && now < promo.valid_from) applicable = false;
-          if (promo.valid_until && now > promo.valid_until) applicable = false;
+          if (offer.valid_from && now < offer.valid_from) applicable = false;
+          if (offer.valid_until && now > offer.valid_until) applicable = false;
 
           if (applicable) {
-            appliedPromo = promo.code;
-            if (promo.discount_type === 'fixed_price') {
-              pricePerHour = promo.discount_value;
-            } else if (promo.discount_type === 'percentage') {
-              pricePerHour = pricePerHour * (1 - promo.discount_value / 100);
+            appliedCoupon = offer.code;
+            if (offer.discount_type === 'fixed_price') {
+              pricePerHour = offer.discount_value;
+            } else if (offer.discount_type === 'percentage') {
+              pricePerHour = pricePerHour * (1 - offer.discount_value / 100);
             }
-            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
-            console.log('[Booking] Applied promo:', promo.code, '→', pricePerHour, 'CZK/hr');
+            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+            console.log('[Booking] Applied offer:', offer.code, '→', pricePerHour, 'CZK/hr');
           }
         }
       }
@@ -280,33 +301,27 @@ export async function bookWidgetService(request: NextRequest) {
       try {
         const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
         let guestInfo = 'Зовнішній клієнт';
-        let isMultiRoom = 0;
         if (reservationId) {
           const guest = db.prepare(`
-            SELECT g.first_name, g.last_name, u.name as unit_name, r.is_multi_room
+            SELECT g.first_name, g.last_name, u.name as unit_name
             FROM reservations r
             JOIN guests g ON r.guest_id = g.id
             LEFT JOIN units u ON r.unit_id = u.id
             WHERE r.id = ?
           `).get(reservationId) as any;
-          if (guest) {
-            guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
-            isMultiRoom = guest.is_multi_room || 0;
-          }
+          if (guest) guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
         }
         const svcName = service.name_en || service.name;
         const payStatus = paymentId ? '💳 Очікує оплати' : '✅ Без оплати';
-        const lines = [
+        const text = [
           `📦 <b>Нове замовлення: ${esc(svcName)}</b>`,
           ``,
           `👤 ${guestInfo}`,
           `📅 ${date}, ${startHour}:00–${startHour + hours}:00`,
           `💰 ${totalPrice} CZK`,
           payStatus,
-        ];
-        if (isMultiRoom) lines.push('', `⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`);
-        if (reservationId) lines.push('', `🔖 <code>${esc(reservationId)}</code>`);
-        sendTelegramMessage(lines.join('\n')).catch(() => {});
+        ].join('\n');
+        sendTelegramMessage(text).catch(() => {});
       } catch { /* non-critical */ }
 
       return NextResponse.json({
@@ -321,7 +336,7 @@ export async function bookWidgetService(request: NextRequest) {
         addonTotal,
         totalPrice,
         addons: addonDetails,
-        promoApplied: appliedPromo,
+        offerApplied: appliedPromo,
       }, { status: 201, headers: CORS_HEADERS });
 
     } else if (action === 'book-breakfast') {

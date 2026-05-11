@@ -72,18 +72,18 @@ export async function createWidgetCheckoutSession(req: Request) {
       const h = hours || 1;
       let basePrice = svc.price;
 
-      // Apply promo code discount if provided
-      if (body.promoCode) {
+      // Apply Coupon code discount if provided
+      if (body.couponCode) {
         try {
-          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND is_active = 1").get(body.promoCode) as any;
-          if (promo) {
-            if (promo.discount_type === 'fixed_price') {
-              basePrice = promo.discount_value;
-            } else if (promo.discount_type === 'percentage') {
-              basePrice = Math.round(svc.price * (1 - promo.discount_value / 100));
+          const offer = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND is_active = 1").get(body.couponCode) as any;
+          if (offer) {
+            if (offer.discount_type === 'fixed_price') {
+              basePrice = offer.discount_value;
+            } else if (offer.discount_type === 'percentage') {
+              basePrice = Math.round(svc.price * (1 - offer.discount_value / 100));
             }
           }
-        } catch { /* promo lookup failed — use full price */ }
+        } catch { /* offer lookup failed — use full price */ }
       }
 
       amount = basePrice * h;
@@ -154,50 +154,6 @@ export async function createWidgetCheckoutSession(req: Request) {
         orderId = `so_${Date.now()}`;
         const h = hours || 2;
         const sHour = start_hour || 14;
-
-        // ── Block time slots (availability check + booking) ──────
-        // Without this, two guests could book the same sauna hour.
-        const hasSlotTable = db.prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='service_time_slots'"
-        ).get();
-
-        if (hasSlotTable) {
-          // Check availability first
-          for (let i = 0; i < h; i++) {
-            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
-            const conflict = db.prepare(
-              `SELECT id FROM service_time_slots
-               WHERE service_id = ? AND date = ? AND start_time = ? AND booked_count >= max_capacity`
-            ).get(service_id, service_date, slotTime) as any;
-            if (conflict) {
-              return NextResponse.json(
-                { error: `Slot ${slotTime} on ${service_date} is already booked` },
-                { status: 409, headers: CORS_HEADERS }
-              );
-            }
-          }
-
-          // Block the slots
-          for (let i = 0; i < h; i++) {
-            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
-            const slotEnd = `${String(sHour + i + 1).padStart(2, '0')}:00`;
-            const existing = db.prepare(
-              `SELECT id FROM service_time_slots WHERE service_id = ? AND date = ? AND start_time = ?`
-            ).get(service_id, service_date, slotTime) as any;
-
-            if (existing) {
-              db.prepare(
-                'UPDATE service_time_slots SET booked_count = booked_count + 1, reservation_id = ? WHERE id = ?'
-              ).run(reservation_id || null, existing.id);
-            } else {
-              db.prepare(
-                `INSERT INTO service_time_slots (id, service_id, date, start_time, end_time, max_capacity, booked_count, reservation_id)
-                 VALUES (?, ?, ?, ?, ?, 1, 1, ?)`
-              ).run(`slot_${Date.now()}_${i}`, service_id, service_date, slotTime, slotEnd, reservation_id || null);
-            }
-          }
-        }
-
         const notesObj = {
           service_date,
           startHour: sHour,
@@ -208,8 +164,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         };
 
         db.prepare(`
-          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, notes)
-          VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?)
+          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, notes)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?)
         `).run(
           orderId, reservation_id || 'system_fallback', service_id, h, amount, JSON.stringify(notesObj)
         );
@@ -222,11 +178,10 @@ export async function createWidgetCheckoutSession(req: Request) {
     try {
       let guestName = '';
       let unitName = '';
-      let isMultiRoom = 0;
       if (reservation_id) {
         try {
           const resInfo = db.prepare(`
-            SELECT r.id, r.is_multi_room, rg.first_name, rg.last_name, u.name as unit_name
+            SELECT r.id, rg.first_name, rg.last_name, u.name as unit_name
             FROM reservations r
             LEFT JOIN reservation_guests rg ON rg.reservation_id = r.id
             LEFT JOIN units u ON u.id = r.unit_id
@@ -235,7 +190,6 @@ export async function createWidgetCheckoutSession(req: Request) {
           if (resInfo) {
             guestName = [resInfo.first_name, resInfo.last_name].filter(Boolean).join(' ');
             unitName = resInfo.unit_name || '';
-            isMultiRoom = resInfo.is_multi_room || 0;
           }
         } catch { /* guest lookup failed */ }
       }
@@ -252,10 +206,8 @@ export async function createWidgetCheckoutSession(req: Request) {
       if (unitName) lines.push(`🏠 ${esc(unitName)}`);
       if (service_date && timeRange) lines.push(`📅 ${service_date}, ${timeRange}`);
       lines.push(`💰 ${amount} ${currency}`);
-      if (body.promoCode) lines.push(`🏷️ Промокод: ${esc(body.promoCode)}`);
+      if (body.couponCode) lines.push(`🏷️ Промокод: ${esc(body.couponCode)}`);
       lines.push(`💳 Очікує оплати`);
-      if (isMultiRoom) lines.push('', `⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`);
-      if (reservation_id) lines.push('', `🔖 <code>${esc(reservation_id)}</code>`);
 
       sendTelegramMessage(lines.join('\n')).catch(() => { });
     } catch { /* */ }
@@ -303,32 +255,13 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       if (orderId) {
         try {
-          // Update the payment_id COLUMN (used by Teya webhook to match orders)
-          // AND keep notes JSON in sync for debugging
           const so = db.prepare("SELECT notes FROM service_orders WHERE id = ?").get(orderId) as any;
           if (so && so.notes) {
             const parsed = JSON.parse(so.notes);
             parsed.payment_id = session.sessionId;
-            db.prepare('UPDATE service_orders SET payment_id = ?, payment_status = \'pending\', notes = ? WHERE id = ?').run(session.sessionId, JSON.stringify(parsed), orderId);
-          } else {
-            db.prepare('UPDATE service_orders SET payment_id = ?, payment_status = \'pending\' WHERE id = ?').run(session.sessionId, orderId);
+            db.prepare('UPDATE service_orders SET notes = ? WHERE id = ?').run(JSON.stringify(parsed), orderId);
           }
-        } catch (e: any) { console.error('[Checkout Session] Update order payment_id error:', e.message); }
-      }
-
-      // Link time slots to session ID so cancel/expiry can release them
-      if (service_id && service_date) {
-        try {
-          const h = hours || 2;
-          const sHour = start_hour || 14;
-          for (let i = 0; i < h; i++) {
-            const slotTime = `${String(sHour + i).padStart(2, '0')}:00`;
-            db.prepare(
-              `UPDATE service_time_slots SET booking_session_id = ?
-               WHERE service_id = ? AND date = ? AND start_time = ?`
-            ).run(session.sessionId, service_id, service_date, slotTime);
-          }
-        } catch { /* non-critical */ }
+        } catch { /* */ }
       }
 
       return NextResponse.json({

@@ -25,6 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       try { plan.payment_schedule = JSON.parse(plan.payment_schedule); } catch { /* */ }
       try { plan.meals_included = JSON.parse(plan.meals_included); } catch { /* */ }
       try { plan.applied_listings = JSON.parse(plan.applied_listings); } catch { /* */ }
+      try { plan.valid_weekdays = plan.valid_weekdays ? JSON.parse(plan.valid_weekdays) : null; } catch { /* */ }
     }
 
     return NextResponse.json({ plans });
@@ -58,6 +59,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       min_stay = 1,
       max_stay = 999,
       pricing_mode = 'independent',
+      pricing_modifier_percent = null,
+      pricing_modifier_type = 'less',
+      derived_from_plan_id = null,
+      valid_weekdays = null,
       applied_listings = [],
     } = body;
 
@@ -78,21 +83,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       INSERT INTO site_rate_plans (
         site_id, name, is_default, cancellation_policy, payment_schedule,
         meals_included, min_days_before_checkin, same_day_cutoff_hour,
-        min_stay, max_stay, pricing_mode, applied_listings
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        min_stay, max_stay, pricing_mode, applied_listings,
+        pricing_modifier_percent, pricing_modifier_type, derived_from_plan_id, valid_weekdays
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, name.trim(), is_default ? 1 : 0, cancellation_policy,
       JSON.stringify(payment_schedule),
       JSON.stringify(meals_included),
       min_days_before_checkin, same_day_cutoff_hour,
       min_stay, max_stay, pricing_mode,
-      JSON.stringify(applied_listings)
+      JSON.stringify(applied_listings),
+      pricing_modifier_percent, pricing_modifier_type, derived_from_plan_id,
+      valid_weekdays ? JSON.stringify(valid_weekdays) : null
     );
 
     const plan = db.prepare('SELECT * FROM site_rate_plans WHERE rowid = ?').get(result.lastInsertRowid) as any;
     try { plan.payment_schedule = JSON.parse(plan.payment_schedule); } catch { /* */ }
     try { plan.meals_included = JSON.parse(plan.meals_included); } catch { /* */ }
     try { plan.applied_listings = JSON.parse(plan.applied_listings); } catch { /* */ }
+    try { plan.valid_weekdays = plan.valid_weekdays ? JSON.parse(plan.valid_weekdays) : null; } catch { /* */ }
 
     return NextResponse.json({ plan }, { status: 201 });
   } catch (error: any) {

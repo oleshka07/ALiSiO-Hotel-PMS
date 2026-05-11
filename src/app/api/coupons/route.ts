@@ -3,27 +3,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
 
-/* ─── GET /api/promo-codes?site_id=xxx ─── */
+/* ─── GET /api/coupons?site_id=xxx ─── */
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser(getSessionIdFromCookies(req.headers.get('cookie')));
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const db = getDb();
-    const siteId = new URL(req.url).searchParams.get('site_id');
+    const url = new URL(req.url);
+    const siteId = url.searchParams.get('site_id');
+    const ruleId = url.searchParams.get('rule_id');
 
-    const codes = siteId
-      ? db.prepare('SELECT * FROM promo_codes WHERE site_id = ? ORDER BY created_at DESC').all(siteId)
-      : db.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC').all();
+    let sql = 'SELECT * FROM promo_codes WHERE 1=1';
+    const params: (string | number)[] = [];
+
+    if (siteId) { sql += ' AND site_id = ?'; params.push(siteId); }
+    if (ruleId) { sql += ' AND voucher_rule_id = ?'; params.push(ruleId); }
+
+    sql += ' ORDER BY created_at DESC';
+    const codes = db.prepare(sql).all(...params);
 
     return NextResponse.json(codes);
   } catch (e: any) {
-    console.error('GET /api/promo-codes error:', e?.message || e);
+    console.error('GET /api/coupons error:', e?.message || e);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
-/* ─── POST /api/promo-codes ─── */
+/* ─── POST /api/coupons ─── */
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser(getSessionIdFromCookies(req.headers.get('cookie')));
@@ -78,7 +85,7 @@ export async function POST(req: NextRequest) {
     if (e?.message?.includes('UNIQUE')) {
       return NextResponse.json({ error: 'Промокод з таким кодом вже існує' }, { status: 409 });
     }
-    console.error('POST /api/promo-codes error:', e?.message || e);
+    console.error('POST /api/coupons error:', e?.message || e);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

@@ -23,7 +23,7 @@ export async function createWidgetReservation(request: NextRequest) {
       adults = 2, children = 0,
       hasPet = false,
       firstName, lastName, email, phone,
-      promoCode, certificateCode,
+      couponCode, certificateCode,
       siteId,
     } = body;
 
@@ -136,28 +136,48 @@ export async function createWidgetReservation(request: NextRequest) {
       totalPrice += petChargeTotal;
     }
 
-    let promoDiscount = 0;
-    if (promoCode) {
+    let offerDiscount = 0;
+    if (couponCode) {
       try {
-        const promo = db.prepare(`
+        const code = String(couponCode).toUpperCase().trim();
+        let offer = db.prepare(`
           SELECT * FROM promo_codes
           WHERE code = ? AND is_active = 1
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until >= ?)
             AND (max_uses IS NULL OR current_uses < max_uses)
-        `).get(String(promoCode).toUpperCase().trim(), checkOut, checkIn) as any;
+        `).get(code, checkOut, checkIn) as any;
+        
+        let isBundle = false;
 
-        if (promo) {
-          if (promo.discount_type === 'percentage') {
-            promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
-          } else if (promo.discount_type === 'fixed_price') {
-            promoDiscount = Math.max(0, totalPrice - promo.discount_value);
-          } else {
-            promoDiscount = promo.discount_value;
-          }
-          db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
+        if (!offer) {
+          offer = db.prepare(`
+            SELECT * FROM voucher_bundles 
+            WHERE promo_code = ? AND is_active = 1 
+              AND (redemption_limit IS NULL OR current_uses < redemption_limit)
+          `).get(code) as any;
+          if (offer) isBundle = true;
         }
-      } catch { /* promo lookup failed — continue without discount */ }
+
+        if (offer) {
+          if (isBundle) {
+            // Package overrides the totalPrice completely
+            offerDiscount = Math.max(0, totalPrice - offer.price);
+            db.prepare('UPDATE voucher_bundles SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+          } else {
+            if (offer.discount_type === 'percentage') {
+              offerDiscount = Math.round(totalPrice * offer.discount_value / 100);
+            } else if (offer.discount_type === 'fixed_price' || offer.discount_type === 'fixed_amount') {
+              offerDiscount = Math.max(0, totalPrice - offer.discount_value);
+            } else {
+              offerDiscount = offer.discount_value;
+            }
+            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+          }
+        }
+      } catch (err: any) { 
+        console.error('[Coupon validation error]', err);
+      }
     }
 
     let certificateDiscount = 0;
@@ -165,7 +185,7 @@ export async function createWidgetReservation(request: NextRequest) {
       certificateDiscount = 0;
     }
 
-    const finalPrice = Math.max(0, totalPrice - promoDiscount - certificateDiscount);
+    const finalPrice = Math.max(0, totalPrice - offerDiscount - certificateDiscount);
 
     const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string };
 
@@ -200,7 +220,7 @@ export async function createWidgetReservation(request: NextRequest) {
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice, null, promoCode ? JSON.stringify([promoCode]) : null
+      'tentative', 'unpaid', 'direct', finalPrice, null, couponCode ? JSON.stringify([couponCode]) : null
     );
 
     notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
@@ -214,7 +234,7 @@ export async function createWidgetReservation(request: NextRequest) {
       nights,
       totalPrice: finalPrice,
       originalPrice: totalPrice,
-      promoDiscount,
+      offerDiscount,
       certificateDiscount,
       currency: 'CZK',
     }, { status: 201, headers: CORS_HEADERS });

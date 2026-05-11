@@ -201,12 +201,15 @@ function initSchema(database: any) {
       name TEXT NOT NULL,
       code TEXT NOT NULL,
       pricing_model TEXT NOT NULL DEFAULT 'standard',
+      fixed_price REAL,
       currency TEXT NOT NULL DEFAULT 'CZK',
       is_active INTEGER NOT NULL DEFAULT 1,
       cancellation_policy TEXT,
       meal_plan TEXT,
       priority INTEGER NOT NULL DEFAULT 0,
       description TEXT,
+      included_services_json TEXT NOT NULL DEFAULT '[]',
+      is_hidden INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(property_id, code)
@@ -977,6 +980,25 @@ function runMigrations(database: any) {
     console.log('[DB] VRBO source migration note:', e.message);
   }
 
+  // --- Migration: add included_services_json and is_hidden to rate_plans ---
+  try {
+    const rpCols = database.prepare("PRAGMA table_info(rate_plans)").all().map((c: any) => c.name);
+    if (!rpCols.includes('included_services_json')) {
+      database.exec("ALTER TABLE rate_plans ADD COLUMN included_services_json TEXT NOT NULL DEFAULT '[]'");
+      console.log('[DB] Added included_services_json to rate_plans');
+    }
+    if (!rpCols.includes('is_hidden')) {
+      database.exec("ALTER TABLE rate_plans ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0");
+      console.log('[DB] Added is_hidden to rate_plans');
+    }
+    if (!rpCols.includes('fixed_price')) {
+      database.exec("ALTER TABLE rate_plans ADD COLUMN fixed_price REAL");
+      console.log('[DB] Added fixed_price to rate_plans');
+    }
+  } catch (e: any) {
+    console.log('[DB] rate_plans migration note:', e.message);
+  }
+
   // ═══════════════════════════════════════════════════════
   // BOOKING SERVICE v2 TABLES
   // ═══════════════════════════════════════════════════════
@@ -1140,26 +1162,15 @@ function runMigrations(database: any) {
     )
   `);
 
-  // Seed GLAMPING promo code: 310 CZK/hour for sauna AND tub (instead of 600)
+  // Seed GLAMPING promo code: 310 CZK/hour for sauna (instead of 600)
   try {
-    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get() as { id: string } | undefined;
+    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get();
     if (!glamExists) {
       database.prepare(`
         INSERT INTO promo_codes (id, code, description, discount_type, discount_value, applicable_services, is_active)
-        VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna+tub discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna","svc_pool"]', 1)
+        VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna"]', 1)
       `).run();
-      console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna+tub)');
-    } else {
-      // Backfill existing rows that only included svc_sauna — extend to svc_pool
-      // so the same promo works in the chan/hot-tub widget.
-      const row = database.prepare("SELECT applicable_services FROM promo_codes WHERE code = 'GLAMPING'").get() as { applicable_services: string | null };
-      if (row?.applicable_services && !row.applicable_services.includes('svc_pool')) {
-        database.prepare(`
-          UPDATE promo_codes SET applicable_services = '["svc_sauna","svc_pool"]'
-          WHERE code = 'GLAMPING'
-        `).run();
-        console.log('[DB] Extended GLAMPING promo to include svc_pool (chan/tub)');
-      }
+      console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna)');
     }
   } catch (e) {
     console.warn('[DB] Promo seed error:', e);
@@ -2857,6 +2868,13 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_site_rate_plans_site ON site_rate_plans(site_id)');
 
+  // --- Migration: add pricing dependent fields to site_rate_plans ---
+  try { database.exec('ALTER TABLE site_rate_plans ADD COLUMN pricing_modifier_percent REAL'); } catch { /* */ }
+  try { database.exec("ALTER TABLE site_rate_plans ADD COLUMN pricing_modifier_type TEXT DEFAULT 'less'"); } catch { /* */ }
+  try { database.exec('ALTER TABLE site_rate_plans ADD COLUMN derived_from_plan_id TEXT'); } catch { /* */ }
+  try { database.exec('ALTER TABLE site_rate_plans ADD COLUMN valid_weekdays TEXT'); } catch { /* */ }
+
+
   // --- Migration: create site_services table ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS site_services (
@@ -3124,19 +3142,6 @@ function runMigrations(database: any) {
     }
   } catch { /* */ }
 
-  // --- Migration: add lock_code, entry_photo_url to units (per-unit guest page override) ---
-  try {
-    const unitCols = database.prepare('PRAGMA table_info(units)').all().map((c: any) => c.name);
-    if (!unitCols.includes('lock_code')) {
-      database.exec('ALTER TABLE units ADD COLUMN lock_code TEXT');
-      console.log('[DB] Added lock_code to units');
-    }
-    if (!unitCols.includes('entry_photo_url')) {
-      database.exec('ALTER TABLE units ADD COLUMN entry_photo_url TEXT');
-      console.log('[DB] Added entry_photo_url to units');
-    }
-  } catch { /* */ }
-
   // ═══════════════════════════════════════════════════════════════════
   // PR #15: Clearing accounts + channel receivables
   // ═══════════════════════════════════════════════════════════════════
@@ -3240,8 +3245,8 @@ function runMigrations(database: any) {
       const seeds = [
         { name: 'Booking.com (CZK)', currency: 'CZK', color: '#003580', sort_order: 901 },
         { name: 'Booking.com (EUR)', currency: 'EUR', color: '#003580', sort_order: 902 },
-        { name: 'Airbnb (EUR)',      currency: 'EUR', color: '#FF5A5F', sort_order: 903 },
-        { name: 'VRBO (EUR)',        currency: 'EUR', color: '#206A92', sort_order: 904 },
+        { name: 'Airbnb (EUR)', currency: 'EUR', color: '#FF5A5F', sort_order: 903 },
+        { name: 'VRBO (EUR)', currency: 'EUR', color: '#206A92', sort_order: 904 },
       ];
       const insertClearing = database.prepare(`
         INSERT INTO finance_accounts (id, organization_id, name, type, currency, color, sort_order, is_active)
@@ -3262,37 +3267,59 @@ function runMigrations(database: any) {
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
-  // PR #C: needs_review flag for ops where the channel→account resolver
-  // had to fall back. Surfaces a queue for the admin to triage.
+  // Finance PR #A: is_pms_signal flag on fin_operations
+  //
+  // Splits "PMS-internal payment signals" (Hostex auto-payment from
+  // Booking/Airbnb prepaid bookings, Teya widget callbacks) from real
+  // money movements (bank import, cash, manual entry).
+  //
+  // Why: a Booking prepaid reservation arrives from Hostex with a fin_op
+  // marking the reservation as paid (so PMS allows check-in), BUT the
+  // real money is at the platform — we'll only see it on our bank when
+  // Booking pays us out a week later. Same for Teya widget — guest paid,
+  // money is at Teya, comes to bank later.
+  //
+  // is_pms_signal=1 → "expected income, money not on bank yet". These
+  // operations stay in DB so PMS check-in works (recalcReservationPaymentStatus
+  // sums them as paid), but they're hidden from /finance/operations,
+  // cashflow, and the default P&L view. P&L forecast mode adds them back.
+  //
+  // is_pms_signal=0 → real money. Bank imports, cash, manual entries.
   // ═══════════════════════════════════════════════════════════════════
   try {
     const cols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'is_pms_signal')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN is_pms_signal INTEGER NOT NULL DEFAULT 0");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fop_is_pms_signal ON fin_operations(is_pms_signal)");
+    }
+    // PR #C: needs_review flag for ops where the channel→account resolver
+    // had to fall back. Surfaces a queue for the admin to triage.
     if (!cols.some((c) => c.name === 'needs_review')) {
       database.exec("ALTER TABLE fin_operations ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
       database.exec("CREATE INDEX IF NOT EXISTS idx_fop_needs_review ON fin_operations(needs_review)");
     }
-  } catch (e: any) { console.log('[DB] PR #C needs_review column:', e.message); }
+  } catch (e: any) { console.log('[DB] PR #A/C fin_operations columns:', e.message); }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #F: drop is_pms_signal column.
-  //
-  // Channel-mediated «expected income» signals stopped being created in
-  // clean-1 (Hostex sync) and the legacy rows were deleted in clean-2.
-  // The column itself is now obsolete — every fin_operations row is real
-  // money. This drops it idempotently (re-runs are no-op when the column
-  // is already gone).
-  //
-  // Requires SQLite ≥ 3.35 (March 2021) for ALTER TABLE DROP COLUMN.
-  // better-sqlite3 ships with a recent enough SQLite, so this is safe.
-  // ═══════════════════════════════════════════════════════════════════
+  // Retro-migrate: existing operations from Hostex / Teya / widget paths
+  // are by definition signals (money was at platform, may or may not yet
+  // be on bank). One-shot via fin_system_state guard.
   try {
-    const cols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
-    if (cols.some((c) => c.name === 'is_pms_signal')) {
-      database.exec("DROP INDEX IF EXISTS idx_fop_is_pms_signal");
-      database.exec("ALTER TABLE fin_operations DROP COLUMN is_pms_signal");
-      console.log('[DB] Cleanup #F: dropped is_pms_signal column');
+    const already = database.prepare(
+      "SELECT value FROM fin_system_state WHERE key = 'pr_A_pms_signal_backfilled'"
+    ).get() as { value: string } | undefined;
+    if (!already) {
+      const r = database.prepare(`
+        UPDATE fin_operations
+        SET is_pms_signal = 1
+        WHERE source IN ('hostex', 'teia', 'teya', 'booking_widget', 'guest_page')
+          AND is_pms_signal = 0
+      `).run();
+      database.prepare(
+        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('pr_A_pms_signal_backfilled', ?, datetime('now'))"
+      ).run(`tagged ${r.changes} rows as PMS signals`);
+      if (r.changes > 0) console.log(`[DB] PR #A: tagged ${r.changes} legacy fin_operations as is_pms_signal=1`);
     }
-  } catch (e: any) { console.log('[DB] Cleanup #F drop is_pms_signal:', e.message); }
+  } catch (e: any) { console.log('[DB] PR #A backfill:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
   // PR #36: supabase_id columns on investor tables for idempotent re-import
@@ -3307,11 +3334,11 @@ function runMigrations(database: any) {
       }
     } catch (e: any) { console.log(`[DB] PR #36 ${table}.${col} migration:`, e.message); }
   };
-  addCol('investors',                  'supabase_id', 'TEXT');
-  addCol('investor_investments',       'supabase_id', 'TEXT');
-  addCol('investor_payouts',           'supabase_id', 'TEXT');
-  addCol('property_monthly_metrics',   'supabase_id', 'TEXT');
-  addCol('property_monthly_reports',   'supabase_id', 'TEXT');
+  addCol('investors', 'supabase_id', 'TEXT');
+  addCol('investor_investments', 'supabase_id', 'TEXT');
+  addCol('investor_payouts', 'supabase_id', 'TEXT');
+  addCol('property_monthly_metrics', 'supabase_id', 'TEXT');
+  addCol('property_monthly_reports', 'supabase_id', 'TEXT');
 
   // ═══════════════════════════════════════════════════════════════════
   // Cleanup #A: re-introduce unit_id columns on investor tables (the
@@ -3322,12 +3349,12 @@ function runMigrations(database: any) {
   //
   // No code yet reads from these — that comes in cleanup #B.
   // ═══════════════════════════════════════════════════════════════════
-  addCol('investor_investments',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
-  addCol('investor_payouts',           'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
-  addCol('property_monthly_metrics',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
-  addCol('property_monthly_reports',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
-  addCol('property_work_stages',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
-  addCol('investor_property_details',  'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('investor_investments', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('investor_payouts', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('property_monthly_metrics', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_monthly_reports', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_work_stages', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('investor_property_details', 'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
 
   try {
     const norm = (s: string) => (s || '').toLowerCase()
@@ -3412,110 +3439,6 @@ function runMigrations(database: any) {
       }
     }
   } catch (e: any) { console.log('[DB] Cleanup #C archive supabase BUs:', e.message); }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Finance PR #G: payment_webhook_log — audit trail for every Teya
-  // webhook call. Captures raw payload + outcome so that when a payment
-  // doesn't show up in the system, the admin can look here to see whether
-  // the webhook was received, parsed, matched to an order, and recorded.
-  // ═══════════════════════════════════════════════════════════════════
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS payment_webhook_log (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      provider TEXT NOT NULL,
-      event_type TEXT,
-      session_id TEXT,
-      transaction_id TEXT,
-      payment_ref TEXT,
-      amount REAL,
-      currency TEXT,
-      result TEXT NOT NULL CHECK (result IN ('recorded','no_match','duplicate','signature_invalid','parse_error','unhandled','error')),
-      error_message TEXT,
-      reservation_id TEXT,
-      operation_id TEXT,
-      raw_payload TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_created ON payment_webhook_log(created_at DESC)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #D: backfill needs_review on legacy null-account ops.
-  //
-  // The migrations from `income`, `expenses`, `transfers`, `payments`
-  // copied rows into fin_operations even when account_id was NULL.
-  // createOperationInTx now rejects such rows on creation (see
-  // operations.handlers.ts:185-192), but the historical leftovers stay
-  // invisible — they don't show up in /finance/reconcile because their
-  // needs_review flag was never set, and their balance impact is hidden
-  // by PR #signals-filter (the latest fix).
-  //
-  // Mark them needs_review=1 so the operator sees them in the existing
-  // triage queue (`/finance/operations?needs_review=1`) and can either
-  // assign an account or archive them. Idempotent: only flips rows
-  // currently at 0.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const result = database.prepare(`
-      UPDATE fin_operations
-      SET needs_review = 1
-      WHERE needs_review = 0
-        AND (
-          (op_type = 'income'   AND account_to_id   IS NULL) OR
-          (op_type = 'expense'  AND account_from_id IS NULL) OR
-          (op_type = 'transfer' AND (account_from_id IS NULL OR account_to_id IS NULL))
-        )
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #D: flagged ${result.changes} legacy null-account fin_operations as needs_review=1`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #D needs_review backfill:', e.message);
-  }
-
-  // (Cleanup #E lived here — deleted legacy Hostex signal fin_operations.
-  //  It served its purpose during clean-2 deploy. Since clean-3 drops the
-  //  is_pms_signal column entirely, the migration is a no-op and was
-  //  removed to avoid noisy «no such column» errors on every startup.)
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #G: purge auto-created fin_operations.
-  //
-  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
-  // return), four code paths created fin_operations on every guest tap
-  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
-  // had never manually entered. The actual money still lives at the
-  // platform / Teya merchant until the bank statement arrives, so these
-  // rows were essentially a parallel ledger that diverged from reality.
-  //
-  // After clean-5 no NEW rows are created. This migration sweeps the
-  // accumulated ones — sources hostex / teia / booking_widget. Manual
-  // cash entries (source='manual') and bank-import rows (source='bank'
-  // / 'manual_bank' / 'kb_inbox') are preserved.
-  //
-  // Bank-transaction match pointers are nulled before the DELETE so the
-  // FK does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations
-        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
-  }
 
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
@@ -3882,6 +3805,123 @@ function runMigrations(database: any) {
       }
     }
   } catch (e: any) { console.log('[DB] PR #15 receivables backfill:', e.message); }
+
+  // --- Migration: create vouchers table (feature/vouchers) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS vouchers (
+      id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      property_id     TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      code            TEXT NOT NULL UNIQUE,
+      template_id     TEXT NOT NULL DEFAULT 'custom',
+      name            TEXT NOT NULL,
+      type            TEXT NOT NULL DEFAULT 'open_date'
+                      CHECK (type IN ('open_date', 'package', 'discount')),
+      value_type      TEXT NOT NULL DEFAULT 'fixed_czk'
+                      CHECK (value_type IN ('fixed_czk', 'fixed_eur', 'percent', 'nights')),
+      face_value      REAL NOT NULL DEFAULT 0,
+      currency        TEXT NOT NULL DEFAULT 'CZK',
+      status          TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft', 'active', 'paid', 'redeemed', 'expired', 'cancelled')),
+      recipient_name  TEXT,
+      recipient_email TEXT,
+      buyer_name      TEXT,
+      buyer_email     TEXT,
+      buyer_phone     TEXT,
+      message         TEXT,
+      expires_at      TEXT,
+      paid_at         TEXT,
+      redeemed_at     TEXT,
+      reservation_id  TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      config_json     TEXT NOT NULL DEFAULT '{}',
+      notes           TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_property ON vouchers(property_id)');
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)');
+  console.log('[DB] vouchers table ready');
+
+  // --- Migration: voucher automation rules table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_automation_rules (
+      id               TEXT PRIMARY KEY,
+      site_id          TEXT NOT NULL,
+      template_id      TEXT,
+      name             TEXT NOT NULL DEFAULT 'Автоматизований ваучер',
+      discount_type    TEXT NOT NULL DEFAULT 'percentage',
+      discount_value   REAL NOT NULL DEFAULT 0,
+      valid_from       TEXT,
+      valid_until      TEXT,
+      min_nights       INTEGER,
+      max_nights       INTEGER,
+      allowed_days     TEXT,
+      applies_to       TEXT NOT NULL DEFAULT 'listings',
+      redemption_limit INTEGER NOT NULL DEFAULT 1,
+      generated_count  INTEGER NOT NULL DEFAULT 0,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_var_site ON voucher_automation_rules(site_id)');
+
+  // --- Migration: add voucher_rule_id to promo_codes ---
+  try {
+    database.exec(`ALTER TABLE promo_codes ADD COLUMN voucher_rule_id TEXT REFERENCES voucher_automation_rules(id) ON DELETE SET NULL`);
+    console.log('[DB] Added voucher_rule_id to promo_codes');
+  } catch { /* column already exists */ }
+
+  // --- Migration: add extra fields to promo_codes (min_nights, max_nights, redemption_limit, site_id, allowed_days, applies_to) ---
+  for (const col of [
+    'min_nights INTEGER',
+    'max_nights INTEGER',
+    'redemption_limit INTEGER',
+    'site_id TEXT',
+    'allowed_days TEXT',
+    'applies_to TEXT DEFAULT \'services\'',
+  ]) {
+    try { database.exec(`ALTER TABLE promo_codes ADD COLUMN ${col}`); } catch { /* already exists */ }
+  }
+
+  console.log('[DB] voucher_automation_rules ready');
+
+  // --- Migration: voucher_bundles (bundle/package vouchers) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_bundles (
+      id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id         TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      description     TEXT,
+      price           REAL NOT NULL DEFAULT 0,
+      currency        TEXT NOT NULL DEFAULT 'CZK',
+      nights_included INTEGER NOT NULL DEFAULT 0,
+      listing_type    TEXT,
+      included_services TEXT NOT NULL DEFAULT '[]',
+      validity_months INTEGER NOT NULL DEFAULT 12,
+      is_active       INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vb_site ON voucher_bundles(site_id)');
+
+  // --- Migration: add bundle_id to vouchers ---
+  try {
+    database.exec(`ALTER TABLE vouchers ADD COLUMN bundle_id TEXT REFERENCES voucher_bundles(id) ON DELETE SET NULL`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add allowed_days to voucher_bundles ---
+  try {
+    database.exec(`ALTER TABLE voucher_bundles ADD COLUMN allowed_days TEXT`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add promo_code, redemption_limit, current_uses to voucher_bundles ---
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN promo_code TEXT`); } catch { /* already exists */ }
+  try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_promo_code ON voucher_bundles(promo_code) WHERE promo_code IS NOT NULL`); } catch { }
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN redemption_limit INTEGER DEFAULT 1`); } catch { /* already exists */ }
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
+
+  console.log('[DB] voucher_bundles ready');
 
 }
 
