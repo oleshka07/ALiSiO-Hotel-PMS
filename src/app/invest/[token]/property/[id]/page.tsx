@@ -187,6 +187,21 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
+        {/* Per-asset Forward Projection */}
+        {data.scenarios?.[params.id] && data.scenarios[params.id].length > 0 && (
+          <div style={{ marginTop: 16, padding: 20, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>Прогноз повного повернення</h3>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>3 сценарії</span>
+            </div>
+            <AssetForwardProjection
+              scenarios={data.scenarios[params.id]}
+              invested={property.invested}
+              currency={property.currency}
+            />
+          </div>
+        )}
+
         {/* KPI Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
           <KpiCard label="Вкладений капітал" value={fmt(property.invested, property.currency)} sub={`${recoveredPct.toFixed(1)}% повернуто`} barPct={recoveredPct} icon={<Wallet />} color="#3b82f6" />
@@ -262,6 +277,128 @@ export default function PropertyDetailPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface ScenarioPoint { period: string; eur: number }
+
+function safeParse<T>(s: string | null | undefined): T | null {
+  if (!s) return null;
+  try { return JSON.parse(s) as T; } catch { return null; }
+}
+
+function AssetForwardProjection({ scenarios, invested, currency }: {
+  scenarios: NonNullable<PortalData['scenarios']>[string];
+  invested: number;
+  currency: string;
+}) {
+  const aggregate = (key: 'pessimistic' | 'base' | 'optimistic') => {
+    const sc = scenarios.find((x) => x.scenario === key);
+    if (!sc) return { series: [] as Array<{ period: string; pct: number }>, eta: null as string | null, assumptions: null };
+    const proj = safeParse<ScenarioPoint[]>(sc.monthly_cashback_projection_json) || [];
+    let sum = 0;
+    const series = proj.map((p) => {
+      sum += p.eur;
+      return { period: p.period, pct: invested > 0 ? Math.min(150, (sum / invested) * 100) : 0 };
+    });
+    return {
+      series,
+      eta: sc.full_repayment_eta,
+      assumptions: safeParse<{ occupancy?: number; adr?: number; opex_growth?: number; notes?: string }>(sc.assumptions_json),
+    };
+  };
+
+  const opt  = aggregate('optimistic');
+  const base = aggregate('base');
+  const pes  = aggregate('pessimistic');
+
+  const allPeriods = [...new Set([...opt.series, ...base.series, ...pes.series].map((p) => p.period))].sort();
+  if (allPeriods.length === 0) {
+    return <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}>Сценарії задано, але без monthly projection JSON</div>;
+  }
+
+  const periodToIdx = new Map(allPeriods.map((p, i) => [p, i] as const));
+  const W = 800, H = 200, PAD = 20;
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2 - 12;
+  const stepX = innerW / Math.max(1, allPeriods.length - 1);
+  const xFor = (period: string) => PAD + (periodToIdx.get(period) || 0) * stepX;
+  const yFor = (pct: number) => PAD + (innerH - (Math.min(100, pct) / 100) * innerH);
+  const baseY = PAD + innerH;
+
+  const toLinePath = (series: { period: string; pct: number }[]): string => {
+    if (series.length === 0) return '';
+    return series.map((p, i) => `${i === 0 ? 'M' : 'L'}${xFor(p.period).toFixed(1)},${yFor(p.pct).toFixed(1)}`).join(' ');
+  };
+
+  const todayPeriod = new Date().toISOString().substring(0, 7);
+  let todayX: number | null = null;
+  for (let i = 0; i < allPeriods.length; i++) {
+    if (allPeriods[i] <= todayPeriod) todayX = xFor(allPeriods[i]);
+  }
+
+  const fmtEta = (etaIso: string | null, fallbackSeries: { period: string; pct: number }[]) => {
+    if (etaIso) return etaIso.substring(0, 7);
+    const reached = fallbackSeries.find((p) => p.pct >= 100);
+    return reached ? reached.period : '—';
+  };
+
+  return (
+    <div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+        <defs>
+          <linearGradient id="asset-band-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#16a34a" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#16a34a" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <line x1={PAD} y1={yFor(100)} x2={W - PAD} y2={yFor(100)} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2,3" />
+        <text x={W - PAD - 4} y={yFor(100) - 3} fill="#94a3b8" fontSize="9" textAnchor="end">100%</text>
+
+        {toLinePath(pes.series)  && <path d={toLinePath(pes.series)}  fill="none" stroke="#16a34a" strokeWidth="1.5" strokeDasharray="3,2" opacity="0.45" />}
+        {toLinePath(base.series) && <path d={toLinePath(base.series)} fill="none" stroke="#16a34a" strokeWidth="2.5" />}
+        {toLinePath(opt.series)  && <path d={toLinePath(opt.series)}  fill="none" stroke="#16a34a" strokeWidth="1.5" strokeDasharray="3,2" opacity="0.45" />}
+
+        {todayX != null && (
+          <line x1={todayX} y1={PAD} x2={todayX} y2={baseY} stroke="#04392c" strokeWidth="1" strokeDasharray="3,3" />
+        )}
+
+        {allPeriods.filter((p) => p.endsWith('-01') || p === allPeriods[0] || p === allPeriods[allPeriods.length - 1]).map((p) => (
+          <text key={p} x={xFor(p)} y={H - 4} fill="#94a3b8" fontSize="9" textAnchor="middle">{p}</text>
+        ))}
+      </svg>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 12 }}>
+        {[
+          { label: 'Песимістичний', value: fmtEta(pes.eta, pes.series), highlight: false },
+          { label: 'Базовий',       value: fmtEta(base.eta, base.series), highlight: true },
+          { label: 'Оптимістичний', value: fmtEta(opt.eta, opt.series), highlight: false },
+        ].map((c) => (
+          <div key={c.label} style={{
+            padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+            background: c.highlight ? '#dcfce7' : '#f8fafc',
+            border: `1px solid ${c.highlight ? '#16a34a' : '#e2e8f0'}`,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: c.highlight ? '#047857' : '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{c.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: c.highlight ? '#047857' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {base.assumptions && (() => {
+        const a = base.assumptions;
+        const parts: string[] = [];
+        if (a.occupancy != null)    parts.push(`occupancy ${(a.occupancy * 100).toFixed(0)}%`);
+        if (a.adr != null)          parts.push(`ADR ${a.adr.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} CZK`);
+        if (a.opex_growth != null)  parts.push(`OPEX growth +${(a.opex_growth * 100).toFixed(0)}%/рік`);
+        if (parts.length === 0)     return null;
+        return (
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9', lineHeight: 1.5 }}>
+            <b>Базовий сценарій:</b> {parts.join(' · ')}. Інвестиція: {invested.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}.
+          </div>
+        );
+      })()}
     </div>
   );
 }
