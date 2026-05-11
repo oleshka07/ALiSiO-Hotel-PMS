@@ -63,6 +63,48 @@ interface PortalData {
     mime_type: string | null; period_start: string | null; period_end: string | null;
     uploaded_at: string; business_unit_id: string | null; download_url: string;
   }>;
+  scenarios?: Record<string, Array<{
+    scenario: 'pessimistic' | 'base' | 'optimistic';
+    assumptions_json: string | null;
+    monthly_cashback_projection_json: string | null;
+    full_repayment_eta: string | null;
+  }>>;
+}
+
+interface ScenarioPoint { period: string; eur: number }
+
+function safeParse<T>(s: string | null | undefined): T | null {
+  if (!s) return null;
+  try { return JSON.parse(s) as T; } catch { return null; }
+}
+
+function aggregateScenario(
+  scenarios: NonNullable<PortalData['scenarios']>,
+  scenarioKey: 'pessimistic' | 'base' | 'optimistic',
+): { series: ScenarioPoint[]; latestEta: string | null; assumptions: Array<{ buId: string; raw: string | null }> } {
+  // Accumulate {period → eur} across all BUs
+  const acc = new Map<string, number>();
+  let latestEta: string | null = null;
+  const assumptions: Array<{ buId: string; raw: string | null }> = [];
+
+  for (const [buId, items] of Object.entries(scenarios)) {
+    const sc = items.find((x) => x.scenario === scenarioKey);
+    if (!sc) continue;
+    assumptions.push({ buId, raw: sc.assumptions_json });
+    if (sc.full_repayment_eta && (!latestEta || sc.full_repayment_eta > latestEta)) {
+      latestEta = sc.full_repayment_eta;
+    }
+    const proj = safeParse<ScenarioPoint[]>(sc.monthly_cashback_projection_json);
+    if (!proj || !Array.isArray(proj)) continue;
+    for (const p of proj) {
+      acc.set(p.period, (acc.get(p.period) || 0) + (p.eur || 0));
+    }
+  }
+
+  const series = [...acc.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, eur]) => ({ period, eur }));
+  return { series, latestEta, assumptions };
 }
 
 const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
@@ -262,6 +304,13 @@ export default function InvestorPortalPage() {
         {data.cashback_status && data.cashback_status.schedule.length > 0 && (
           <Card title="Графік повернення капіталу" subtitle="Plan vs Actual" style={{ marginBottom: 24 }}>
             <CashbackTimeline status={data.cashback_status} currency={t.currency} />
+          </Card>
+        )}
+
+        {/* Forward Projection fan chart */}
+        {data.scenarios && Object.keys(data.scenarios).length > 0 && (
+          <Card title="Прогноз повного повернення" subtitle="3 сценарії" style={{ marginBottom: 24 }}>
+            <ForwardProjection scenarios={data.scenarios} totalInvested={t.invested} currency={t.currency} />
           </Card>
         )}
 
@@ -509,6 +558,172 @@ function SourceBreakdown({ items }: { items: Array<{ source: string; currency: s
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function ForwardProjection({ scenarios, totalInvested, currency }: {
+  scenarios: NonNullable<PortalData['scenarios']>;
+  totalInvested: number;
+  currency: string;
+}) {
+  const opt  = aggregateScenario(scenarios, 'optimistic');
+  const base = aggregateScenario(scenarios, 'base');
+  const pes  = aggregateScenario(scenarios, 'pessimistic');
+
+  // Cumulative series per scenario, projected as % of totalInvested.
+  const cumulative = (series: ScenarioPoint[]) => {
+    let sum = 0;
+    return series.map((p) => { sum += p.eur; return { period: p.period, pct: totalInvested > 0 ? Math.min(150, (sum / totalInvested) * 100) : 0 }; });
+  };
+  const cOpt  = cumulative(opt.series);
+  const cBase = cumulative(base.series);
+  const cPes  = cumulative(pes.series);
+
+  // Union of periods, sorted
+  const allPeriods = [...new Set([...cOpt, ...cBase, ...cPes].map((p) => p.period))].sort();
+  if (allPeriods.length === 0) {
+    return <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}>Сценарії поки не задані</div>;
+  }
+
+  const periodToIdx = new Map(allPeriods.map((p, i) => [p, i] as const));
+  const W = 800, H = 200, PAD = 20;
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2 - 12; // reserve bottom for x-labels
+  const stepX = innerW / Math.max(1, allPeriods.length - 1);
+
+  // Helper: turn a cumulative series → path string mapped onto axes
+  const xFor = (period: string) => PAD + (periodToIdx.get(period) || 0) * stepX;
+  const yFor = (pct: number) => PAD + (innerH - (Math.min(100, pct) / 100) * innerH);
+  const baseY = PAD + innerH;
+
+  const toLinePath = (series: { period: string; pct: number }[]): string => {
+    if (series.length === 0) return '';
+    return series.map((p, i) => `${i === 0 ? 'M' : 'L'}${xFor(p.period).toFixed(1)},${yFor(p.pct).toFixed(1)}`).join(' ');
+  };
+
+  const linePes  = toLinePath(cPes);
+  const lineBase = toLinePath(cBase);
+  const lineOpt  = toLinePath(cOpt);
+
+  // Areas between bounds
+  const areaBetween = (top: { period: string; pct: number }[], bottom: { period: string; pct: number }[]): string => {
+    if (top.length === 0 || bottom.length === 0) return '';
+    const topPath = top.map((p, i) => `${i === 0 ? 'M' : 'L'}${xFor(p.period).toFixed(1)},${yFor(p.pct).toFixed(1)}`).join(' ');
+    const bottomReversed = [...bottom].reverse();
+    const bottomPath = bottomReversed.map((p) => `L${xFor(p.period).toFixed(1)},${yFor(p.pct).toFixed(1)}`).join(' ');
+    return `${topPath} ${bottomPath} Z`;
+  };
+  const areaOptBase = areaBetween(cOpt, cBase);
+  const areaBasePes = areaBetween(cBase, cPes);
+
+  // Today line
+  const todayPeriod = new Date().toISOString().substring(0, 7);
+  let todayX: number | null = null;
+  for (let i = 0; i < allPeriods.length; i++) {
+    if (allPeriods[i] <= todayPeriod) todayX = xFor(allPeriods[i]);
+  }
+
+  // Year labels — pick periods at start of each year that exists in data
+  const yearLabels = allPeriods.filter((p) => p.endsWith('-01') || p === allPeriods[0]);
+
+  // Format scenario chip — extract years from ETA or last period reached 100%
+  const fmtEta = (etaIso: string | null, fallbackSeries: { period: string; pct: number }[]) => {
+    if (etaIso) return etaIso.substring(0, 7);
+    // Find first period where pct >= 100
+    const reached = fallbackSeries.find((p) => p.pct >= 100);
+    return reached ? reached.period : '—';
+  };
+
+  return (
+    <div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+        <defs>
+          <linearGradient id="band-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#16a34a" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#16a34a" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+
+        {/* 100% reference line */}
+        <line x1={PAD} y1={yFor(100)} x2={W - PAD} y2={yFor(100)} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2,3" />
+        <text x={W - PAD - 4} y={yFor(100) - 3} fill="#94a3b8" fontSize="9" textAnchor="end">100%</text>
+
+        {/* Areas */}
+        {areaOptBase && <path d={areaOptBase} fill="url(#band-fill)" />}
+        {areaBasePes && <path d={areaBasePes} fill="url(#band-fill)" />}
+
+        {/* Lines */}
+        {linePes  && <path d={linePes}  fill="none" stroke="#16a34a" strokeWidth="1.5" strokeDasharray="3,2" opacity="0.4" />}
+        {lineBase && <path d={lineBase} fill="none" stroke="#16a34a" strokeWidth="2.5" />}
+        {lineOpt  && <path d={lineOpt}  fill="none" stroke="#16a34a" strokeWidth="1.5" strokeDasharray="3,2" opacity="0.4" />}
+
+        {/* Today line */}
+        {todayX != null && (
+          <>
+            <line x1={todayX} y1={PAD} x2={todayX} y2={baseY} stroke="#04392c" strokeWidth="1" strokeDasharray="3,3" />
+            <circle cx={todayX} cy={yFor(cBase.find((p) => p.period <= todayPeriod) ? (cBase.findLast?.((p) => p.period <= todayPeriod)?.pct ?? 0) : 0)} r="4" fill="#04392c" />
+          </>
+        )}
+
+        {/* Year labels along the bottom */}
+        {yearLabels.map((p) => (
+          <text key={p} x={xFor(p)} y={H - 4} fill="#94a3b8" fontSize="9" textAnchor="middle">
+            {p.substring(2, 4)}
+          </text>
+        ))}
+      </svg>
+
+      {/* Scenario chips */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 12, marginBottom: 12 }}>
+        <ScenarioChip label="Песимістичний" value={fmtEta(pes.latestEta, cPes)}  />
+        <ScenarioChip label="Базовий"       value={fmtEta(base.latestEta, cBase)} highlight />
+        <ScenarioChip label="Оптимістичний" value={fmtEta(opt.latestEta, cOpt)}  />
+      </div>
+
+      {/* Assumptions summary */}
+      {(() => {
+        const baseAssumps = base.assumptions
+          .map((a) => safeParse<{ occupancy?: number; adr?: number; opex_growth?: number; notes?: string }>(a.raw))
+          .filter((x): x is { occupancy?: number; adr?: number; opex_growth?: number; notes?: string } => x !== null);
+        if (baseAssumps.length === 0) return null;
+        const avg = (key: 'occupancy' | 'adr' | 'opex_growth') => {
+          const vals = baseAssumps.map((a) => a[key]).filter((v): v is number => v != null);
+          if (vals.length === 0) return null;
+          return vals.reduce((s, v) => s + v, 0) / vals.length;
+        };
+        const occ = avg('occupancy');
+        const adr = avg('adr');
+        const opx = avg('opex_growth');
+        const parts: string[] = [];
+        if (occ != null) parts.push(`occupancy ${(occ * 100).toFixed(0)}%`);
+        if (adr != null) parts.push(`ADR ${adr.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} CZK`);
+        if (opx != null) parts.push(`OPEX growth +${(opx * 100).toFixed(0)}%/рік`);
+        if (parts.length === 0) return null;
+        return (
+          <div style={{ fontSize: 11, color: '#64748b', paddingTop: 10, borderTop: '1px solid #f1f5f9', lineHeight: 1.5 }}>
+            <b>Базовий сценарій:</b> {parts.join(' · ')}{currency === 'EUR' ? '' : `. Сума: ${totalInvested.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function ScenarioChip({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div style={{
+      padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+      border: '1px solid #e2e8f0',
+      background: highlight ? '#dcfce7' : '#f8fafc',
+      borderColor: highlight ? '#16a34a' : '#e2e8f0',
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: highlight ? '#047857' : '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: highlight ? '#047857' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+        {value}
       </div>
     </div>
   );
