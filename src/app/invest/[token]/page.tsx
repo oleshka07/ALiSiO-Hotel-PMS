@@ -72,6 +72,7 @@ interface PortalData {
   pulse?: {
     locked_in_nights_this_month: number;
     nights_in_month: number;
+    total_available_nights_this_month: number;
     pipeline_inquiries_count: number;
     expected_inflow_next_30_days: number;
     expected_inflow_currency: string;
@@ -133,7 +134,10 @@ const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 function fmt(n: number, cur: string): string {
-  return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
+  // Round sub-1 cents (positive or negative) to zero — investor doesn't care
+  // about €0.10 left "owed" from rounding (request #8).
+  const value = Math.abs(n) < 1 ? 0 : n;
+  return `${value.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -282,9 +286,12 @@ export default function InvestorPortalPage() {
                 const cb = data.cashback_status;
                 const meta = cb ? CASHBACK_STATUS_META[cb.status] : null;
                 return meta ? (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: meta.bg, color: meta.fg, borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12, letterSpacing: 0.03 }}>
+                  <div
+                    title={cb ? `Виплачено ${cb.cumulative_paid_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR з планованих на сьогодні ${cb.cumulative_planned_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR (deltaPct ${cb.delta_pct}%)` : undefined}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: meta.bg, color: meta.fg, borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12, letterSpacing: 0.03 }}
+                  >
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
-                    {meta.label}{cb && cb.delta_pct !== 0 ? ` · ${cb.delta_pct > 0 ? '+' : ''}${cb.delta_pct.toFixed(1)}%` : ''}
+                    {meta.label}
                   </div>
                 ) : (
                   <div style={{ display: 'inline-block', padding: '4px 10px', background: 'rgba(34,197,94,0.2)', color: '#86efac', borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12 }}>Active Portfolio</div>
@@ -330,18 +337,21 @@ export default function InvestorPortalPage() {
               <PulseStat
                 label="Цей місяць locked-in"
                 value={`${data.pulse.locked_in_nights_this_month} ${data.pulse.locked_in_nights_this_month === 1 ? 'ніч' : 'ночей'}`}
-                sub={`${data.pulse.nights_in_month > 0 ? Math.round((data.pulse.locked_in_nights_this_month / data.pulse.nights_in_month) * 100) : 0}% occupancy`}
+                sub={`${data.pulse.total_available_nights_this_month > 0 ? Math.round((data.pulse.locked_in_nights_this_month / data.pulse.total_available_nights_this_month) * 100) : 0}% завантаження`}
+                tooltip={`З ${data.pulse.total_available_nights_this_month} доступних ночей (днів у місяці × кількість об'єктів)`}
               />
               <PulseStat
-                label="Pipeline · 14 днів"
+                label="Попередні запити · 14 днів"
                 value={`+${data.pulse.pipeline_inquiries_count} ${data.pulse.pipeline_inquiries_count === 1 ? 'запит' : 'запитів'}`}
-                sub="tentative"
+                sub="попередні, не підтверджені"
+                tooltip="Reservations зі статусом «tentative» на наступні 14 днів — гості ще можуть скасувати"
               />
               <PulseStat
                 label="Очікувані надходження · 30 днів"
                 value={fmt(data.pulse.expected_inflow_next_30_days, data.pulse.expected_inflow_currency)}
-                sub="confirmed"
+                sub="підтверджені бронювання"
                 accent
+                tooltip="Сума total_price підтверджених бронювань (Airbnb / Booking / direct), check-in у наступні 30 днів. Валюта — як у системі бронювань"
               />
             </div>
           </div>
@@ -793,9 +803,9 @@ function ForwardProjection({ scenarios, totalInvested, currency }: {
   );
 }
 
-function PulseStat({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: boolean }) {
+function PulseStat({ label, value, sub, accent, tooltip }: { label: string; value: string; sub: string; accent?: boolean; tooltip?: string }) {
   return (
-    <div style={{ background: '#f5f7fa', borderRadius: 10, padding: '10px 12px' }}>
+    <div title={tooltip} style={{ background: '#f5f7fa', borderRadius: 10, padding: '10px 12px', cursor: tooltip ? 'help' : 'default' }}>
       <div style={{ fontSize: 10, letterSpacing: 0.5, color: '#98a2b3', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: accent ? '#047857' : '#0e1116', letterSpacing: '-0.01em' }}>{value}</div>
       <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{sub}</div>
