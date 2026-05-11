@@ -883,8 +883,7 @@ function CashbackTimeline({ status, currency }: {
     ? (status.cumulative_planned_eur / status.total_planned_eur) * 100
     : 0;
 
-  // Build per-period bar pairs (planned + actual).
-  // Merge schedule + paid_periods into one row set keyed by period.
+  // Build per-period rows
   const periods = new Map<string, { planned: number; actual: number }>();
   for (const p of status.schedule) {
     periods.set(p.period, { planned: p.planned_eur, actual: 0 });
@@ -894,27 +893,63 @@ function CashbackTimeline({ status, currency }: {
     existing.actual = p.eur;
     periods.set(p.period, existing);
   }
-  const sortedPeriods = [...periods.entries()].sort(([a], [b]) => a.localeCompare(b));
+  let sortedPeriods = [...periods.entries()].sort(([a], [b]) => a.localeCompare(b));
 
-  // Find max for scaling
+  // Auto-aggregate to quarters when too many monthly periods (more than 36).
+  // Investor doesn't read 60 thin bars; quarters are visually clean.
+  const useQuarterly = sortedPeriods.length > 36 && !sortedPeriods[0][0].includes('-Q');
+  if (useQuarterly) {
+    const q = new Map<string, { planned: number; actual: number }>();
+    for (const [period, v] of sortedPeriods) {
+      const [y, m] = period.split('-');
+      const qNum = Math.ceil(parseInt(m, 10) / 3);
+      const key = `${y}-Q${qNum}`;
+      const cell = q.get(key) || { planned: 0, actual: 0 };
+      cell.planned += v.planned;
+      cell.actual += v.actual;
+      q.set(key, cell);
+    }
+    sortedPeriods = [...q.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }
+
   const maxAmount = Math.max(
     ...sortedPeriods.map(([, v]) => Math.max(v.planned, v.actual)),
     1,
   );
 
-  // "Today" cursor — index of the last period that has ended on/before today
+  // "Today" cursor index
   const today = new Date().toISOString().substring(0, 7);
+  const periodEndsByOrBefore = (period: string, dateStr: string): boolean => {
+    if (period.includes('-Q')) {
+      const [y, qPart] = period.split('-Q');
+      const qNum = parseInt(qPart, 10);
+      const monthEnd = qNum * 3;
+      return `${y}-${String(monthEnd).padStart(2, '0')}` <= dateStr;
+    }
+    return period <= dateStr;
+  };
   let todayIdx = -1;
   for (let i = 0; i < sortedPeriods.length; i++) {
-    if (sortedPeriods[i][0].substring(0, 7) <= today) todayIdx = i;
+    if (periodEndsByOrBefore(sortedPeriods[i][0], today)) todayIdx = i;
   }
 
-  // SVG dimensions
-  const W = 800, H = 140, PAD_X = 12, PAD_Y = 14;
+  // SVG dimensions — taller for line+bars overlay
+  const W = 800, H = 200, PAD_X = 16, PAD_Y = 18;
   const innerW = W - PAD_X * 2;
-  const innerH = H - PAD_Y * 2 - 14; // reserve 14px at the bottom for x-axis labels
+  const innerH = H - PAD_Y * 2 - 16;
   const barGroupW = innerW / Math.max(1, sortedPeriods.length);
-  const barW = Math.min(14, barGroupW * 0.4);
+  const barW = Math.min(16, barGroupW * 0.35);
+  const baseY = H - PAD_Y - 16;
+
+  // Pre-compute cumulative series for the line overlay
+  let cPlanned = 0, cActual = 0;
+  const cumulativeSeries = sortedPeriods.map(([period, v]) => {
+    cPlanned += v.planned;
+    cActual += v.actual;
+    return { period, cPlanned, cActual };
+  });
+  const totalContract = Math.max(status.total_planned_eur, 1);
+  const yForCum = (eur: number) => PAD_Y + (innerH - (Math.min(1, eur / totalContract)) * innerH);
 
   return (
     <div>
@@ -957,23 +992,36 @@ function CashbackTimeline({ status, currency }: {
         <span>Planned: {plannedPct.toFixed(1)}%</span>
       </div>
 
-      {/* Bars chart */}
+      {/* Subtitle showing aggregation */}
+      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
+        {useQuarterly
+          ? `Згруповано по кварталах для зручності (${sortedPeriods.length} періодів)`
+          : `${sortedPeriods.length} ${sortedPeriods.length === 1 ? 'місяць' : 'місяців'}`}
+      </div>
+
+      {/* Combined chart: bars + cumulative line */}
       {sortedPeriods.length > 0 && (
         <>
-          <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
-            {/* baseline */}
-            <line x1={PAD_X} y1={H - PAD_Y - 14} x2={W - PAD_X} y2={H - PAD_Y - 14} stroke="#e2e8f0" strokeWidth={1} />
+          <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              <linearGradient id="cb-cum-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#16a34a" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#16a34a" stopOpacity="0" />
+              </linearGradient>
+            </defs>
 
+            {/* baseline */}
+            <line x1={PAD_X} y1={baseY} x2={W - PAD_X} y2={baseY} stroke="#e2e8f0" strokeWidth={1} />
+
+            {/* Per-period bars */}
             {sortedPeriods.map(([period, v], i) => {
               const groupX = PAD_X + i * barGroupW + (barGroupW / 2);
               const plannedH = (v.planned / maxAmount) * innerH;
               const actualH = (v.actual / maxAmount) * innerH;
-              const baseY = H - PAD_Y - 14;
               const isFuture = i > todayIdx;
               const plannedColor = isFuture ? '#e2e8f0' : '#cbd5e1';
               return (
                 <g key={period}>
-                  {/* planned bar (left) */}
                   <rect
                     x={groupX - barW - 1}
                     y={baseY - plannedH}
@@ -984,7 +1032,6 @@ function CashbackTimeline({ status, currency }: {
                   >
                     <title>{`Plan ${period}: ${v.planned.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
                   </rect>
-                  {/* actual bar (right) */}
                   {v.actual > 0 && (
                     <rect
                       x={groupX + 1}
@@ -1001,16 +1048,53 @@ function CashbackTimeline({ status, currency }: {
               );
             })}
 
-            {/* "today" cursor */}
+            {/* Cumulative lines overlay — planned (grey) + actual (green) */}
+            {cumulativeSeries.length > 1 && (() => {
+              const xFor = (i: number) => PAD_X + i * barGroupW + (barGroupW / 2);
+              const plannedPath = cumulativeSeries.map((c, i) => `${i === 0 ? 'M' : 'L'}${xFor(i).toFixed(1)},${yForCum(c.cPlanned).toFixed(1)}`).join(' ');
+              const actualPathUntilToday = cumulativeSeries.slice(0, todayIdx + 1).map((c, i) => `${i === 0 ? 'M' : 'L'}${xFor(i).toFixed(1)},${yForCum(c.cActual).toFixed(1)}`).join(' ');
+              return (
+                <>
+                  {/* Planned line — dashed grey */}
+                  <path d={plannedPath} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3" opacity="0.7" />
+                  {/* Actual cumulative — solid emerald */}
+                  {actualPathUntilToday && (
+                    <path d={actualPathUntilToday} fill="none" stroke="#047857" strokeWidth="2.5" />
+                  )}
+                  {/* Endpoint marker on actual line */}
+                  {todayIdx >= 0 && (
+                    <circle cx={xFor(todayIdx)} cy={yForCum(cumulativeSeries[todayIdx].cActual)} r="4" fill="#047857" stroke="#fff" strokeWidth="1.5">
+                      <title>{`Накопичено на ${cumulativeSeries[todayIdx].period}: ${cumulativeSeries[todayIdx].cActual.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
+                    </circle>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* Today cursor */}
             {todayIdx >= 0 && todayIdx < sortedPeriods.length - 1 && (() => {
               const x = PAD_X + (todayIdx + 1) * barGroupW;
               return (
                 <g>
-                  <line x1={x} y1={PAD_Y} x2={x} y2={H - PAD_Y - 4} stroke="#04392c" strokeWidth={1} strokeDasharray="3,3" />
+                  <line x1={x} y1={PAD_Y} x2={x} y2={baseY} stroke="#04392c" strokeWidth={1} strokeDasharray="3,3" />
                   <text x={x} y={H - 2} fill="#04392c" fontSize={9} fontWeight={600} textAnchor="middle">today</text>
                 </g>
               );
             })()}
+
+            {/* X-axis labels — pick year transitions */}
+            {sortedPeriods.map(([period], i) => {
+              const isFirst = i === 0;
+              const isLast = i === sortedPeriods.length - 1;
+              const showLabel = isFirst || isLast || (i % Math.max(1, Math.floor(sortedPeriods.length / 6)) === 0);
+              if (!showLabel) return null;
+              const x = PAD_X + i * barGroupW + (barGroupW / 2);
+              return (
+                <text key={`lbl-${period}`} x={x} y={baseY + 12} fill="#94a3b8" fontSize="9" textAnchor="middle">
+                  {period.length > 7 ? period : period.substring(2)}
+                </text>
+              );
+            })}
           </svg>
 
           {/* Legend */}

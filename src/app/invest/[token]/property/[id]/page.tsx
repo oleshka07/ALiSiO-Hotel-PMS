@@ -145,22 +145,32 @@ export default function PropertyDetailPage() {
         {/* Hospitality Ops Metrics — ADR / RevPAR / Occupancy */}
         {data.ops_metrics?.[params.id] && (() => {
           const ops = data.ops_metrics[params.id];
+          // Period labels for the tooltip — current month vs previous month
+          const now = new Date();
+          const monthNames = ['січень','лютий','березень','квітень','травень','червень','липень','серпень','вересень','жовтень','листопад','грудень'];
+          const curMonth = monthNames[now.getMonth()];
+          const prevMonth = monthNames[(now.getMonth() + 11) % 12];
+          const periodLabel = `${curMonth} vs ${prevMonth}`;
           const trendStr = (cur: number | null, prev: number | null, unit: 'pp' | '%') => {
             if (cur == null || prev == null) return null;
             const delta = unit === 'pp' ? cur - prev : (prev === 0 ? 0 : ((cur - prev) / prev) * 100);
             const sign = delta >= 0 ? '↑' : '↓';
             const color = delta >= 0 ? '#16a34a' : '#dc2626';
-            return { text: `${sign} ${delta > 0 ? '+' : ''}${delta.toFixed(unit === 'pp' ? 1 : 0)}${unit}`, color };
+            const tooltip = `${periodLabel}: ${prev?.toFixed(1) || '?'} → ${cur?.toFixed(1) || '?'}`;
+            return { text: `${sign} ${delta > 0 ? '+' : ''}${delta.toFixed(unit === 'pp' ? 1 : 0)}${unit}`, color, tooltip };
           };
           const occTrend = trendStr(ops.occupancy_now_pct, ops.occupancy_prev_pct, 'pp');
           const adrTrend = trendStr(ops.adr_now, ops.adr_prev, '%');
           const revparTrend = trendStr(ops.revpar_now, ops.revpar_prev, '%');
           return (
-            <div className="invest-ops-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
-              <OpsMetric label="Occupancy" value={ops.occupancy_now_pct != null ? `${ops.occupancy_now_pct}%` : '—'} trend={occTrend} />
-              <OpsMetric label="ADR" value={ops.adr_now != null ? `${ops.adr_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={adrTrend} />
-              <OpsMetric label="RevPAR" value={ops.revpar_now != null ? `${ops.revpar_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={revparTrend} />
-            </div>
+            <>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 16, marginBottom: 4, textAlign: 'right' }}>Порівняння: {periodLabel}</div>
+              <div className="invest-ops-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                <OpsMetric label="Occupancy" value={ops.occupancy_now_pct != null ? `${ops.occupancy_now_pct}%` : '—'} trend={occTrend} />
+                <OpsMetric label="ADR" value={ops.adr_now != null ? `${ops.adr_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={adrTrend} />
+                <OpsMetric label="RevPAR" value={ops.revpar_now != null ? `${ops.revpar_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={revparTrend} />
+              </div>
+            </>
           );
         })()}
 
@@ -431,13 +441,13 @@ function AssetOccupancyBars({ data }: { data: { month: string; occupancy_pct: nu
   );
 }
 
-function OpsMetric({ label, value, trend }: { label: string; value: string; trend: { text: string; color: string } | null }) {
+function OpsMetric({ label, value, trend }: { label: string; value: string; trend: { text: string; color: string; tooltip?: string } | null }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 10px', textAlign: 'center' }}>
       <div style={{ fontSize: 10, color: '#98a2b3', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {trend && (
-        <div style={{ marginTop: 3, fontSize: 10, fontVariantNumeric: 'tabular-nums', color: trend.color }}>{trend.text}</div>
+        <div title={trend.tooltip} style={{ marginTop: 3, fontSize: 10, fontVariantNumeric: 'tabular-nums', color: trend.color, cursor: trend.tooltip ? 'help' : 'default' }}>{trend.text}</div>
       )}
     </div>
   );
