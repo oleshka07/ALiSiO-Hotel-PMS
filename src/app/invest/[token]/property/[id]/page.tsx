@@ -67,7 +67,24 @@ export default function PropertyDetailPage() {
   }, [params.token]);
 
   if (error) return <div style={{ padding: 80, textAlign: 'center', color: '#dc2626' }}>{error}</div>;
-  if (!data) return <div style={{ padding: 80, textAlign: 'center', color: '#94a3b8' }}>Завантаження…</div>;
+  if (!data) return (
+    <div className="invest-page-root">
+      <header className="invest-topnav">
+        <span className="invest-skel" style={{ width: 80, height: 16 }} />
+      </header>
+      <div className="invest-container">
+        <span className="invest-skel" style={{ width: 160, height: 24, marginBottom: 8 }} />
+        <span className="invest-skel" style={{ width: 280, height: 12, marginBottom: 16 }} />
+        <div className="invest-skel-card"><span className="invest-skel" style={{ width: '50%', height: 28 }} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 16 }}>
+          {[1, 2, 3].map((i) => <div key={i} className="invest-skel-card" style={{ marginBottom: 0, textAlign: 'center' }}><span className="invest-skel" style={{ width: '70%', height: 18, margin: '0 auto' }} /></div>)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 12 }}>
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="invest-skel-card" style={{ marginBottom: 0 }}><span className="invest-skel" style={{ width: '70%', height: 18 }} /></div>)}
+        </div>
+      </div>
+    </div>
+  );
 
   const property = data.properties.find((p) => p.project_id === params.id);
   if (!property) return (

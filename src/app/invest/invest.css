@@ -235,3 +235,37 @@
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
+
+/* ============================================
+   Skeleton loaders
+   ============================================ */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.invest-skel {
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+  display: block;
+}
+
+.invest-skel-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+/* Smooth transition for any interactive element */
+.invest-content button,
+.invest-content a {
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.invest-content button:active,
+.invest-content a:active {
+  transform: scale(0.98);
+}
