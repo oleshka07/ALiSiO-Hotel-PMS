@@ -114,6 +114,7 @@ export interface InvestorPortalData {
   pulse: {
     locked_in_nights_this_month: number;
     nights_in_month: number;
+    total_available_nights_this_month: number; // nights × number of investor's units
     pipeline_inquiries_count: number;     // status='tentative' next 14 days
     expected_inflow_next_30_days: number; // sum of total_price of confirmed reservations
     expected_inflow_currency: string;
@@ -518,6 +519,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   const pulse: InvestorPortalData['pulse'] = {
     locked_in_nights_this_month: Math.round(lockedNights),
     nights_in_month: nightsInMonth,
+    total_available_nights_this_month: nightsInMonth * Math.max(1, investorUnitIds.length),
     pipeline_inquiries_count: pipelineCount,
     expected_inflow_next_30_days: +inflowTotal.toFixed(2),
     expected_inflow_currency: inflowCurrency,
