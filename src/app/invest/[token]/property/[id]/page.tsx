@@ -84,7 +84,7 @@ export default function PropertyDetailPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f5f7fa', paddingBottom: 32 }}>
-      <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <header className="invest-topnav">
         <Link href={`/invest/${params.token}`} style={{ color: '#0f172a', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <ArrowLeft size={16} /> Портфель
         </Link>
@@ -94,13 +94,13 @@ export default function PropertyDetailPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: 32 }}>
+      <div className="invest-container invest-content" style={{ maxWidth: 1200 }}>
         <h1 style={{ margin: 0, marginBottom: 4, color: '#0f172a' }}>Деталі об&apos;єкта</h1>
         <p style={{ margin: 0, color: '#64748b' }}>Поточна результативність {property.project_name}</p>
 
         {/* Title card */}
-        <div style={{ marginTop: 16, padding: 24, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
+        <div className="invest-asset-title-card" style={{ marginTop: 16, padding: 24, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+          <div className="invest-asset-title-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
             <div style={{ flex: 1 }}>
               <span style={{ display: 'inline-block', padding: '4px 10px', background: `${stat.color}15`, color: stat.color, borderRadius: 4, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>{stat.label}</span>
               <h2 style={{ margin: 0, fontSize: 22, color: '#0f172a' }}>{property.project_name}</h2>
@@ -131,7 +131,7 @@ export default function PropertyDetailPage() {
           const adrTrend = trendStr(ops.adr_now, ops.adr_prev, '%');
           const revparTrend = trendStr(ops.revpar_now, ops.revpar_prev, '%');
           return (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
+            <div className="invest-ops-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
               <OpsMetric label="Occupancy" value={ops.occupancy_now_pct != null ? `${ops.occupancy_now_pct}%` : '—'} trend={occTrend} />
               <OpsMetric label="ADR" value={ops.adr_now != null ? `${ops.adr_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={adrTrend} />
               <OpsMetric label="RevPAR" value={ops.revpar_now != null ? `${ops.revpar_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={revparTrend} />

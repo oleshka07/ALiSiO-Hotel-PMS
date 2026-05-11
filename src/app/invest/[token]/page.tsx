@@ -237,11 +237,11 @@ export default function InvestorPortalPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f5f7fa', padding: '0' }}>
       {/* Header */}
-      <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#16a34a,#22c55e)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>A</div>
-        <div style={{ flex: 1 }}>
+      <header className="invest-topnav">
+        <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#16a34a,#22c55e)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, flexShrink: 0 }}>A</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Swipe Scape Investment</div>
-          <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Portfolio</div>
+          <div className="invest-topnav-brand-sub" style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Portfolio</div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{data.investor.name}</div>
@@ -249,7 +249,7 @@ export default function InvestorPortalPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: 32 }}>
+      <div className="invest-container invest-content">
         {/* Title */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ margin: 0, fontSize: 24, color: '#0f172a' }}>Мій інвестиційний портфель</h1>
@@ -275,8 +275,8 @@ export default function InvestorPortalPage() {
         )}
 
         {/* Hero summary card */}
-        <div style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)', borderRadius: 16, padding: 32, marginBottom: 24, color: '#fff' }}>
-          <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+        <div className="invest-hero" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)', borderRadius: 16, padding: 32, marginBottom: 24, color: '#fff' }}>
+          <div className="invest-hero-flex">
             <div style={{ flex: 1 }}>
               {(() => {
                 const cb = data.cashback_status;
@@ -290,13 +290,13 @@ export default function InvestorPortalPage() {
                   <div style={{ display: 'inline-block', padding: '4px 10px', background: 'rgba(34,197,94,0.2)', color: '#86efac', borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12 }}>Active Portfolio</div>
                 );
               })()}
-              <h2 style={{ margin: 0, fontSize: 28, marginBottom: 8 }}>Сумарна статистика</h2>
-              <p style={{ margin: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.5 }}>
+              <h2 className="invest-hero-title" style={{ margin: 0, fontSize: 28, marginBottom: 8 }}>Сумарна статистика</h2>
+              <p className="invest-hero-desc" style={{ margin: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.5 }}>
                 Ваш портфель включає <b>{t.active_lots}</b> {t.active_lots === 1 ? 'актив' : 'активів'}. Ми постійно
                 оптимізуємо операційні витрати для забезпечення стабільного пасивного доходу.
               </p>
             </div>
-            <div style={{ minWidth: 280 }}>
+            <div className="invest-hero-stats" style={{ minWidth: 280 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
                 <Stat label="Кількість лотів" value={String(t.active_lots)} />
                 <Stat label="Прогноз окупності" value={t.payback_years ? `~${t.payback_years}р` : '—'} />
@@ -326,7 +326,7 @@ export default function InvestorPortalPage() {
                 LIVE
               </span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div className="invest-pulse-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
               <PulseStat
                 label="Цей місяць locked-in"
                 value={`${data.pulse.locked_in_nights_this_month} ${data.pulse.locked_in_nights_this_month === 1 ? 'ніч' : 'ночей'}`}
@@ -372,7 +372,7 @@ export default function InvestorPortalPage() {
 
         {/* Asset allocation table */}
         <Card title="Розподіл активів у портфелі">
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <table className="invest-assets-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 <th style={th}>Об&apos;єкт</th>
@@ -438,7 +438,7 @@ export default function InvestorPortalPage() {
         </Card>
 
         {/* Capital growth chart + Occupancy dynamics */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginTop: 16 }}>
+        <div className="invest-row-2col">
           <Card title="Графік зростання капіталу" subtitle="● Прибуток · ● Інвестиція">
             <CapitalGrowthChart data={data.capital_growth} currency={t.currency} />
           </Card>
@@ -723,7 +723,7 @@ function ForwardProjection({ scenarios, totalInvested, currency }: {
       </svg>
 
       {/* Scenario chips */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 12, marginBottom: 12 }}>
+      <div className="invest-scenarios-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 12, marginBottom: 12 }}>
         <ScenarioChip label="Песимістичний" value={fmtEta(pes.latestEta, cPes)}  />
         <ScenarioChip label="Базовий"       value={fmtEta(base.latestEta, cBase)} highlight />
         <ScenarioChip label="Оптимістичний" value={fmtEta(opt.latestEta, cOpt)}  />
