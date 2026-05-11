@@ -111,6 +111,22 @@ export interface InvestorPortalData {
     monthly_cashback_projection_json: string | null;
     full_repayment_eta: string | null;
   }>>;
+  pulse: {
+    locked_in_nights_this_month: number;
+    nights_in_month: number;
+    pipeline_inquiries_count: number;     // status='tentative' next 14 days
+    expected_inflow_next_30_days: number; // sum of total_price of confirmed reservations
+    expected_inflow_currency: string;
+  };
+  ops_metrics: Record<string, {           // keyed by project_id (BU id)
+    occupancy_now_pct: number | null;     // current month
+    occupancy_prev_pct: number | null;    // previous month
+    adr_now: number | null;
+    adr_prev: number | null;
+    revpar_now: number | null;
+    revpar_prev: number | null;
+    currency: string;
+  }>;
 }
 
 function deriveStatus(stages: Array<{ pct: number }>): string {
@@ -429,6 +445,141 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     }
   }
 
+  // ─── Live Pulse + Ops Metrics (Phase 5) ───────────────────────
+  // Reservations live on `reservations`, linked to physical `units`.
+  // The investor's BUs are mapped to units via investor_investments.unit_id.
+  const investorUnitIds = [...new Set(investments.map((i) => i.unit_id).filter(Boolean))] as string[];
+
+  // Helper: get reservations for an array of unit_ids in a date range
+  const reservationsFor = (unitIds: string[], whereExtra: string, params: any[]): any[] => {
+    if (unitIds.length === 0) return [];
+    const placeholders = unitIds.map(() => '?').join(',');
+    return db.prepare(`
+      SELECT id, unit_id, check_in, check_out, nights, status, total_price, currency
+      FROM reservations
+      WHERE unit_id IN (${placeholders})
+        AND status NOT IN ('cancelled', 'no_show', 'draft')
+        ${whereExtra}
+    `).all(...unitIds, ...params);
+  };
+
+  // Pulse — current month (YYYY-MM)
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const monthEnd   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  const next30End  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 30));
+  const next14End  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 14));
+  const fmtIso = (d: Date) => d.toISOString().substring(0, 10);
+  const todayIso = fmtIso(now);
+  const monthStartIso = fmtIso(monthStart);
+  const monthEndIso   = fmtIso(monthEnd);
+  const nightsInMonth = monthEnd.getUTCDate();
+
+  // Locked-in nights this month: confirmed reservations that overlap [monthStart, monthEnd]
+  const lockedNights = investorUnitIds.length > 0
+    ? (reservationsFor(
+        investorUnitIds,
+        "AND check_in <= ? AND check_out >= ?",
+        [monthEndIso, monthStartIso],
+      ) as any[]).reduce((sum, r) => {
+        // overlap length
+        const ci = r.check_in > monthStartIso ? r.check_in : monthStartIso;
+        const co = r.check_out < monthEndIso ? r.check_out : monthEndIso;
+        const days = (new Date(co).getTime() - new Date(ci).getTime()) / (1000 * 60 * 60 * 24);
+        return sum + Math.max(0, days);
+      }, 0)
+    : 0;
+
+  // Pipeline: tentative reservations in next 14 days
+  const pipelineCount = investorUnitIds.length > 0
+    ? (db.prepare(`
+        SELECT COUNT(*) AS n FROM reservations
+        WHERE unit_id IN (${investorUnitIds.map(() => '?').join(',')})
+          AND status = 'tentative'
+          AND check_in BETWEEN ? AND ?
+      `).get(...investorUnitIds, todayIso, fmtIso(next14End)) as { n: number }).n
+    : 0;
+
+  // Expected inflow next 30 days (confirmed only)
+  const inflowRows = investorUnitIds.length > 0
+    ? reservationsFor(
+        investorUnitIds,
+        "AND status IN ('confirmed', 'checked_in') AND check_in BETWEEN ? AND ?",
+        [todayIso, fmtIso(next30End)],
+      ) as any[]
+    : [];
+  let inflowTotal = 0;
+  let inflowCurrency = 'CZK';
+  for (const r of inflowRows) {
+    inflowTotal += r.total_price || 0;
+    inflowCurrency = r.currency || inflowCurrency;
+  }
+
+  const pulse: InvestorPortalData['pulse'] = {
+    locked_in_nights_this_month: Math.round(lockedNights),
+    nights_in_month: nightsInMonth,
+    pipeline_inquiries_count: pipelineCount,
+    expected_inflow_next_30_days: +inflowTotal.toFixed(2),
+    expected_inflow_currency: inflowCurrency,
+  };
+
+  // Ops Metrics per BU — current month + previous month for trend.
+  // Occupancy = nights_sold / (days_in_month × units_count)
+  // ADR = revenue / nights_sold
+  // RevPAR = revenue / total_available_nights
+  const opsMetrics: InvestorPortalData['ops_metrics'] = {};
+  const prevMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const prevMonthEnd   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+  const prevNightsInMonth = prevMonthEnd.getUTCDate();
+
+  for (const inv of investments) {
+    if (!inv.unit_id || opsMetrics[inv.project_id]) continue;
+    const buUnitIds = investments.filter((i) => i.project_id === inv.project_id).map((i) => i.unit_id).filter(Boolean) as string[];
+    const buRow = db.prepare("SELECT units_count, name FROM business_units WHERE id = ?").get(inv.project_id) as { units_count?: number; name: string } | undefined;
+    const unitsCount = Math.max(1, buRow?.units_count || buUnitIds.length || 1);
+
+    const computeWindow = (winStart: Date, winEnd: Date, daysInWindow: number) => {
+      const winStartIso = fmtIso(winStart);
+      const winEndIso = fmtIso(winEnd);
+      const rows = reservationsFor(
+        buUnitIds,
+        "AND check_in <= ? AND check_out >= ?",
+        [winEndIso, winStartIso],
+      ) as any[];
+      let nightsSold = 0;
+      let revenue = 0;
+      let cur = inv.currency || 'CZK';
+      for (const r of rows) {
+        const ci = r.check_in > winStartIso ? r.check_in : winStartIso;
+        const co = r.check_out < winEndIso ? r.check_out : winEndIso;
+        const n = Math.max(0, (new Date(co).getTime() - new Date(ci).getTime()) / (1000 * 60 * 60 * 24));
+        nightsSold += n;
+        // Scale revenue by overlap fraction (avoid over-counting if reservation crosses window)
+        const totalNights = r.nights || Math.max(1, (new Date(r.check_out).getTime() - new Date(r.check_in).getTime()) / (1000 * 60 * 60 * 24));
+        revenue += (r.total_price || 0) * (n / totalNights);
+        cur = r.currency || cur;
+      }
+      const available = daysInWindow * unitsCount;
+      const occupancy = available > 0 ? (nightsSold / available) * 100 : null;
+      const adr = nightsSold > 0 ? revenue / nightsSold : null;
+      const revpar = available > 0 ? revenue / available : null;
+      return { occupancy, adr, revpar, currency: cur };
+    };
+
+    const cur  = computeWindow(monthStart, monthEnd, nightsInMonth);
+    const prev = computeWindow(prevMonthStart, prevMonthEnd, prevNightsInMonth);
+
+    opsMetrics[inv.project_id] = {
+      occupancy_now_pct: cur.occupancy != null ? +cur.occupancy.toFixed(1) : null,
+      occupancy_prev_pct: prev.occupancy != null ? +prev.occupancy.toFixed(1) : null,
+      adr_now: cur.adr != null ? +cur.adr.toFixed(0) : null,
+      adr_prev: prev.adr != null ? +prev.adr.toFixed(0) : null,
+      revpar_now: cur.revpar != null ? +cur.revpar.toFixed(0) : null,
+      revpar_prev: prev.revpar != null ? +prev.revpar.toFixed(0) : null,
+      currency: cur.currency,
+    };
+  }
+
   return {
     investor: {
       id: investor.id, name: investor.name, email: investor.email, status: investor.status,
@@ -471,5 +622,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     asset_notes: assetNotes,
     documents,
     scenarios,
+    pulse,
+    ops_metrics: opsMetrics,
   };
 }
