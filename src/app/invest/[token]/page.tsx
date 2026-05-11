@@ -258,6 +258,13 @@ export default function InvestorPortalPage() {
           </div>
         </div>
 
+        {/* Cashback Schedule Timeline — графік повернення капіталу */}
+        {data.cashback_status && data.cashback_status.schedule.length > 0 && (
+          <Card title="Графік повернення капіталу" subtitle="Plan vs Actual" style={{ marginBottom: 24 }}>
+            <CashbackTimeline status={data.cashback_status} currency={t.currency} />
+          </Card>
+        )}
+
         {/* KPI cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
           <KpiCard label="Вкладений капітал" value={fmt(t.invested, t.currency)} sub={t.invested > 0 ? `${(t.paid_out / t.invested * 100).toFixed(1)}% повернуто` : undefined} barPct={t.invested > 0 ? (t.paid_out / t.invested * 100) : 0} icon={<Wallet />} color="#3b82f6" />
@@ -503,6 +510,170 @@ function SourceBreakdown({ items }: { items: Array<{ source: string; currency: s
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function CashbackTimeline({ status, currency }: {
+  status: NonNullable<PortalData['cashback_status']>;
+  currency: string;
+}) {
+  const meta = CASHBACK_STATUS_META[status.status];
+  const totalPct = status.total_planned_eur > 0
+    ? (status.cumulative_paid_eur / status.total_planned_eur) * 100
+    : 0;
+  const plannedPct = status.total_planned_eur > 0
+    ? (status.cumulative_planned_eur / status.total_planned_eur) * 100
+    : 0;
+
+  // Build per-period bar pairs (planned + actual).
+  // Merge schedule + paid_periods into one row set keyed by period.
+  const periods = new Map<string, { planned: number; actual: number }>();
+  for (const p of status.schedule) {
+    periods.set(p.period, { planned: p.planned_eur, actual: 0 });
+  }
+  for (const p of status.paid_periods) {
+    const existing = periods.get(p.period) || { planned: 0, actual: 0 };
+    existing.actual = p.eur;
+    periods.set(p.period, existing);
+  }
+  const sortedPeriods = [...periods.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+  // Find max for scaling
+  const maxAmount = Math.max(
+    ...sortedPeriods.map(([, v]) => Math.max(v.planned, v.actual)),
+    1,
+  );
+
+  // "Today" cursor — index of the last period that has ended on/before today
+  const today = new Date().toISOString().substring(0, 7);
+  let todayIdx = -1;
+  for (let i = 0; i < sortedPeriods.length; i++) {
+    if (sortedPeriods[i][0].substring(0, 7) <= today) todayIdx = i;
+  }
+
+  // SVG dimensions
+  const W = 800, H = 140, PAD_X = 12, PAD_Y = 14;
+  const innerW = W - PAD_X * 2;
+  const innerH = H - PAD_Y * 2 - 14; // reserve 14px at the bottom for x-axis labels
+  const barGroupW = innerW / Math.max(1, sortedPeriods.length);
+  const barW = Math.min(14, barGroupW * 0.4);
+
+  return (
+    <div>
+      {/* Header summary */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: '#0f172a' }}>
+            {status.cumulative_paid_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>cashback ({status.paid_periods.length} {status.paid_periods.length === 1 ? 'період' : 'періодів'})</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: meta.bg, color: meta.fg }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
+            {meta.label}
+          </span>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
+            Plan: {status.total_planned_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency} · {totalPct.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+
+      {/* Progress bar — actual vs planned cumulative */}
+      <div style={{ position: 'relative', height: 10, background: '#f1f5f9', borderRadius: 5, overflow: 'visible', marginBottom: 4 }}>
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: `${Math.min(100, totalPct)}%`,
+          background: 'linear-gradient(90deg, #16a34a, #22c55e)',
+          borderRadius: 5, zIndex: 2,
+        }} />
+        {plannedPct > 0 && (
+          <div style={{
+            position: 'absolute', top: -3, bottom: -3, left: `${Math.min(100, plannedPct)}%`,
+            width: 2, background: '#475569', zIndex: 3,
+          }} title={`Planned by today: ${status.cumulative_planned_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`} />
+        )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', fontVariantNumeric: 'tabular-nums', marginBottom: 14 }}>
+        <span>Actual: {totalPct.toFixed(1)}%</span>
+        <span>Planned: {plannedPct.toFixed(1)}%</span>
+      </div>
+
+      {/* Bars chart */}
+      {sortedPeriods.length > 0 && (
+        <>
+          <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
+            {/* baseline */}
+            <line x1={PAD_X} y1={H - PAD_Y - 14} x2={W - PAD_X} y2={H - PAD_Y - 14} stroke="#e2e8f0" strokeWidth={1} />
+
+            {sortedPeriods.map(([period, v], i) => {
+              const groupX = PAD_X + i * barGroupW + (barGroupW / 2);
+              const plannedH = (v.planned / maxAmount) * innerH;
+              const actualH = (v.actual / maxAmount) * innerH;
+              const baseY = H - PAD_Y - 14;
+              const isFuture = i > todayIdx;
+              const plannedColor = isFuture ? '#e2e8f0' : '#cbd5e1';
+              return (
+                <g key={period}>
+                  {/* planned bar (left) */}
+                  <rect
+                    x={groupX - barW - 1}
+                    y={baseY - plannedH}
+                    width={barW}
+                    height={Math.max(0, plannedH)}
+                    rx={2}
+                    fill={plannedColor}
+                  >
+                    <title>{`Plan ${period}: ${v.planned.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
+                  </rect>
+                  {/* actual bar (right) */}
+                  {v.actual > 0 && (
+                    <rect
+                      x={groupX + 1}
+                      y={baseY - actualH}
+                      width={barW}
+                      height={Math.max(0, actualH)}
+                      rx={2}
+                      fill="#16a34a"
+                    >
+                      <title>{`Actual ${period}: ${v.actual.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
+                    </rect>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* "today" cursor */}
+            {todayIdx >= 0 && todayIdx < sortedPeriods.length - 1 && (() => {
+              const x = PAD_X + (todayIdx + 1) * barGroupW;
+              return (
+                <g>
+                  <line x1={x} y1={PAD_Y} x2={x} y2={H - PAD_Y - 4} stroke="#04392c" strokeWidth={1} strokeDasharray="3,3" />
+                  <text x={x} y={H - 2} fill="#04392c" fontSize={9} fontWeight={600} textAnchor="middle">today</text>
+                </g>
+              );
+            })()}
+          </svg>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11, color: '#64748b' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, background: '#16a34a', borderRadius: 2 }} />
+              Виплачено (фактично)
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, background: '#cbd5e1', borderRadius: 2 }} />
+              План по контракту
+            </span>
+            {status.next_planned_period && (
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#475569' }}>
+                Наступна виплата: <b style={{ color: '#0f172a' }}>{status.next_planned_amount_eur.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}</b> · {status.next_planned_period}
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
