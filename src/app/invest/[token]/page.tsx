@@ -92,7 +92,7 @@ export default function InvestorPortalPage() {
       <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#16a34a,#22c55e)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>A</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>ALiSiO Investment</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Swipe Scape Investment</div>
           <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Portfolio</div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -239,7 +239,7 @@ export default function InvestorPortalPage() {
         )}
 
         <div style={{ marginTop: 32, fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
-          ALiSiO Investment · Дані оновлюються автоматично · Конфіденційно
+          Swipe Scape Investment · Дані оновлюються автоматично · Конфіденційно
         </div>
       </div>
     </div>

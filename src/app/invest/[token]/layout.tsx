@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import '../invest.css';
 
-const TITLE = 'ALiSiO Investment Portfolio';
+const TITLE = 'Swipe Scape Investment Portfolio';
 const DESCRIPTION = 'Your investment portfolio dashboard';
 
 export const metadata: Metadata = {
