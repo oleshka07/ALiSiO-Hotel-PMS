@@ -225,7 +225,7 @@ export default function InvestorPortalPage() {
       .finally(() => setLoading(false));
   }, [params.token]);
 
-  if (loading) return <div style={{ padding: 80, textAlign: 'center', color: '#94a3b8' }}>Завантаження…</div>;
+  if (loading) return <PortalSkeleton />;
   if (error || !data) return (
     <div style={{ padding: 80, textAlign: 'center' }}>
       <h1>404</h1><p style={{ color: '#94a3b8' }}>{error || 'Portal not found'}</p>
@@ -494,6 +494,41 @@ export default function InvestorPortalPage() {
 
         <div style={{ marginTop: 32, fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
           Swipe Scape Investment · Дані оновлюються автоматично · Конфіденційно
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortalSkeleton() {
+  return (
+    <div className="invest-page-root">
+      <header className="invest-topnav">
+        <span className="invest-skel" style={{ width: 36, height: 36, borderRadius: 8 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span className="invest-skel" style={{ width: 160, height: 14, marginBottom: 4 }} />
+          <span className="invest-skel" style={{ width: 60, height: 10 }} />
+        </div>
+      </header>
+      <div className="invest-container">
+        <span className="invest-skel" style={{ width: 240, height: 28, marginBottom: 8 }} />
+        <span className="invest-skel" style={{ width: 320, height: 14, marginBottom: 24 }} />
+        <div className="invest-skel-card">
+          <span className="invest-skel" style={{ width: 100, height: 12, marginBottom: 12 }} />
+          <span className="invest-skel" style={{ width: '60%', height: 22, marginBottom: 8 }} />
+          <span className="invest-skel" style={{ width: '90%', height: 12 }} />
+        </div>
+        <div style={{ background: 'linear-gradient(135deg,#064e3b 0%,#065f46 100%)', borderRadius: 16, padding: 32, marginBottom: 24, color: '#fff' }}>
+          <span className="invest-skel" style={{ width: 120, height: 24, marginBottom: 12, background: 'rgba(255,255,255,0.2)', backgroundImage: 'none' }} />
+          <span className="invest-skel" style={{ width: 200, height: 32, marginBottom: 16, background: 'rgba(255,255,255,0.2)', backgroundImage: 'none' }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="invest-skel-card" style={{ marginBottom: 0 }}>
+              <span className="invest-skel" style={{ width: 80, height: 10, marginBottom: 12 }} />
+              <span className="invest-skel" style={{ width: '70%', height: 22 }} />
+            </div>
+          ))}
         </div>
       </div>
     </div>
