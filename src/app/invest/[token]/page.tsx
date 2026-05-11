@@ -451,11 +451,14 @@ export default function InvestorPortalPage() {
           </div>
         </Card>
 
-        {/* Capital growth chart + Occupancy dynamics */}
+        {/* Capital growth chart + Occupancy dynamics — hide both sides if empty */}
+        {(data.capital_growth.some((p) => p.profit_cumulative > 0) || (data.occupancy_by_month && data.occupancy_by_month.some((m) => m.occupancy_pct > 0))) && (
         <div className="invest-row-2col">
-          <Card title="Графік зростання капіталу" subtitle="● Прибуток · ● Інвестиція">
-            <CapitalGrowthChart data={data.capital_growth} currency={t.currency} />
-          </Card>
+          {data.capital_growth.some((p) => p.profit_cumulative > 0) ? (
+            <Card title="Графік зростання капіталу" subtitle="Накопичений прибуток за період">
+              <CapitalGrowthChart data={data.capital_growth} currency={t.currency} />
+            </Card>
+          ) : null}
           {(data.occupancy_by_month && data.occupancy_by_month.some((m) => m.occupancy_pct > 0)) ? (
             <Card title="Динаміка Occupancy" subtitle="Останні 12 місяців">
               {(() => {
@@ -472,6 +475,7 @@ export default function InvestorPortalPage() {
             </Card>
           ) : null}
         </div>
+        )}
 
         {/* Income by source — derived from real reservations × equity */}
         {data.income_by_source.length > 0 && (
@@ -595,25 +599,53 @@ function Card({ title, subtitle, children, style }: { title: string; subtitle?: 
 function CapitalGrowthChart({ data, currency }: { data: { month: string; profit_cumulative: number }[]; currency: string }) {
   if (data.length === 0) return <div style={{ color: '#94a3b8', padding: 20 }}>Поки немає даних</div>;
   const max = Math.max(...data.map((d) => d.profit_cumulative), 1);
-  const W = 600, H = 180, P = 30;
+  const W = 600, H = 200, P = 30;
   const xStep = (W - P * 2) / Math.max(1, data.length - 1);
-  const points = data.map((d, i) => `${P + i * xStep},${H - P - (d.profit_cumulative / max) * (H - P * 2)}`).join(' ');
+  const xFor = (i: number) => P + i * xStep;
+  const yFor = (v: number) => H - P - (v / max) * (H - P * 2);
+  const points = data.map((d, i) => `${xFor(i)},${yFor(d.profit_cumulative)}`).join(' ');
+
+  // Show X labels for first, middle, last + every ~3rd in between to avoid clutter
+  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="cgrow-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#16a34a" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#16a34a" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* baseline */}
       <line x1={P} x2={W - P} y1={H - P} y2={H - P} stroke="#e2e8f0" />
+      {/* gradient area under curve */}
+      <path
+        d={`M${xFor(0)},${H - P} ${data.map((d, i) => `L${xFor(i)},${yFor(d.profit_cumulative)}`).join(' ')} L${xFor(data.length - 1)},${H - P} Z`}
+        fill="url(#cgrow-fill)"
+      />
       <polyline points={points} fill="none" stroke="#16a34a" strokeWidth="2" />
       {data.map((d, i) => (
-        <circle key={i} cx={P + i * xStep} cy={H - P - (d.profit_cumulative / max) * (H - P * 2)} r="3" fill="#16a34a" />
+        <g key={i}>
+          {/* dot with tooltip */}
+          <circle cx={xFor(i)} cy={yFor(d.profit_cumulative)} r="4" fill="#16a34a" stroke="#fff" strokeWidth="1.5">
+            <title>{`${d.month}: ${d.profit_cumulative.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
+          </circle>
+          {/* tap target for mobile */}
+          <rect x={xFor(i) - 12} y={yFor(d.profit_cumulative) - 12} width={24} height={24} fill="transparent">
+            <title>{`${d.month}: ${d.profit_cumulative.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${currency}`}</title>
+          </rect>
+          {/* X-label every Nth point */}
+          {(i === 0 || i === data.length - 1 || i % labelEvery === 0) && (
+            <text x={xFor(i)} y={H - 10} fontSize="10" fill="#94a3b8" textAnchor="middle">{d.month}</text>
+          )}
+        </g>
       ))}
-      {data.length > 0 && (
-        <text x={P} y={H - 8} fontSize="10" fill="#94a3b8">{data[0].month}</text>
-      )}
-      {data.length > 1 && (
-        <text x={W - P - 30} y={H - 8} fontSize="10" fill="#94a3b8">{data[data.length - 1].month}</text>
-      )}
-      <text x={W - P} y={20} fontSize="11" fill="#16a34a" fontWeight="600" textAnchor="end">
+      {/* current value pinned at top-right */}
+      <text x={W - P} y={20} fontSize="12" fill="#16a34a" fontWeight="600" textAnchor="end">
         {data[data.length - 1]?.profit_cumulative.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}
       </text>
+      {/* "Наведіть для деталей" hint */}
+      <text x={P} y={20} fontSize="10" fill="#94a3b8">Наведіть курсор на точку для деталей</text>
     </svg>
   );
 }
