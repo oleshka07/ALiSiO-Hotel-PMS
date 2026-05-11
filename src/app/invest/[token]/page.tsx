@@ -69,6 +69,22 @@ interface PortalData {
     monthly_cashback_projection_json: string | null;
     full_repayment_eta: string | null;
   }>>;
+  pulse?: {
+    locked_in_nights_this_month: number;
+    nights_in_month: number;
+    pipeline_inquiries_count: number;
+    expected_inflow_next_30_days: number;
+    expected_inflow_currency: string;
+  };
+  ops_metrics?: Record<string, {
+    occupancy_now_pct: number | null;
+    occupancy_prev_pct: number | null;
+    adr_now: number | null;
+    adr_prev: number | null;
+    revpar_now: number | null;
+    revpar_prev: number | null;
+    currency: string;
+  }>;
 }
 
 interface ScenarioPoint { period: string; eur: number }
@@ -299,6 +315,37 @@ export default function InvestorPortalPage() {
             </div>
           </div>
         </div>
+
+        {/* Live Operations Pulse */}
+        {data.pulse && (
+          <div style={{ background: 'linear-gradient(135deg,#ffffff 0%,#f5fbf8 100%)', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>Що відбувається зараз</div>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#047857', fontWeight: 600 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', animation: 'pulse 2s ease-in-out infinite' }} />
+                LIVE
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <PulseStat
+                label="Цей місяць locked-in"
+                value={`${data.pulse.locked_in_nights_this_month} ${data.pulse.locked_in_nights_this_month === 1 ? 'ніч' : 'ночей'}`}
+                sub={`${data.pulse.nights_in_month > 0 ? Math.round((data.pulse.locked_in_nights_this_month / data.pulse.nights_in_month) * 100) : 0}% occupancy`}
+              />
+              <PulseStat
+                label="Pipeline · 14 днів"
+                value={`+${data.pulse.pipeline_inquiries_count} ${data.pulse.pipeline_inquiries_count === 1 ? 'запит' : 'запитів'}`}
+                sub="tentative"
+              />
+              <PulseStat
+                label="Очікувані надходження · 30 днів"
+                value={fmt(data.pulse.expected_inflow_next_30_days, data.pulse.expected_inflow_currency)}
+                sub="confirmed"
+                accent
+              />
+            </div>
+          </div>
+        )}
 
         {/* Cashback Schedule Timeline — графік повернення капіталу */}
         {data.cashback_status && data.cashback_status.schedule.length > 0 && (
@@ -707,6 +754,16 @@ function ForwardProjection({ scenarios, totalInvested, currency }: {
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+function PulseStat({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: boolean }) {
+  return (
+    <div style={{ background: '#f5f7fa', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, letterSpacing: 0.5, color: '#98a2b3', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: accent ? '#047857' : '#0e1116', letterSpacing: '-0.01em' }}>{value}</div>
+      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{sub}</div>
     </div>
   );
 }

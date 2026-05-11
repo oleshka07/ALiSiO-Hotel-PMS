@@ -29,6 +29,16 @@ interface PortalData {
     project_id: string | null; project_name: string | null;
     period_year_month: string | null; comment: string | null;
   }>;
+  ops_metrics?: Record<string, {
+    occupancy_now_pct: number | null;
+    occupancy_prev_pct: number | null;
+    adr_now: number | null;
+    adr_prev: number | null;
+    revpar_now: number | null;
+    revpar_prev: number | null;
+    currency: string;
+  }>;
+  asset_notes?: Record<string, { month: string; ceo_name: string | null; body_md: string | null }>;
 }
 
 function fmt(n: number, cur: string): string {
@@ -107,6 +117,40 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
+        {/* Hospitality Ops Metrics — ADR / RevPAR / Occupancy */}
+        {data.ops_metrics?.[params.id] && (() => {
+          const ops = data.ops_metrics[params.id];
+          const trendStr = (cur: number | null, prev: number | null, unit: 'pp' | '%') => {
+            if (cur == null || prev == null) return null;
+            const delta = unit === 'pp' ? cur - prev : (prev === 0 ? 0 : ((cur - prev) / prev) * 100);
+            const sign = delta >= 0 ? '↑' : '↓';
+            const color = delta >= 0 ? '#16a34a' : '#dc2626';
+            return { text: `${sign} ${delta > 0 ? '+' : ''}${delta.toFixed(unit === 'pp' ? 1 : 0)}${unit}`, color };
+          };
+          const occTrend = trendStr(ops.occupancy_now_pct, ops.occupancy_prev_pct, 'pp');
+          const adrTrend = trendStr(ops.adr_now, ops.adr_prev, '%');
+          const revparTrend = trendStr(ops.revpar_now, ops.revpar_prev, '%');
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
+              <OpsMetric label="Occupancy" value={ops.occupancy_now_pct != null ? `${ops.occupancy_now_pct}%` : '—'} trend={occTrend} />
+              <OpsMetric label="ADR" value={ops.adr_now != null ? `${ops.adr_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={adrTrend} />
+              <OpsMetric label="RevPAR" value={ops.revpar_now != null ? `${ops.revpar_now.toLocaleString('cs-CZ')} ${ops.currency}` : '—'} trend={revparTrend} />
+            </div>
+          );
+        })()}
+
+        {/* Asset-level CEO note */}
+        {data.asset_notes?.[params.id]?.body_md && (
+          <div style={{ marginTop: 16, padding: 14, background: 'linear-gradient(135deg,#ffffff 0%,#f8faf9 100%)', border: '1px solid #e2e8f0', borderLeft: '3px solid #16a34a', borderRadius: 12 }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
+              {data.asset_notes[params.id].ceo_name || 'CEO'} · {data.asset_notes[params.id].month}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', whiteSpace: 'pre-wrap' }}>
+              {data.asset_notes[params.id].body_md}
+            </div>
+          </div>
+        )}
+
         {/* KPI Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
           <KpiCard label="Вкладений капітал" value={fmt(property.invested, property.currency)} sub={`${recoveredPct.toFixed(1)}% повернуто`} barPct={recoveredPct} icon={<Wallet />} color="#3b82f6" />
@@ -182,6 +226,18 @@ export default function PropertyDetailPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function OpsMetric({ label, value, trend }: { label: string; value: string; trend: { text: string; color: string } | null }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 10px', textAlign: 'center' }}>
+      <div style={{ fontSize: 10, color: '#98a2b3', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      {trend && (
+        <div style={{ marginTop: 3, fontSize: 10, fontVariantNumeric: 'tabular-nums', color: trend.color }}>{trend.text}</div>
+      )}
     </div>
   );
 }
