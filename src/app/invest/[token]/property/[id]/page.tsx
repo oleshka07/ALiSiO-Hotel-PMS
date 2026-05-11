@@ -39,10 +39,18 @@ interface PortalData {
     currency: string;
   }>;
   asset_notes?: Record<string, { month: string; ceo_name: string | null; body_md: string | null }>;
+  occupancy_by_month_per_asset?: Record<string, Array<{ month: string; occupancy_pct: number }>>;
+  scenarios?: Record<string, Array<{
+    scenario: 'pessimistic' | 'base' | 'optimistic';
+    assumptions_json: string | null;
+    monthly_cashback_projection_json: string | null;
+    full_repayment_eta: string | null;
+  }>>;
 }
 
 function fmt(n: number, cur: string): string {
-  return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
+  const value = Math.abs(n) < 1 ? 0 : n;
+  return `${value.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -156,6 +164,17 @@ export default function PropertyDetailPage() {
           );
         })()}
 
+        {/* Per-asset occupancy dynamics (last 12 months) */}
+        {data.occupancy_by_month_per_asset?.[params.id] && data.occupancy_by_month_per_asset[params.id].some((m) => m.occupancy_pct > 0) && (
+          <div style={{ marginTop: 16, padding: 20, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>Динаміка Occupancy</h3>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>Останні 12 місяців</span>
+            </div>
+            <AssetOccupancyBars data={data.occupancy_by_month_per_asset[params.id]} />
+          </div>
+        )}
+
         {/* Asset-level CEO note */}
         {data.asset_notes?.[params.id]?.body_md && (
           <div style={{ marginTop: 16, padding: 14, background: 'linear-gradient(135deg,#ffffff 0%,#f8faf9 100%)', border: '1px solid #e2e8f0', borderLeft: '3px solid #16a34a', borderRadius: 12 }}>
@@ -242,6 +261,34 @@ export default function PropertyDetailPage() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AssetOccupancyBars({ data }: { data: { month: string; occupancy_pct: number }[] }) {
+  const max = Math.max(...data.map((d) => d.occupancy_pct), 100);
+  const nonZero = data.filter((d) => d.occupancy_pct > 0);
+  const avg = nonZero.length > 0 ? nonZero.reduce((s, d) => s + d.occupancy_pct, 0) / nonZero.length : 0;
+  return (
+    <div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a', marginBottom: 12 }}>
+        {avg.toFixed(1)}%
+        <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', marginLeft: 8, fontWeight: 500 }}>середнє за період</span>
+      </div>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 140 }}>
+        {data.map((d) => {
+          const heightPct = (d.occupancy_pct / max) * 100;
+          return (
+            <div key={d.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' }} title={`${d.month}: ${d.occupancy_pct}%`}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: d.occupancy_pct > 0 ? '#16a34a' : 'transparent' }}>
+                {d.occupancy_pct.toFixed(0)}%
+              </div>
+              <div style={{ width: '100%', height: `${Math.max(2, heightPct * 0.8)}%`, minHeight: 2, background: d.occupancy_pct > 0 ? '#22c55e' : '#e2e8f0', borderRadius: 3 }} />
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{d.month.substring(5)}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -48,6 +48,7 @@ interface PortalData {
     schedule: Array<{ period: string; planned_eur: number }>;
     paid_periods: Array<{ period: string; eur: number }>;
   };
+  occupancy_by_month?: Array<{ month: string; occupancy_pct: number }>;
   performance_scores?: Record<string, {
     score: 'above' | 'on_track' | 'below' | 'unknown';
     actual_apy: number | null;
@@ -387,16 +388,18 @@ export default function InvestorPortalPage() {
               <tr style={{ background: '#f8fafc' }}>
                 <th style={th}>Об&apos;єкт</th>
                 <th style={th}>Інвестовано</th>
-                <th style={th}>Сумарний ROI</th>
-                <th style={th}>Статус</th>
+                <th style={{ ...th, textAlign: 'right' }}>Накопичений профіт</th>
+                <th style={{ ...th, textAlign: 'right' }}>% від інвестиції</th>
+                <th style={{ ...th, textAlign: 'right' }}>APY</th>
                 <th style={{ ...th, width: 1 }}></th>
               </tr>
             </thead>
             <tbody>
               {data.properties.map((p) => {
-                const stat = STATUS_LABEL[p.status] || STATUS_LABEL.active;
                 const perf = data.performance_scores?.[p.project_id];
                 const perfMeta = perf ? PERFORMANCE_META[perf.score] : PERFORMANCE_META.unknown;
+                const cumulativeProfit = p.accumulated_profit;
+                const profitPct = p.invested > 0 ? (cumulativeProfit / p.invested) * 100 : 0;
                 return (
                   <tr key={p.project_id} style={{ borderTop: '1px solid #e2e8f0' }}>
                     <td style={{ ...td, fontWeight: 600, color: '#0f172a', position: 'relative', paddingLeft: 18 }}>
@@ -409,13 +412,14 @@ export default function InvestorPortalPage() {
                       {p.project_name}
                     </td>
                     <td style={{ ...td, color: '#0f172a' }}>{fmt(p.invested, p.currency)}</td>
-                    <td style={{ ...td, color: (p.roi_pct || 0) >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
-                      {p.roi_pct != null ? `${p.roi_pct >= 0 ? '+' : ''}${p.roi_pct}%` : '—'}
+                    <td style={{ ...td, textAlign: 'right', color: cumulativeProfit >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmt(cumulativeProfit, p.currency)}
                     </td>
-                    <td style={td}>
-                      <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: `${stat.color}15`, color: stat.color, fontWeight: 600 }}>
-                        {stat.label}
-                      </span>
+                    <td style={{ ...td, textAlign: 'right', color: profitPct >= 0 ? '#16a34a' : '#dc2626', fontVariantNumeric: 'tabular-nums' }}>
+                      {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(1)}%
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', color: (p.roi_pct || 0) >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {p.roi_pct != null ? `${p.roi_pct >= 0 ? '+' : ''}${p.roi_pct}%` : '—'}
                     </td>
                     <td style={td}>
                       <Link href={`/invest/${params.token}/property/${p.project_id}`} style={{ color: '#3b82f6', fontSize: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -426,7 +430,7 @@ export default function InvestorPortalPage() {
                 );
               })}
               {data.properties.length === 0 && (
-                <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: '#94a3b8', padding: 40 }}>Інвестицій ще немає</td></tr>
+                <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#94a3b8', padding: 40 }}>Інвестицій ще немає</td></tr>
               )}
             </tbody>
           </table>
@@ -452,17 +456,21 @@ export default function InvestorPortalPage() {
           <Card title="Графік зростання капіталу" subtitle="● Прибуток · ● Інвестиція">
             <CapitalGrowthChart data={data.capital_growth} currency={t.currency} />
           </Card>
-          <Card title="Динаміка Occupancy">
-            {t.avg_occupancy_pct != null ? (
-              <div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: '#16a34a' }}>{t.avg_occupancy_pct}%</div>
-                <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 16 }}>Portfolio avg</div>
-                <OccupancyBars data={data.occupancy_dynamics.slice(-12)} />
-              </div>
-            ) : (
-              <div style={{ color: '#94a3b8', textAlign: 'center', padding: 20 }}>Метрик occupancy ще немає</div>
-            )}
-          </Card>
+          {(data.occupancy_by_month && data.occupancy_by_month.some((m) => m.occupancy_pct > 0)) ? (
+            <Card title="Динаміка Occupancy" subtitle="Останні 12 місяців">
+              {(() => {
+                const vals = (data.occupancy_by_month || []).filter((m) => m.occupancy_pct > 0).map((m) => m.occupancy_pct);
+                const avg = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+                return (
+                  <div>
+                    <div style={{ fontSize: 36, fontWeight: 700, color: '#16a34a' }}>{avg.toFixed(1)}%</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 16 }}>середнє за 12 міс</div>
+                    <OccupancyBars data={data.occupancy_by_month || []} />
+                  </div>
+                );
+              })()}
+            </Card>
+          ) : null}
         </div>
 
         {/* Income by source — derived from real reservations × equity */}
@@ -1055,14 +1063,21 @@ function PayoutsTable({ items }: { items: PortalData['payouts'] }) {
 
 function OccupancyBars({ data }: { data: { month: string; occupancy_pct: number }[] }) {
   if (data.length === 0) return <div style={{ color: '#94a3b8', padding: 20, textAlign: 'center' }}>Немає даних</div>;
+  const max = Math.max(...data.map((d) => d.occupancy_pct), 100);
   return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 80, marginTop: 8 }}>
-      {data.map((d) => (
-        <div key={d.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }} title={`${d.month}: ${d.occupancy_pct}%`}>
-          <div style={{ width: '100%', height: `${Math.min(100, d.occupancy_pct)}%`, minHeight: 2, background: '#22c55e', borderRadius: 2 }} />
-          <div style={{ fontSize: 9, color: '#94a3b8' }}>{d.month.substring(5)}</div>
-        </div>
-      ))}
+    <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 100, marginTop: 8 }}>
+      {data.map((d) => {
+        const heightPct = (d.occupancy_pct / max) * 100;
+        return (
+          <div key={d.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' }} title={`${d.month}: ${d.occupancy_pct}%`}>
+            <div style={{ fontSize: 9, fontWeight: 600, color: d.occupancy_pct > 0 ? '#16a34a' : 'transparent' }}>
+              {d.occupancy_pct.toFixed(0)}%
+            </div>
+            <div style={{ width: '100%', height: `${Math.max(2, heightPct * 0.8)}%`, minHeight: 2, background: d.occupancy_pct > 0 ? '#22c55e' : '#e2e8f0', borderRadius: 2 }} />
+            <div style={{ fontSize: 9, color: '#94a3b8' }}>{d.month.substring(5)}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }

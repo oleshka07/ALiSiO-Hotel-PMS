@@ -128,6 +128,10 @@ export interface InvestorPortalData {
     revpar_prev: number | null;
     currency: string;
   }>;
+  // Last 12 months of computed occupancy (from reservations), portfolio-aggregate
+  occupancy_by_month: Array<{ month: string; occupancy_pct: number }>;
+  // Last 12 months of computed occupancy per BU (asset detail page)
+  occupancy_by_month_per_asset: Record<string, Array<{ month: string; occupancy_pct: number }>>;
 }
 
 function deriveStatus(stages: Array<{ pct: number }>): string {
@@ -582,6 +586,59 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     };
   }
 
+  // ─── Occupancy time series (last 12 months) ─────────────────
+  // Computed directly from reservations — independent from manual metrics.
+  // Per-asset + aggregate.
+  const occupancyByMonthPerAsset: InvestorPortalData['occupancy_by_month_per_asset'] = {};
+  const aggregateOcc = new Map<string, { soldNights: number; available: number }>();
+
+  const monthsLookback = 12;
+  const startOf12mAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsLookback - 1), 1));
+
+  for (const inv of investments) {
+    if (!inv.unit_id) continue;
+    if (occupancyByMonthPerAsset[inv.project_id]) continue;
+    const buUnitIds = investments.filter((i) => i.project_id === inv.project_id).map((i) => i.unit_id).filter(Boolean) as string[];
+    const buRow = db.prepare("SELECT units_count FROM business_units WHERE id = ?").get(inv.project_id) as { units_count?: number } | undefined;
+    const unitsCount = Math.max(1, buRow?.units_count || buUnitIds.length || 1);
+
+    const series: Array<{ month: string; occupancy_pct: number }> = [];
+    for (let mi = 0; mi < monthsLookback; mi++) {
+      const winStart = new Date(Date.UTC(startOf12mAgo.getUTCFullYear(), startOf12mAgo.getUTCMonth() + mi, 1));
+      const winEnd   = new Date(Date.UTC(winStart.getUTCFullYear(), winStart.getUTCMonth() + 1, 0));
+      const daysInWin = winEnd.getUTCDate();
+      const winStartIso = fmtIso(winStart);
+      const winEndIso = fmtIso(winEnd);
+      const monthKey = winStartIso.substring(0, 7);
+
+      const rows = reservationsFor(buUnitIds, "AND check_in <= ? AND check_out >= ?", [winEndIso, winStartIso]) as any[];
+      let sold = 0;
+      for (const r of rows) {
+        const ci = r.check_in > winStartIso ? r.check_in : winStartIso;
+        const co = r.check_out < winEndIso ? r.check_out : winEndIso;
+        sold += Math.max(0, (new Date(co).getTime() - new Date(ci).getTime()) / (1000 * 60 * 60 * 24));
+      }
+      const available = daysInWin * unitsCount;
+      const pct = available > 0 ? (sold / available) * 100 : 0;
+      series.push({ month: monthKey, occupancy_pct: +pct.toFixed(1) });
+
+      // Aggregate (across all assets) — track nights sold + available, then
+      // compute % at the end as a weighted average.
+      const agg = aggregateOcc.get(monthKey) || { soldNights: 0, available: 0 };
+      agg.soldNights += sold;
+      agg.available += available;
+      aggregateOcc.set(monthKey, agg);
+    }
+    occupancyByMonthPerAsset[inv.project_id] = series;
+  }
+
+  const occupancyByMonth = [...aggregateOcc.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, v]) => ({
+      month,
+      occupancy_pct: v.available > 0 ? +((v.soldNights / v.available) * 100).toFixed(1) : 0,
+    }));
+
   return {
     investor: {
       id: investor.id, name: investor.name, email: investor.email, status: investor.status,
@@ -626,5 +683,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     scenarios,
     pulse,
     ops_metrics: opsMetrics,
+    occupancy_by_month: occupancyByMonth,
+    occupancy_by_month_per_asset: occupancyByMonthPerAsset,
   };
 }
