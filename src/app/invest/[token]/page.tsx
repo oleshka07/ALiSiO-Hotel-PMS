@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Wallet, TrendingUp, Clock, Activity, ExternalLink, CheckCircle } from 'lucide-react';
+import { Wallet, TrendingUp, Clock, Activity, ExternalLink, CheckCircle, FileText, Download } from 'lucide-react';
 
 interface PortalData {
   investor: { id: string; name: string; email: string | null; status: string };
@@ -35,6 +35,34 @@ interface PortalData {
     project_id: string | null; project_name: string | null;
     period_year_month: string | null; comment: string | null;
   }>;
+  // v2 fields
+  cashback_status?: {
+    status: 'ahead' | 'on_track' | 'slightly_behind' | 'behind' | 'no_schedule';
+    cumulative_paid_eur: number;
+    cumulative_planned_eur: number;
+    delta_eur: number;
+    delta_pct: number;
+    total_planned_eur: number;
+    next_planned_period: string | null;
+    next_planned_amount_eur: number;
+    schedule: Array<{ period: string; planned_eur: number }>;
+    paid_periods: Array<{ period: string; eur: number }>;
+  };
+  performance_scores?: Record<string, {
+    score: 'above' | 'on_track' | 'below' | 'unknown';
+    actual_apy: number | null;
+    target_apy: number | null;
+    ratio: number | null;
+  }>;
+  ceo_note?: {
+    scope: string; scope_id: string; month: string;
+    ceo_name: string | null; body_md: string | null; updated_at: string;
+  } | null;
+  documents?: Array<{
+    id: string; type: string; name: string; file_size: number;
+    mime_type: string | null; period_start: string | null; period_end: string | null;
+    uploaded_at: string; business_unit_id: string | null; download_url: string;
+  }>;
 }
 
 const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
@@ -56,6 +84,68 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   project:     { label: 'Project',      color: '#6366f1' },
   paused:      { label: 'Paused',       color: '#94a3b8' },
 };
+
+const CASHBACK_STATUS_META: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
+  ahead:           { label: 'Ahead of plan',  bg: 'rgba(34,197,94,0.18)',  fg: '#16a34a', dot: '#16a34a' },
+  on_track:        { label: 'On Track',       bg: 'rgba(34,197,94,0.18)',  fg: '#16a34a', dot: '#16a34a' },
+  slightly_behind: { label: 'Slightly behind', bg: 'rgba(245,158,11,0.18)', fg: '#b45309', dot: '#f59e0b' },
+  behind:          { label: 'Behind',         bg: 'rgba(220,38,38,0.15)',  fg: '#b91c1c', dot: '#dc2626' },
+  no_schedule:     { label: 'No schedule',    bg: 'rgba(148,163,184,0.18)', fg: '#475569', dot: '#94a3b8' },
+};
+
+const PERFORMANCE_META: Record<string, { color: string; label: string }> = {
+  above:    { color: '#16a34a', label: 'Above plan' },
+  on_track: { color: '#f59e0b', label: 'On track' },
+  below:    { color: '#dc2626', label: 'Below plan' },
+  unknown:  { color: '#94a3b8', label: 'No target set' },
+};
+
+const DOC_TYPE_LABEL: Record<string, string> = {
+  agreement:      'Договір',
+  monthly_report: 'Звіт',
+  tax_statement:  'Податковий',
+  bank_statement: 'Виписка',
+  other:          'Інше',
+};
+
+const DOC_TYPE_COLOR: Record<string, string> = {
+  agreement:      '#3b82f6',
+  monthly_report: '#16a34a',
+  tax_statement:  '#f59e0b',
+  bank_statement: '#7c3aed',
+  other:          '#64748b',
+};
+
+/** Very small markdown renderer: bold (**), italic (*), and paragraphs.
+ *  Adequate for CEO notes; falls back to plain text safely. */
+function renderMarkdown(md: string): React.ReactNode {
+  const paragraphs = md.split(/\n\s*\n/);
+  return paragraphs.map((p, i) => {
+    // Process inline: **bold** then *italic*
+    const tokens: React.ReactNode[] = [];
+    let rest = p;
+    let key = 0;
+    while (rest.length > 0) {
+      const boldMatch = rest.match(/\*\*(.+?)\*\*/);
+      const italicMatch = rest.match(/\*(.+?)\*/);
+      const m = boldMatch && (!italicMatch || boldMatch.index! <= italicMatch.index!) ? boldMatch : italicMatch;
+      if (!m || m.index === undefined) { tokens.push(rest); break; }
+      if (m.index > 0) tokens.push(rest.substring(0, m.index));
+      const isBold = m === boldMatch;
+      tokens.push(isBold
+        ? <b key={`b${key++}`}>{m[1]}</b>
+        : <i key={`i${key++}`}>{m[1]}</i>);
+      rest = rest.substring(m.index + m[0].length);
+    }
+    return <p key={i} style={{ margin: i > 0 ? '8px 0 0' : 0 }}>{tokens}</p>;
+  });
+}
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export default function InvestorPortalPage() {
   const params = useParams<{ token: string }>();
@@ -108,11 +198,40 @@ export default function InvestorPortalPage() {
           <p style={{ margin: '4px 0 0', color: '#64748b' }}>Сумарні показники по всім вашим активам.</p>
         </div>
 
+        {/* CEO Monthly Note */}
+        {data.ceo_note?.body_md && (
+          <div style={{ background: 'linear-gradient(135deg,#ffffff 0%,#f8faf9 100%)', border: '1px solid #e2e8f0', borderLeft: '3px solid #16a34a', borderRadius: 14, padding: 16, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#04392c,#065f46)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 14 }}>
+                {(data.ceo_note.ceo_name || 'C').charAt(0)}
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{data.ceo_note.ceo_name || 'CEO'} · CEO</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Місячний звіт · {data.ceo_note.month}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.55, color: '#0f172a' }}>
+              {renderMarkdown(data.ceo_note.body_md)}
+            </div>
+          </div>
+        )}
+
         {/* Hero summary card */}
         <div style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)', borderRadius: 16, padding: 32, marginBottom: 24, color: '#fff' }}>
           <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'inline-block', padding: '4px 10px', background: 'rgba(34,197,94,0.2)', color: '#86efac', borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12 }}>Active Portfolio</div>
+              {(() => {
+                const cb = data.cashback_status;
+                const meta = cb ? CASHBACK_STATUS_META[cb.status] : null;
+                return meta ? (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: meta.bg, color: meta.fg, borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12, letterSpacing: 0.03 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
+                    {meta.label}{cb && cb.delta_pct !== 0 ? ` · ${cb.delta_pct > 0 ? '+' : ''}${cb.delta_pct.toFixed(1)}%` : ''}
+                  </div>
+                ) : (
+                  <div style={{ display: 'inline-block', padding: '4px 10px', background: 'rgba(34,197,94,0.2)', color: '#86efac', borderRadius: 999, fontSize: 11, fontWeight: 600, marginBottom: 12 }}>Active Portfolio</div>
+                );
+              })()}
               <h2 style={{ margin: 0, fontSize: 28, marginBottom: 8 }}>Сумарна статистика</h2>
               <p style={{ margin: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.5 }}>
                 Ваш портфель включає <b>{t.active_lots}</b> {t.active_lots === 1 ? 'актив' : 'активів'}. Ми постійно
@@ -163,9 +282,19 @@ export default function InvestorPortalPage() {
             <tbody>
               {data.properties.map((p) => {
                 const stat = STATUS_LABEL[p.status] || STATUS_LABEL.active;
+                const perf = data.performance_scores?.[p.project_id];
+                const perfMeta = perf ? PERFORMANCE_META[perf.score] : PERFORMANCE_META.unknown;
                 return (
                   <tr key={p.project_id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                    <td style={{ ...td, fontWeight: 600, color: '#0f172a' }}>{p.project_name}</td>
+                    <td style={{ ...td, fontWeight: 600, color: '#0f172a', position: 'relative', paddingLeft: 18 }}>
+                      <span
+                        title={perf ? `${perfMeta.label}${perf.actual_apy != null ? ` (actual ${(perf.actual_apy * 100).toFixed(1)}% vs target ${perf.target_apy != null ? (perf.target_apy * 100).toFixed(1) + '%' : '?'})` : ''}` : 'No target_apy set on investment'}
+                        style={{
+                          position: 'absolute', left: 8, top: 12, bottom: 12,
+                          width: 4, background: perfMeta.color, borderRadius: 2,
+                        }} />
+                      {p.project_name}
+                    </td>
                     <td style={{ ...td, color: '#0f172a' }}>{fmt(p.invested, p.currency)}</td>
                     <td style={{ ...td, color: (p.roi_pct || 0) >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
                       {p.roi_pct != null ? `${p.roi_pct >= 0 ? '+' : ''}${p.roi_pct}%` : '—'}
@@ -188,6 +317,21 @@ export default function InvestorPortalPage() {
               )}
             </tbody>
           </table>
+          {/* Performance indicator legend */}
+          <div style={{ display: 'flex', gap: 14, marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#64748b' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 4, height: 10, background: '#16a34a', borderRadius: 2 }} /> Above plan
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 4, height: 10, background: '#f59e0b', borderRadius: 2 }} /> On track
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 4, height: 10, background: '#dc2626', borderRadius: 2 }} /> Below plan
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 4, height: 10, background: '#94a3b8', borderRadius: 2 }} /> No target
+            </span>
+          </div>
         </Card>
 
         {/* Capital growth chart + Occupancy dynamics */}
@@ -212,6 +356,13 @@ export default function InvestorPortalPage() {
         {data.income_by_source.length > 0 && (
           <Card title="Дохід за джерелами" subtitle="Розподіл за кількістю бронювань (по виїзду)" style={{ marginTop: 16 }}>
             <SourceBreakdown items={data.income_by_source} />
+          </Card>
+        )}
+
+        {/* Documents vault */}
+        {data.documents && data.documents.length > 0 && (
+          <Card title="Документи" subtitle={`${data.documents.length} ${data.documents.length === 1 ? 'файл' : 'файлів'}`} style={{ marginTop: 16 }}>
+            <DocumentsList items={data.documents} />
           </Card>
         )}
 
@@ -352,6 +503,37 @@ function SourceBreakdown({ items }: { items: Array<{ source: string; currency: s
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function DocumentsList({ items }: { items: NonNullable<PortalData['documents']> }) {
+  return (
+    <div>
+      {items.map((d) => {
+        const color = DOC_TYPE_COLOR[d.type] || DOC_TYPE_COLOR.other;
+        return (
+          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: `${color}18`, color, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <FileText size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{d.name}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                <span style={{ background: `${color}18`, color, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                  {DOC_TYPE_LABEL[d.type] || d.type}
+                </span>
+                {' · '}{fmtSize(d.file_size)}
+                {' · '}{d.uploaded_at?.substring(0, 10)}
+                {d.period_start && ` · період ${d.period_start}${d.period_end ? `..${d.period_end}` : ''}`}
+              </div>
+            </div>
+            <a href={d.download_url} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 14px', background: '#f1f5f9', color: '#3b82f6', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+              <Download size={14} /> Завантажити
+            </a>
+          </div>
+        );
+      })}
     </div>
   );
 }
