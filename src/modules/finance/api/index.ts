@@ -309,6 +309,13 @@ export {
   getAutoRevenueForMonth,
 } from './investors.handlers';
 export { getInvestorAudit, previewCascadeDelete } from './investor-audit.handlers';
+export { listMonthlyNotes } from './investor-notes.handlers';
+import {
+  upsertMonthlyNote as _upsertMonthlyNote,
+  deleteMonthlyNote as _deleteMonthlyNote,
+} from './investor-notes.handlers';
+export const upsertMonthlyNote = withPermission('manage_investors', _upsertMonthlyNote);
+export const deleteMonthlyNote = withPermission('manage_investors', _deleteMonthlyNote);
 import {
   relinkProjectToUnit as _relinkProjectToUnit,
   executeCascadeDelete as _executeCascadeDelete,

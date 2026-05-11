@@ -181,12 +181,13 @@ export async function createInvestment(request: NextRequest): Promise<NextRespon
     db.prepare(`
       INSERT INTO investor_investments
         (id, organization_id, investor_id, project_id, amount, currency, equity_pct,
-         invested_at, model_description, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         invested_at, model_description, is_active, target_apy, target_occupancy, cashback_schedule_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, orgId, body.investor_id, body.project_id,
       body.amount, body.currency || 'EUR', body.equity_pct ?? null,
       body.invested_at, body.model_description || null, body.is_active === false ? 0 : 1,
+      body.target_apy ?? null, body.target_occupancy ?? null, body.cashback_schedule_json ?? null,
     );
     return NextResponse.json({ id, ok: true }, { status: 201 });
   } catch (error: any) {
@@ -204,7 +205,7 @@ export async function updateInvestment(
     const body = await request.json();
     const fields: string[] = [];
     const params: any[] = [];
-    for (const k of ['investor_id', 'project_id', 'amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active']) {
+    for (const k of ['investor_id', 'project_id', 'amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'cashback_schedule_json', 'target_apy', 'target_occupancy']) {
       if (body[k] !== undefined) { fields.push(`${k} = ?`); params.push(body[k]); }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
