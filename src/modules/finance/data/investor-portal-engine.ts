@@ -16,6 +16,8 @@
 //
 
 import { getInvestorIncomeBySource, type InvestorSourceBreakdown } from './auto-revenue-engine';
+import { computeAggregatePortfolioCashback, computeCashbackStatus, type CashbackStatus } from './cashback-calculator';
+import { getPerformanceScoresForInvestor, type PerformanceScoreResult } from './performance-score';
 
 export interface InvestorPortalData {
   investor: {
@@ -78,6 +80,37 @@ export interface InvestorPortalData {
     period_year_month: string | null;
     comment: string | null;
   }>;
+  // ─── Investor Portal v2 ──────────────────────────────────
+  cashback_status: CashbackStatus;
+  per_investment_cashback: Array<{ investment_id: string; project_id: string; status: CashbackStatus }>;
+  performance_scores: Record<string, PerformanceScoreResult>; // keyed by project_id (= business_unit_id)
+  ceo_note: {
+    scope: 'portfolio' | 'asset';
+    scope_id: string;
+    month: string;
+    ceo_name: string | null;
+    body_md: string | null;
+    updated_at: string;
+  } | null;
+  asset_notes: Record<string, { month: string; ceo_name: string | null; body_md: string | null }>;
+  documents: Array<{
+    id: string;
+    type: 'agreement' | 'monthly_report' | 'tax_statement' | 'bank_statement' | 'other';
+    name: string;
+    file_size: number;
+    mime_type: string | null;
+    period_start: string | null;
+    period_end: string | null;
+    uploaded_at: string;
+    business_unit_id: string | null;
+    download_url: string;
+  }>;
+  scenarios: Record<string, Array<{
+    scenario: 'pessimistic' | 'base' | 'optimistic';
+    assumptions_json: string | null;
+    monthly_cashback_projection_json: string | null;
+    full_repayment_eta: string | null;
+  }>>;
 }
 
 function deriveStatus(stages: Array<{ pct: number }>): string {
@@ -298,6 +331,104 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, c]) => ({ month, occupancy_pct: +(c.num / c.den).toFixed(1) }));
 
+  // ─── Investor Portal v2 — additional data ─────────────────────
+  // Cashback status (aggregate across all investments)
+  const cashbackStatus = computeAggregatePortfolioCashback(db, investor.id);
+
+  // Per-investment cashback (for per-property pages)
+  const perInvestmentCashback = investments.map((inv) => ({
+    investment_id: inv.id,
+    project_id: inv.project_id,
+    status: computeCashbackStatus(db, inv.id),
+  }));
+
+  // Performance scores per project_id (= business_unit_id)
+  const perfScoresMap = getPerformanceScoresForInvestor(db, investor.id);
+  const performanceScores: Record<string, PerformanceScoreResult> = {};
+  for (const [pid, score] of perfScoresMap.entries()) performanceScores[pid] = score;
+
+  // Latest CEO note for the investor's portfolio (most recent month).
+  // Schema: investor_monthly_notes(scope, scope_id, month, ceo_name, body_md).
+  const ceoNoteRow = db.prepare(`
+    SELECT scope, scope_id, month, ceo_name, body_md, updated_at
+    FROM investor_monthly_notes
+    WHERE scope = 'portfolio' AND scope_id = ?
+    ORDER BY month DESC LIMIT 1
+  `).get(investor.id) as any;
+  const ceoNote = ceoNoteRow || null;
+
+  // Asset-level notes: keep ONLY the latest month per asset, keyed by project_id.
+  const assetNotes: InvestorPortalData['asset_notes'] = {};
+  if (projectIds.length > 0) {
+    const placeholders = projectIds.map(() => '?').join(',');
+    const assetNoteRows = db.prepare(`
+      SELECT n1.scope_id, n1.month, n1.ceo_name, n1.body_md
+      FROM investor_monthly_notes n1
+      WHERE n1.scope = 'asset'
+        AND n1.scope_id IN (${placeholders})
+        AND n1.month = (
+          SELECT MAX(month) FROM investor_monthly_notes n2
+          WHERE n2.scope = 'asset' AND n2.scope_id = n1.scope_id
+        )
+    `).all(...projectIds) as any[];
+    for (const n of assetNoteRows) {
+      assetNotes[n.scope_id] = { month: n.month, ceo_name: n.ceo_name, body_md: n.body_md };
+    }
+  }
+
+  // Documents — investor-level OR attached to any of the investor's projects.
+  const docPlaceholders = projectIds.length > 0 ? projectIds.map(() => '?').join(',') : "''";
+  const docsRows = projectIds.length > 0
+    ? db.prepare(`
+        SELECT id, type, name, file_size, mime_type, period_start, period_end,
+               uploaded_at, business_unit_id
+        FROM investor_documents
+        WHERE is_archived = 0
+          AND (investor_id = ? OR business_unit_id IN (${docPlaceholders}))
+        ORDER BY uploaded_at DESC
+      `).all(investor.id, ...projectIds) as any[]
+    : db.prepare(`
+        SELECT id, type, name, file_size, mime_type, period_start, period_end,
+               uploaded_at, business_unit_id
+        FROM investor_documents
+        WHERE is_archived = 0 AND investor_id = ?
+        ORDER BY uploaded_at DESC
+      `).all(investor.id) as any[];
+  const documents = docsRows.map((d) => ({
+    id: d.id,
+    type: d.type,
+    name: d.name,
+    file_size: d.file_size,
+    mime_type: d.mime_type,
+    period_start: d.period_start,
+    period_end: d.period_end,
+    uploaded_at: d.uploaded_at,
+    business_unit_id: d.business_unit_id,
+    download_url: `/api/finance/investor-documents/${d.id}/download`,
+  }));
+
+  // Forecast scenarios keyed by business_unit_id
+  const scenarios: InvestorPortalData['scenarios'] = {};
+  if (projectIds.length > 0) {
+    const placeholders = projectIds.map(() => '?').join(',');
+    const scenarioRows = db.prepare(`
+      SELECT business_unit_id, scenario, assumptions_json,
+             monthly_cashback_projection_json, full_repayment_eta
+      FROM forecast_scenarios
+      WHERE business_unit_id IN (${placeholders})
+      ORDER BY business_unit_id, scenario
+    `).all(...projectIds) as any[];
+    for (const s of scenarioRows) {
+      if (!scenarios[s.business_unit_id]) scenarios[s.business_unit_id] = [];
+      scenarios[s.business_unit_id].push({
+        scenario: s.scenario,
+        assumptions_json: s.assumptions_json,
+        monthly_cashback_projection_json: s.monthly_cashback_projection_json,
+        full_repayment_eta: s.full_repayment_eta,
+      });
+    }
+  }
+
   return {
     investor: {
       id: investor.id, name: investor.name, email: investor.email, status: investor.status,
@@ -333,5 +464,12 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       period_year_month: p.period_year_month,
       comment: p.comment,
     })),
+    cashback_status: cashbackStatus,
+    per_investment_cashback: perInvestmentCashback,
+    performance_scores: performanceScores,
+    ceo_note: ceoNote,
+    asset_notes: assetNotes,
+    documents,
+    scenarios,
   };
 }
