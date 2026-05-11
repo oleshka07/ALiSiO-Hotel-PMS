@@ -3736,6 +3736,80 @@ function runMigrations(database: any) {
     )
   `);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Investor Portal v2 — Phase 1 (Foundation)
+  //
+  // New columns + tables to support contractual cashback schedules,
+  // performance targets, CEO monthly notes, investor documents, and
+  // 3-scenario forward projections.
+  //
+  // - cashback_schedule_json: full contractual monthly/quarterly plan
+  // - target_apy / target_occupancy: baselines for the above/on/below
+  //   performance indicator on the assets list
+  // - units_count: how many physical units in a business_unit (1 by
+  //   default; e.g. "B1-B3 STEALTH" has 3)
+  // - investor_monthly_notes: CEO commentary per month, scope=portfolio|asset
+  // - investor_documents: filesystem-backed PDF vault (agreements, monthly
+  //   reports, tax statements)
+  // - forecast_scenarios: 3 scenarios (pessimistic/base/optimistic) per BU
+  // ═══════════════════════════════════════════════════════════════════
+  addCol('investor_investments', 'cashback_schedule_json', 'TEXT');
+  addCol('investor_investments', 'target_apy',             'NUMERIC');
+  addCol('investor_investments', 'target_occupancy',       'NUMERIC');
+  addCol('business_units',       'units_count',            'INTEGER NOT NULL DEFAULT 1');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_monthly_notes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL CHECK (scope IN ('portfolio', 'asset')),
+      scope_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      ceo_name TEXT,
+      body_md TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (scope, scope_id, month)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_notes_scope ON investor_monthly_notes(scope, scope_id, month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_documents (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      investor_id TEXT REFERENCES investors(id) ON DELETE CASCADE,
+      business_unit_id TEXT REFERENCES business_units(id) ON DELETE SET NULL,
+      type TEXT NOT NULL CHECK (type IN ('agreement', 'monthly_report', 'tax_statement', 'bank_statement', 'other')),
+      name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER,
+      mime_type TEXT,
+      period_start TEXT,
+      period_end TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      uploaded_by TEXT,
+      is_archived INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_docs_investor ON investor_documents(investor_id, is_archived)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_docs_bu ON investor_documents(business_unit_id, is_archived)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS forecast_scenarios (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      business_unit_id TEXT NOT NULL REFERENCES business_units(id) ON DELETE CASCADE,
+      scenario TEXT NOT NULL CHECK (scenario IN ('pessimistic', 'base', 'optimistic')),
+      assumptions_json TEXT,
+      monthly_cashback_projection_json TEXT,
+      full_repayment_eta TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (business_unit_id, scenario)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_forecast_bu ON forecast_scenarios(business_unit_id)');
+
   // PR #27: email-forward receipts inbox (separate from bank inbox)
   // User forwards email with invoice/receipt → IMAP poll extracts attachments
   // → drops them in fin_pending_receipts pool → user manually links to a
