@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut } from 'lucide-react';
 import BookingViewModal from '@/components/booking/BookingViewModal';
+import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow } from '@/components/booking/BookingForm';
 
 interface BookingRow {
   id: string; check_in: string; check_out: string; nights: number;
@@ -48,188 +49,51 @@ const FILTER_CHIPS = [
   { key: 'checked_out', label: 'Виселено' },
 ];
 
-function calcNights(checkIn: string, checkOut: string): number {
-  if (!checkIn || !checkOut) return 0;
-  return Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000);
-}
+// ─── Booking Sheet wrapper ─────────────────────────────────
+// Wraps shared BookingForm in mobile bottom-sheet styling.
 
-// ─── New Booking Sheet ─────────────────────────────────────
-
-function NewBookingSheet({ units, onClose, onSaved }: {
-  units: UnitRow[];
+function BookingFormSheet({
+  title,
+  mode,
+  bookingId,
+  initial,
+  unitTypes,
+  allUnits,
+  bookingSources,
+  onClose,
+  onSaved,
+}: {
+  title: string;
+  mode: 'create' | 'edit';
+  bookingId?: string;
+  initial?: Partial<import('@/components/booking/BookingForm').BookingFormValues>;
+  unitTypes: BFUnitTypeRow[];
+  allUnits: BFUnitRow[];
+  bookingSources: BFBookingSourceRow[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    phone: '',
-    checkIn: today,
-    checkOut: tomorrow,
-    unitId: units.find(u => u.category_type === 'resort')?.id || units[0]?.id || '',
-    adults: 2,
-    source: 'direct',
-    status: 'confirmed',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const resortUnits = useMemo(() => units.filter(u => u.category_type === 'resort'), [units]);
-  const nights = calcNights(form.checkIn, form.checkOut);
-
-  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!form.firstName || !form.lastName || !form.unitId || nights < 1) {
-      setError('Заповніть обов\'язкові поля');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          phone: form.phone || null,
-          unitId: form.unitId,
-          checkIn: form.checkIn,
-          checkOut: form.checkOut,
-          nights,
-          adults: form.adults,
-          children: 0,
-          status: form.status,
-          paymentStatus: 'unpaid',
-          source: form.source,
-          totalPrice: 0,
-        }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || 'Помилка створення');
-      }
-      onSaved();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Помилка мережі');
-      setSaving(false);
-    }
-  }
-
-  const inp = (style?: React.CSSProperties) => ({
-    width: '100%', padding: '11px 12px', borderRadius: 10,
-    border: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)', fontSize: 15,
-    boxSizing: 'border-box' as const,
-    ...style,
-  });
-
-  const label = { fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 5, display: 'block' as const };
-
   return (
     <>
       <div className="m-sheet-backdrop" onClick={onClose} />
       <div className="m-sheet" style={{ maxHeight: '92dvh' }}>
         <div className="m-sheet-handle" />
         <div className="m-sheet-header">
-          <h2 style={{ fontSize: 17 }}>Нове бронювання</h2>
+          <h2 style={{ fontSize: 17 }}>{title}</h2>
           <button className="m-header-btn" onClick={onClose}><X size={20} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ flex: 1, overflowY: 'auto', padding: '0 16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Name */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={label}>Ім'я *</label>
-              <input style={inp()} value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} placeholder="Іван" required />
-            </div>
-            <div>
-              <label style={label}>Прізвище *</label>
-              <input style={inp()} value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} placeholder="Іваненко" required />
-            </div>
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label style={label}>Телефон</label>
-            <input style={inp()} type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+380..." />
-          </div>
-
-          {/* Dates */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={label}>Заїзд *</label>
-              <input style={inp()} type="date" value={form.checkIn} onChange={e => setForm(f => ({ ...f, checkIn: e.target.value }))} required />
-            </div>
-            <div>
-              <label style={label}>Виїзд *</label>
-              <input style={inp()} type="date" value={form.checkOut} onChange={e => setForm(f => ({ ...f, checkOut: e.target.value }))} required />
-            </div>
-          </div>
-
-          {nights > 0 && (
-            <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--accent-primary)', fontWeight: 600, marginTop: -6 }}>
-              {nights} ніч{nights === 1 ? '' : nights < 5 ? 'і' : 'ей'}
-            </div>
-          )}
-
-          {/* Unit */}
-          <div>
-            <label style={label}>Юніт *</label>
-            <select style={inp()} value={form.unitId} onChange={e => setForm(f => ({ ...f, unitId: e.target.value }))} required>
-              <option value="">— оберіть —</option>
-              {resortUnits.map(u => <option key={u.id} value={u.id}>{u.code} — {u.unit_type_name}</option>)}
-            </select>
-          </div>
-
-          {/* Adults + Source */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={label}>Дорослих</label>
-              <select style={inp()} value={form.adults} onChange={e => setForm(f => ({ ...f, adults: Number(e.target.value) }))}>
-                {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={label}>Статус</label>
-              <select style={inp()} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                <option value="confirmed">Підтверджено</option>
-                <option value="tentative">Очікується</option>
-                <option value="draft">Чернетка</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Source */}
-          <div>
-            <label style={label}>Джерело</label>
-            <select style={inp()} value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
-              <option value="direct">Прямий</option>
-              <option value="phone">Телефон</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="booking_com">Booking.com</option>
-              <option value="airbnb">Airbnb</option>
-              <option value="agoda">Agoda</option>
-            </select>
-          </div>
-
-          {error && <p style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>{error}</p>}
-
-          <button
-            type="submit"
-            disabled={saving || nights < 1}
-            style={{
-              width: '100%', padding: '14px', borderRadius: 12, border: 'none',
-              background: 'linear-gradient(135deg, #14b8a6, #3b82f6)',
-              color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer',
-              opacity: (saving || nights < 1) ? 0.6 : 1,
-            }}
-          >
-            {saving ? 'Створення...' : 'Створити бронювання'}
-          </button>
-        </form>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 24px' }}>
+          <BookingForm
+            mode={mode}
+            bookingId={bookingId}
+            initial={initial}
+            unitTypes={unitTypes}
+            allUnits={allUnits}
+            bookingSources={bookingSources}
+            onSaved={onSaved}
+            onCancel={onClose}
+          />
+        </div>
       </div>
     </>
   );
@@ -244,22 +108,24 @@ interface MobileBookingsProps {
 export default function MobileBookings({ openNew }: MobileBookingsProps) {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [units, setUnits] = useState<UnitRow[]>([]);
+  const [unitTypes, setUnitTypes] = useState<BFUnitTypeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [viewBooking, setViewBooking] = useState<BookingRow | null>(null);
+  const [editBooking, setEditBooking] = useState<BookingRow | null>(null);
   const [payments, setPayments] = useState<unknown[]>([]);
   const [registrations, setRegistrations] = useState<unknown[]>([]);
   const [activityLog, setActivityLog] = useState<unknown[]>([]);
-  const [bookingSources, setBookingSources] = useState<unknown[]>([]);
+  const [bookingSources, setBookingSources] = useState<BFBookingSourceRow[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(openNew ?? false);
   const [categoryFilter, setCategoryFilter] = useState('resort');
 
   const sourceMap = useMemo(() => {
     const map: Record<string, { label: string; color: string }> = {};
-    for (const s of bookingSources as { code: string; name: string; color: string }[]) {
-      map[s.code] = { label: s.name, color: s.color };
+    for (const s of bookingSources) {
+      map[s.code] = { label: s.name, color: s.color || '#6c7086' };
     }
     return map;
   }, [bookingSources]);
@@ -267,14 +133,16 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [bRes, sRes, uRes] = await Promise.all([
+      const [bRes, sRes, uRes, utRes] = await Promise.all([
         fetch(`/api/bookings?category=${categoryFilter}&limit=500`),
         fetch('/api/booking-sources'),
         fetch('/api/units'),
+        fetch('/api/unit-types'),
       ]);
       if (bRes.ok) { const d = await bRes.json(); setBookings(d.bookings || d); }
       if (sRes.ok) setBookingSources(await sRes.json());
       if (uRes.ok) setUnits(await uRes.json());
+      if (utRes.ok) setUnitTypes(await utRes.json());
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [categoryFilter]);
@@ -299,7 +167,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
     setViewBooking(booking);
     try {
       const [pRes, rRes, aRes] = await Promise.all([
-        fetch(`/api/bookings/${booking.id}/payments`),
+        fetch(`/api/payments?reservation_id=${booking.id}`),
         fetch(`/api/bookings/${booking.id}/registrations`),
         fetch(`/api/bookings/${booking.id}/activity`),
       ]);
@@ -310,9 +178,35 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
   };
 
   const handleChangeStatus = async (id: string, status: string) => {
-    await fetch(`/api/bookings/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    await fetch(`/api/bookings/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
     fetchData();
   };
+
+  const editInitial = useMemo(() => {
+    if (!editBooking) return undefined;
+    return {
+      category: editBooking.category_type,
+      unitTypeId: editBooking.unit_type_id || '',
+      unitId: editBooking.unit_id,
+      source: editBooking.source,
+      checkIn: editBooking.check_in,
+      checkOut: editBooking.check_out,
+      adults: editBooking.adults,
+      children: editBooking.children,
+      firstName: editBooking.first_name,
+      lastName: editBooking.last_name,
+      email: editBooking.guest_email || '',
+      phone: editBooking.guest_phone || '',
+      status: editBooking.status,
+      paymentStatus: editBooking.payment_status || 'unpaid',
+      totalPrice: String(editBooking.total_price || ''),
+      commissionAmount: String(editBooking.commission_amount || ''),
+      cityTaxAmount: String(editBooking.city_tax_amount || ''),
+      cityTaxIncluded: !!editBooking.city_tax_included,
+      cityTaxPaid: editBooking.city_tax_paid || 'pending',
+      internalNotes: editBooking.internal_notes || '',
+    };
+  }, [editBooking]);
 
   return (
     <div>
@@ -451,11 +345,30 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
       )}
 
       {/* New booking sheet */}
-      {showNewBooking && units.length > 0 && (
-        <NewBookingSheet
-          units={units}
+      {showNewBooking && (
+        <BookingFormSheet
+          title="Нове бронювання"
+          mode="create"
+          unitTypes={unitTypes}
+          allUnits={units as unknown as BFUnitRow[]}
+          bookingSources={bookingSources}
           onClose={() => setShowNewBooking(false)}
           onSaved={() => { setShowNewBooking(false); fetchData(); }}
+        />
+      )}
+
+      {/* Edit booking sheet */}
+      {editBooking && (
+        <BookingFormSheet
+          title="Редагувати бронювання"
+          mode="edit"
+          bookingId={editBooking.id}
+          initial={editInitial}
+          unitTypes={unitTypes}
+          allUnits={units as unknown as BFUnitRow[]}
+          bookingSources={bookingSources}
+          onClose={() => setEditBooking(null)}
+          onSaved={() => { setEditBooking(null); setViewBooking(null); fetchData(); }}
         />
       )}
 
@@ -468,9 +381,9 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
           activityLog={activityLog as Parameters<typeof BookingViewModal>[0]['activityLog']}
           sourceMap={sourceMap}
           onClose={() => setViewBooking(null)}
-          onEdit={() => {}}
+          onEdit={() => { if (viewBooking) setEditBooking(viewBooking); }}
           onChangeStatus={handleChangeStatus}
-          onFetchPayments={(id) => fetch(`/api/bookings/${id}/payments`).then(r => r.json()).then(setPayments)}
+          onFetchPayments={(id) => fetch(`/api/payments?reservation_id=${id}`).then(r => r.json()).then(setPayments)}
           onFetchBookings={fetchData}
           onFetchRegistrations={(id) => fetch(`/api/bookings/${id}/registrations`).then(r => r.json()).then(setRegistrations)}
           showToast={() => {}}
