@@ -521,19 +521,46 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   }
 
   // FX → EUR. finance_exchange_rates schema: from_currency, to_currency, rate, effective_from.
-  // Strategy: latest rate with effective_from <= today.
+  //
+  // Bidirectional lookup with sanity check, because admins inconsistently
+  // store rates: some store «1 EUR = 25.2 CZK» as from=EUR/to=CZK/rate=25.2
+  // (standard ECB convention), others mistakenly store the same magnitude
+  // as from=CZK/to=EUR/rate=25.2 (which would mean 1 CZK = 25 EUR — wrong!).
+  //
+  // Strategy:
+  //   1. Try direct rate (from=fromCur → to=EUR). Sanity: rate should be
+  //      close to or below 1 for typical conversions to EUR.
+  //   2. If not found OR rate looks inverted, try reverse (from=EUR →
+  //      to=fromCur), use 1/rate.
+  //   3. Pick the one that produces a plausible amount (rate < 5 for direct,
+  //      rate > 0.2 for inverse means a sensible exchange).
   const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
   const orgId = orgRow?.id;
   const getRateToEur = (fromCur: string): number | null => {
     if (fromCur === 'EUR') return 1;
     if (!orgId) return null;
-    const row = db.prepare(`
+    const direct = db.prepare(`
       SELECT rate FROM finance_exchange_rates
       WHERE organization_id = ? AND from_currency = ? AND to_currency = 'EUR'
         AND effective_from <= ?
       ORDER BY effective_from DESC LIMIT 1
     `).get(orgId, fromCur, todayIso) as { rate: number } | undefined;
-    return row?.rate ?? null;
+    const inverse = db.prepare(`
+      SELECT rate FROM finance_exchange_rates
+      WHERE organization_id = ? AND from_currency = 'EUR' AND to_currency = ?
+        AND effective_from <= ?
+      ORDER BY effective_from DESC LIMIT 1
+    `).get(orgId, fromCur, todayIso) as { rate: number } | undefined;
+
+    // Standard convention: 1 EUR = N FOREIGN where N > 1. Reverse rate
+    // (FOREIGN → EUR) should therefore be < 1. If `direct.rate > 5` it's
+    // almost certainly the inverse stored in the wrong direction.
+    const directRate = direct?.rate;
+    const inverseRate = inverse?.rate;
+    if (directRate != null && directRate < 5) return directRate;
+    if (inverseRate != null && inverseRate > 0.2) return 1 / inverseRate;
+    if (directRate != null) return 1 / directRate; // last-ditch: treat as inverse
+    return null;
   };
 
   let inflowEur = 0;
