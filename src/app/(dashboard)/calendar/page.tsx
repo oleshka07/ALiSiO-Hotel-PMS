@@ -7,6 +7,7 @@ import { useDevice } from '@/lib/useDevice';
 import MobileCalendar from '@/components/mobile/pages/MobileCalendar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
 import BookingViewModal from '@/components/booking/BookingViewModal';
+import BookingForm from '@/components/booking/BookingForm';
 import {
   Search,
   ChevronDown,
