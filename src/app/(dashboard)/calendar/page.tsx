@@ -167,7 +167,6 @@ function CalendarDesktop() {
   const [bookingSources, setBookingSources] = useState<any[]>([]);
   const [blocks, setBlocks] = useState<{ id: string; unit_id: string; date_from: string; date_to: string; notes: string }[]>([]);
   const [toast, setToast] = useState('');
-  const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
@@ -183,19 +182,13 @@ function CalendarDesktop() {
   // Two-click date range selection
   const [rangeStart, setRangeStart] = useState<{ unitId: string; date: string } | null>(null);
 
-  // New booking form
+  // Booking form data
   const [unitTypes, setUnitTypes] = useState<any[]>([]);
   const [allUnits, setAllUnits] = useState<any[]>([]);
   const [priceMap, setPriceMap] = useState<Record<string, Record<string, number>>>({});
-  const [form, setForm] = useState({
-    category: 'glamping', unitTypeId: '', unitId: '', source: 'direct',
-    checkIn: '', checkOut: '', adults: 2, children: 0,
-    firstName: '', lastName: '', email: '', phone: '',
-    status: 'confirmed', paymentStatus: 'unpaid',
-    totalPrice: '', commissionAmount: '',
-    cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending',
-    internalNotes: '',
-  });
+  const [newBookingPrefill, setNewBookingPrefill] = useState<{
+    category?: string; unitTypeId?: string; unitId?: string; checkIn?: string; checkOut?: string;
+  } | null>(null);
   const [tooltip, setTooltip] = useState<{ booking: BookingRow; x: number; y: number } | null>(null);
 
   // Build dynamic source map
@@ -451,24 +444,23 @@ function CalendarDesktop() {
     const dateStr = fmtDate(day);
     const unit = units.find(u => u.id === unitId);
     if (!rangeStart || rangeStart.unitId !== unitId) {
-      // First click — set start
       setRangeStart({ unitId, date: dateStr });
     } else {
-      // Second click — set end and open modal
       let ci = rangeStart.date;
       let co = dateStr;
       if (co <= ci) { const tmp = ci; ci = co; co = tmp; }
-      // end date should be next day if same day
       if (ci === co) {
         const nd = new Date(day); nd.setDate(nd.getDate() + 1);
         co = fmtDate(nd);
       }
       setRangeStart(null);
-      setForm(p => ({
-        ...p, unitId, checkIn: ci, checkOut: co,
-        category: unit?.category_type || p.category,
-        cityTaxAmount: recalcCityTax(p.adults, ci, co),
-      }));
+      setNewBookingPrefill({
+        unitId,
+        category: unit?.category_type,
+        unitTypeId: unit?.unit_type_id,
+        checkIn: ci,
+        checkOut: co,
+      });
       setShowNewBooking(true);
     }
   };
@@ -524,132 +516,36 @@ function CalendarDesktop() {
 
   // ─── Open Edit ──────
   const openEditBooking = (b: BookingRow) => {
-    setForm({
-      category: b.category_type, unitTypeId: b.unit_type_id || '', unitId: b.unit_id,
-      source: b.source, checkIn: b.check_in, checkOut: b.check_out,
-      adults: b.adults, children: b.children,
-      firstName: b.first_name, lastName: b.last_name,
-      email: b.guest_email || '', phone: b.guest_phone || '',
-      status: b.status, paymentStatus: b.payment_status || 'unpaid',
-      totalPrice: String(b.total_price || ''),
-      commissionAmount: String((b as any).commission_amount || ''),
-      cityTaxAmount: String((b as any).city_tax_amount || ''),
-      cityTaxIncluded: !!(b as any).city_tax_included,
-      cityTaxPaid: (b as any).city_tax_paid || 'pending',
-      internalNotes: (b as any).internal_notes || '',
-    });
     setEditBooking(b);
     setViewBooking(null);
   };
 
-  // ─── Auto-calc helpers ──────
-  const getSourceCommissionPct = (sourceCode: string) => {
-    const src = bookingSources.find((s: any) => s.code === sourceCode);
-    return src?.commission_percent || 0;
-  };
-  const recalcCommission = (price: string, sourceCode: string) => {
-    const pct = getSourceCommissionPct(sourceCode);
-    if (pct > 0 && Number(price) > 0) return String(Math.round(Number(price) * pct / 100));
-    return '0';
-  };
-  const calcNightsLocal = (ci: string, co: string) => {
-    if (!ci || !co) return 0;
-    return Math.max(0, Math.floor((new Date(co).getTime() - new Date(ci).getTime()) / 86400000));
-  };
-  const recalcCityTax = (adults: number, ci: string, co: string) => {
-    const n = calcNightsLocal(ci, co);
-    return n > 0 && adults > 0 ? String(adults * n * 25) : '0';
-  };
-
-  // ─── Save Edit ──────
-  const handleSaveEdit = async () => {
-    if (!editBooking) return;
-    setSaving(true);
-    try {
-      const nights = Math.max(1, Math.floor((new Date(form.checkOut).getTime() - new Date(form.checkIn).getTime()) / 86400000));
-      const res = await fetch(`/api/bookings/${editBooking.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unit_id: form.unitId, check_in: form.checkIn, check_out: form.checkOut,
-          nights, adults: form.adults, children: form.children,
-          status: form.status, payment_status: form.paymentStatus,
-          source: form.source, firstName: form.firstName, lastName: form.lastName,
-          email: form.email, phone: form.phone,
-          total_price: form.totalPrice ? Number(form.totalPrice) : undefined,
-          commission_amount: form.commissionAmount ? Number(form.commissionAmount) : 0,
-          city_tax_amount: Number(form.cityTaxAmount) || 0,
-          city_tax_included: form.cityTaxIncluded ? 1 : 0,
-          city_tax_paid: form.cityTaxPaid,
-          internal_notes: form.internalNotes || null,
-        }),
-      });
-      if (res.ok) {
-        showToast('Бронювання оновлено!');
-        setEditBooking(null);
-        fetchData();
-      } else {
-        const d = await res.json();
-        alert(d.error || 'Помилка збереження');
-      }
-    } catch { alert('Помилка мережі'); }
-    setSaving(false);
-  };
-
-  // ─── Create New Booking ──────
-  const handleCreateBooking = async () => {
-    if (!form.firstName || !form.lastName || !form.checkIn || !form.checkOut) {
-      alert("Заповніть обов'язкові поля: Ім'я, Прізвище, Заїзд, Виїзд"); return;
-    }
-    const nights = Math.max(1, Math.floor((new Date(form.checkOut).getTime() - new Date(form.checkIn).getTime()) / 86400000));
-    if (nights <= 0) { alert('Дата виїзду має бути після заїзду'); return; }
-    let unitId = form.unitId;
-    if (!unitId) {
-      const avail = allUnits.filter((u: any) => u.unit_type_id === form.unitTypeId || u.category_type === form.category);
-      unitId = avail[0]?.id;
-    }
-    if (!unitId) { alert('Немає доступних юнітів'); return; }
-    setSaving(true);
-    try {
-      let totalPrice = Number(form.totalPrice) || 0;
-      if (!totalPrice) {
-        try {
-          const qRes = await fetch(`/api/pricing/quote?unitTypeId=${form.unitTypeId}&checkIn=${form.checkIn}&checkOut=${form.checkOut}&adults=${form.adults}&children=${form.children}`);
-          if (qRes.ok) { const q = await qRes.json(); totalPrice = q.totalPrice || 0; }
-        } catch {}
-      }
-      const res = await fetch('/api/bookings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unitId, checkIn: form.checkIn, checkOut: form.checkOut, nights,
-          adults: form.adults, children: form.children,
-          firstName: form.firstName, lastName: form.lastName,
-          email: form.email, phone: form.phone,
-          status: form.status, paymentStatus: form.paymentStatus,
-          source: form.source, totalPrice,
-          commissionAmount: form.commissionAmount ? Number(form.commissionAmount) : undefined,
-          cityTaxAmount: Number(form.cityTaxAmount) || 0,
-          cityTaxIncluded: form.cityTaxIncluded,
-          cityTaxPaid: form.cityTaxPaid,
-          internalNotes: form.internalNotes || null,
-        }),
-      });
-      if (res.ok) {
-        showToast('Бронювання створено!');
-        setShowNewBooking(false);
-        fetchData();
-      } else {
-        const d = await res.json(); alert(d.error || 'Помилка');
-      }
-    } catch { alert('Помилка мережі'); }
-    setSaving(false);
-  };
-
-  // ─── Cascading dropdowns ──────
-  const unitTypesForCategory = useMemo(() => unitTypes.filter((ut: any) => ut.category_type === form.category), [unitTypes, form.category]);
-  const unitsForType = useMemo(() => {
-    if (!form.unitTypeId) return allUnits.filter((u: any) => u.category_type === form.category);
-    return allUnits.filter((u: any) => u.unit_type_id === form.unitTypeId);
-  }, [allUnits, form.unitTypeId, form.category]);
+  const editInitial = useMemo(() => {
+    if (!editBooking) return undefined;
+    const b = editBooking as any;
+    return {
+      category: editBooking.category_type,
+      unitTypeId: editBooking.unit_type_id || '',
+      unitId: editBooking.unit_id,
+      source: editBooking.source,
+      checkIn: editBooking.check_in,
+      checkOut: editBooking.check_out,
+      adults: editBooking.adults,
+      children: editBooking.children,
+      firstName: editBooking.first_name,
+      lastName: editBooking.last_name,
+      email: editBooking.guest_email || '',
+      phone: editBooking.guest_phone || '',
+      status: editBooking.status,
+      paymentStatus: editBooking.payment_status || 'unpaid',
+      totalPrice: String(editBooking.total_price || ''),
+      commissionAmount: String(b.commission_amount || ''),
+      cityTaxAmount: String(b.city_tax_amount || ''),
+      cityTaxIncluded: !!b.city_tax_included,
+      cityTaxPaid: b.city_tax_paid || 'pending',
+      internalNotes: b.internal_notes || '',
+    };
+  }, [editBooking]);
 
   // ─── Total width ──────
   const totalW = TOTAL_DAYS * DAY_W;
@@ -721,7 +617,7 @@ function CalendarDesktop() {
                 {syncing ? ' Синх...' : ' Hostex'}
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Users size={14} /> Групове</button>
-              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending', internalNotes: '' }); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { setNewBookingPrefill(null); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
           </div>
 
@@ -1119,119 +1015,58 @@ function CalendarDesktop() {
         />
       )}
 
-      {/* ─── Edit Booking Modal (compact) ───────── */}
+      {/* ─── Edit Booking Modal ───────── */}
       {editBooking && (
         <div className="modal-overlay" onClick={() => setEditBooking(null)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ padding: '10px 16px' }}>
-              <h3 className="modal-title" style={{ fontSize: 15 }}>Редагувати бронювання</h3>
-              <button className="modal-close" onClick={() => setEditBooking(null)}><X size={16} /></button>
+            <div className="modal-header">
+              <h3 className="modal-title">Редагувати бронювання</h3>
+              <button className="modal-close" onClick={() => setEditBooking(null)}><X size={18} /></button>
             </div>
-            <div className="modal-body" style={{ padding: '12px 16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Дор.</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => setForm(p => ({ ...p, adults: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Діт.</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Юніт</label><select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Джерело</label><select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Статус</label><select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Оплата</label><select className="form-select" value={form.paymentStatus} onChange={e => setForm(p => ({ ...p, paymentStatus: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-              </div>
-              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginBottom: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>💰 Фінанси</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ціна CZK</label><input className="form-input" type="number" placeholder="0" value={form.totalPrice} onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Комісія{getSourceCommissionPct(form.source) > 0 && ` ${getSourceCommissionPct(form.source)}%`}</label><input className="form-input" type="number" placeholder="0" value={form.commissionAmount} onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>🏛️ Збір</label><input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount} onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Збір ст.</label><select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="pending">⏳</option><option value="paid">✅</option><option value="exempt">🚫</option></select></div>
-                </div>
-                <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}><input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} /> Вкл. у вартість</label>
-              </div>
-              <textarea className="form-input" placeholder="Примітки..." value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px', minHeight: 36, resize: 'vertical', width: '100%' }} />
-            </div>
-            <div className="modal-footer" style={{ padding: '8px 16px' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setEditBooking(null)}>Скасувати</button>
-              <button className="btn btn-primary btn-sm" onClick={handleSaveEdit} disabled={saving}>
-                {saving ? <Loader2 size={14} className="animate-pulse" /> : <Save size={14} />} Зберегти
-              </button>
+            <div className="modal-body">
+              <BookingForm
+                mode="edit"
+                bookingId={editBooking.id}
+                initial={editInitial}
+                unitTypes={unitTypes}
+                allUnits={allUnits}
+                bookingSources={bookingSources}
+                onSaved={() => {
+                  setEditBooking(null);
+                  showToast('Бронювання оновлено!');
+                  fetchData();
+                }}
+                onCancel={() => setEditBooking(null)}
+              />
             </div>
           </div>
         </div>
       )}
 
-
-
-      {/* ─── New Booking Modal (compact) ───────── */}
+      {/* ─── New Booking Modal ───────── */}
       {showNewBooking && (
-        <div className="modal-overlay" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}>
+        <div className="modal-overlay" onClick={() => { setShowNewBooking(false); setRangeStart(null); setNewBookingPrefill(null); }}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ padding: '10px 16px' }}>
-              <h3 className="modal-title" style={{ fontSize: 15 }}>Нове бронювання</h3>
-              <button className="modal-close" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}><X size={16} /></button>
+            <div className="modal-header">
+              <h3 className="modal-title">Нове бронювання</h3>
+              <button className="modal-close" onClick={() => { setShowNewBooking(false); setRangeStart(null); setNewBookingPrefill(null); }}><X size={18} /></button>
             </div>
-            <div className="modal-body" style={{ padding: '12px 16px' }}>
-              {/* Section: Stay */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value, cityTaxAmount: recalcCityTax(p.adults, e.target.value, p.checkOut) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value, cityTaxAmount: recalcCityTax(p.adults, p.checkIn, e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Дор.</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => { const a = Number(e.target.value); setForm(p => ({ ...p, adults: a, cityTaxAmount: recalcCityTax(a, p.checkIn, p.checkOut) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Діт.</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-              </div>
-              {form.checkIn && form.checkOut && <div style={{ fontSize: 11, color: 'var(--accent-primary)', fontWeight: 600, marginBottom: 8 }}>📅 {calcNightsLocal(form.checkIn, form.checkOut)} ночей</div>}
-
-              {/* Section: Unit */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Категорія</label><select className="form-select" value={form.category} onChange={e => { const cat = e.target.value; const uts = unitTypes.filter((ut: any) => ut.category_type === cat); setForm(p => ({ ...p, category: cat, unitTypeId: uts[0]?.id || '', unitId: '' })); }} style={{ fontSize: 12, padding: '5px 6px' }}><option value="glamping">Glamping</option><option value="resort">Resort</option><option value="camping">Camping</option></select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Тип</label><select className="form-select" value={form.unitTypeId} onChange={e => setForm(p => ({ ...p, unitTypeId: e.target.value, unitId: '' }))} style={{ fontSize: 12, padding: '5px 6px' }}>{unitTypesForCategory.map((ut: any) => <option key={ut.id} value={ut.id}>{ut.name}</option>)}</select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Юніт</label><select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="">Авто</option>{unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Джерело</label><select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></div>
-              </div>
-
-              {/* Section: Guest */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-              </div>
-
-              {/* Section: Finance */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginBottom: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>💰 Фінанси</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ціна CZK</label><input className="form-input" type="number" placeholder="0" value={form.totalPrice} onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Комісія{getSourceCommissionPct(form.source) > 0 && ` ${getSourceCommissionPct(form.source)}%`}</label><input className="form-input" type="number" placeholder="0" value={form.commissionAmount} onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Статус</label><select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Оплата</label><select className="form-select" value={form.paymentStatus} onChange={e => setForm(p => ({ ...p, paymentStatus: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-                </div>
-              </div>
-
-              {/* Section: Tax + Notes (compact row) */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>🏛️ Збір CZK</label><input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount} onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
-                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Збір статус</label><select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="pending">⏳ Очікує</option><option value="paid">✅ Оплачено</option><option value="exempt">🚫 Звільнено</option></select></div>
-                  <div style={{ gridColumn: '3 / -1', display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-                    <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}><input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} /> Вкл. у вартість</label>
-                  </div>
-                </div>
-                <textarea className="form-input" placeholder="Примітки..." value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px', minHeight: 36, resize: 'vertical', marginTop: 6, width: '100%' }} />
-              </div>
-            </div>
-            <div className="modal-footer" style={{ padding: '8px 16px' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}>Скасувати</button>
-              <button className="btn btn-primary btn-sm" onClick={handleCreateBooking} disabled={saving}>
-                {saving ? <Loader2 size={14} className="animate-pulse" /> : <Plus size={14} />} Створити
-              </button>
+            <div className="modal-body">
+              <BookingForm
+                mode="create"
+                initial={newBookingPrefill || undefined}
+                unitTypes={unitTypes}
+                allUnits={allUnits}
+                bookingSources={bookingSources}
+                onSaved={() => {
+                  setShowNewBooking(false);
+                  setNewBookingPrefill(null);
+                  setRangeStart(null);
+                  showToast('Бронювання створено!');
+                  fetchData();
+                }}
+                onCancel={() => { setShowNewBooking(false); setRangeStart(null); setNewBookingPrefill(null); }}
+              />
             </div>
           </div>
         </div>
