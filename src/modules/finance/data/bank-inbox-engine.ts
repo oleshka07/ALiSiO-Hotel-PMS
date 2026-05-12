@@ -8,6 +8,7 @@ import { createOperationInTx } from '../api/operations.handlers';
 import { tryMatchBankOpToReceivables } from './clearing-engine';
 import { tagOpWithRecurringSuggestion } from './recurring-engine';
 import { parseKbPdf, validateParsedStatement } from './kb-pdf-parser';
+import { parseStatementWithLlm } from './llm-statement-extractor';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // ─────────────────────────────────────────────────────────────────
@@ -290,8 +291,19 @@ export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<Check
               } else if (isCsv) {
                 stmt = parseKbCsv(att.content.toString('utf8'));
               } else {
-                // PDF — KB Mojebanka default delivery format
-                stmt = await parseKbPdf(att.content as Buffer);
+                // PDF — LLM-based extractor (works for any bank format).
+                // If OPENAI_API_KEY is missing or LLM fails, fall back to
+                // the legacy KB-specific regex parser as a last resort.
+                if (process.env.OPENAI_API_KEY) {
+                  try {
+                    stmt = await parseStatementWithLlm(att.content as Buffer, filename, msg.uid);
+                  } catch (llmErr: any) {
+                    console.log(`[BankInbox] LLM extractor failed (${llmErr.message}), falling back to regex parser`);
+                    stmt = await parseKbPdf(att.content as Buffer);
+                  }
+                } else {
+                  stmt = await parseKbPdf(att.content as Buffer);
+                }
               }
             } catch (e: any) {
               const reason = `parse failed — ${e.message}`;
