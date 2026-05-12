@@ -75,8 +75,9 @@ interface PortalData {
     nights_in_month: number;
     total_available_nights_this_month: number;
     pipeline_inquiries_count: number;
-    expected_inflow_next_30_days: number;
-    expected_inflow_currency: string;
+    expected_inflow_next_30_days_eur: number;
+    expected_inflow_by_currency: Array<{ currency: string; amount: number }>;
+    fx_rate_warning: string | null;
   };
   ops_metrics?: Record<string, {
     occupancy_now_pct: number | null;
@@ -349,10 +350,14 @@ export default function InvestorPortalPage() {
               />
               <PulseStat
                 label="Очікувані надходження · 30 днів"
-                value={fmt(data.pulse.expected_inflow_next_30_days, data.pulse.expected_inflow_currency)}
+                value={fmt(data.pulse.expected_inflow_next_30_days_eur, 'EUR')}
                 sub="підтверджені бронювання"
                 accent
-                tooltip="Сума total_price підтверджених бронювань (Airbnb / Booking / direct), check-in у наступні 30 днів. Валюта — як у системі бронювань"
+                tooltip={(() => {
+                  const breakdown = data.pulse.expected_inflow_by_currency.map((b) => `${b.amount.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} ${b.currency}`).join(' + ');
+                  const base = `Сума total_price підтверджених бронювань (check-in у наступні 30 днів) лише по ваших об'єктах. Конвертовано в EUR за поточним курсом.\n\nРаз-валюта: ${breakdown || '—'}`;
+                  return data.pulse.fx_rate_warning ? `${base}\n\n⚠ ${data.pulse.fx_rate_warning}` : base;
+                })()}
               />
             </div>
           </div>

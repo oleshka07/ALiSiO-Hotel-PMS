@@ -116,8 +116,9 @@ export interface InvestorPortalData {
     nights_in_month: number;
     total_available_nights_this_month: number; // nights × number of investor's units
     pipeline_inquiries_count: number;     // status='tentative' next 14 days
-    expected_inflow_next_30_days: number; // sum of total_price of confirmed reservations
-    expected_inflow_currency: string;
+    expected_inflow_next_30_days_eur: number;   // converted total
+    expected_inflow_by_currency: Array<{ currency: string; amount: number }>; // raw breakdown
+    fx_rate_warning: string | null;       // populated if any rate is missing
   };
   ops_metrics: Record<string, {           // keyed by project_id (BU id)
     occupancy_now_pct: number | null;     // current month
@@ -505,7 +506,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       `).get(...investorUnitIds, todayIso, fmtIso(next14End)) as { n: number }).n
     : 0;
 
-  // Expected inflow next 30 days (confirmed only)
+  // Expected inflow next 30 days (confirmed only) — broken down by currency
   const inflowRows = investorUnitIds.length > 0
     ? reservationsFor(
         investorUnitIds,
@@ -513,11 +514,39 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
         [todayIso, fmtIso(next30End)],
       ) as any[]
     : [];
-  let inflowTotal = 0;
-  let inflowCurrency = 'CZK';
+  const inflowByCurrency = new Map<string, number>();
   for (const r of inflowRows) {
-    inflowTotal += r.total_price || 0;
-    inflowCurrency = r.currency || inflowCurrency;
+    const cur = r.currency || 'CZK';
+    inflowByCurrency.set(cur, (inflowByCurrency.get(cur) || 0) + (r.total_price || 0));
+  }
+
+  // FX → EUR. finance_exchange_rates schema: from_currency, to_currency, rate, effective_from.
+  // Strategy: latest rate with effective_from <= today.
+  const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+  const orgId = orgRow?.id;
+  const getRateToEur = (fromCur: string): number | null => {
+    if (fromCur === 'EUR') return 1;
+    if (!orgId) return null;
+    const row = db.prepare(`
+      SELECT rate FROM finance_exchange_rates
+      WHERE organization_id = ? AND from_currency = ? AND to_currency = 'EUR'
+        AND effective_from <= ?
+      ORDER BY effective_from DESC LIMIT 1
+    `).get(orgId, fromCur, todayIso) as { rate: number } | undefined;
+    return row?.rate ?? null;
+  };
+
+  let inflowEur = 0;
+  let fxWarning: string | null = null;
+  const inflowByCurrencyArr: Array<{ currency: string; amount: number }> = [];
+  for (const [cur, amount] of inflowByCurrency.entries()) {
+    inflowByCurrencyArr.push({ currency: cur, amount: +amount.toFixed(2) });
+    const rate = getRateToEur(cur);
+    if (rate == null) {
+      fxWarning = `Курс ${cur}→EUR не задано — суми у ${cur} виключено`;
+      continue;
+    }
+    inflowEur += amount * rate;
   }
 
   const pulse: InvestorPortalData['pulse'] = {
@@ -525,8 +554,9 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     nights_in_month: nightsInMonth,
     total_available_nights_this_month: nightsInMonth * Math.max(1, investorUnitIds.length),
     pipeline_inquiries_count: pipelineCount,
-    expected_inflow_next_30_days: +inflowTotal.toFixed(2),
-    expected_inflow_currency: inflowCurrency,
+    expected_inflow_next_30_days_eur: +inflowEur.toFixed(2),
+    expected_inflow_by_currency: inflowByCurrencyArr,
+    fx_rate_warning: fxWarning,
   };
 
   // Ops Metrics per BU — current month + previous month for trend.
