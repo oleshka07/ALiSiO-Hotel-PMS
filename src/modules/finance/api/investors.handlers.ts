@@ -516,26 +516,27 @@ export async function getAutoRevenueForMonth(request: NextRequest): Promise<Next
 }
 
 // ─── Helper: get available projects for investor pickers ─────
-// Returns active BUs PLUS any (potentially archived) BU still referenced
-// by an active investor_investment. This way:
-//   - New investments can pick from active finance BUs (the 5-6 normal ones).
-//   - Existing investments on archived investor-only BUs (A1/B1 etc, that
-//     cleanup #C archived) still resolve correctly when editing.
+// Returns ONLY business_units that are investor properties — either
+// registered in investor_property_details (the canonical investor
+// property registry) or referenced by an active investor_investment.
+// This excludes operational finance categories (Ресторан, Палатки,
+// Кемпінг, Сауна …) which live in business_units but are not investor
+// objects, so they don't pollute the investor module's project dropdown.
 
 export async function listInvestorProjects(_request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
     const rows = db.prepare(`
-      SELECT id, name, sort_order, is_active
-      FROM business_units
-      WHERE organization_id = ?
+      SELECT bu.id, bu.name, bu.sort_order, bu.is_active
+      FROM business_units bu
+      WHERE bu.organization_id = ?
         AND (
-          is_active = 1
-          OR id IN (SELECT DISTINCT project_id FROM investor_investments
-                    WHERE organization_id = ? AND is_active = 1 AND project_id IS NOT NULL)
+          bu.id IN (SELECT project_id FROM investor_property_details)
+          OR bu.id IN (SELECT DISTINCT project_id FROM investor_investments
+                       WHERE organization_id = ? AND is_active = 1 AND project_id IS NOT NULL)
         )
-      ORDER BY is_active DESC, sort_order, name
+      ORDER BY bu.is_active DESC, bu.sort_order, bu.name
     `).all(orgId, orgId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
