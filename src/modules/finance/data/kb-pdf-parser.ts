@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PDFParse } from 'pdf-parse';
 import type { ParsedStatement, ParsedTransaction } from './bank-inbox-engine';
+import { ensurePdfWorker } from './pdf-worker-init';
 
 // ─────────────────────────────────────────────────────────────────
 // KB (Komerční banka) PDF statement parser
@@ -243,6 +244,7 @@ function extractCounterparty(rawLines: string[]): string | null {
  * which then triggers the Telegram alert (see notifyParseFailure).
  */
 export async function parseKbPdf(buf: Buffer): Promise<ParsedStatement> {
+  ensurePdfWorker();
   const parser = new PDFParse({ data: buf });
   const data = await parser.getText();
   const text = data.text || '';
