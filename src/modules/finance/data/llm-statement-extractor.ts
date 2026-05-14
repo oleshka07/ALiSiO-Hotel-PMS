@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PDFParse } from 'pdf-parse';
 import type { ParsedStatement, ParsedTransaction } from './bank-inbox-engine';
+import { ensurePdfWorker } from './pdf-worker-init';
 
 const ARCHIVE_ROOT = path.join(process.cwd(), 'data', 'uploads', 'bank-statements');
 
@@ -127,6 +128,7 @@ export async function parseStatementWithLlm(
   }
 
   // 2. Extract text.
+  ensurePdfWorker();
   const parsed = await new PDFParse({ data: pdfBuffer }).getText();
   const text = parsed.text || '';
   if (!text.trim()) {
