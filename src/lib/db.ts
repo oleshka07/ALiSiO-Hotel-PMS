@@ -3561,6 +3561,36 @@ function runMigrations(database: any) {
     console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #I: drop dead FK columns on bank_transactions
+  //
+  // matched_payment_id REFERENCES payments(id) — payments table was DROPed
+  // matched_expense_id REFERENCES expenses(id) — expenses table was DROPed
+  //
+  // Both were superseded by matched_operation_id (REFERENCES fin_operations)
+  // in PR #6. The dead FK target makes ANY insert that touches these
+  // columns blow up with "no such table: main.payments" (even when the
+  // value is NULL — SQLite still validates FK target exists at write time
+  // with foreign_keys=ON). bank-inbox-engine inserts into bank_transactions
+  // on every parsed PDF row, hence the recurring email-import errors.
+  //
+  // SQLite ≥3.35 supports ALTER TABLE DROP COLUMN. Wrap in try in case
+  // the column was already dropped on a fresh install.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const btxCols = database.prepare("PRAGMA table_info(bank_transactions)").all() as { name: string }[];
+    if (btxCols.some((c) => c.name === 'matched_payment_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_payment_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_payment_id (FK→payments)');
+    }
+    if (btxCols.some((c) => c.name === 'matched_expense_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_expense_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_expense_id (FK→expenses)');
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #I drop dead FK columns:', e.message);
+  }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
