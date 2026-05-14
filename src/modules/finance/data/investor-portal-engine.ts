@@ -644,57 +644,55 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   }
 
   // ─── Occupancy time series (last 12 months) ─────────────────
-  // Computed directly from reservations — independent from manual metrics.
-  // Per-asset + aggregate.
-  const occupancyByMonthPerAsset: InvestorPortalData['occupancy_by_month_per_asset'] = {};
-  const aggregateOcc = new Map<string, { soldNights: number; available: number }>();
-
+  // Reads from property_monthly_metrics — the single source of truth for
+  // investor-facing data. Months without a manual metric render as 0%
+  // bars (gray, thin) which preserves the existing "12 bars always
+  // shown" UI behaviour. Previous version computed from reservations
+  // directly which masked operator-corrected occupancy and missed
+  // months where bookings live outside our reservations table
+  // (pre-Hostex-sync history backfilled via Supabase importer).
   const monthsLookback = 12;
   const startOf12mAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsLookback - 1), 1));
-
-  for (const inv of investments) {
-    if (!inv.unit_id) continue;
-    if (occupancyByMonthPerAsset[inv.project_id]) continue;
-    const buUnitIds = investments.filter((i) => i.project_id === inv.project_id).map((i) => i.unit_id).filter(Boolean) as string[];
-    const buRow = db.prepare("SELECT units_count FROM business_units WHERE id = ?").get(inv.project_id) as { units_count?: number } | undefined;
-    const unitsCount = Math.max(1, buRow?.units_count || buUnitIds.length || 1);
-
-    const series: Array<{ month: string; occupancy_pct: number }> = [];
-    for (let mi = 0; mi < monthsLookback; mi++) {
-      const winStart = new Date(Date.UTC(startOf12mAgo.getUTCFullYear(), startOf12mAgo.getUTCMonth() + mi, 1));
-      const winEnd   = new Date(Date.UTC(winStart.getUTCFullYear(), winStart.getUTCMonth() + 1, 0));
-      const daysInWin = winEnd.getUTCDate();
-      const winStartIso = fmtIso(winStart);
-      const winEndIso = fmtIso(winEnd);
-      const monthKey = winStartIso.substring(0, 7);
-
-      const rows = reservationsFor(buUnitIds, "AND check_in <= ? AND check_out >= ?", [winEndIso, winStartIso]) as any[];
-      let sold = 0;
-      for (const r of rows) {
-        const ci = r.check_in > winStartIso ? r.check_in : winStartIso;
-        const co = r.check_out < winEndIso ? r.check_out : winEndIso;
-        sold += Math.max(0, (new Date(co).getTime() - new Date(ci).getTime()) / (1000 * 60 * 60 * 24));
-      }
-      const available = daysInWin * unitsCount;
-      const pct = available > 0 ? (sold / available) * 100 : 0;
-      series.push({ month: monthKey, occupancy_pct: +pct.toFixed(1) });
-
-      // Aggregate (across all assets) — track nights sold + available, then
-      // compute % at the end as a weighted average.
-      const agg = aggregateOcc.get(monthKey) || { soldNights: 0, available: 0 };
-      agg.soldNights += sold;
-      agg.available += available;
-      aggregateOcc.set(monthKey, agg);
-    }
-    occupancyByMonthPerAsset[inv.project_id] = series;
+  const monthKeys: string[] = [];
+  for (let mi = 0; mi < monthsLookback; mi++) {
+    const winStart = new Date(Date.UTC(startOf12mAgo.getUTCFullYear(), startOf12mAgo.getUTCMonth() + mi, 1));
+    monthKeys.push(fmtIso(winStart).substring(0, 7));
   }
 
-  const occupancyByMonth = [...aggregateOcc.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, v]) => ({
-      month,
-      occupancy_pct: v.available > 0 ? +((v.soldNights / v.available) * 100).toFixed(1) : 0,
+  const occupancyByMonthPerAsset: InvestorPortalData['occupancy_by_month_per_asset'] = {};
+  const aggregateOcc = new Map<string, { sum: number; count: number }>();
+
+  for (const projectId of projectIds) {
+    if (occupancyByMonthPerAsset[projectId]) continue;
+    const metrics = metricsByProject.get(projectId) || [];
+    const occByMonthForProject = new Map<string, number>();
+    for (const m of metrics) {
+      if (m.occupancy_pct != null) occByMonthForProject.set(m.year_month, m.occupancy_pct);
+    }
+    const series = monthKeys.map((mk) => ({
+      month: mk,
+      occupancy_pct: +(occByMonthForProject.get(mk) ?? 0).toFixed(1),
     }));
+    occupancyByMonthPerAsset[projectId] = series;
+
+    for (const mk of monthKeys) {
+      const v = occByMonthForProject.get(mk);
+      if (v != null && v > 0) {
+        const cell = aggregateOcc.get(mk) || { sum: 0, count: 0 };
+        cell.sum += v;
+        cell.count += 1;
+        aggregateOcc.set(mk, cell);
+      }
+    }
+  }
+
+  const occupancyByMonth = monthKeys.map((mk) => {
+    const cell = aggregateOcc.get(mk);
+    return {
+      month: mk,
+      occupancy_pct: cell && cell.count > 0 ? +(cell.sum / cell.count).toFixed(1) : 0,
+    };
+  });
 
   return {
     investor: {
