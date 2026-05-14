@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, X, Search } from 'lucide-react';
-import BookingViewModal from '@/components/booking/BookingViewModal';
+import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow, type BookingFormValues } from '@/components/booking/BookingForm';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -878,13 +878,12 @@ export default function MobileCalendar() {
         />
       )}
 
-      {/* Booking detail modal */}
+      {/* Booking detail sheet */}
       {viewBooking && (
-        <BookingViewModal
+        <MobileBookingDetail
           booking={viewBooking}
-          payments={payments as Parameters<typeof BookingViewModal>[0]['payments']}
-          registrations={registrations as Parameters<typeof BookingViewModal>[0]['registrations']}
-          activityLog={activityLog as Parameters<typeof BookingViewModal>[0]['activityLog']}
+          payments={payments as any[]}
+          registrations={registrations as any[]}
           sourceMap={sourceMap}
           onClose={() => setViewBooking(null)}
           onEdit={() => { if (viewBooking) setEditBooking(viewBooking); }}

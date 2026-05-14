@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut } from 'lucide-react';
-import BookingViewModal from '@/components/booking/BookingViewModal';
+import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow } from '@/components/booking/BookingForm';
 
 interface BookingRow {
@@ -399,13 +399,12 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
         />
       )}
 
-      {/* Booking detail modal */}
+      {/* Booking detail sheet */}
       {viewBooking && (
-        <BookingViewModal
+        <MobileBookingDetail
           booking={viewBooking}
-          payments={payments as Parameters<typeof BookingViewModal>[0]['payments']}
-          registrations={registrations as Parameters<typeof BookingViewModal>[0]['registrations']}
-          activityLog={activityLog as Parameters<typeof BookingViewModal>[0]['activityLog']}
+          payments={payments as any[]}
+          registrations={registrations as any[]}
           sourceMap={sourceMap}
           onClose={() => setViewBooking(null)}
           onEdit={() => { if (viewBooking) setEditBooking(viewBooking); }}
