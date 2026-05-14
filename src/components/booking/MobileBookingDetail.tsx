@@ -1,0 +1,790 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import {
+  X, MoreVertical, Phone, Mail, MessageCircle, Check, Clock, Lock,
+  Plus, Copy, ExternalLink, Edit3, Loader2, Save, Receipt,
+  CreditCard, FileText, Users, Trash2,
+} from 'lucide-react';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+interface MobileBookingDetailProps {
+  booking: any;
+  payments: any[];
+  registrations: any[];
+  sourceMap: Record<string, { label: string; color: string }>;
+  onClose: () => void;
+  onEdit: () => void;
+  onChangeStatus: (id: string, status: string) => void;
+  onFetchPayments: (id: string) => void;
+  onFetchBookings: () => void;
+  onFetchRegistrations: (id: string) => void;
+  showToast: (msg: string) => void;
+  setBooking: (b: any) => void;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: 'Чернетка',
+  tentative: 'Очікується',
+  confirmed: 'Підтверджено',
+  checked_in: 'Заселено',
+  checked_out: 'Виселено',
+  cancelled: 'Скасовано',
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: '💵 Готівка',
+  card: '💳 Картою',
+  bank_transfer: '🏦 На рахунок',
+  invoice: '📄 Фактура',
+  booking_platform: '🏨 Платформа',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  deposit: 'Передплата',
+  full: 'Повна',
+  partial: 'Часткова',
+  refund: 'Повернення',
+};
+
+const WEEKDAY_SHORT = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+function formatDate(iso: string): { date: string; day: string } {
+  if (!iso) return { date: '—', day: '' };
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return { date: iso, day: '' };
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return { date: `${dd}.${mm}.${d.getFullYear()}`, day: WEEKDAY_SHORT[d.getDay()] };
+}
+
+function toEur(czk: number): string {
+  return Math.round(czk / 25.5).toLocaleString();
+}
+
+function nightsLabel(n: number): string {
+  if (n === 1) return 'ніч';
+  if (n >= 2 && n <= 4) return 'ночі';
+  return 'ночей';
+}
+
+function adultsLabel(n: number): string {
+  if (n === 1) return 'дорослий';
+  if (n >= 2 && n <= 4) return 'дорослих';
+  return 'дорослих';
+}
+
+export default function MobileBookingDetail({
+  booking: b,
+  payments,
+  registrations,
+  sourceMap,
+  onClose, onEdit, onChangeStatus,
+  onFetchPayments, onFetchBookings, onFetchRegistrations,
+  showToast, setBooking,
+}: MobileBookingDetailProps) {
+  const [tab, setTab] = useState<'payment' | 'registration' | 'groups'>('payment');
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
+  const [showRegForm, setShowRegForm] = useState(false);
+  const [regForm, setRegForm] = useState({
+    firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD',
+    documentNumber: '', nationality: '', country: '', address: '',
+  });
+  const [savingReg, setSavingReg] = useState(false);
+  const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
+  const [subBookings, setSubBookings] = useState<any[]>([]);
+
+  const checkIn = formatDate(b.check_in);
+  const checkOut = formatDate(b.check_out);
+
+  const total = b.total_price || 0;
+  const paidFromOps = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
+  const isPaid = b.payment_status === 'paid' || b.payment_status === 'prepaid';
+  const paid = isPaid && paidFromOps === 0 ? total : paidFromOps;
+  const remaining = Math.max(0, total - paid);
+  const pct = isPaid ? 100 : total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const isRegistered = b.registration_status === 'registered';
+  const canCheckIn = isPaid && isRegistered;
+  const regNeeded = b.adults || 1;
+  const regBadge = `${registrations.length}/${regNeeded}`;
+
+  const sourceInfo = sourceMap[b.source] || { label: b.source || 'Direct', color: '#6B7392' };
+
+  useEffect(() => {
+    if (!b?.id) return;
+    fetch(`/api/bookings/${b.id}/invoice`)
+      .then(r => r.json())
+      .then(data => setInvoice(data))
+      .catch(() => setInvoice(null));
+  }, [b?.id, b?.payment_status]);
+
+  useEffect(() => {
+    if (!b?.id) return;
+    fetch(`/api/bookings/${b.id}/sub-bookings`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setSubBookings(data); })
+      .catch(() => setSubBookings([]));
+  }, [b?.id]);
+
+  const guestPhoneClean = useMemo(() => (b.guest_phone || '').replace(/[^\d+]/g, ''), [b.guest_phone]);
+
+  const handleAddPayment = async () => {
+    if (!payForm.amount || Number(payForm.amount) <= 0) return;
+    const res = await fetch('/api/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reservation_id: b.id,
+        amount: Number(payForm.amount),
+        method: payForm.method,
+        type: payForm.type,
+        notes: payForm.notes || undefined,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
+    setShowPayForm(false);
+    onFetchPayments(b.id);
+    onFetchBookings();
+    const msg = data?.kind === 'marker'
+      ? '✅ Позначка збережена'
+      : 'Платіж додано!';
+    showToast(msg);
+  };
+
+  const handleDeletePayment = async (pId: string) => {
+    if (!confirm('Видалити платіж?')) return;
+    await fetch(`/api/payments/${pId}`, { method: 'DELETE' });
+    onFetchPayments(b.id);
+    onFetchBookings();
+    showToast('Видалено');
+  };
+
+  const handleTogglePaymentRequest = async () => {
+    const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested';
+    await fetch(`/api/bookings/${b.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_status: ns }),
+    });
+    setBooking({ ...b, payment_status: ns });
+    onFetchBookings();
+    showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано');
+  };
+
+  const handleSaveRegistration = async () => {
+    if (!regForm.firstName || !regForm.lastName) {
+      showToast('Імʼя та прізвище обовʼязкові');
+      return;
+    }
+    setSavingReg(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/registrations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(regForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Помилка');
+        return;
+      }
+      setRegForm({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
+      setShowRegForm(false);
+      onFetchRegistrations(b.id);
+      onFetchBookings();
+      showToast('Гостя зареєстровано');
+    } catch { showToast('Помилка'); }
+    finally { setSavingReg(false); }
+  };
+
+  const handleDeleteRegistration = async (regId: string) => {
+    if (!confirm('Видалити реєстрацію?')) return;
+    await fetch(`/api/bookings/${b.id}/registrations?reg_id=${regId}`, { method: 'DELETE' });
+    onFetchRegistrations(b.id);
+    onFetchBookings();
+    showToast('Видалено');
+  };
+
+  const handleCopyGuestLink = () => {
+    if (!b.guest_page_token) return;
+    navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`)
+      .then(() => showToast('Посилання скопійовано'));
+  };
+
+  const handleOpenGuestPage = () => {
+    if (!b.guest_page_token) return;
+    window.open(`/guest/${b.guest_page_token}`, '_blank');
+  };
+
+  // ── Render helpers
+  const StatusIcon = ({ kind, label, sub }: { kind: 'ok' | 'wait' | 'fail' | 'default'; label: string; sub?: string }) => {
+    const colors: Record<string, { bg: string; fg: string }> = {
+      ok:      { bg: 'rgba(74,222,128,0.14)',  fg: '#4ADE80' },
+      wait:    { bg: 'rgba(245,184,71,0.14)',  fg: '#F5B847' },
+      fail:    { bg: 'rgba(242,107,107,0.14)', fg: '#F26B6B' },
+      default: { bg: 'var(--bg-tertiary)',     fg: 'var(--text-tertiary)' },
+    };
+    const c = colors[kind];
+    const Icon = kind === 'ok' ? Check : kind === 'wait' ? Clock : kind === 'fail' ? X : Lock;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center' }}>
+        <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: c.bg, color: c.fg }}>
+          <Icon size={16} strokeWidth={2.2} />
+        </div>
+        <div style={{ fontSize: 11, color: kind === 'default' ? 'var(--text-secondary)' : c.fg, fontWeight: 500 }}>{label}</div>
+        {sub && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>{sub}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="m-sheet-backdrop" onClick={onClose} />
+      <div className="m-sheet mbd-sheet" style={{ maxHeight: '94dvh', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', borderBottom: '1px solid var(--border-primary)',
+          flexShrink: 0,
+        }}>
+          <button onClick={onClose} className="m-header-btn" aria-label="Закрити">
+            <X size={20} />
+          </button>
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>Бронювання</span>
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>#{b.id}</span>
+          </div>
+          <button className="m-header-btn" aria-label="Більше">
+            <MoreVertical size={20} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+
+          {/* Multi-room warning */}
+          {b.is_multi_room && (
+            <div style={{
+              margin: '10px 14px', padding: '8px 12px', borderRadius: 8,
+              background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+              border: '1px solid rgba(245,158,11,0.3)', fontSize: 11, lineHeight: 1.4,
+            }}>
+              <strong>⚠️ Multi-room</strong> — Hostex колапсує групове бронювання Booking.com в один запис. Перевір у Hostex (маркер {b.multi_room_marker || '?'}).
+            </div>
+          )}
+
+          {/* Guest section */}
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+              <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
+                {b.first_name} {b.last_name}
+              </div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                {total.toLocaleString()} CZK
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                <span style={{ padding: '2px 7px', background: 'var(--bg-tertiary)', borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: 'ui-monospace, monospace' }}>
+                  {b.unit_code || b.unit_name}
+                </span>
+                <span style={{ padding: '2px 7px', background: `${sourceInfo.color}26`, borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceInfo.color, fontFamily: 'ui-monospace, monospace' }}>
+                  {sourceInfo.label}
+                </span>
+                <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
+                <span>{b.nights} {nightsLabel(b.nights)}</span>
+                <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
+                <span>{b.adults} {adultsLabel(b.adults)}{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
+                ≈ {toEur(total)} €
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+              {[
+                { lbl: 'Заїзд', val: checkIn },
+                { lbl: 'Виїзд', val: checkOut },
+              ].map(d => (
+                <div key={d.lbl} style={{
+                  display: 'flex', flexDirection: 'column', gap: 2,
+                  padding: '7px 10px', background: 'var(--bg-tertiary)',
+                  borderRadius: 8, border: '1px solid var(--border-primary)',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.7px', fontWeight: 600 }}>{d.lbl}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                    {d.val.date}
+                    {d.val.day && <span style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginLeft: 4, fontWeight: 400 }}>{d.val.day}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Contacts */}
+            {(b.guest_phone || b.guest_email) && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {b.guest_phone && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Phone size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      {b.guest_phone}
+                    </span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <a href={`tel:${guestPhoneClean}`} style={contactBtnStyle('#4ADE80')} aria-label="Подзвонити">
+                        <Phone size={14} />
+                      </a>
+                      <a href={`https://wa.me/${guestPhoneClean.replace(/^\+/, '')}`} target="_blank" rel="noopener" style={contactBtnStyle('#4ADE80')} aria-label="WhatsApp">
+                        <MessageCircle size={14} />
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {b.guest_email && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Mail size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {b.guest_email}
+                    </span>
+                    <a href={`mailto:${b.guest_email}`} style={contactBtnStyle('#5B7CFF')} aria-label="Email">
+                      <Mail size={14} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Statuses */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+            padding: '10px 8px', borderBottom: '1px solid var(--border-primary)',
+          }}>
+            <StatusIcon
+              kind={['confirmed','checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
+              label="Підтверджено"
+            />
+            <StatusIcon
+              kind={isPaid ? 'ok' : (b.payment_status === 'payment_requested' ? 'wait' : 'fail')}
+              label="Оплата"
+              sub={isPaid ? undefined : `${pct}%`}
+            />
+            <StatusIcon
+              kind={isRegistered ? 'ok' : 'fail'}
+              label="Реєстрація"
+              sub={regBadge}
+            />
+            <StatusIcon
+              kind={['checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
+              label="Заселено"
+            />
+          </div>
+
+          {/* Primary actions */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr',
+            gap: 6, padding: '10px 14px',
+            borderBottom: '1px solid var(--border-primary)',
+          }}>
+            {b.status === 'confirmed' && (
+              <button onClick={() => onChangeStatus(b.id, 'checked_in')} disabled={!canCheckIn}
+                style={primaryActionStyle(canCheckIn ? 'primary' : 'disabled')}
+                title={!canCheckIn ? 'Спочатку оплата та реєстрація' : ''}>
+                <Check size={14} strokeWidth={2.2} /> Заселити
+                {!canCheckIn && <Lock size={11} style={{ opacity: 0.7 }} />}
+              </button>
+            )}
+            {b.status === 'checked_in' && (
+              <button onClick={() => onChangeStatus(b.id, 'checked_out')} style={primaryActionStyle('primary')}>
+                <Check size={14} strokeWidth={2.2} /> Виселити
+              </button>
+            )}
+            {b.status === 'tentative' && (
+              <button onClick={() => onChangeStatus(b.id, 'confirmed')} style={primaryActionStyle('primary')}>
+                <Check size={14} strokeWidth={2.2} /> Підтвердити
+              </button>
+            )}
+            {!['confirmed','checked_in','checked_out','tentative'].includes(b.status) && (
+              <div style={{ ...primaryActionStyle('confirmed'), justifyContent: 'center', cursor: 'default' }}>
+                <span style={{ fontSize: 12 }}>{STATUS_LABELS[b.status] || b.status}</span>
+              </div>
+            )}
+            {!['cancelled','checked_out'].includes(b.status) ? (
+              <button onClick={() => { if (confirm('Скасувати бронювання?')) onChangeStatus(b.id, 'cancelled'); }}
+                style={primaryActionStyle('danger')}>
+                <X size={14} strokeWidth={2.2} /> Скасувати
+              </button>
+            ) : <div />}
+            <div style={primaryActionStyle('confirmed', { cursor: 'default' })}>
+              {STATUS_LABELS[b.status] || b.status}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            {([
+              { k: 'payment' as const, l: 'Оплата', Icon: CreditCard, badge: !isPaid && total > 0 ? `${pct}%` : undefined },
+              { k: 'registration' as const, l: 'Реєстрація', Icon: FileText, badge: !isRegistered ? regBadge : undefined },
+              { k: 'groups' as const, l: 'Групи', Icon: Users, badge: subBookings.length > 0 ? String(subBookings.length) : undefined },
+            ]).map(t => (
+              <button key={t.k} onClick={() => setTab(t.k)}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer',
+                  fontSize: 12.5, fontWeight: tab === t.k ? 600 : 500,
+                  color: tab === t.k ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                  borderBottom: tab === t.k ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                }}>
+                <t.Icon size={14} strokeWidth={1.8} />
+                {t.l}
+                {t.badge && (
+                  <span style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(242,107,107,0.15)', color: '#F26B6B', borderRadius: 3, fontWeight: 700, fontFamily: 'ui-monospace, monospace' }}>
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          {tab === 'payment' && (
+            <div style={{ padding: '12px 14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+                <div>
+                  <div style={amountLblStyle}>Всього</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div style={amountLblStyle}>Оплачено</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#4ADE80', fontVariantNumeric: 'tabular-nums' }}>{paid.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div style={amountLblStyle}>Залишок</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: remaining > 0 ? '#F5B847' : '#4ADE80', fontVariantNumeric: 'tabular-nums' }}>{remaining.toLocaleString()}</div>
+                </div>
+              </div>
+
+              <div style={{ height: 5, background: 'var(--bg-tertiary)', borderRadius: 3, marginTop: 10, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? '#4ADE80' : '#5B7CFF', borderRadius: 3, transition: 'width 0.4s' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>
+                <span>{pct}% оплачено</span>
+                <span>в CZK</span>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 10 }}>
+                <button onClick={() => setShowPayForm(true)} style={payBtnStyle('primary')}>
+                  <Plus size={13} strokeWidth={2.3} /> Платіж
+                </button>
+                <button onClick={handleTogglePaymentRequest} style={payBtnStyle(b.payment_status === 'payment_requested' ? 'active' : 'default')}>
+                  <Mail size={13} /> Запит
+                </button>
+                {invoice ? (
+                  <button onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')} style={payBtnStyle('default')}>
+                    <Receipt size={13} /> Інвойс
+                  </button>
+                ) : (
+                  <button disabled style={payBtnStyle('disabled')}>
+                    <Receipt size={13} /> Інвойс
+                  </button>
+                )}
+              </div>
+
+              {/* Add payment form */}
+              {showPayForm && (
+                <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input className="form-input" type="number" placeholder="Сума CZK" value={payForm.amount}
+                      onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))}
+                      style={{ fontSize: 13 }} />
+                    <select className="form-select" value={payForm.method}
+                      onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}
+                      style={{ fontSize: 13 }}>
+                      <option value="cash">💵 Готівка</option>
+                      <option value="card">💳 Картою</option>
+                      <option value="bank_transfer">🏦 Рахунок</option>
+                      <option value="invoice">📄 Фактура</option>
+                      <option value="booking_platform">🏨 Платформа</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                    <select className="form-select" value={payForm.type}
+                      onChange={e => setPayForm(p => ({ ...p, type: e.target.value }))}
+                      style={{ fontSize: 13 }}>
+                      <option value="deposit">Передплата</option>
+                      <option value="partial">Часткова</option>
+                      <option value="full">Повна</option>
+                      <option value="refund">Повернення</option>
+                    </select>
+                    <input className="form-input" placeholder="Примітка" value={payForm.notes}
+                      onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))}
+                      style={{ fontSize: 13 }} />
+                  </div>
+                  {remaining > 0 && (
+                    <button onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                      Залишок: {remaining.toLocaleString()} CZK
+                    </button>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setShowPayForm(false)} style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                      Скасувати
+                    </button>
+                    <button onClick={handleAddPayment} disabled={!payForm.amount || Number(payForm.amount) <= 0}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: (!payForm.amount || Number(payForm.amount) <= 0) ? 0.5 : 1 }}>
+                      <Save size={12} /> Зберегти
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Payments list */}
+              {payments.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, marginBottom: 6 }}>Транзакції</div>
+                  {payments.map((p: any) => (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '8px 10px', background: 'var(--bg-secondary)',
+                      borderRadius: 8, marginBottom: 4, fontSize: 12,
+                    }}>
+                      <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#F26B6B' : '#4ADE80', fontVariantNumeric: 'tabular-nums' }}>
+                        {p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()}
+                      </span>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{METHOD_LABELS[p.method] || p.method}</span>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{TYPE_LABELS[p.type] || p.type}</span>
+                      <button onClick={() => handleDeletePayment(p.id)}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'registration' && (
+            <div style={{ padding: '12px 14px' }}>
+              <div style={{
+                padding: '10px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8,
+                background: isRegistered ? 'rgba(74,222,128,0.1)' : 'rgba(242,107,107,0.1)',
+                border: `1px solid ${isRegistered ? 'rgba(74,222,128,0.3)' : 'rgba(242,107,107,0.3)'}`,
+              }}>
+                <span style={{ fontSize: 18 }}>{isRegistered ? '✅' : '❌'}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isRegistered ? '#4ADE80' : '#F26B6B' }}>
+                    {isRegistered ? 'Реєстрація завершена' : `Зареєструйте ${regNeeded - registrations.length} гостей`}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{registrations.length} з {regNeeded}</div>
+                </div>
+              </div>
+
+              {registrations.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  {registrations.map((r: any) => (
+                    <div key={r.reg_id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', background: 'var(--bg-secondary)',
+                      borderRadius: 8, marginBottom: 6,
+                    }}>
+                      <span style={{ fontSize: 20 }}>👤</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{r.first_name} {r.last_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          {r.document_number || '—'} · {r.nationality || '—'}
+                        </div>
+                      </div>
+                      <button onClick={() => handleDeleteRegistration(r.reg_id)}
+                        style={{ background: 'none', border: 'none', color: '#F26B6B', cursor: 'pointer', padding: 6 }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!showRegForm && registrations.length < regNeeded && (
+                <button onClick={() => setShowRegForm(true)}
+                  style={{
+                    marginTop: 12, width: '100%', padding: 12, borderRadius: 10,
+                    background: 'rgba(91,124,255,0.12)', color: '#5B7CFF',
+                    border: '1px solid rgba(91,124,255,0.3)', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}>
+                  <Plus size={14} strokeWidth={2.3} /> Додати гостя
+                </button>
+              )}
+
+              {showRegForm && (
+                <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input className="form-input" placeholder="Імʼя *" value={regForm.firstName}
+                      onChange={e => setRegForm(p => ({ ...p, firstName: e.target.value }))} style={{ fontSize: 13 }} />
+                    <input className="form-input" placeholder="Прізвище *" value={regForm.lastName}
+                      onChange={e => setRegForm(p => ({ ...p, lastName: e.target.value }))} style={{ fontSize: 13 }} />
+                  </div>
+                  <input className="form-input" type="date" placeholder="Дата народження" value={regForm.dateOfBirth}
+                    onChange={e => setRegForm(p => ({ ...p, dateOfBirth: e.target.value }))} style={{ fontSize: 13 }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                    <select className="form-select" value={regForm.documentType}
+                      onChange={e => setRegForm(p => ({ ...p, documentType: e.target.value }))} style={{ fontSize: 13 }}>
+                      <option value="ID_CARD">ID Card</option>
+                      <option value="PASSPORT">Passport</option>
+                    </select>
+                    <input className="form-input" placeholder="Номер документа" value={regForm.documentNumber}
+                      onChange={e => setRegForm(p => ({ ...p, documentNumber: e.target.value }))} style={{ fontSize: 13 }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input className="form-input" placeholder="Громадянство" value={regForm.nationality}
+                      onChange={e => setRegForm(p => ({ ...p, nationality: e.target.value }))} style={{ fontSize: 13 }} />
+                    <input className="form-input" placeholder="Країна" value={regForm.country}
+                      onChange={e => setRegForm(p => ({ ...p, country: e.target.value }))} style={{ fontSize: 13 }} />
+                  </div>
+                  <input className="form-input" placeholder="Адреса" value={regForm.address}
+                    onChange={e => setRegForm(p => ({ ...p, address: e.target.value }))} style={{ fontSize: 13 }} />
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setShowRegForm(false)}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                      Скасувати
+                    </button>
+                    <button onClick={handleSaveRegistration} disabled={savingReg}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {savingReg ? <Loader2 size={12} className="animate-pulse" /> : <Save size={12} />} Зберегти
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'groups' && (
+            <div style={{ padding: '12px 14px' }}>
+              {subBookings.length === 0 ? (
+                <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  Немає підбронювань
+                  <div style={{ fontSize: 11, marginTop: 6 }}>
+                    Створення груп доступне у desktop-версії
+                  </div>
+                </div>
+              ) : (
+                subBookings.map(sb => (
+                  <div key={sb.id} style={{
+                    padding: '10px 12px', background: 'var(--bg-secondary)',
+                    borderRadius: 8, marginBottom: 6,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{sb.label || 'Без назви'}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                        {(sb.subtotal || 0).toLocaleString()} CZK
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                      {sb.child_unit_code || sb.child_unit_name || sb.unit_id} · {sb.adults || 0} дор.{sb.children > 0 ? ` + ${sb.children} діт.` : ''}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bottom actions */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5,
+          padding: '9px 14px', borderTop: '1px solid var(--border-primary)',
+          flexShrink: 0,
+        }}>
+          <button onClick={onClose} style={bottomActionStyle('default')}>Закрити</button>
+          {b.guest_page_token ? (
+            <>
+              <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
+                <Copy size={12} /> Копія
+              </button>
+              <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
+                <ExternalLink size={12} /> Гостьова
+              </button>
+            </>
+          ) : (
+            <>
+              <div />
+              <div />
+            </>
+          )}
+          <button onClick={onEdit} style={bottomActionStyle('edit')}>
+            <Edit3 size={12} /> Редагувати
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────
+
+function contactBtnStyle(color: string): React.CSSProperties {
+  return {
+    width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 7, border: `1px solid ${color}40`, background: `${color}1A`,
+    color, textDecoration: 'none', flexShrink: 0,
+  };
+}
+
+function primaryActionStyle(variant: 'primary' | 'danger' | 'confirmed' | 'disabled', extra?: React.CSSProperties): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+    padding: '10px 6px', borderRadius: 9, fontSize: 13, fontWeight: 600,
+    border: '1px solid transparent', cursor: 'pointer',
+  };
+  switch (variant) {
+    case 'primary':
+      return { ...base, background: 'var(--accent-primary)', color: '#fff', ...extra };
+    case 'danger':
+      return { ...base, background: 'var(--bg-secondary)', color: '#F26B6B', borderColor: 'rgba(242,107,107,0.3)', ...extra };
+    case 'confirmed':
+      return { ...base, background: 'rgba(74,222,128,0.12)', color: '#4ADE80', borderColor: 'rgba(74,222,128,0.3)', ...extra };
+    case 'disabled':
+      return { ...base, background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', cursor: 'not-allowed', opacity: 0.6, ...extra };
+  }
+}
+
+function payBtnStyle(variant: 'primary' | 'active' | 'default' | 'disabled'): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+    padding: '9px 4px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+    border: '1px solid var(--border-primary)',
+  };
+  switch (variant) {
+    case 'primary':
+      return { ...base, background: 'rgba(91,124,255,0.12)', color: '#5B7CFF', borderColor: 'rgba(91,124,255,0.3)' };
+    case 'active':
+      return { ...base, background: 'var(--accent-primary)', color: '#fff', borderColor: 'transparent' };
+    case 'default':
+      return { ...base, background: 'var(--bg-secondary)', color: 'var(--text-secondary)' };
+    case 'disabled':
+      return { ...base, background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', cursor: 'not-allowed', opacity: 0.5 };
+  }
+}
+
+function bottomActionStyle(variant: 'default' | 'edit'): React.CSSProperties {
+  const base: React.CSSProperties = {
+    padding: '9px 4px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+    textAlign: 'center', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+  };
+  if (variant === 'edit') {
+    return { ...base, background: 'rgba(91,124,255,0.1)', color: '#5B7CFF', border: '1px solid rgba(91,124,255,0.28)' };
+  }
+  return { ...base, background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)' };
+}
+
+const amountLblStyle: React.CSSProperties = {
+  fontSize: 10.5, color: 'var(--text-tertiary)', textTransform: 'uppercase',
+  letterSpacing: '0.4px', fontWeight: 600, marginBottom: 3,
+};
