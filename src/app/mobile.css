@@ -105,7 +105,13 @@
   background: var(--bg-card);
   border-top: 1px solid var(--border-primary);
   z-index: 50;
-  position: relative;
+  /* Anchor to viewport. iOS Chrome / Safari ignore overflow:hidden on
+     dvh-sized flex parents — relative positioning lets the nav scroll
+     with content. Fixed positioning keeps it pinned to the bottom. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
 }
 
 .m-tab-item {
