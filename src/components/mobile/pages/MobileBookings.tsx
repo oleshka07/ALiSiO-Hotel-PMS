@@ -121,6 +121,13 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
   const [showSearch, setShowSearch] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(openNew ?? false);
   const [categoryFilter, setCategoryFilter] = useState('resort');
+  const [showArchive, setShowArchive] = useState(false);
+
+  const todayISO = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
 
   const sourceMap = useMemo(() => {
     const map: Record<string, { label: string; color: string }> = {};
@@ -133,8 +140,10 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const params = new URLSearchParams({ category: categoryFilter, limit: '500' });
+      if (!showArchive) params.set('check_out_from', todayISO);
       const [bRes, sRes, uRes, utRes] = await Promise.all([
-        fetch(`/api/bookings?category=${categoryFilter}&limit=500`),
+        fetch(`/api/bookings?${params}`),
         fetch('/api/booking-sources'),
         fetch('/api/units'),
         fetch('/api/unit-types'),
@@ -145,7 +154,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
       if (utRes.ok) setUnitTypes(await utRes.json());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [categoryFilter]);
+  }, [categoryFilter, showArchive, todayISO]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -226,12 +235,16 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
 
       {/* Category toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-        {[{ key: 'resort', label: 'Resort' }, { key: 'camping', label: 'Camping' }].map(c => (
+        {[
+          { key: 'glamping', label: 'Glamping' },
+          { key: 'resort', label: 'Resort' },
+          { key: 'camping', label: 'Camping' },
+        ].map(c => (
           <button
             key={c.key}
             onClick={() => setCategoryFilter(c.key)}
             style={{
-              padding: '5px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              padding: '5px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
               background: categoryFilter === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
               color: categoryFilter === c.key ? '#fff' : 'var(--text-secondary)',
             }}
@@ -256,9 +269,23 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
 
       {/* Toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-          {filtered.length} бронювань
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+            {filtered.length} {showArchive ? 'всього' : 'актуальних'}
+          </span>
+          <button
+            onClick={() => setShowArchive(p => !p)}
+            style={{
+              padding: '3px 9px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontSize: 10, fontWeight: 700,
+              background: showArchive ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+              color: showArchive ? '#fff' : 'var(--text-tertiary)',
+            }}
+            title={showArchive ? 'Показано всі бронювання' : 'Показано лише актуальні'}
+          >
+            {showArchive ? 'Архів' : 'Актуальні'}
+          </button>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => setShowNewBooking(true)}

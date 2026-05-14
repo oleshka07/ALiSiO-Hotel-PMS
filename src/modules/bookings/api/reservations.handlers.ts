@@ -74,6 +74,14 @@ export async function listReservations(request: NextRequest) {
       params.push(dateTo);
     }
 
+    // Hide bookings already checked out before given date. Use this for
+    // "current + upcoming" lists where stale departures are noise.
+    const checkOutFrom = searchParams.get('check_out_from') || '';
+    if (checkOutFrom) {
+      query += ' AND r.check_out >= ?';
+      params.push(checkOutFrom);
+    }
+
     const sourceFilter = searchParams.get('source') || '';
     if (sourceFilter) {
       query += ' AND r.source = ?';
