@@ -286,12 +286,19 @@ export async function updateOperation(
 
     const body = await request.json();
     const allowed: (keyof CreateOperationInput)[] = [
+      'op_type',
       'account_from_id', 'account_to_id', 'amount', 'currency', 'amount_to', 'currency_to',
       'paid_at', 'accrued_at', 'period_from', 'period_to',
       'category_id', 'project_id', 'counterparty_id',
       'reservation_id', 'status', 'method', 'payment_subtype',
       'comment', 'is_planned', 'source', 'source_ref',
     ];
+
+    // op_type changes are allowed (e.g. «Перетворити в переказ» UI flow).
+    // Validate so the column doesn't get a bogus value.
+    if (body.op_type !== undefined && !(OP_TYPES as readonly string[]).includes(body.op_type)) {
+      return NextResponse.json({ error: `op_type must be one of ${OP_TYPES.join(', ')}` }, { status: 400 });
+    }
 
     const fields: string[] = [];
     const params: any[] = [];
