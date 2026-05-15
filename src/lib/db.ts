@@ -189,6 +189,9 @@ function initSchema(database: any) {
       notes TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
+      -- Virtual "staging pool" unit used by the room-allocation modal to
+      -- park bookings without a real room. Hidden from regular listings.
+      is_pool INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(property_id, code)
@@ -990,6 +993,34 @@ function runMigrations(database: any) {
     }
   } catch (e: any) {
     console.log('[DB] gender migration note:', e.message);
+  }
+
+  // --- Migration: add is_pool column to units + seed pool unit for Building F ---
+  // The room-allocation modal uses pool units as a "staging" location for
+  // bookings without a confirmed room. Pool units are real DB rows so the
+  // existing PATCH unit_id flow works unchanged, but they are filtered out
+  // of every regular list (calendar, bookings, etc.) so they never show up
+  // as bookable rooms.
+  try {
+    const unitsCols = database.prepare("PRAGMA table_info(units)").all().map((c: any) => c.name);
+    if (!unitsCols.includes('is_pool')) {
+      database.exec("ALTER TABLE units ADD COLUMN is_pool INTEGER NOT NULL DEFAULT 0");
+      console.log('[DB] Added is_pool column to units');
+    }
+    // Seed pool unit for Building F (idempotent).
+    const fBldg = database.prepare("SELECT id, property_id, category_id FROM buildings WHERE code = 'F' LIMIT 1").get() as { id: string; property_id: string; category_id: string } | undefined;
+    if (fBldg) {
+      const fUtAny = database.prepare("SELECT id FROM unit_types WHERE building_id = ? LIMIT 1").get(fBldg.id) as { id: string } | undefined;
+      const existing = database.prepare("SELECT id FROM units WHERE building_id = ? AND is_pool = 1 LIMIT 1").get(fBldg.id) as { id: string } | undefined;
+      if (!existing && fUtAny) {
+        database.prepare(
+          "INSERT INTO units (id, unit_type_id, property_id, category_id, building_id, name, code, beds, sort_order, is_pool, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)"
+        ).run('u_f_pool', fUtAny.id, fBldg.property_id, fBldg.category_id, fBldg.id, 'Чорновик F', 'F-POOL', 99, 9999);
+        console.log('[DB] Seeded staging pool unit for Building F');
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] is_pool migration note:', e.message);
   }
 
   // --- Migration: extend additional_services with service_type, duration, photo ---

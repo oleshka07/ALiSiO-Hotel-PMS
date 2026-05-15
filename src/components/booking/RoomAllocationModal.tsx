@@ -16,6 +16,7 @@ interface UnitRow {
   unit_type_id: string;
   unit_type_name?: string;
   cleaning_status?: string;
+  is_pool?: number;
 }
 
 interface BookingRow {
@@ -101,7 +102,9 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     setError('');
     try {
       const [uRes, bRes] = await Promise.all([
-        fetch('/api/units?category=resort'),
+        // include_pool=1 brings in the virtual staging pool unit; we
+        // separate it from real rooms client-side.
+        fetch('/api/units?category=resort&include_pool=1'),
         fetch(`/api/bookings?category=resort&check_out_from=${todayISO}&date_to=${horizonISO}&limit=500`),
       ]);
       if (!uRes.ok) throw new Error('Не вдалося завантажити юніти');
@@ -141,10 +144,24 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     if (open) fetchData();
   }, [open, fetchData]);
 
-  // ── Index: which booking lives in a given unit "today onwards"
+  // Virtual staging pool unit for this building. Bookings on this unit
+  // are "in Чорновик" — they have no real room and live in the staging
+  // strip. The room-allocation modal is the only surface that knows
+  // about pool units; every other module's API requests omit them via
+  // the default include_pool=false on /api/units.
+  const poolUnit = useMemo(() => units.find(u => u.is_pool === 1) || null, [units]);
+  const poolUnitId = poolUnit?.id || null;
+
+  // Real rooms only — pool unit is rendered separately as the Чорновик
+  // strip and should never appear in the floor plan grid.
+  const roomUnits = useMemo(() => units.filter(u => u.id !== poolUnitId), [units, poolUnitId]);
+
+  // ── Index: which booking lives in a given REAL room "today onwards"
+  // Pool bookings aren't tracked here — they have no specific room.
   const bookingByUnit = useMemo(() => {
     const m = new Map<string, BookingRow>();
     for (const b of bookings) {
+      if (b.unit_id === poolUnitId) continue;
       if (b.check_in <= todayISO && b.check_out > todayISO) {
         m.set(b.unit_id, b);
         continue;
@@ -153,7 +170,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       if (!existing || b.check_in < existing.check_in) m.set(b.unit_id, b);
     }
     return m;
-  }, [bookings, todayISO]);
+  }, [bookings, todayISO, poolUnitId]);
 
   const stateOf = useCallback((b: BookingRow): RoomState => {
     if (b.check_in === todayISO) return 'arrive-today';
@@ -164,43 +181,44 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     return 'stay';
   }, [todayISO]);
 
-  // Wings
+  // Wings — derived from real rooms only.
   const leftWing = useMemo(() => {
-    return units
+    return roomUnits
       .filter(u => roomNumOf(u.code) >= LEFT_WING_MIN_NUM_F)
       .sort((a, b) => roomNumOf(b.code) - roomNumOf(a.code));
-  }, [units]);
+  }, [roomUnits]);
   const rightWing = useMemo(() => {
-    return units
+    return roomUnits
       .filter(u => {
         const n = roomNumOf(u.code);
         return n > 0 && n < LEFT_WING_MIN_NUM_F;
       })
       .sort((a, b) => roomNumOf(a.code) - roomNumOf(b.code));
-  }, [units]);
+  }, [roomUnits]);
 
   // Status bar
   const occupied = bookingByUnit.size;
-  const arrivalsToday = bookings.filter(b => b.check_in === todayISO).length;
-  const departuresToday = bookings.filter(b => b.check_out === todayISO).length;
+  const arrivalsToday = bookings.filter(b => b.check_in === todayISO && b.unit_id !== poolUnitId).length;
+  const departuresToday = bookings.filter(b => b.check_out === todayISO && b.unit_id !== poolUnitId).length;
 
-  // Чорновик: bookings explicitly detached from a room (no unit_id /
-  // unit_id pointing at a placeholder). Per user feedback the staging
-  // strip is meant *only* for guests an admin has pulled out of their
-  // room — not a duplicate view of arrivals. Until a "pending
-  // assignment" status (or nullable unit_id) lands this list is always
-  // empty and the strip is hidden in the UI.
+  // Чорновик: bookings parked on the pool unit. Admin moved them here
+  // from a real room (or they came in via a future "pending assignment"
+  // flow). Dragging them onto a real room calls PATCH unit_id := real.
   const stagingBookings = useMemo(() => {
-    return bookings.filter(b => !b.unit_id);
-  }, [bookings]);
+    if (!poolUnitId) return [];
+    return bookings.filter(b => b.unit_id === poolUnitId);
+  }, [bookings, poolUnitId]);
 
   // ── Validation
   const canAccept = useCallback((destUnitId: string, bookingId: string): { ok: boolean; type?: 'move' | 'swap'; reason?: string } => {
     const guest = bookings.find(b => b.id === bookingId);
     if (!guest) return { ok: false, reason: 'Бронювання не знайдено' };
+    if (guest.unit_id === destUnitId) return { ok: false };
+    // Drop on the staging pool is always a valid move — no capacity,
+    // no overlap, multiple bookings can sit in the pool simultaneously.
+    if (destUnitId === poolUnitId) return { ok: true, type: 'move' };
     const room = units.find(u => u.id === destUnitId);
     if (!room) return { ok: false, reason: 'Кімната не знайдена' };
-    if (guest.unit_id === destUnitId) return { ok: false };
     const party = partyOf(guest);
     if (room.beds < party) return { ok: false, reason: `${room.code}: ${room.beds} місць, треба ${party}` };
 
@@ -539,7 +557,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="ram-title">Будова {buildingCode} · Розселення</div>
-            <div className="ram-subtitle">{todayISO} · {units.length} кімнат</div>
+            <div className="ram-subtitle">{todayISO} · {roomUnits.length} кімнат</div>
           </div>
           <button className="ram-close" onClick={onClose} aria-label="Закрити">
             <X size={17} strokeWidth={2} />
@@ -547,24 +565,31 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         </div>
 
         <div className="ram-statusbar">
-          <div className="ram-sb-item"><span className="ram-sb-k">Зайнято</span><span className="ram-sb-v ram-c-occ">{occupied}/{units.length}</span></div>
-          <div className="ram-sb-item"><span className="ram-sb-k">Вільно</span><span className="ram-sb-v ram-c-free">{Math.max(0, units.length - occupied)}</span></div>
+          <div className="ram-sb-item"><span className="ram-sb-k">Зайнято</span><span className="ram-sb-v ram-c-occ">{occupied}/{roomUnits.length}</span></div>
+          <div className="ram-sb-item"><span className="ram-sb-k">Вільно</span><span className="ram-sb-v ram-c-free">{Math.max(0, roomUnits.length - occupied)}</span></div>
           <div className="ram-sb-item"><span className="ram-sb-k">Заїзди</span><span className="ram-sb-v ram-c-arr">{arrivalsToday}</span></div>
           <div className="ram-sb-item"><span className="ram-sb-k">Виїзди</span><span className="ram-sb-v ram-c-lea">{departuresToday}</span></div>
         </div>
 
-        {stagingBookings.length > 0 && (
-          <div className="ram-staging">
+        {/* Чорновик is always visible and is a drop target so admins can
+            park bookings without a room. Hidden only when the building
+            has no pool unit configured yet. */}
+        {poolUnitId && (
+          <div className="ram-staging" data-ram-dropzone={poolUnitId} onClick={() => handleZoneClick(poolUnitId)}>
             <div className="ram-staging-head">
               <span className="ram-staging-lbl">Чорновик</span>
               <span className="ram-staging-cnt">{stagingBookings.length}</span>
-              <span className="ram-staging-tip">тягни в кімнату ↓</span>
+              <span className="ram-staging-tip">{stagingBookings.length > 0 ? 'тягни в кімнату ↓' : 'тягни сюди гостя без кімнати'}</span>
             </div>
-            <div className="ram-staging-scroll" onPointerDown={onPointerDown}>
-              {stagingBookings.map(b => (
-                <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} unitCode={units.find(u => u.id === b.unit_id)?.code} />
-              ))}
-            </div>
+            {stagingBookings.length > 0 ? (
+              <div className="ram-staging-scroll" onPointerDown={onPointerDown}>
+                {stagingBookings.map(b => (
+                  <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} />
+                ))}
+              </div>
+            ) : (
+              <div className="ram-staging-empty">Усі гості розподілені ✓</div>
+            )}
           </div>
         )}
 
@@ -691,19 +716,17 @@ function RoomCard({ unit, guest, stateOf, onTapEmpty, formatShort: fmt }: {
   );
 }
 
-function StagingChip({ booking, stateOf, formatShort: fmt, unitCode }: {
+function StagingChip({ booking, stateOf, formatShort: fmt }: {
   booking: BookingRow;
   stateOf: (b: BookingRow) => RoomState;
   formatShort: (d: string) => string;
-  unitCode?: string;
 }) {
   const st = stateOf(booking);
   const tag = st === 'arrive-today' ? 'сьогодні'
     : st === 'arrive-tomorrow' ? 'завтра'
     : st === 'arrive-2days' ? '+2 дн'
     : '';
-  const tagClass = st === 'arrive-today' ? 'ram-tag-arr-strong'
-    : 'ram-tag-arr';
+  const tagClass = st === 'arrive-today' ? 'ram-tag-arr-strong' : 'ram-tag-arr';
   const party = partyOf(booking);
   return (
     <div className="ram-chip" data-ram-card={booking.id}>
@@ -715,7 +738,7 @@ function StagingChip({ booking, stateOf, formatShort: fmt, unitCode }: {
       <div className="ram-chip-bottom">
         {tag && <span className={`ram-tag ${tagClass}`}>{tag}</span>}
         <span className="ram-chip-dates">{fmt(booking.check_in)}–{fmt(booking.check_out)}</span>
-        {unitCode && <span className="ram-chip-src">{unitCode}</span>}
+        {booking.source && <span className="ram-chip-src">{booking.source}</span>}
       </div>
     </div>
   );
@@ -776,6 +799,19 @@ function RoomAllocationStyles() {
         background: var(--bg-secondary);
         border-top: 1px solid var(--border-primary);
         border-bottom: 1px solid var(--border-primary);
+        transition: background .12s, box-shadow .12s;
+      }
+      .ram-staging.ram-valid {
+        background: rgba(242,107,107,0.08) !important;
+        box-shadow: inset 0 0 0 2px rgba(242,107,107,0.48);
+      }
+      .ram-staging.ram-drop-hover.ram-valid {
+        box-shadow: inset 0 0 0 3px #F26B6B;
+      }
+      .ram-staging-empty {
+        padding: 6px 14px;
+        font-size: 11px;
+        color: var(--text-tertiary);
       }
       .ram-staging-head {
         display: flex; align-items: center; gap: 6px;

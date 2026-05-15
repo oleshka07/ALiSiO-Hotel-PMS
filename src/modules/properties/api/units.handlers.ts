@@ -7,6 +7,7 @@ export async function listUnits(request: NextRequest): Promise<NextResponse> {
     const rows = unitsRepo.listUnits({
       category: searchParams.get('category') || undefined,
       unitType: searchParams.get('unitType') || undefined,
+      includePool: searchParams.get('include_pool') === '1',
     });
     return NextResponse.json(rows);
   } catch (error) {
