@@ -12,6 +12,7 @@ interface Props {
   nights: number;
   total: number;
   adults?: number;
+  guestEmail?: string | null;
   guestPageToken?: string;
   paymentUrl?: string;
   qrCodeUrl?: string;
@@ -262,9 +263,10 @@ function GuestPageLink({ token }: { token: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
-  nights, total, adults = 1, guestPageToken, paymentUrl, qrCodeUrl,
+  nights, total, adults = 1, guestEmail, guestPageToken, paymentUrl, qrCodeUrl,
   onReset, onAdminConfirm,
 }: Props) {
+  const hasEmail = !!(guestEmail && guestEmail.trim());
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
   const [currentGuest, setCurrentGuest] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
@@ -330,6 +332,12 @@ export default function StepSuccess({
         <div className="kc-success-icon" style={{ background: 'var(--kc-error-light)', color: 'var(--kc-error)' }}>✗</div>
         <h2>Payment failed</h2>
         <p>Your payment was not completed. Please try again or contact us.</p>
+        {reservationId && (
+          <div style={{ background: 'var(--kc-bg-card, #f8fafb)', borderRadius: 'var(--kc-radius-sm)', padding: '10px 14px', margin: '12px auto', display: 'inline-block', border: '1px solid var(--kc-border, #e2e8f0)' }}>
+            <div style={{ fontSize: 11, color: 'var(--kc-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Booking reference</div>
+            <div style={{ fontSize: 15, fontWeight: 600, fontFamily: 'monospace' }}>{reservationId}</div>
+          </div>
+        )}
         <button className="kc-btn kc-btn-primary" onClick={onReset} type="button">Try again</button>
         <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact us via WhatsApp</a>
       </div>
@@ -405,7 +413,12 @@ export default function StepSuccess({
     <div className="kc-fade-in kc-success">
       <div className="kc-success-icon">✓</div>
       <h2>Booking confirmed!</h2>
-      <p>Thank you for your reservation. We&apos;ll send a confirmation email shortly.</p>
+      <p>
+        Thank you for your reservation.
+        {hasEmail
+          ? ' A confirmation email has been sent to the address you provided.'
+          : ' Please save your booking ID below — we can use it to look up your stay at check-in.'}
+      </p>
 
       {reservationId && (
         <div style={{ background: 'var(--kc-green-light)', borderRadius: 'var(--kc-radius-sm)', padding: '12px 16px', margin: '16px auto', display: 'inline-block' }}>
@@ -500,7 +513,7 @@ export default function StepSuccess({
       </button>
 
       <div className="kc-footer">
-        📧 Confirmation sent to your email<br />
+        {hasEmail && <>📧 Confirmation sent to <strong>{guestEmail}</strong><br /></>}
         📞 +420 723 565 616
       </div>
     </div>
