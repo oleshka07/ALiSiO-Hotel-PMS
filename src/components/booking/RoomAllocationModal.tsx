@@ -45,11 +45,18 @@ type RoomState = 'free' | 'stay' | 'arrive-today' | 'arrive-tomorrow' | 'arrive-
 
 const BUILDING_F_CODE = 'F';
 // Physical layout of Building F: F9..F17 line the left side of the
-// corridor (top = F17 furthest from the entrance, bottom = F9), F1..F8
-// line the right side (top = F1, bottom = F8). Derived from
-// `sort_order`. When other buildings are added or rooms get renumbered
-// this should move to a real `wing` column on units.
-const LEFT_WING_MIN_SORT_F = 9;
+// corridor (top = F17 furthest from the entrance, bottom = F9); F1..F8
+// line the right side (top = F1, bottom = F8). Derive the room number
+// from the unit code (`F17` → 17) rather than from sort_order — in
+// production the sort_order column has drifted from the dev seed and
+// most rooms ended up on the wrong side of the corridor. The code is
+// the source of truth visible to the user.
+const LEFT_WING_MIN_NUM_F = 9;
+
+function roomNumOf(code: string): number {
+  const m = (code || '').match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -146,8 +153,19 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   }, [todayISO]);
 
   // Wings
-  const leftWing = useMemo(() => units.filter(u => u.sort_order >= LEFT_WING_MIN_SORT_F).sort((a, b) => b.sort_order - a.sort_order), [units]);
-  const rightWing = useMemo(() => units.filter(u => u.sort_order < LEFT_WING_MIN_SORT_F).sort((a, b) => a.sort_order - b.sort_order), [units]);
+  const leftWing = useMemo(() => {
+    return units
+      .filter(u => roomNumOf(u.code) >= LEFT_WING_MIN_NUM_F)
+      .sort((a, b) => roomNumOf(b.code) - roomNumOf(a.code));
+  }, [units]);
+  const rightWing = useMemo(() => {
+    return units
+      .filter(u => {
+        const n = roomNumOf(u.code);
+        return n > 0 && n < LEFT_WING_MIN_NUM_F;
+      })
+      .sort((a, b) => roomNumOf(a.code) - roomNumOf(b.code));
+  }, [units]);
 
   // Status bar
   const occupied = bookingByUnit.size;
