@@ -343,7 +343,12 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
     const investor = db.prepare("SELECT name FROM investors WHERE id = ?").get(body.investor_id) as { name: string } | undefined;
     if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
 
-    // Resolve account: explicit, else first active bank account in matching currency
+    // Resolve account: explicit if supplied, else the first active CASH
+    // account in the matching currency, falling back to bank. Operator
+    // wants dividends to flow out of «Готівка EUR» by default — bank
+    // accounts (glamping_eur, etc.) hold operating money that shouldn't
+    // get drained for distributions. The cash account is allowed to go
+    // negative and is reconciled separately.
     const currency = body.currency || 'EUR';
     let accountFromId: string | null = body.account_from_id || null;
     if (!accountFromId) {
@@ -351,7 +356,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
         SELECT id FROM finance_accounts
         WHERE organization_id = ? AND currency = ? AND is_active = 1
           AND type IN ('bank', 'cash')
-        ORDER BY (type = 'bank') DESC, sort_order ASC
+        ORDER BY (type = 'cash') DESC, sort_order ASC
         LIMIT 1
       `).get(orgId, currency) as { id: string } | undefined;
       accountFromId = a?.id || null;
@@ -526,7 +531,7 @@ export async function bulkMonthlyPayout(request: NextRequest): Promise<NextRespo
         SELECT id FROM finance_accounts
         WHERE organization_id = ? AND currency = ? AND is_active = 1
           AND type IN ('bank', 'cash')
-        ORDER BY (type = 'bank') DESC, sort_order ASC
+        ORDER BY (type = 'cash') DESC, sort_order ASC
         LIMIT 1
       `).get(orgId, currency) as { id: string } | undefined;
       accountFromId = a?.id || null;
