@@ -116,8 +116,8 @@ export interface InvestorPortalData {
     nights_in_month: number;
     total_available_nights_this_month: number; // nights × number of investor's units
     pipeline_inquiries_count: number;     // status='tentative' next 14 days
-    expected_inflow_next_30_days_eur: number;   // converted total
-    expected_inflow_by_currency: Array<{ currency: string; amount: number }>; // raw breakdown
+    expected_inflow_next_30_days_eur: number;   // INVESTOR'S share, converted to EUR
+    expected_inflow_by_currency: Array<{ currency: string; amount: number }>; // investor's share per currency
     fx_rate_warning: string | null;       // populated if any rate is missing
   };
   ops_metrics: Record<string, {           // keyed by project_id (BU id)
@@ -506,7 +506,11 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       `).get(...investorUnitIds, todayIso, fmtIso(next14End)) as { n: number }).n
     : 0;
 
-  // Expected inflow next 30 days (confirmed only) — broken down by currency
+  // Expected inflow next 30 days (confirmed only) — broken down by currency.
+  // The number is the INVESTOR'S SHARE, not the gross property revenue:
+  // each reservation total is multiplied by the investor's equity_pct on
+  // that specific unit. Showing gross misled the investor into thinking
+  // they receive the full revenue stream.
   const inflowRows = investorUnitIds.length > 0
     ? reservationsFor(
         investorUnitIds,
@@ -514,10 +518,20 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
         [todayIso, fmtIso(next30End)],
       ) as any[]
     : [];
+  // unit_id → total equity_pct (sum across lots if investor has multiple
+  // investments on the same unit).
+  const unitEquityFraction = new Map<string, number>();
+  for (const inv of investments) {
+    if (!inv.unit_id) continue;
+    const prev = unitEquityFraction.get(inv.unit_id) || 0;
+    unitEquityFraction.set(inv.unit_id, prev + ((inv.equity_pct || 0) / 100));
+  }
   const inflowByCurrency = new Map<string, number>();
   for (const r of inflowRows) {
     const cur = r.currency || 'CZK';
-    inflowByCurrency.set(cur, (inflowByCurrency.get(cur) || 0) + (r.total_price || 0));
+    const eq = unitEquityFraction.get(r.unit_id) || 0;
+    const share = (r.total_price || 0) * eq;
+    inflowByCurrency.set(cur, (inflowByCurrency.get(cur) || 0) + share);
   }
 
   // FX → EUR. finance_exchange_rates schema: from_currency, to_currency, rate, effective_from.
