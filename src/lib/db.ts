@@ -4098,6 +4098,51 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] Sub-Bookings sub_booking_id migration:', e.message); }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Operations audit (W4 from finance UX upgrade).
+  //
+  // Adds `created_by_user_id` + `updated_by_user_id` to `fin_operations`
+  // so the operator sees who recorded / last edited each row (e.g.
+  // Андрій checking in a guest with cash payment vs. Олег reconciling
+  // a bank statement). NULL on legacy rows; backfill is intentionally
+  // skipped because we don't know who created them.
+  //
+  // `fin_operation_audit` stores the full change history. Each insert /
+  // update / delete / op_type conversion writes one row with full
+  // before/after JSON snapshots (chose `full` over `diff` for easier
+  // debugging — disk is cheap, payments need bulletproof audit trail).
+  //
+  // No FK on operation_id deliberately: audit must survive op deletion
+  // so we keep history even after the original row is removed.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const finOpCols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
+    if (!finOpCols.some((c: any) => c.name === 'created_by_user_id')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN created_by_user_id TEXT");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fin_operations_created_by ON fin_operations(created_by_user_id)");
+      console.log('[DB] Audit: added created_by_user_id to fin_operations');
+    }
+    if (!finOpCols.some((c: any) => c.name === 'updated_by_user_id')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN updated_by_user_id TEXT");
+      console.log('[DB] Audit: added updated_by_user_id to fin_operations');
+    }
+  } catch (e: any) { console.log('[DB] Audit fin_operations columns:', e.message); }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_operation_audit (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      operation_id TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('create', 'update', 'delete', 'convert')),
+      user_id TEXT,
+      user_name TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      performed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_op ON fin_operation_audit(operation_id, performed_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_user ON fin_operation_audit(user_id, performed_at DESC)');
+
 }
 
 
