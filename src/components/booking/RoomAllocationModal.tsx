@@ -44,10 +44,12 @@ interface RoomAllocationModalProps {
 type RoomState = 'free' | 'stay' | 'arrive-today' | 'arrive-tomorrow' | 'arrive-2days' | 'leave-today' | 'leave-tomorrow';
 
 const BUILDING_F_CODE = 'F';
-// Physical layout of Building F: rooms F1..F8 are on the left side of
-// the corridor, F9..F17 on the right. Derived from `sort_order`. Update
-// when other buildings are added (or when we introduce a `wing` column).
-const RIGHT_WING_MIN_SORT_F = 9;
+// Physical layout of Building F: F9..F17 line the left side of the
+// corridor (top = F17 furthest from the entrance, bottom = F9), F1..F8
+// line the right side (top = F1, bottom = F8). Derived from
+// `sort_order`. When other buildings are added or rooms get renumbered
+// this should move to a real `wing` column on units.
+const LEFT_WING_MIN_SORT_F = 9;
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -144,8 +146,8 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   }, [todayISO]);
 
   // Wings
-  const leftWing = useMemo(() => units.filter(u => u.sort_order < RIGHT_WING_MIN_SORT_F).sort((a, b) => a.sort_order - b.sort_order), [units]);
-  const rightWing = useMemo(() => units.filter(u => u.sort_order >= RIGHT_WING_MIN_SORT_F).sort((a, b) => b.sort_order - a.sort_order), [units]);
+  const leftWing = useMemo(() => units.filter(u => u.sort_order >= LEFT_WING_MIN_SORT_F).sort((a, b) => b.sort_order - a.sort_order), [units]);
+  const rightWing = useMemo(() => units.filter(u => u.sort_order < LEFT_WING_MIN_SORT_F).sort((a, b) => a.sort_order - b.sort_order), [units]);
 
   // Status bar
   const occupied = bookingByUnit.size;
