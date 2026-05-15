@@ -329,9 +329,11 @@ export { listForecastScenarios } from './forecast-scenarios.handlers';
 import {
   upsertForecastScenario as _upsertForecastScenario,
   deleteForecastScenario as _deleteForecastScenario,
+  copyScenariosToAll as _copyScenariosToAll,
 } from './forecast-scenarios.handlers';
 export const upsertForecastScenario = withPermission('manage_investors', _upsertForecastScenario);
 export const deleteForecastScenario = withPermission('manage_investors', _deleteForecastScenario);
+export const copyScenariosToAll     = withPermission('manage_investors', _copyScenariosToAll);
 import {
   relinkProjectToUnit as _relinkProjectToUnit,
   executeCascadeDelete as _executeCascadeDelete,

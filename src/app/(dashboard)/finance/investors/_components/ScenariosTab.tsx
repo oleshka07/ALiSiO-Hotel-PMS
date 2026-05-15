@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Edit, TrendingUp, Trash2 } from 'lucide-react';
+import { Edit, TrendingUp, Trash2, Copy } from 'lucide-react';
 
 interface Scenario {
   id: string;
@@ -109,6 +109,30 @@ export default function ScenariosTab() {
     fetchAll();
   }
 
+  async function copyToAll(sourceBuId: string, sourceName: string) {
+    const sourceCount = grouped.get(sourceBuId)?.scenarios.size || 0;
+    if (sourceCount === 0) { alert('Цей обʼєкт ще не має сценаріїв — нема що копіювати.'); return; }
+    const overwrite = confirm(
+      `Скопіювати сценарії з «${sourceName}» на ВСІ інші інвесторські обʼєкти?\n\n` +
+      `OK — перезаписати існуючі сценарії на цільових обʼєктах\n` +
+      `Cancel — копіювати тільки туди де ще немає (пропустити існуючі)`,
+    );
+    // Confirm intent — distinct from the overwrite question above.
+    if (!confirm(`Точно копіювати ${sourceCount} ${sourceCount === 1 ? 'сценарій' : 'сценарії'} ${overwrite ? '(з перезаписом)' : '(пропускаючи існуючі)'}?`)) return;
+    try {
+      const res = await fetch('/api/finance/forecast-scenarios/copy-to-all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_business_unit_id: sourceBuId, overwrite }),
+      });
+      const j = await res.json();
+      if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+      alert(`✓ Записано: ${j.written} · Пропущено (вже існують): ${j.skipped}\nЦільових обʼєктів: ${j.targets}`);
+      fetchAll();
+    } catch (e: any) {
+      alert(`Помилка: ${e.message}`);
+    }
+  }
+
   return (
     <div>
       <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
@@ -123,7 +147,17 @@ export default function ScenariosTab() {
         <div style={{ display: 'grid', gap: 12 }}>
           {[...grouped.entries()].map(([buId, group]) => (
             <div key={buId} style={{ border: '1px solid var(--border-primary)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>{group.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{group.name}</div>
+                <div style={{ flex: 1 }} />
+                {group.scenarios.size > 0 && (
+                  <button onClick={() => copyToAll(buId, group.name)}
+                          style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 11, border: '1px solid var(--border-primary)' }}
+                          title="Скопіювати ці сценарії на всі інші інвесторські обʼєкти">
+                    <Copy size={11} /> Скопіювати на всі інші
+                  </button>
+                )}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                 {(['pessimistic', 'base', 'optimistic'] as const).map((sc) => {
                   const meta = SCENARIO_META[sc];
