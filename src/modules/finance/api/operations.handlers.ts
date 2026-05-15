@@ -428,6 +428,31 @@ export async function deleteOperation(
   }
 }
 
+/**
+ * GET /api/finance/operations/[id]/audit
+ * Returns the full change history for one operation, newest first.
+ * Powers the «👤 Хто створив / редагував» hover modal.
+ */
+export async function getOperationAudit(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+    const rows = db.prepare(`
+      SELECT id, operation_id, action, user_id, user_name,
+             before_json, after_json, performed_at
+      FROM fin_operation_audit
+      WHERE operation_id = ?
+      ORDER BY performed_at DESC, id DESC
+    `).all(id);
+    return NextResponse.json({ items: rows });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function duplicateOperation(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> }

@@ -155,7 +155,7 @@ export { getFinanceLog } from './log.handlers';
 
 // ─── Operations (PR #6) — manage_payments ─────────────────────
 export {
-  listOperations, getOperation,
+  listOperations, getOperation, getOperationAudit,
   getReservationPaymentTotals, recalcReservationPaymentStatus,
 } from './operations.handlers';
 import {

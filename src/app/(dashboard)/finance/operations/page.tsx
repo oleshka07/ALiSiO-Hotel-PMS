@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X, History } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
 import ExportButton from '../_components/ExportButton';
@@ -72,6 +72,8 @@ export default function OperationsPage() {
   // none → asc → desc → none. Resets on reload.
   const [sortKey, setSortKey] = useState<'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project' | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // History modal: holds the id of the operation whose audit trail is open.
+  const [historyOpId, setHistoryOpId] = useState<string | null>(null);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
 
   const fetchOps = useCallback(async () => {
@@ -432,6 +434,7 @@ export default function OperationsPage() {
                               <Paperclip size={10} /> {attachCounts[o.id]}
                             </span>
                           )}
+                          <button onClick={() => setHistoryOpId(o.id)} style={iconBtn} title="Історія змін (хто створив / редагував)"><History size={14} /></button>
                           <button onClick={openModal} style={iconBtn} title="Редагувати"><Pencil size={14} /></button>
                           <button onClick={() => handleDuplicate(o)} style={iconBtn} title="Дублювати"><Copy size={14} /></button>
                           <button onClick={() => handleDelete(o)} style={{ ...iconBtn, color: '#dc2626' }} title="Видалити"><Trash2 size={14} /></button>
@@ -454,6 +457,10 @@ export default function OperationsPage() {
           onClose={() => { setModalType(null); setEditOp(null); }}
           onSaved={() => { setModalType(null); setEditOp(null); fetchOps(); fetchAccounts(); }}
         />
+      )}
+
+      {historyOpId && (
+        <AuditHistoryModal operationId={historyOpId} onClose={() => setHistoryOpId(null)} />
       )}
     </div>
   );
@@ -479,6 +486,134 @@ function SortableTh({ label, sortKey, currentKey, dir, onClick, align }: {
         {active && (dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
       </span>
     </th>
+  );
+}
+
+interface AuditEntry {
+  id: string;
+  operation_id: string;
+  action: 'create' | 'update' | 'delete' | 'convert';
+  user_id: string | null;
+  user_name: string | null;
+  before_json: string | null;
+  after_json: string | null;
+  performed_at: string;
+}
+
+// Fields we care to surface when computing the «what changed» summary
+// between before_json and after_json. Internal/computed fields like
+// `amount_company` or `updated_at` are intentionally hidden.
+const AUDIT_TRACK_FIELDS = [
+  'op_type', 'amount', 'currency', 'paid_at', 'accrued_at',
+  'account_from_id', 'account_to_id',
+  'category_id', 'project_id', 'counterparty_id',
+  'comment', 'status', 'method', 'payment_subtype', 'reservation_id',
+] as const;
+
+function AuditHistoryModal({ operationId, onClose }: { operationId: string; onClose: () => void }) {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/finance/operations/${operationId}/audit`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) { setEntries(j.items || []); setLoading(false); } })
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [operationId]);
+
+  function diffSummary(beforeJson: string | null, afterJson: string | null): string[] {
+    try {
+      const before = beforeJson ? JSON.parse(beforeJson) : null;
+      const after = afterJson ? JSON.parse(afterJson) : null;
+      const out: string[] = [];
+      for (const key of AUDIT_TRACK_FIELDS) {
+        const b = before?.[key];
+        const a = after?.[key];
+        if (b !== a) {
+          const fmt = (v: any) => (v == null || v === '' ? '∅' : String(v));
+          out.push(`${key}: ${fmt(b)} → ${fmt(a)}`);
+        }
+      }
+      return out;
+    } catch { return []; }
+  }
+
+  const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
+    create:  { label: 'Створено',  color: '#16a34a', bg: 'rgba(34,197,94,0.10)' },
+    update:  { label: 'Редаговано', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)' },
+    convert: { label: 'Конвертовано', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
+    delete:  { label: 'Видалено',  color: '#dc2626', bg: 'rgba(220,38,38,0.10)' },
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+         onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ background: 'var(--bg-primary)', borderRadius: 12, padding: 24, minWidth: 540, maxWidth: 720, maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <History size={18} /> Історія змін
+          </h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, fontFamily: 'monospace' }}>op: {operationId}</div>
+
+        {loading ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)' }}>Завантаження…</div>
+        ) : entries.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
+            Історії немає. Цю операцію створили до того як ввімкнули аудит (W4a).
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {entries.map((e) => {
+              const meta = actionMeta[e.action];
+              const changes = e.action === 'update' || e.action === 'convert' ? diffSummary(e.before_json, e.after_json) : [];
+              const isSystem = !e.user_id;
+              return (
+                <div key={e.id} style={{ border: '1px solid var(--border-primary)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: meta.color, background: meta.bg, textTransform: 'uppercase' }}>
+                      {meta.label}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {isSystem ? <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>System</span> : e.user_name}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                      {new Date(e.performed_at).toLocaleString('cs-CZ')}
+                    </span>
+                  </div>
+                  {(e.action === 'update' || e.action === 'convert') && (
+                    changes.length === 0 ? (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(зміни поза tracked fields)</div>
+                    ) : (
+                      <ul style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                        {changes.map((c, i) => <li key={i} style={{ fontFamily: 'monospace' }}>{c}</li>)}
+                      </ul>
+                    )
+                  )}
+                  {(e.action === 'create' || e.action === 'delete') && (
+                    <details style={{ fontSize: 11, marginTop: 4 }}>
+                      <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Повний snapshot</summary>
+                      <pre style={{ fontFamily: 'monospace', fontSize: 10, background: 'var(--bg-secondary)', padding: 8, borderRadius: 4, marginTop: 6, overflow: 'auto', maxHeight: 260 }}>
+                        {(() => {
+                          const raw = e.action === 'create' ? e.after_json : e.before_json;
+                          try { return JSON.stringify(JSON.parse(raw || '{}'), null, 2); } catch { return raw || ''; }
+                        })()}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
