@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import * as crypto from 'crypto';
-import { createOperationInTx } from './operations.handlers';
+import { createOperationInTx, getOptionalActor } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
 import { getAutoRevenueAllProjects, getAutoRevenue } from '../data/auto-revenue-engine';
@@ -372,6 +372,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
     const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
 
     // Create the matching fin_operation
+    const actor = await getOptionalActor();
     const operationId = createOperationInTx(db, orgId, {
       op_type: 'expense',
       account_from_id: accountFromId,
@@ -386,7 +387,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
       source: 'dividend',
       source_ref: payoutId,
       status: 'completed',
-    });
+    }, actor);
 
     db.prepare(`
       INSERT INTO investor_payouts
@@ -549,6 +550,7 @@ export async function bulkMonthlyPayout(request: NextRequest): Promise<NextRespo
 
     const created: Array<{ id: string; fin_operation_id: string; project_id: string; amount: number }> = [];
     let totalAmount = 0;
+    const actor = await getOptionalActor();
 
     const tx = db.transaction(() => {
       for (const item of validItems) {
@@ -568,7 +570,7 @@ export async function bulkMonthlyPayout(request: NextRequest): Promise<NextRespo
           source: 'dividend',
           source_ref: payoutId,
           status: 'completed',
-        });
+        }, actor);
         db.prepare(`
           INSERT INTO investor_payouts
             (id, organization_id, investor_id, project_id, amount, currency,
