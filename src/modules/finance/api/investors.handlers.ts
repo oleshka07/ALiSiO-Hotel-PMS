@@ -417,6 +417,178 @@ export async function deletePayout(
   }
 }
 
+/**
+ * GET /api/finance/investor-payouts/preview?investor_id=X&year_month=YYYY-MM
+ *
+ * Per-property breakdown for the «Виплатити за місяць» modal: revenue
+ * from property_monthly_metrics × equity_pct gives the accrued amount,
+ * minus any payouts already recorded for the same (investor, project,
+ * period) tuple — so the operator sees the remainder and can't
+ * accidentally pay twice for the same month.
+ */
+export async function previewMonthlyPayout(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const investorId = sp.get('investor_id');
+    const yearMonth = sp.get('year_month');
+    if (!investorId || !yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'investor_id and year_month=YYYY-MM required' }, { status: 400 });
+    }
+
+    const investments = db.prepare(`
+      SELECT ii.project_id, ii.equity_pct, ii.currency,
+             bu.name AS project_name, bu.sort_order
+      FROM investor_investments ii
+      JOIN business_units bu ON bu.id = ii.project_id
+      WHERE ii.organization_id = ?
+        AND ii.investor_id = ?
+        AND ii.is_active = 1
+        AND ii.project_id IS NOT NULL
+      ORDER BY bu.sort_order, bu.name
+    `).all(orgId, investorId) as Array<{
+      project_id: string; equity_pct: number | null; currency: string | null;
+      project_name: string; sort_order: number;
+    }>;
+
+    const items = investments.map((inv) => {
+      const metric = db.prepare(`
+        SELECT revenue FROM property_monthly_metrics
+        WHERE organization_id = ? AND project_id = ? AND year_month = ?
+      `).get(orgId, inv.project_id, yearMonth) as { revenue: number | null } | undefined;
+      const revenue = metric?.revenue ?? null;
+      const eq = (inv.equity_pct || 0) / 100;
+      const accrued = revenue != null ? +(revenue * eq).toFixed(2) : null;
+
+      const paidRow = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM investor_payouts
+        WHERE organization_id = ?
+          AND investor_id = ?
+          AND project_id = ?
+          AND period_year_month = ?
+      `).get(orgId, investorId, inv.project_id, yearMonth) as { total: number };
+      const alreadyPaid = +paidRow.total.toFixed(2);
+      const remainder = accrued != null ? +(accrued - alreadyPaid).toFixed(2) : null;
+
+      return {
+        project_id: inv.project_id,
+        project_name: inv.project_name,
+        equity_pct: inv.equity_pct,
+        currency: inv.currency || 'EUR',
+        revenue,
+        accrued,
+        already_paid: alreadyPaid,
+        remainder,
+      };
+    });
+
+    return NextResponse.json({ year_month: yearMonth, items });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/investor-payouts/bulk-monthly
+ * Body: {
+ *   investor_id, year_month, paid_at, currency?, account_from_id?,
+ *   items: [{ project_id, amount, comment? }]
+ * }
+ *
+ * Creates one investor_payouts row + one fin_operation per item in a
+ * single db.transaction(). All-or-nothing — if any row fails the whole
+ * batch rolls back, so the operator never ends up with a partially
+ * applied monthly distribution where some properties got paid and
+ * others silently didn't.
+ */
+export async function bulkMonthlyPayout(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    const { investor_id, year_month, paid_at, account_from_id, items } = body;
+    const currency = body.currency || 'EUR';
+
+    if (!investor_id || !year_month || !paid_at || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: 'investor_id, year_month, paid_at, items[] required' }, { status: 400 });
+    }
+    if (!/^\d{4}-\d{2}$/.test(year_month)) {
+      return NextResponse.json({ error: 'year_month must be YYYY-MM' }, { status: 400 });
+    }
+    const investor = db.prepare("SELECT name FROM investors WHERE id = ?").get(investor_id) as { name: string } | undefined;
+    if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
+
+    let accountFromId: string | null = account_from_id || null;
+    if (!accountFromId) {
+      const a = db.prepare(`
+        SELECT id FROM finance_accounts
+        WHERE organization_id = ? AND currency = ? AND is_active = 1
+          AND type IN ('bank', 'cash')
+        ORDER BY (type = 'bank') DESC, sort_order ASC
+        LIMIT 1
+      `).get(orgId, currency) as { id: string } | undefined;
+      accountFromId = a?.id || null;
+    }
+    if (!accountFromId) {
+      return NextResponse.json({ error: `No active bank/cash account in ${currency}` }, { status: 400 });
+    }
+    const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
+
+    type Item = { project_id: string; amount: number; comment?: string | null };
+    const validItems = (items as Item[]).filter((i) => i.project_id && +i.amount > 0);
+    if (validItems.length === 0) {
+      return NextResponse.json({ error: 'No items with positive amount' }, { status: 400 });
+    }
+
+    const created: Array<{ id: string; fin_operation_id: string; project_id: string; amount: number }> = [];
+    let totalAmount = 0;
+
+    const tx = db.transaction(() => {
+      for (const item of validItems) {
+        const payoutId = `payout_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+        const amount = +Math.abs(Number(item.amount)).toFixed(2);
+        const operationId = createOperationInTx(db, orgId, {
+          op_type: 'expense',
+          account_from_id: accountFromId!,
+          account_to_id: null,
+          amount,
+          currency,
+          paid_at,
+          project_id: item.project_id,
+          category_id: dividendCategoryId,
+          comment: item.comment || `Dividend → ${investor.name} for ${year_month}`,
+          method: 'bank_transfer',
+          source: 'dividend',
+          source_ref: payoutId,
+          status: 'completed',
+        });
+        db.prepare(`
+          INSERT INTO investor_payouts
+            (id, organization_id, investor_id, project_id, amount, currency,
+             paid_at, period_year_month, comment, fin_operation_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(payoutId, orgId, investor_id, item.project_id, amount, currency,
+               paid_at, year_month, item.comment || null, operationId);
+        created.push({ id: payoutId, fin_operation_id: operationId, project_id: item.project_id, amount });
+        totalAmount += amount;
+      }
+    });
+    tx();
+
+    return NextResponse.json({
+      ok: true,
+      created_count: created.length,
+      total_amount: +totalAmount.toFixed(2),
+      currency,
+      payouts: created,
+    }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 // ─── Monthly digest aggregator ──────────────────────────
 //
 // GET /api/finance/investor-monthly-digest?year_month=YYYY-MM&investor_id=...
