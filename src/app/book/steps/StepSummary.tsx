@@ -15,20 +15,35 @@ interface Props {
   priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
   onPayOnline: (contact: { name: string; email: string; phone: string }) => void;
   onPayAdmin: (contact: { name: string; email: string; phone: string }) => void;
+  onShowQr: (contact: { name: string; email: string; phone: string }) => Promise<string | null>;
   submitting: boolean;
 }
 
 export default function StepSummary({
   accommodationLabel, checkIn, checkOut, nights, guests,
-  total, extras, priceBreakdown, onPayOnline, onPayAdmin, submitting,
+  total, extras, priceBreakdown, onPayOnline, onPayAdmin, onShowQr, submitting,
 }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   const extrasTotal = extras.reduce((s, e) => s + e.price, 0);
   const grandTotal = total + extrasTotal;
-  const valid = name.trim().length >= 2 && email.includes('@') && email.includes('.');
+  const phoneDigits = phone.replace(/\D/g, '');
+  const emailValid = email.trim() === '' || (email.includes('@') && email.includes('.'));
+  const valid = name.trim().length >= 2 && phoneDigits.length >= 6 && emailValid;
+
+  const handleQrClick = async () => {
+    setQrLoading(true);
+    try {
+      const url = await onShowQr({ name, email, phone });
+      if (url) setQrUrl(url);
+    } finally {
+      setQrLoading(false);
+    }
+  };
 
   return (
     <div className="kc-fade-in">
@@ -81,12 +96,12 @@ export default function StepSummary({
           <input className="kc-input" value={name} onChange={e => setName(e.target.value)} placeholder="Jan Novák" />
         </div>
         <div className="kc-input-group">
-          <label className="kc-input-label">Email *</label>
-          <input className="kc-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jan@email.cz" />
+          <label className="kc-input-label">Phone *</label>
+          <input className="kc-input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+420 ..." />
         </div>
         <div className="kc-input-group">
-          <label className="kc-input-label">Phone (optional)</label>
-          <input className="kc-input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+420 ..." />
+          <label className="kc-input-label">Email (optional)</label>
+          <input className="kc-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jan@email.cz" />
         </div>
       </div>
 
@@ -96,6 +111,10 @@ export default function StepSummary({
           onClick={() => onPayOnline({ name, email, phone })} type="button">
           {submitting ? <><div className="kc-spinner" /> Processing...</> : `💳 Pay online — ${formatPrice(grandTotal)} Kč`}
         </button>
+        <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting || qrLoading}
+          onClick={handleQrClick} type="button">
+          {qrLoading ? <><div className="kc-spinner" /> Generating...</> : '📱 Show QR for guest'}
+        </button>
         <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
           onClick={() => onPayAdmin({ name, email, phone })} type="button">
           🏢 Pay via administrator
@@ -104,6 +123,58 @@ export default function StepSummary({
 
       <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--kc-text-muted)', marginTop: 12 }}>
         By booking you agree to the terms of Kemp Carlsbad s.r.o.
+      </div>
+
+      {qrUrl && <QrPaymentModal url={qrUrl} amount={grandTotal} onClose={() => setQrUrl(null)} />}
+    </div>
+  );
+}
+
+function QrPaymentModal({ url, amount, onClose }: { url: string; amount: number; onClose: () => void }) {
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=16&data=${encodeURIComponent(url)}`;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 20, padding: 24, maxWidth: 380, width: '100%',
+          textAlign: 'center', boxShadow: '0 24px 48px rgba(0,0,0,0.25)',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Scan to pay</div>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+          Guest scans with their phone to open the Teya payment page
+        </div>
+        <div style={{
+          background: '#f8fafb', borderRadius: 14, padding: 12,
+          display: 'inline-block', marginBottom: 16, border: '2px solid #e2e8f0',
+        }}>
+          <img src={qrSrc} alt="Payment QR" width={260} height={260} style={{ display: 'block', borderRadius: 8 }} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--kc-green)', marginBottom: 16 }}>
+          {formatPrice(amount)} Kč
+        </div>
+        <div style={{ fontSize: 12, color: '#777', marginBottom: 16, lineHeight: 1.4 }}>
+          Link is valid for ~30 minutes. After payment the booking is confirmed automatically.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <a
+            href={url} target="_blank" rel="noopener noreferrer"
+            className="kc-btn kc-btn-primary"
+            style={{ textDecoration: 'none', display: 'block', textAlign: 'center' }}
+          >
+            💳 Open payment in new tab
+          </a>
+          <button className="kc-btn kc-btn-secondary" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
