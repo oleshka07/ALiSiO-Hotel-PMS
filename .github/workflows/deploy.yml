@@ -113,6 +113,19 @@ jobs:
               echo "[setup] crontab entry for poll-bank-inboxes already present"
             fi
 
+            # Daily PriceLabs → price_calendar sync. 04:00 lets ČNB publish
+            # the day's EUR/CZK rate first; PriceLabs refreshes overnight.
+            touch /var/log/pms-cron-pricelabs.log
+            chmod 644 /var/log/pms-cron-pricelabs.log
+            if ! crontab -l 2>/dev/null | grep -q 'sync-pricelabs'; then
+              ( crontab -l 2>/dev/null || true
+                echo '0 4 * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1'
+              ) | crontab -
+              echo "[setup] installed crontab entry for sync-pricelabs"
+            else
+              echo "[setup] crontab entry for sync-pricelabs already present"
+            fi
+
             # Restart service only after a successful build.
             systemctl restart alisio-pms
             sleep 3
