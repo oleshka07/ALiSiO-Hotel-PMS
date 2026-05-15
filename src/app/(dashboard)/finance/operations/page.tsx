@@ -56,8 +56,11 @@ export default function OperationsPage() {
   const [modalType, setModalType] = useState<OpType | null>(null);
   const [editOp, setEditOp] = useState<Operation | null>(null);
 
+  // Default window: 01.01.2025 → end of current month. The fiscal-year-
+  // since start lets the operator see the full historic context without
+  // hunting for older operations; they can narrow it later if needed.
   const today = new Date();
-  const [from, setFrom] = useState(new Date(today.getFullYear(), today.getMonth() - 2, 1).toISOString().substring(0, 10));
+  const [from, setFrom] = useState('2025-01-01');
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
