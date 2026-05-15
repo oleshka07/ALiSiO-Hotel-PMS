@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
 import ExportButton from '../_components/ExportButton';
@@ -64,6 +64,14 @@ export default function OperationsPage() {
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
+  // Multi-select account filter — toggled from the sidebar by clicking
+  // an account row. Empty set = no filter. Not persisted; resets on
+  // reload so the operator gets the full view back by default.
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  // Temporary client-side sort. Click a column header to toggle:
+  // none → asc → desc → none. Resets on reload.
+  const [sortKey, setSortKey] = useState<'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project' | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
 
   const fetchOps = useCallback(async () => {
@@ -71,6 +79,7 @@ export default function OperationsPage() {
     const params = new URLSearchParams({ from, to, pageSize: '500' });
     if (filterType) params.set('op_type', filterType);
     if (search.trim()) params.set('search', search.trim());
+    if (selectedAccountIds.size > 0) params.set('account_id', [...selectedAccountIds].join(','));
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
@@ -89,7 +98,7 @@ export default function OperationsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [from, to, filterType, search]);
+  }, [from, to, filterType, search, selectedAccountIds]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -154,6 +163,48 @@ export default function OperationsPage() {
   const netTotal = totalIncome - totalExpense;
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
 
+  function toggleAccount(id: string) {
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function clickSort(key: NonNullable<typeof sortKey>) {
+    // Cycle: nothing | other → asc → desc → off
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return; }
+    if (sortDir === 'asc') { setSortDir('desc'); return; }
+    setSortKey(null);
+  }
+
+  function sortValue(o: Operation, key: NonNullable<typeof sortKey>): string | number {
+    switch (key) {
+      case 'paid_at':      return o.paid_at;
+      case 'amount':       return o.amount;
+      case 'account':      return (o.account_from_name || o.account_to_name || '').toLowerCase();
+      case 'counterparty': return (o.counterparty_name || '').toLowerCase();
+      case 'category':     return (o.category_name || '').toLowerCase();
+      case 'project':      return (o.project_name || '').toLowerCase();
+    }
+  }
+
+  const displayedOps = sortKey
+    ? [...ops].sort((a, b) => {
+        const va = sortValue(a, sortKey);
+        const vb = sortValue(b, sortKey);
+        // Empty strings always sink to bottom so they're easy to triage
+        // when the operator sorts «по категорії» to fill missing ones.
+        const aEmpty = va === '' || va == null;
+        const bEmpty = vb === '' || vb == null;
+        if (aEmpty && !bEmpty) return 1;
+        if (!aEmpty && bEmpty) return -1;
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ?  1 : -1;
+        return 0;
+      })
+    : ops;
+
   return (
     <div className="page-container" style={{ maxWidth: 1400, margin: '0 auto' }}>
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -194,13 +245,34 @@ export default function OperationsPage() {
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Всього на рахунках</div>
           <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{formatMoney(totalBalance, 'CZK')}</div>
           <hr style={{ border: 'none', borderTop: '1px solid var(--border-primary)', margin: '16px 0' }} />
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 8 }}>Мої рахунки</div>
-          {accounts.map((a) => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
-              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: a.color, marginRight: 6, verticalAlign: 'middle' }} />{a.name}</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{formatMoney(a.balance, a.currency)}</span>
-            </div>
-          ))}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Мої рахунки</div>
+            {selectedAccountIds.size > 0 && (
+              <button onClick={() => setSelectedAccountIds(new Set())}
+                      style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer', padding: 0 }}
+                      title="Скинути фільтр по рахунках">
+                <X size={11} /> Скинути ({selectedAccountIds.size})
+              </button>
+            )}
+          </div>
+          {accounts.map((a) => {
+            const active = selectedAccountIds.has(a.id);
+            return (
+              <button key={a.id} onClick={() => toggleAccount(a.id)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', padding: '6px 8px', fontSize: 13,
+                        background: active ? 'rgba(99,102,241,0.12)' : 'transparent',
+                        border: active ? '1px solid #6366f1' : '1px solid transparent',
+                        borderRadius: 6, cursor: 'pointer', color: 'var(--text-primary)',
+                        marginBottom: 2, textAlign: 'left',
+                      }}
+                      title={active ? 'Зняти фільтр' : 'Фільтрувати по цьому рахунку (можна обрати кілька)'}>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: a.color, marginRight: 6, verticalAlign: 'middle' }} />{a.name}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{formatMoney(a.balance, a.currency)}</span>
+              </button>
+            );
+          })}
         </aside>
 
         {/* Main content */}
@@ -248,18 +320,18 @@ export default function OperationsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
-                    <th style={th}>Дата</th>
-                    <th style={{ ...th, textAlign: 'right' }}>Сума</th>
-                    <th style={th}>Рахунок</th>
-                    <th style={th}>Контрагент</th>
-                    <th style={th}>Категорія</th>
-                    <th style={th}>Проєкт</th>
+                    <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
+                    <SortableTh label="Рахунок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Контрагент" sortKey="counterparty" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Категорія" sortKey="category" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Проєкт" sortKey="project" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <th style={th}>Коментар</th>
                     <th style={{ ...th, width: 90 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ops.map((o) => {
+                  {displayedOps.map((o) => {
                     const isExpense = o.op_type === 'expense';
                     const isTransfer = o.op_type === 'transfer';
                     const amountColor = isTransfer ? 'var(--text-secondary)' : isExpense ? '#ef4444' : '#22c55e';
@@ -384,6 +456,29 @@ export default function OperationsPage() {
         />
       )}
     </div>
+  );
+}
+
+type SortKey = 'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project';
+
+function SortableTh({ label, sortKey, currentKey, dir, onClick, align }: {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey | null;
+  dir: 'asc' | 'desc';
+  onClick: (k: SortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th style={{ ...th, textAlign: align || 'left', cursor: 'pointer', userSelect: 'none' }}
+        onClick={() => onClick(sortKey)}
+        title={active ? `Сортовано ${dir === 'asc' ? '↑' : '↓'} — клік щоб ${dir === 'asc' ? 'обернути' : 'скинути'}` : 'Клік щоб сортувати'}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+        {label}
+        {active && (dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+      </span>
+    </th>
   );
 }
 
