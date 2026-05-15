@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createPaymentOperation } from '@/modules/finance/api/payment-bridge';
+import { getOptionalActor } from '@/modules/finance/api/operations.handlers';
 
 // Legacy /api/payments endpoint — reads/writes via fin_operations.
 //
@@ -74,7 +75,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Cash on hand → real money, create the fin_operation as before.
+    // Capture who recorded it (Andriy taking cash at check-in shows up
+    // attributed to him in the operations audit log, not anonymous).
     if (CASH_METHODS.has(method)) {
+      const actor = await getOptionalActor();
       const { operationId } = createPaymentOperation({
         reservationId: reservation_id,
         amount: Math.abs(Number(amount)),
@@ -84,6 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         status: 'completed',
         paidAt: paid_at || new Date().toISOString(),
         comment: notes || null,
+        actor,
       });
       return NextResponse.json({ id: operationId, ok: true, kind: 'fin_operation' }, { status: 201 });
     }

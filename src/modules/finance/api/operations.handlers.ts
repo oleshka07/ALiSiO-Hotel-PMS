@@ -1,12 +1,54 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getDb } from '@core/db';
+import { getSessionUser } from '@/lib/auth';
 
 const OP_TYPES = ['income', 'expense', 'transfer'] as const;
 type OpType = typeof OP_TYPES[number];
 
 const STATUSES = ['completed', 'pending', 'failed', 'refunded'] as const;
 type Status = typeof STATUSES[number];
+
+// Actor of an operation mutation, attached to the audit row. Null on
+// system flows (Hostex sync, Teia webhook, bank inbox parser).
+export interface OperationActor { id: string; name: string }
+
+export async function getOptionalActor(): Promise<OperationActor | null> {
+  try {
+    const store = await cookies();
+    const sessionId = store.get('session_id')?.value;
+    const user = await getSessionUser(sessionId);
+    if (!user) return null;
+    return { id: user.id, name: user.full_name };
+  } catch { return null; }
+}
+
+export function writeOperationAudit(
+  db: any,
+  operationId: string,
+  action: 'create' | 'update' | 'delete' | 'convert',
+  actor: OperationActor | null,
+  beforeRow: any,
+  afterRow: any,
+): void {
+  const id = `aud_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    db.prepare(`
+      INSERT INTO fin_operation_audit
+        (id, operation_id, action, user_id, user_name, before_json, after_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, operationId, action,
+      actor?.id || null, actor?.name || null,
+      beforeRow ? JSON.stringify(beforeRow) : null,
+      afterRow ? JSON.stringify(afterRow) : null,
+    );
+  } catch (e: any) {
+    // Audit must never break the main mutation. Log and continue.
+    console.error('[fin_operation_audit] write failed (non-fatal):', e?.message);
+  }
+}
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -195,7 +237,13 @@ interface CreateOperationInput {
   needs_review?: number;
 }
 
-export function createOperationInTx(db: any, orgId: string, input: CreateOperationInput, createdBy?: string | null): string {
+export function createOperationInTx(
+  db: any,
+  orgId: string,
+  input: CreateOperationInput,
+  actor?: OperationActor | null,
+): string {
+  const createdBy = actor?.id || null;
   const { op_type, amount, paid_at } = input;
   if (!(OP_TYPES as readonly string[]).includes(op_type)) {
     throw new Error(`op_type must be one of ${OP_TYPES.join(', ')}`);
@@ -255,6 +303,12 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
     for (const tagId of input.tag_ids) insertTag.run(id, tagId);
   }
 
+  if (createdBy) {
+    db.prepare('UPDATE fin_operations SET updated_by_user_id = ? WHERE id = ?').run(createdBy, id);
+  }
+  const afterRow = db.prepare('SELECT * FROM fin_operations WHERE id = ?').get(id);
+  writeOperationAudit(db, id, 'create', actor || null, null, afterRow);
+
   return id;
 }
 
@@ -263,7 +317,8 @@ export async function createOperation(request: NextRequest): Promise<NextRespons
     const db = getDb();
     const orgId = getOrgId(db);
     const body = (await request.json()) as CreateOperationInput;
-    const id = createOperationInTx(db, orgId, body);
+    const actor = await getOptionalActor();
+    const id = createOperationInTx(db, orgId, body, actor);
     const created = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
 
     if (body.reservation_id) recalcReservationPaymentStatus(db, body.reservation_id);
@@ -316,6 +371,11 @@ export async function updateOperation(
       fields.push('amount_company = ?');
       params.push(computeAmountCompany(db, newAmount, newCurrency, newPaid));
     }
+    const actor = await getOptionalActor();
+    if (actor) {
+      fields.push('updated_by_user_id = ?');
+      params.push(actor.id);
+    }
     fields.push("updated_at = datetime('now')");
 
     if (fields.length === 1) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
@@ -332,6 +392,11 @@ export async function updateOperation(
     const resId = (updated as any)?.reservation_id ?? existing.reservation_id;
     if (resId) recalcReservationPaymentStatus(db, resId);
 
+    // Mark 'convert' when op_type changed (e.g. expense → transfer), else
+    // a routine 'update' — lets the audit UI render them differently.
+    const action: 'update' | 'convert' = body.op_type !== undefined && body.op_type !== existing.op_type ? 'convert' : 'update';
+    writeOperationAudit(db, id, action, actor, existing, updated);
+
     return NextResponse.json(enrichOperation(db, updated));
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -347,6 +412,11 @@ export async function deleteOperation(
     const { id } = await context.params;
     const existing = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id) as any;
     if (!existing) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
+
+    // Capture actor + snapshot the row BEFORE delete so the audit row
+    // survives the row being gone (FK-free by design — see W4a).
+    const actor = await getOptionalActor();
+    writeOperationAudit(db, id, 'delete', actor, existing, null);
 
     db.prepare('UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id = ?').run(id);
     db.prepare('DELETE FROM fin_operations WHERE id = ?').run(id);

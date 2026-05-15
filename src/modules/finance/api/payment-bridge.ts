@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
-import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
+import {
+  createOperationInTx,
+  recalcReservationPaymentStatus,
+  type OperationActor,
+} from './operations.handlers';
 import { applyRulesToOperation, loadActiveRules } from '../data/auto-rules-engine';
 
 export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'invoice' | 'online' | 'booking_platform';
@@ -26,6 +30,13 @@ export interface CreatePaymentOperationInput {
    * defaulting to the first cash account.
    */
   channelType?: string;
+  /**
+   * Who triggered this payment. Forwarded into the fin_operation as
+   * `created_by_user_id` + recorded in the audit table. Null for
+   * system flows (Hostex sync, Teia webhook, etc.) where there's no
+   * HTTP user — those audit rows read «System» in the UI.
+   */
+  actor?: OperationActor | null;
 }
 
 /**
@@ -122,7 +133,7 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     source,
     source_ref: sourceRef || reservationId,
     needs_review: needsReview,
-  });
+  }, input.actor || null);
 
   recalcReservationPaymentStatus(db, reservationId);
 
