@@ -113,6 +113,8 @@ export async function updateReservation(request: NextRequest, { params }: { para
     // the target unit is free across the (possibly new) dates. POST has
     // this check; PATCH historically did not, so unit reassignment via
     // edit forms or the room-allocation modal could silently double-book.
+    // Staging pool units intentionally hold many bookings at once — skip
+    // the check when the target unit is a pool.
     if (body.unit_id !== undefined || body.check_in !== undefined || body.check_out !== undefined) {
       const current = db.prepare(
         'SELECT unit_id, check_in, check_out FROM reservations WHERE id = ?',
@@ -121,17 +123,20 @@ export async function updateReservation(request: NextRequest, { params }: { para
         const targetUnit = body.unit_id !== undefined ? body.unit_id : current.unit_id;
         const targetIn  = body.check_in   !== undefined ? body.check_in  : current.check_in;
         const targetOut = body.check_out  !== undefined ? body.check_out : current.check_out;
-        const overlap = db.prepare(`
-          SELECT id FROM reservations
-          WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show')
-            AND check_in < ? AND check_out > ?
-          LIMIT 1
-        `).get(targetUnit, id, targetOut, targetIn) as { id: string } | undefined;
-        if (overlap) {
-          return NextResponse.json(
-            { error: 'Кімната зайнята на ці дати іншим бронюванням', conflictBookingId: overlap.id },
-            { status: 409 },
-          );
+        const targetUnitRow = db.prepare('SELECT is_pool FROM units WHERE id = ?').get(targetUnit) as { is_pool?: number } | undefined;
+        if (!targetUnitRow?.is_pool) {
+          const overlap = db.prepare(`
+            SELECT id FROM reservations
+            WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show')
+              AND check_in < ? AND check_out > ?
+            LIMIT 1
+          `).get(targetUnit, id, targetOut, targetIn) as { id: string } | undefined;
+          if (overlap) {
+            return NextResponse.json(
+              { error: 'Кімната зайнята на ці дати іншим бронюванням', conflictBookingId: overlap.id },
+              { status: 409 },
+            );
+          }
         }
       }
     }

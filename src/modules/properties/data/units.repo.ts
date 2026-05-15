@@ -1,9 +1,9 @@
 import { getDb } from '@core/db';
 
-export function listUnits(filters: { category?: string; unitType?: string } = {}) {
+export function listUnits(filters: { category?: string; unitType?: string; includePool?: boolean } = {}) {
   let query = `
     SELECT
-      u.id, u.name, u.code, u.beds, u.zone, u.room_status, u.cleaning_status, u.sort_order, u.is_active, u.lock_code, u.entry_photo_url,
+      u.id, u.name, u.code, u.beds, u.zone, u.room_status, u.cleaning_status, u.sort_order, u.is_active, u.is_pool, u.lock_code, u.entry_photo_url,
       c.id as category_id, c.name as category_name, c.type as category_type, c.icon as category_icon, c.color as category_color,
       ut.id as unit_type_id, ut.name as unit_type_name, ut.code as unit_type_code, ut.max_adults, ut.base_occupancy,
       b.id as building_id, b.name as building_name, b.code as building_code
@@ -15,6 +15,12 @@ export function listUnits(filters: { category?: string; unitType?: string } = {}
   `;
 
   const params: string[] = [];
+
+  // Pool/staging units never show up as bookable rooms. The room-allocation
+  // modal opts in via includePool=true.
+  if (!filters.includePool) {
+    query += ' AND (u.is_pool IS NULL OR u.is_pool = 0)';
+  }
 
   if (filters.category) {
     query += ' AND c.type = ?';

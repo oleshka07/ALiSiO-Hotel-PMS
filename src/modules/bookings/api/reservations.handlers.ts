@@ -23,7 +23,7 @@ export async function listReservations(request: NextRequest) {
         r.is_multi_room, r.multi_room_marker,
         (SELECT COUNT(*) FROM reservation_sub_bookings WHERE reservation_id = r.id) as sub_booking_count,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone, g.nationality,
-        u.id as unit_id, u.name as unit_name, u.code as unit_code,
+        u.id as unit_id, u.name as unit_name, u.code as unit_code, u.is_pool as unit_is_pool,
         c.id as category_id, c.name as category_name, c.type as category_type,
         ut.id as unit_type_id, ut.name as unit_type_name
       FROM reservations r
