@@ -343,6 +343,7 @@ import {
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
   upsertMonthlyMetric as _upsertMonthlyMetric, deleteMonthlyMetric as _deleteMonthlyMetric,
   createPayout as _createPayout, deletePayout as _deletePayout,
+  previewMonthlyPayout as _previewMonthlyPayout, bulkMonthlyPayout as _bulkMonthlyPayout,
   createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
   unlinkInvestorProperty as _unlinkInvestorProperty,
   upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
@@ -358,6 +359,8 @@ export const upsertMonthlyMetric = withPermission('manage_investors', _upsertMon
 export const deleteMonthlyMetric = withPermission('manage_investors', _deleteMonthlyMetric);
 export const createPayout        = withPermission('manage_investors', _createPayout);
 export const deletePayout        = withPermission('manage_investors', _deletePayout);
+export const previewMonthlyPayout = withPermission('manage_investors', _previewMonthlyPayout);
+export const bulkMonthlyPayout    = withPermission('manage_investors', _bulkMonthlyPayout);
 export const createInvestorProperty = withPermission('manage_investors', _createInvestorProperty);
 export const updateInvestorProperty = withPermission('manage_investors', _updateInvestorProperty);
 export const unlinkInvestorProperty = withPermission('manage_investors', _unlinkInvestorProperty);
