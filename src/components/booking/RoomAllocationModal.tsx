@@ -44,10 +44,10 @@ interface RoomAllocationModalProps {
 type RoomState = 'free' | 'stay' | 'arrive-today' | 'arrive-tomorrow' | 'arrive-2days' | 'leave-today' | 'leave-tomorrow';
 
 const BUILDING_F_CODE = 'F';
-// Wing split for Building F based on existing room layout: numbers 9-17
-// are physically the left wing, 1-8 the right. Derived from `sort_order`
-// since we have no `wing` column. Update if other buildings get added.
-const LEFT_WING_MIN_SORT_F = 9;
+// Physical layout of Building F: rooms F1..F8 are on the left side of
+// the corridor, F9..F17 on the right. Derived from `sort_order`. Update
+// when other buildings are added (or when we introduce a `wing` column).
+const RIGHT_WING_MIN_SORT_F = 9;
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -144,13 +144,24 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   }, [todayISO]);
 
   // Wings
-  const leftWing = useMemo(() => units.filter(u => u.sort_order >= LEFT_WING_MIN_SORT_F).sort((a, b) => b.sort_order - a.sort_order), [units]);
-  const rightWing = useMemo(() => units.filter(u => u.sort_order < LEFT_WING_MIN_SORT_F).sort((a, b) => a.sort_order - b.sort_order), [units]);
+  const leftWing = useMemo(() => units.filter(u => u.sort_order < RIGHT_WING_MIN_SORT_F).sort((a, b) => a.sort_order - b.sort_order), [units]);
+  const rightWing = useMemo(() => units.filter(u => u.sort_order >= RIGHT_WING_MIN_SORT_F).sort((a, b) => b.sort_order - a.sort_order), [units]);
 
   // Status bar
   const occupied = bookingByUnit.size;
   const arrivalsToday = bookings.filter(b => b.check_in === todayISO).length;
   const departuresToday = bookings.filter(b => b.check_out === todayISO).length;
+
+  // Чорновик: arrivals in the next 3 days (today / tomorrow / +2) — needs
+  // manager's attention. Bookings still have unit_id pointing to their
+  // assigned room (our model requires NOT NULL); the chip is a quick
+  // re-allocation shortcut. Dragging a chip onto a room calls the same
+  // PATCH unit_id flow; staging itself is not a drop target (we can't
+  // unset unit_id without a schema change).
+  const stagingBookings = useMemo(() => {
+    const horizon = new Set([todayISO, addDays(todayISO, 1), addDays(todayISO, 2)]);
+    return bookings.filter(b => horizon.has(b.check_in));
+  }, [bookings, todayISO]);
 
   // ── Validation
   const canAccept = useCallback((destUnitId: string, bookingId: string): { ok: boolean; type?: 'move' | 'swap'; reason?: string } => {
@@ -451,6 +462,31 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
+  // Lock the underlying page scroll while the modal is open. iOS Safari
+  // happily rubber-bands the document under a fixed sheet otherwise,
+  // which made the calendar grid behind the modal scroll on touch.
+  useEffect(() => {
+    if (!open) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyTouch = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    const blockOutsideTouch = (e: TouchEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.ram-sheet')) return;
+      e.preventDefault();
+    };
+    document.addEventListener('touchmove', blockOutsideTouch, { passive: false });
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.touchAction = prevBodyTouch;
+      document.removeEventListener('touchmove', blockOutsideTouch);
+    };
+  }, [open]);
+
   // Re-apply highlight when bookings change while a guest is selected
   useEffect(() => {
     if (selectedId) applyValidHighlights(selectedId);
@@ -484,6 +520,21 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
           <div className="ram-sb-item"><span className="ram-sb-k">Вільно</span><span className="ram-sb-v ram-c-free">{Math.max(0, units.length - occupied)}</span></div>
           <div className="ram-sb-item"><span className="ram-sb-k">Заїзди</span><span className="ram-sb-v ram-c-arr">{arrivalsToday}</span></div>
           <div className="ram-sb-item"><span className="ram-sb-k">Виїзди</span><span className="ram-sb-v ram-c-lea">{departuresToday}</span></div>
+        </div>
+
+        <div className="ram-staging">
+          <div className="ram-staging-head">
+            <span className="ram-staging-lbl">Чорновик</span>
+            <span className="ram-staging-cnt">{stagingBookings.length}</span>
+            <span className="ram-staging-tip">{stagingBookings.length > 0 ? 'тягни в кімнату ↓' : 'найближчих заїздів немає'}</span>
+          </div>
+          {stagingBookings.length > 0 && (
+            <div className="ram-staging-scroll" onPointerDown={onPointerDown}>
+              {stagingBookings.map(b => (
+                <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} unitCode={units.find(u => u.id === b.unit_id)?.code} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="ram-legend">
@@ -609,6 +660,36 @@ function RoomCard({ unit, guest, stateOf, onTapEmpty, formatShort: fmt }: {
   );
 }
 
+function StagingChip({ booking, stateOf, formatShort: fmt, unitCode }: {
+  booking: BookingRow;
+  stateOf: (b: BookingRow) => RoomState;
+  formatShort: (d: string) => string;
+  unitCode?: string;
+}) {
+  const st = stateOf(booking);
+  const tag = st === 'arrive-today' ? 'сьогодні'
+    : st === 'arrive-tomorrow' ? 'завтра'
+    : st === 'arrive-2days' ? '+2 дн'
+    : '';
+  const tagClass = st === 'arrive-today' ? 'ram-tag-arr-strong'
+    : 'ram-tag-arr';
+  const party = partyOf(booking);
+  return (
+    <div className="ram-chip" data-ram-card={booking.id}>
+      <div className="ram-chip-top">
+        <GripVertical size={11} className="ram-grip" />
+        <span className="ram-chip-name">{booking.first_name} {booking.last_name}</span>
+        <span className="ram-chip-pax">{party}</span>
+      </div>
+      <div className="ram-chip-bottom">
+        {tag && <span className={`ram-tag ${tagClass}`}>{tag}</span>}
+        <span className="ram-chip-dates">{fmt(booking.check_in)}–{fmt(booking.check_out)}</span>
+        {unitCode && <span className="ram-chip-src">{unitCode}</span>}
+      </div>
+    </div>
+  );
+}
+
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() + n);
@@ -658,6 +739,67 @@ function RoomAllocationStyles() {
       .ram-c-free { color: #4ADE80; }
       .ram-c-arr { color: #F5B847; }
       .ram-c-lea { color: #5DC8E0; }
+
+      .ram-staging {
+        flex-shrink: 0; padding: 8px 0 9px;
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border-primary);
+        border-bottom: 1px solid var(--border-primary);
+      }
+      .ram-staging-head {
+        display: flex; align-items: center; gap: 6px;
+        padding: 0 14px 7px;
+      }
+      .ram-staging-lbl {
+        font-size: 11px; font-weight: 700;
+        color: #F26B6B;
+      }
+      .ram-staging-cnt {
+        font-size: 10px; font-weight: 700; color: #F26B6B;
+        background: rgba(242,107,107,0.13); border: 1px solid rgba(242,107,107,0.48);
+        padding: 1px 6px; border-radius: 9px;
+      }
+      .ram-staging-tip {
+        margin-left: auto; font-size: 9.5px; color: var(--text-tertiary); font-style: italic;
+      }
+      .ram-staging-scroll {
+        display: flex; gap: 7px; padding: 0 14px;
+        overflow-x: auto; scrollbar-width: none;
+        touch-action: pan-x;
+      }
+      .ram-staging-scroll::-webkit-scrollbar { display: none; }
+      .ram-chip {
+        flex-shrink: 0; width: 156px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-primary);
+        border-radius: 8px; padding: 6px 8px;
+        cursor: grab; user-select: none; -webkit-user-select: none;
+      }
+      .ram-chip-top { display: flex; align-items: center; gap: 5px; }
+      .ram-chip-name {
+        font-size: 11.5px; font-weight: 600; color: var(--text-primary);
+        flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .ram-chip-pax {
+        display: inline-block; padding: 1px 7px;
+        border-radius: 20px; background: var(--bg-card);
+        border: 1px solid var(--border-primary);
+        font-size: 9.5px; font-weight: 700; color: var(--text-primary);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-variant-numeric: tabular-nums; flex-shrink: 0;
+      }
+      .ram-chip-bottom {
+        display: flex; align-items: center; gap: 5px; margin-top: 4px; flex-wrap: nowrap;
+      }
+      .ram-chip-dates {
+        font-size: 9px; color: var(--text-secondary);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+      }
+      .ram-chip-src {
+        margin-left: auto; font-size: 8.5px; color: var(--text-tertiary);
+        background: var(--bg-card); padding: 0.5px 4px; border-radius: 3px;
+        white-space: nowrap;
+      }
 
       .ram-legend {
         display: flex; gap: 11px;
