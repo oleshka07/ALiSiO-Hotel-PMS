@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Repeat, Check } from 'lucide-react';
+import { X, Repeat, Check, ArrowLeftRight } from 'lucide-react';
 import AttachmentsSection from './AttachmentsSection';
 
 type OpType = 'income' | 'expense' | 'transfer';
@@ -20,6 +20,11 @@ interface Props {
 }
 
 export default function OperationModal({ opType, initial, accounts, onClose, onSaved }: Props) {
+  // currentOpType is local state so the «Перетворити в переказ» button
+  // can flip it inside the modal without reopening. Initial value comes
+  // from the prop; the operation row in DB still has the original
+  // op_type until the user saves.
+  const [currentOpType, setCurrentOpType] = useState<OpType>(opType);
   const [amount, setAmount] = useState<string>(initial?.amount?.toString() || '');
   const [currency, setCurrency] = useState(initial?.currency || 'CZK');
   const [accountFromId, setAccountFromId] = useState<string>(initial?.account_from_id || (opType !== 'income' ? accounts[0]?.id || '' : ''));
@@ -42,7 +47,7 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/finance/categories?op_type=${opType}`).then((r) => r.json()).catch(() => []),
+      fetch(`/api/finance/categories?op_type=${currentOpType}`).then((r) => r.json()).catch(() => []),
       fetch('/api/finance/projects').then((r) => r.json()).catch(() => []),
       fetch('/api/finance/counterparties').then((r) => r.json()).catch(() => []),
     ]).then(([cats, projs, cps]) => {
@@ -50,7 +55,7 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
       setProjects(Array.isArray(projs) ? projs : []);
       setCounterparties(Array.isArray(cps) ? cps : []);
     });
-  }, [opType]);
+  }, [currentOpType]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,23 +64,32 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
     if (!isFinite(amt) || amt <= 0) { setError('Вкажіть додатну суму'); return; }
 
     const body: any = {
-      op_type: opType,
+      op_type: currentOpType,
       amount: amt,
       currency,
       paid_at: paidAt,
       accrued_at: accrualDiffers ? accruedAt : paidAt,
       comment: comment || null,
-      source: 'manual',
+      source: initial?.source || 'manual',
       status: 'completed',
     };
-    if (opType === 'income') body.account_to_id = accountToId;
-    if (opType === 'expense') body.account_from_id = accountFromId;
-    if (opType === 'transfer') {
+    if (currentOpType === 'income') {
+      body.account_to_id = accountToId;
+      body.account_from_id = null;
+    }
+    if (currentOpType === 'expense') {
+      body.account_from_id = accountFromId;
+      body.account_to_id = null;
+    }
+    if (currentOpType === 'transfer') {
       if (accountFromId === accountToId) { setError('Рахунки мають відрізнятися'); return; }
       body.account_from_id = accountFromId;
       body.account_to_id = accountToId;
     }
-    if (opType !== 'transfer') body.category_id = categoryId || null;
+    // category_id has no meaning for a transfer — NULL it explicitly so a
+    // converted income/expense doesn't keep its old category clinging to
+    // a transfer row (which P&L would then treat as income/expense).
+    body.category_id = currentOpType === 'transfer' ? null : (categoryId || null);
     body.project_id = projectId || null;
     body.counterparty_id = counterpartyId || null;
 
@@ -99,8 +113,20 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
     }
   }
 
-  const title = opType === 'income' ? 'Новий дохід' : opType === 'expense' ? 'Нова витрата' : 'Переказ';
-  const accentColor = opType === 'income' ? '#22c55e' : opType === 'expense' ? '#ef4444' : '#6366f1';
+  const title = currentOpType === 'income' ? 'Новий дохід' : currentOpType === 'expense' ? 'Нова витрата' : 'Переказ';
+  const accentColor = currentOpType === 'income' ? '#22c55e' : currentOpType === 'expense' ? '#ef4444' : '#6366f1';
+  const wasConvertedToTransfer = currentOpType === 'transfer' && opType !== 'transfer';
+
+  function convertToTransfer() {
+    // Pre-fill the missing account side. Income had only account_to_id,
+    // expense had only account_from_id. Pick a sensible "other side" so
+    // the form is valid out of the gate — operator can change either.
+    const other = accounts.find((a) => a.id !== (opType === 'income' ? accountToId : accountFromId));
+    if (opType === 'income' && !accountFromId) setAccountFromId(other?.id || '');
+    if (opType === 'expense' && !accountToId)  setAccountToId(other?.id || '');
+    setCurrentOpType('transfer');
+    setError(null);
+  }
 
   return (
     <div style={overlayStyle} onClick={onClose}>
@@ -110,16 +136,16 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
           <button type="button" onClick={onClose} style={closeBtn}><X size={18} /></button>
         </div>
 
-        {(opType === 'expense' || opType === 'transfer') && (
-          <Field label={opType === 'transfer' ? 'З рахунку' : 'З рахунку (витрата)'}>
+        {(currentOpType === 'expense' || currentOpType === 'transfer') && (
+          <Field label={currentOpType === 'transfer' ? 'З рахунку' : 'З рахунку (витрата)'}>
             <select value={accountFromId} onChange={(e) => setAccountFromId(e.target.value)} style={input} required>
               <option value="">—</option>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
             </select>
           </Field>
         )}
-        {(opType === 'income' || opType === 'transfer') && (
-          <Field label={opType === 'transfer' ? 'На рахунок' : 'На рахунок (дохід)'}>
+        {(currentOpType === 'income' || currentOpType === 'transfer') && (
+          <Field label={currentOpType === 'transfer' ? 'На рахунок' : 'На рахунок (дохід)'}>
             <select value={accountToId} onChange={(e) => setAccountToId(e.target.value)} style={input} required>
               <option value="">—</option>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
@@ -138,7 +164,7 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
           </Field>
         </div>
 
-        {opType !== 'transfer' && (
+        {currentOpType !== 'transfer' && (
           <Field label="Категорія">
             <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={input}>
               <option value="">—</option>
@@ -147,7 +173,7 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
           </Field>
         )}
 
-        {opType !== 'transfer' && (
+        {currentOpType !== 'transfer' && (
           <Field label="Контрагент (опц.)">
             <select value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} style={input}>
               <option value="">—</option>
@@ -198,7 +224,25 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
 
         <AttachmentsSection operationId={initial?.id || null} />
 
+        {wasConvertedToTransfer && (
+          <div style={{
+            padding: 10, marginBottom: 10, borderRadius: 8, fontSize: 12,
+            background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.35)', color: '#4338ca',
+          }}>
+            Конвертовано на <b>Переказ</b>. Збереження запише операцію з типом «transfer» — категорія буде очищена,
+            обидва рахунки обовʼязкові. Не зберігати — натисни «Відміна».
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+          {initial && currentOpType !== 'transfer' && (
+            <button type="button" onClick={convertToTransfer}
+                    style={{ ...btnSec, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title="Замінити тип операції на «Переказ» між рахунками. Категорія буде очищена.">
+              <ArrowLeftRight size={14} /> Перетворити в переказ
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
           <button type="button" onClick={onClose} style={btnSec}>Відміна</button>
           <button type="submit" disabled={saving} style={{ ...btnPrim, background: accentColor }}>
             {saving ? 'Збереження…' : initial ? 'Зберегти' : 'Додати'}
