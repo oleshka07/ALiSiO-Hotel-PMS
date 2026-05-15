@@ -429,7 +429,21 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     download_url: `/api/finance/investor-documents/${d.id}/download`,
   }));
 
-  // Forecast scenarios keyed by business_unit_id
+  // Forecast scenarios keyed by business_unit_id.
+  //
+  // When the admin saves a scenario via ScenariosTab they typically fill
+  // simple assumptions (occupancy / ADR / IRR target / ETA) and leave the
+  // raw `monthly_cashback_projection_json` empty — that field is hidden
+  // in a «Розширено» details block and few operators fill it manually.
+  // If we just return whatever is in the DB the forward projection chart
+  // renders blank with a «без monthly projection JSON» placeholder.
+  //
+  // To make the chart useful out-of-the-box we auto-derive the monthly
+  // series from `irr_target` × investor's invested amount when the JSON
+  // is empty: constant monthly cashback over the period from today to
+  // ETA (or until cumulative reaches 120% of invested if ETA isn't set).
+  // The admin can still override with an explicit JSON for non-flat
+  // curves — if present, it wins.
   const scenarios: InvestorPortalData['scenarios'] = {};
   if (projectIds.length > 0) {
     const placeholders = projectIds.map(() => '?').join(',');
@@ -440,12 +454,55 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       WHERE business_unit_id IN (${placeholders})
       ORDER BY business_unit_id, scenario
     `).all(...projectIds) as any[];
+
+    const investedByProject = new Map<string, number>();
+    for (const inv of investments) {
+      investedByProject.set(inv.project_id, (investedByProject.get(inv.project_id) || 0) + (inv.amount || 0));
+    }
+
+    const autoProjection = (assumptionsRaw: string | null, eta: string | null, investedEur: number): string | null => {
+      if (investedEur <= 0) return null;
+      let assumptions: any = null;
+      if (assumptionsRaw) { try { assumptions = JSON.parse(assumptionsRaw); } catch { /* ignore */ } }
+      const irr = assumptions?.irr_target;
+      if (typeof irr !== 'number' || irr <= 0) return null;
+      const monthlyEur = +(investedEur * irr / 12).toFixed(2);
+      if (monthlyEur <= 0) return null;
+
+      const start = new Date();
+      start.setUTCDate(1);
+      start.setUTCHours(0, 0, 0, 0);
+      let end: Date;
+      if (eta && /^\d{4}-\d{2}/.test(eta)) {
+        end = new Date(`${eta.substring(0, 7)}-01T00:00:00Z`);
+      } else {
+        const monthsNeeded = Math.ceil((investedEur * 1.2) / monthlyEur);
+        end = new Date(start);
+        end.setUTCMonth(end.getUTCMonth() + monthsNeeded);
+      }
+      if (end <= start) return null;
+
+      const points: Array<{ period: string; eur: number }> = [];
+      const cur = new Date(start);
+      let safety = 0;
+      while (cur <= end && safety < 360) {
+        points.push({ period: cur.toISOString().substring(0, 7), eur: monthlyEur });
+        cur.setUTCMonth(cur.getUTCMonth() + 1);
+        safety++;
+      }
+      return points.length > 0 ? JSON.stringify(points) : null;
+    };
+
     for (const s of scenarioRows) {
       if (!scenarios[s.business_unit_id]) scenarios[s.business_unit_id] = [];
+      let projection: string | null = s.monthly_cashback_projection_json;
+      if (!projection || !projection.trim()) {
+        projection = autoProjection(s.assumptions_json, s.full_repayment_eta, investedByProject.get(s.business_unit_id) || 0);
+      }
       scenarios[s.business_unit_id].push({
         scenario: s.scenario,
         assumptions_json: s.assumptions_json,
-        monthly_cashback_projection_json: s.monthly_cashback_projection_json,
+        monthly_cashback_projection_json: projection,
         full_repayment_eta: s.full_repayment_eta,
       });
     }
