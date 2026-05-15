@@ -109,6 +109,33 @@ export async function updateReservation(request: NextRequest, { params }: { para
       prevUnitLabel = prevRow?.unit_name || prevRow?.unit_id || null;
     }
 
+    // Overlap guard: if unit_id and/or date range is changing, make sure
+    // the target unit is free across the (possibly new) dates. POST has
+    // this check; PATCH historically did not, so unit reassignment via
+    // edit forms or the room-allocation modal could silently double-book.
+    if (body.unit_id !== undefined || body.check_in !== undefined || body.check_out !== undefined) {
+      const current = db.prepare(
+        'SELECT unit_id, check_in, check_out FROM reservations WHERE id = ?',
+      ).get(id) as { unit_id: string; check_in: string; check_out: string } | undefined;
+      if (current) {
+        const targetUnit = body.unit_id !== undefined ? body.unit_id : current.unit_id;
+        const targetIn  = body.check_in   !== undefined ? body.check_in  : current.check_in;
+        const targetOut = body.check_out  !== undefined ? body.check_out : current.check_out;
+        const overlap = db.prepare(`
+          SELECT id FROM reservations
+          WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show')
+            AND check_in < ? AND check_out > ?
+          LIMIT 1
+        `).get(targetUnit, id, targetOut, targetIn) as { id: string } | undefined;
+        if (overlap) {
+          return NextResponse.json(
+            { error: 'Кімната зайнята на ці дати іншим бронюванням', conflictBookingId: overlap.id },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
     for (const key of allowed) {
       if (body[key] !== undefined) {
         sets.push(`${key} = ?`);

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, X, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, X, Search, Building2 } from 'lucide-react';
 import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow, type BookingFormValues } from '@/components/booking/BookingForm';
+import RoomAllocationModal from '@/components/booking/RoomAllocationModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -270,6 +271,7 @@ export default function MobileCalendar() {
   const [rangeStart, setRangeStart] = useState<{ unitId: string; date: string } | null>(null);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
   const [newBookingPrefill, setNewBookingPrefill] = useState<Partial<BookingFormValues> | null>(null);
+  const [showRoomAllocation, setShowRoomAllocation] = useState(false);
 
   const [startDay, setStartDay] = useState<Date>(() => mondayOf(new Date()));
 
@@ -571,6 +573,15 @@ export default function MobileCalendar() {
           <button onClick={goToday} style={todayBtn}>Сьогодні</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {category === 'resort' && (
+            <button
+              onClick={() => setShowRoomAllocation(true)}
+              style={{ ...navBtn, color: 'var(--accent-primary)' }}
+              title="Розселення по кімнатах Будови F"
+            >
+              <Building2 size={15} />
+            </button>
+          )}
           <button onClick={() => setShowSearch(s => !s)} style={{ ...navBtn, color: showSearch ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
             <Search size={16} />
           </button>
@@ -895,6 +906,14 @@ export default function MobileCalendar() {
           setBooking={(b: unknown) => setViewBooking(b as BookingRow | null)}
         />
       )}
+
+      {/* Room allocation modal (Building F) */}
+      <RoomAllocationModal
+        open={showRoomAllocation}
+        onClose={() => setShowRoomAllocation(false)}
+        onChanged={fetchData}
+        buildingCode="F"
+      />
     </div>
   );
 }
