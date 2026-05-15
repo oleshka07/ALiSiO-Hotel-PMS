@@ -226,6 +226,11 @@ export const testBankInbox   = withPermission('import_bank_data', _testBankInbox
 export const runBankInboxNow = withPermission('import_bank_data', _runBankInboxNow);
 export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes);
 
+// ─── Cron-driven bank inbox poll ──────────────────────────────
+// Not wrapped with withPermission — authenticates via X-Cron-Secret
+// header against process.env.CRON_SECRET. Meant for external crontab.
+export { pollBankInboxesFromCron } from './cron-bank-inbox.handlers';
+
 // ─── Exports (PR #12) — read (no guard) ───────────────────────
 export {
   exportOperations, exportCashflow, exportPnl, exportStatement,
