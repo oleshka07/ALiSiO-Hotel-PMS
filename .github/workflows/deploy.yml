@@ -13,11 +13,18 @@ jobs:
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          # Forward GitHub Secrets that the remote shell needs. To add a new
+          # key: define it in repo Settings → Secrets → Actions, list it
+          # here, list its name in the `envs:` field below, and append the
+          # idempotent .env-sync block at the bottom of the script.
+          PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: PRICELABS_API_KEY
           script: |
             set -euo pipefail
 
@@ -69,6 +76,24 @@ jobs:
               echo "[setup] generated CRON_SECRET and appended to .env"
             else
               echo "[setup] CRON_SECRET already present in .env"
+            fi
+
+            # ─────────────────────────────────────────────────────────
+            # Sync PRICELABS_API_KEY from GitHub Secrets into .env.
+            # Idempotent: appends on first run, overwrites in place
+            # afterwards. The `[ -n ... ]` guard avoids writing an empty
+            # line when the secret is unset in the GitHub repo.
+            # ─────────────────────────────────────────────────────────
+            if [ -n "${PRICELABS_API_KEY:-}" ]; then
+              if grep -q '^PRICELABS_API_KEY=' .env 2>/dev/null; then
+                sed -i "s|^PRICELABS_API_KEY=.*|PRICELABS_API_KEY=${PRICELABS_API_KEY}|" .env
+                echo "[setup] PRICELABS_API_KEY refreshed in .env"
+              else
+                echo "PRICELABS_API_KEY=${PRICELABS_API_KEY}" >> .env
+                echo "[setup] PRICELABS_API_KEY appended to .env"
+              fi
+            else
+              echo "[setup] PRICELABS_API_KEY not set in GitHub Secrets — skipping"
             fi
 
             # Ensure the log file exists with the right perms so cron
