@@ -56,6 +56,38 @@ jobs:
               exit 1
             fi
 
+            # ─────────────────────────────────────────────────────────
+            # Idempotent VPS setup for the bank-inbox cron endpoint
+            # (PR #63). The endpoint /api/cron/poll-bank-inboxes
+            # authenticates via process.env.CRON_SECRET. Generate
+            # once + install crontab + create log file. All steps are
+            # no-ops on subsequent runs.
+            # ─────────────────────────────────────────────────────────
+            if ! grep -q '^CRON_SECRET=' .env 2>/dev/null; then
+              SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+              echo "CRON_SECRET=$SECRET" >> .env
+              echo "[setup] generated CRON_SECRET and appended to .env"
+            else
+              echo "[setup] CRON_SECRET already present in .env"
+            fi
+
+            # Ensure the log file exists with the right perms so cron
+            # output has somewhere to land.
+            touch /var/log/pms-cron-bank.log
+            chmod 644 /var/log/pms-cron-bank.log
+
+            # Install crontab entry if not already present. We match
+            # the URL path rather than the full command so future
+            # tweaks (e.g. log rotation) don't double-install.
+            if ! crontab -l 2>/dev/null | grep -q 'poll-bank-inboxes'; then
+              ( crontab -l 2>/dev/null || true
+                echo '*/15 * * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1'
+              ) | crontab -
+              echo "[setup] installed crontab entry for poll-bank-inboxes"
+            else
+              echo "[setup] crontab entry for poll-bank-inboxes already present"
+            fi
+
             # Restart service only after a successful build.
             systemctl restart alisio-pms
             sleep 3
