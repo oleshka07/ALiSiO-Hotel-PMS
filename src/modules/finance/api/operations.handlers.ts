@@ -71,7 +71,12 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const opType = sp.get('op_type');
     const from = sp.get('from');
     const to = sp.get('to');
-    const accountId = sp.get('account_id');
+    // account_id supports both single value and comma-separated list of
+     // ids — the operator can multi-select accounts in the sidebar.
+    const accountIdRaw = sp.get('account_id');
+    const accountIds = accountIdRaw
+      ? accountIdRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
     const categoryId = sp.get('category_id');
     const projectId = sp.get('project_id');
     const counterpartyId = sp.get('counterparty_id');
@@ -91,7 +96,11 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
     if (to) { where.push('o.paid_at <= ?'); params.push(to); }
-    if (accountId) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(accountId, accountId); }
+    if (accountIds.length > 0) {
+      const ph = accountIds.map(() => '?').join(',');
+      where.push(`(o.account_from_id IN (${ph}) OR o.account_to_id IN (${ph}))`);
+      params.push(...accountIds, ...accountIds);
+    }
     if (categoryId) { where.push('o.category_id = ?'); params.push(categoryId); }
     if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
     if (counterpartyId) { where.push('o.counterparty_id = ?'); params.push(counterpartyId); }
