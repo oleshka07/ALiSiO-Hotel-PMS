@@ -60,7 +60,10 @@ export default function PriceLabsPreviewPage() {
       const res = await fetch(`/api/pricing/pricelabs-preview?${params}`);
       const j = await res.json();
       if (!res.ok) {
-        setError(j.error || j.detail || 'Помилка');
+        // Surface both fields — `detail` is what carries the real cause
+        // (missing PRICELABS_API_KEY, 401 from PriceLabs, etc).
+        const msg = [j.error, j.detail].filter(Boolean).join(' — ');
+        setError(msg || 'Помилка');
         return;
       }
       setData(j as PreviewResponse);
