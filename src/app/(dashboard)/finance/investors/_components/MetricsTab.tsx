@@ -21,6 +21,9 @@ interface AutoRevenue {
   totals_by_currency: Record<string, number>;
   reservations: number;
   by_source: { source: string; currency: string; total: number; reservations: number }[];
+  occupancy_pct: number | null;
+  sold_nights: number;
+  available_nights: number;
 }
 
 interface Project { id: string; name: string; is_active?: number }
@@ -93,13 +96,14 @@ export default function MetricsTab() {
     if (currencies.length === 0) { alert('Жодного бронювання за цей місяць.'); return; }
     const [topCurrency, topAmount] = currencies[0];
     const fmtSum = fmtCurrencies(auto.totals_by_currency);
-    if (!confirm(`Записати ${fmtSum} за ${autoMonth} як метрику?\n(зберігаємо ${topAmount.toFixed(2)} ${topCurrency} — основна валюта)`)) return;
+    const occLine = auto.occupancy_pct != null ? ` · occupancy ${auto.occupancy_pct}%` : '';
+    if (!confirm(`Записати ${fmtSum}${occLine} за ${autoMonth} як метрику?\n(зберігаємо ${topAmount.toFixed(2)} ${topCurrency} — основна валюта; бартер / нульові не враховані в occupancy)`)) return;
     const res = await fetch('/api/finance/investor-monthly-metrics', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         project_id: projectId, year_month: autoMonth,
-        occupancy_pct: null, revenue: topAmount,
-        notes: `Авто з ${auto.reservations} бронювань (${auto.unit_name}) — ${fmtSum} · ${new Date().toISOString().substring(0,10)}`,
+        occupancy_pct: auto.occupancy_pct, revenue: topAmount,
+        notes: `Авто з ${auto.reservations} бронювань (${auto.unit_name}) — ${fmtSum}${occLine} · ${new Date().toISOString().substring(0,10)}`,
       }),
     });
     if (!res.ok) { const j = await res.json(); alert(`Помилка: ${j.error}`); return; }
@@ -161,6 +165,7 @@ export default function MetricsTab() {
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                     {a.reservations} бронювань
                     {a.unit_name && <> · юніт: {a.unit_name}</>}
+                    {a.occupancy_pct != null && <> · <b>{a.occupancy_pct}%</b> occupancy ({a.sold_nights.toFixed(0)}/{a.available_nights})</>}
                   </div>
                   {a.by_source.length > 0 && (
                     <details style={{ marginTop: 4 }} open>
