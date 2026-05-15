@@ -115,7 +115,19 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       });
       const fUnitIds = new Set(fUnits.map((u: any) => u.id));
       const list = Array.isArray(bAll) ? bAll : (bAll.bookings || []);
-      const fBookings = list.filter((b: any) => fUnitIds.has(b.unit_id) && b.status !== 'cancelled');
+      const fBookings = list.filter((b: any) => {
+        if (!fUnitIds.has(b.unit_id)) return false;
+        // Real, occupiable reservations only.
+        if (['cancelled', 'no_show', 'draft'].includes(b.status)) return false;
+        // Hostex sometimes injects availability blocks as fake reservations
+        // with sentinel guest names like "OTA Blocked" / "Channel Block".
+        // They tag the unit so it can't be booked — but they shouldn't show
+        // up here as occupants. Real channel blocks live in
+        // /api/availability-blocks and the calendar already renders them.
+        const fullName = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+        if (/(ota|channel|hostex)[\s_-]*block/.test(fullName)) return false;
+        return true;
+      });
       setUnits(fUnits as UnitRow[]);
       setBookings(fBookings as BookingRow[]);
     } catch (e: any) {
@@ -172,16 +184,15 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   const arrivalsToday = bookings.filter(b => b.check_in === todayISO).length;
   const departuresToday = bookings.filter(b => b.check_out === todayISO).length;
 
-  // Чорновик: arrivals in the next 3 days (today / tomorrow / +2) — needs
-  // manager's attention. Bookings still have unit_id pointing to their
-  // assigned room (our model requires NOT NULL); the chip is a quick
-  // re-allocation shortcut. Dragging a chip onto a room calls the same
-  // PATCH unit_id flow; staging itself is not a drop target (we can't
-  // unset unit_id without a schema change).
+  // Чорновик: bookings explicitly detached from a room (no unit_id /
+  // unit_id pointing at a placeholder). Per user feedback the staging
+  // strip is meant *only* for guests an admin has pulled out of their
+  // room — not a duplicate view of arrivals. Until a "pending
+  // assignment" status (or nullable unit_id) lands this list is always
+  // empty and the strip is hidden in the UI.
   const stagingBookings = useMemo(() => {
-    const horizon = new Set([todayISO, addDays(todayISO, 1), addDays(todayISO, 2)]);
-    return bookings.filter(b => horizon.has(b.check_in));
-  }, [bookings, todayISO]);
+    return bookings.filter(b => !b.unit_id);
+  }, [bookings]);
 
   // ── Validation
   const canAccept = useCallback((destUnitId: string, bookingId: string): { ok: boolean; type?: 'move' | 'swap'; reason?: string } => {
@@ -542,20 +553,20 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
           <div className="ram-sb-item"><span className="ram-sb-k">Виїзди</span><span className="ram-sb-v ram-c-lea">{departuresToday}</span></div>
         </div>
 
-        <div className="ram-staging">
-          <div className="ram-staging-head">
-            <span className="ram-staging-lbl">Чорновик</span>
-            <span className="ram-staging-cnt">{stagingBookings.length}</span>
-            <span className="ram-staging-tip">{stagingBookings.length > 0 ? 'тягни в кімнату ↓' : 'найближчих заїздів немає'}</span>
-          </div>
-          {stagingBookings.length > 0 && (
+        {stagingBookings.length > 0 && (
+          <div className="ram-staging">
+            <div className="ram-staging-head">
+              <span className="ram-staging-lbl">Чорновик</span>
+              <span className="ram-staging-cnt">{stagingBookings.length}</span>
+              <span className="ram-staging-tip">тягни в кімнату ↓</span>
+            </div>
             <div className="ram-staging-scroll" onPointerDown={onPointerDown}>
               {stagingBookings.map(b => (
                 <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} unitCode={units.find(u => u.id === b.unit_id)?.code} />
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="ram-legend">
           <div className="ram-lg"><span className="ram-sw ram-sw-free" /> Вільна</div>
