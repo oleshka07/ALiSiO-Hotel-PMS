@@ -29,6 +29,8 @@ const STEP_LABELS: Record<Step, string> = {
 };
 const STEP_ORDER: Step[] = ['landing', 'accommodation', 'extras', 'summary', 'success'];
 const STORAGE_KEY = 'kc_booking_draft';
+const CHECKOUT_CACHE_KEY = 'kc_checkout_cache';
+const CACHE_TTL_MS = 25 * 60 * 1000; // a bit under Teya's session TTL
 
 function getAccommodationLabel(state: BookingState): string {
   if (!state.accommodationType) return '';
@@ -68,9 +70,32 @@ export default function BookingWizard() {
   const [showPriceList, setShowPriceList] = useState(false);
   const [prices, setPrices] = useState<PriceItem[]>([]);
 
-  // Cache Teya session so "Pay online" + "Show QR" reuse the same checkout
-  // instead of creating duplicate drafts / payment sessions.
+  // Cache Teya session so "Pay online" + "Show QR" + "Pay via admin" reuse
+  // the same draft + checkout instead of creating duplicates. Also persisted
+  // to sessionStorage so a reload during checkout doesn't spawn new reservations.
   const checkoutCacheRef = useRef<{ sessionUrl: string; pmsResId: string; guestPageToken?: string } | null>(null);
+
+  // Restore checkout cache from sessionStorage (recover from accidental reloads
+  // while the Teya tab is still open).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(CHECKOUT_CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (
+        parsed && parsed.ts && Date.now() - parsed.ts < CACHE_TTL_MS &&
+        parsed.sessionUrl && parsed.pmsResId
+      ) {
+        checkoutCacheRef.current = {
+          sessionUrl: parsed.sessionUrl,
+          pmsResId: parsed.pmsResId,
+          guestPageToken: parsed.guestPageToken,
+        };
+      } else {
+        sessionStorage.removeItem(CHECKOUT_CACHE_KEY);
+      }
+    } catch { sessionStorage.removeItem(CHECKOUT_CACHE_KEY); }
+  }, []);
 
   // Load price list from API
   useEffect(() => { loadPriceList().then(setPrices).catch(() => {}); }, []);
@@ -98,18 +123,26 @@ export default function BookingWizard() {
     }
   }, [state, step]);
 
-  // Check payment return URL params
+  // Check payment return URL params. `payment_status` is the authoritative
+  // value set by the widget-payment-return webhook (success | cancel | failed).
+  // `payment` is a legacy param still present in URLs from in-flight pre-fix
+  // Teya sessions; read it as a fallback so those returns don't hang.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const status = params.get('payment');
+    const status = params.get('payment_status') || params.get('payment');
     const rid = params.get('reservation_id');
     const token = params.get('token');
     if (status === 'success') {
       setPaymentStatus('success'); if (rid) setReservationId(rid); if (token) setGuestPageToken(token);
-      setStep('success'); sessionStorage.removeItem(STORAGE_KEY);
+      setStep('success');
+      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(CHECKOUT_CACHE_KEY);
+      checkoutCacheRef.current = null;
       window.history.replaceState({}, '', '/book');
     } else if (status === 'failed' || status === 'cancel') {
-      setPaymentStatus('failed'); setStep('success');
+      setPaymentStatus('failed');
+      if (rid) setReservationId(rid);
+      setStep('success');
       window.history.replaceState({}, '', '/book');
     }
   }, []);
@@ -120,6 +153,7 @@ export default function BookingWizard() {
     setReservationId(undefined); setGuestPageToken(undefined); setPaymentUrl(undefined); setQrCodeUrl(undefined);
     checkoutCacheRef.current = null;
     sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(CHECKOUT_CACHE_KEY);
   }, []);
 
   const goBack = () => { const idx = STEP_ORDER.indexOf(step); if (idx > 0) setStep(STEP_ORDER[idx - 1]); };
@@ -151,7 +185,10 @@ export default function BookingWizard() {
     const { draft, grandTotal } = await createDraft(contact);
     const pmsResId = draft.reservation_id || draft.id;
     const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
-    const returnPath = `/book?payment=success&reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
+    // `payment_status` is set by the webhook (success | cancel | failed); do
+    // not hardcode it here, otherwise cancel/failed returns would also show
+    // the success screen.
+    const returnPath = `/book?reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
     const checkoutRes = await fetch('/api/booking/checkout-session', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -169,6 +206,7 @@ export default function BookingWizard() {
       guestPageToken: draft.guest_page_token as string | undefined,
     };
     checkoutCacheRef.current = entry;
+    try { sessionStorage.setItem(CHECKOUT_CACHE_KEY, JSON.stringify({ ...entry, ts: Date.now() })); } catch { /* */ }
     return entry;
   };
 
@@ -190,14 +228,16 @@ export default function BookingWizard() {
   };
 
   // ─── Show QR for guest (same Teya session, no redirect) ───
-  const handleShowQr = async (contact: { name: string; email: string; phone: string }): Promise<string | null> => {
+  const handleShowQr = async (
+    contact: { name: string; email: string; phone: string }
+  ): Promise<{ url: string; reservationId: string } | null> => {
     setState(s => ({ ...s, contact }));
     try {
       const { sessionUrl, pmsResId, guestPageToken: tok } = await ensureCheckoutSession(contact);
       setReservationId(pmsResId);
       if (tok) setGuestPageToken(tok);
       setPaymentUrl(sessionUrl);
-      return sessionUrl;
+      return { url: sessionUrl, reservationId: pmsResId };
     } catch (err: unknown) {
       console.error('[Booking] QR error', err);
       alert(`Could not generate payment link: ${(err as Error)?.message || 'Unknown error'}`);
@@ -205,13 +245,36 @@ export default function BookingWizard() {
     }
   };
 
+  // QR modal polled /api/booking/drafts and detected payment_status='paid'.
+  // Mirror the Teya redirect path so the success screen renders.
+  const handleQrPaid = useCallback((rid: string) => {
+    setReservationId(rid);
+    setPaymentStatus('success');
+    setStep('success');
+    sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(CHECKOUT_CACHE_KEY);
+    checkoutCacheRef.current = null;
+  }, []);
+
   // ─── Pay via Administrator ────────────────────────
   const handlePayAdmin = async (contact: { name: string; email: string; phone: string }) => {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
-      const { draft } = await createDraft(contact);
-      setReservationId(draft.reservation_id || draft.id);
-      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
+      // If a Teya checkout was already created (Pay online clicked first, or
+      // QR generated), reuse its reservation so we don't end up with two
+      // tentative reservations for the same guest.
+      let pmsResId: string;
+      let tok: string | undefined;
+      if (checkoutCacheRef.current) {
+        pmsResId = checkoutCacheRef.current.pmsResId;
+        tok = checkoutCacheRef.current.guestPageToken;
+      } else {
+        const { draft } = await createDraft(contact);
+        pmsResId = draft.reservation_id || draft.id;
+        tok = draft.guest_page_token;
+      }
+      setReservationId(pmsResId);
+      if (tok) setGuestPageToken(tok);
       setPaymentStatus('admin_pending'); setStep('success');
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {
@@ -333,6 +396,7 @@ export default function BookingWizard() {
             priceBreakdown={state.priceBreakdown}
             onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
             onShowQr={handleShowQr}
+            onQrPaid={handleQrPaid}
             submitting={submitting}
           />
         )}
@@ -344,6 +408,7 @@ export default function BookingWizard() {
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} total={state.total}
             adults={(state.accommodationData.adults as number) || 1}
+            guestEmail={state.contact?.email || null}
             guestPageToken={guestPageToken}
             paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
             onReset={resetAll} onAdminConfirm={handleAdminConfirm}

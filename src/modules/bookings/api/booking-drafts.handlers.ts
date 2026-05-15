@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { sendBookingConfirmationEmail } from '../data/send-confirmation-email';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -264,7 +265,10 @@ export async function updateBookingDraft(req: Request) {
       const now = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Prague' });
       const note = `✅ Оплату прийняв: ${adminName} · ${now}`;
 
-      db.prepare(`
+      // Guard: only update if not already paid. Lets us detect first-time
+      // confirmation and avoid double-sending confirmation emails on a
+      // duplicate PIN submit.
+      const confirmResult = db.prepare(`
         UPDATE reservations
         SET payment_status = 'paid',
             status = 'confirmed',
@@ -273,11 +277,25 @@ export async function updateBookingDraft(req: Request) {
               ELSE internal_notes || char(10) || ?
             END,
             updated_at = datetime('now')
-        WHERE id = ?
+        WHERE id = ? AND payment_status != 'paid'
       `).run(note, note, rid);
 
-      try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
-      try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
+      try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
+      try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
+
+      // Fire confirmation email on first payment only.
+      if (confirmResult.changes > 0) {
+        const origin = (() => {
+          try {
+            const proto = req.headers.get('x-forwarded-proto') || 'https';
+            const host = req.headers.get('host') || '';
+            return host ? `${proto}://${host}` : undefined;
+          } catch { return undefined; }
+        })();
+        sendBookingConfirmationEmail(rid, origin).catch((e) => {
+          console.error('[AdminConfirm] Email send error:', e?.message);
+        });
+      }
 
       // ─── Audit log ──────────────────────────────────────────────────────
       try {
@@ -304,18 +322,43 @@ export async function updateBookingDraft(req: Request) {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
+// Returns the draft joined with the linked reservation so the widget can
+// poll `payment_status` (e.g. while the QR-payment modal is open).
 export async function getBookingDraft(req: Request) {
   try {
     const db = getDb();
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
     const id = searchParams.get('id');
+    const reservationId = searchParams.get('reservation_id');
+
+    const baseSql = `
+      SELECT bd.*,
+             r.payment_status AS reservation_payment_status,
+             r.status        AS reservation_status
+      FROM booking_drafts bd
+      LEFT JOIN reservations r ON bd.reservation_id = r.id
+    `;
 
     let draft: any;
-    if (sessionId) {
-      draft = db.prepare('SELECT * FROM booking_drafts WHERE session_id = ?').get(sessionId);
+    if (reservationId) {
+      draft = db.prepare(`${baseSql} WHERE bd.reservation_id = ? ORDER BY bd.created_at DESC LIMIT 1`).get(reservationId);
+      // Fallback: caller passed a reservation_id with no linked draft (e.g.
+      // dev/test data). Surface the reservation state directly.
+      if (!draft) {
+        const r = db.prepare('SELECT id, payment_status, status FROM reservations WHERE id = ?').get(reservationId) as any;
+        if (r) {
+          draft = {
+            reservation_id: r.id,
+            reservation_payment_status: r.payment_status,
+            reservation_status: r.status,
+          };
+        }
+      }
+    } else if (sessionId) {
+      draft = db.prepare(`${baseSql} WHERE bd.session_id = ?`).get(sessionId);
     } else if (id) {
-      draft = db.prepare('SELECT * FROM booking_drafts WHERE id = ?').get(id);
+      draft = db.prepare(`${baseSql} WHERE bd.id = ?`).get(id);
     }
 
     if (!draft) {
