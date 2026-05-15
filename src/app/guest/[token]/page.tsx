@@ -1386,9 +1386,12 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ image: base64 }),
                 });
-                if (!res.ok) throw new Error('OCR failed');
-                const result = await res.json();
-                if (result.success && result.data) {
+                const result = await res.json().catch(() => ({}));
+                if (!res.ok || !result.success) {
+                  const msg = result?.error || `HTTP ${res.status}`;
+                  console.error('[OCR]', msg);
+                  showToast(`OCR error: ${msg}. Please fill in manually.`, 'error');
+                } else if (result.data) {
                   const d = result.data;
                   setRegData(prev => ({
                     ...prev,
@@ -1403,8 +1406,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 } else {
                   showToast('Could not read document. Please fill in manually.', 'error');
                 }
-              } catch {
-                showToast('OCR error. Please fill in manually.', 'error');
+              } catch (err) {
+                const msg = (err as Error)?.message || 'unknown';
+                console.error('[OCR]', err);
+                showToast(`OCR error: ${msg}. Please fill in manually.`, 'error');
               }
               setOcrLoading(false);
               if (ocrInputRef.current) ocrInputRef.current.value = '';

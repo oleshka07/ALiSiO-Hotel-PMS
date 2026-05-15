@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import StepLanding, { type AccommodationType } from './steps/StepLanding';
 import StepGlamping from './steps/StepGlamping';
 import StepBuildings from './steps/StepBuildings';
@@ -68,6 +68,10 @@ export default function BookingWizard() {
   const [showPriceList, setShowPriceList] = useState(false);
   const [prices, setPrices] = useState<PriceItem[]>([]);
 
+  // Cache Teya session so "Pay online" + "Show QR" reuse the same checkout
+  // instead of creating duplicate drafts / payment sessions.
+  const checkoutCacheRef = useRef<{ sessionUrl: string; pmsResId: string; guestPageToken?: string } | null>(null);
+
   // Load price list from API
   useEffect(() => { loadPriceList().then(setPrices).catch(() => {}); }, []);
 
@@ -114,6 +118,7 @@ export default function BookingWizard() {
     setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
     setStep('landing'); setSubmitting(false); setPaymentStatus('pending');
     setReservationId(undefined); setGuestPageToken(undefined); setPaymentUrl(undefined); setQrCodeUrl(undefined);
+    checkoutCacheRef.current = null;
     sessionStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -140,40 +145,64 @@ export default function BookingWizard() {
     return { draft, grandTotal };
   };
 
+  // Create draft + Teya session once; reuse for both "Pay online" and "Show QR".
+  const ensureCheckoutSession = async (contact: { name: string; email: string; phone: string }) => {
+    if (checkoutCacheRef.current) return checkoutCacheRef.current;
+    const { draft, grandTotal } = await createDraft(contact);
+    const pmsResId = draft.reservation_id || draft.id;
+    const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
+    const returnPath = `/book?payment=success&reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
+    const checkoutRes = await fetch('/api/booking/checkout-session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: grandTotal, currency: 'CZK', description: desc,
+        reservation_id: pmsResId, return_path: returnPath,
+      }),
+    });
+    const checkout = await checkoutRes.json();
+    if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
+    if (!checkout.session_url) throw new Error('Payment gateway did not return a session URL');
+
+    const entry = {
+      sessionUrl: checkout.session_url as string,
+      pmsResId,
+      guestPageToken: draft.guest_page_token as string | undefined,
+    };
+    checkoutCacheRef.current = entry;
+    return entry;
+  };
+
   // ─── Pay Online (Teya) ────────────────────────────
   const handlePayOnline = async (contact: { name: string; email: string; phone: string }) => {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
-      const { draft, grandTotal } = await createDraft(contact);
-      // Use PMS reservation_id for Teya (server reads amount from DB)
-      const pmsResId = draft.reservation_id || draft.id;
-      const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
-      const returnPath = `/book?payment=success&reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
-      const checkoutRes = await fetch('/api/booking/checkout-session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: grandTotal, currency: 'CZK', description: desc,
-          reservation_id: pmsResId, return_path: returnPath,
-        }),
-      });
-      const checkout = await checkoutRes.json();
-      if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
-
+      const { sessionUrl, pmsResId, guestPageToken: tok } = await ensureCheckoutSession(contact);
       setReservationId(pmsResId);
-      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
-      if (checkout.qr_code_url) setQrCodeUrl(checkout.qr_code_url);
-      if (checkout.session_url) {
-        setPaymentUrl(checkout.session_url);
-        setPaymentStatus('pending'); setStep('success');
-        // Open payment in new tab (user stays on QR/pending page)
-        window.open(checkout.session_url, '_blank');
-      } else {
-        setPaymentStatus('success'); setStep('success');
-      }
+      if (tok) setGuestPageToken(tok);
+      setPaymentUrl(sessionUrl);
+      setPaymentStatus('pending'); setStep('success');
+      // Open payment in new tab (user stays on QR/pending page)
+      window.open(sessionUrl, '_blank');
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {
       console.error('[Booking]', err); setPaymentStatus('failed'); setStep('success');
     } finally { setSubmitting(false); }
+  };
+
+  // ─── Show QR for guest (same Teya session, no redirect) ───
+  const handleShowQr = async (contact: { name: string; email: string; phone: string }): Promise<string | null> => {
+    setState(s => ({ ...s, contact }));
+    try {
+      const { sessionUrl, pmsResId, guestPageToken: tok } = await ensureCheckoutSession(contact);
+      setReservationId(pmsResId);
+      if (tok) setGuestPageToken(tok);
+      setPaymentUrl(sessionUrl);
+      return sessionUrl;
+    } catch (err: unknown) {
+      console.error('[Booking] QR error', err);
+      alert(`Could not generate payment link: ${(err as Error)?.message || 'Unknown error'}`);
+      return null;
+    }
   };
 
   // ─── Pay via Administrator ────────────────────────
@@ -303,6 +332,7 @@ export default function BookingWizard() {
             total={state.total} extras={state.extras}
             priceBreakdown={state.priceBreakdown}
             onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
+            onShowQr={handleShowQr}
             submitting={submitting}
           />
         )}
