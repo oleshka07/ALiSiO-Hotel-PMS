@@ -43,12 +43,36 @@ interface PreviewResponse {
   listingsSummary: ListingSummary[];
 }
 
+interface SyncListingResult {
+  pl_id: string;
+  listing_name: string;
+  unit_id: string;
+  unit_type_id: string;
+  unit_name: string;
+  days_written: number;
+}
+interface SyncResult {
+  ok: boolean;
+  daysAhead: number;
+  dateFrom: string;
+  dateTo: string;
+  eurToCzk: number;
+  listingsResolved: number;
+  listingsSkipped: number;
+  daysWrittenTotal: number;
+  perListing: SyncListingResult[];
+  conflicts: Array<{ unit_type_id: string; listing_names: string[] }>;
+  errors: string[];
+}
+
 export default function PriceLabsPreviewPage() {
   const [data, setData] = useState<PreviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
   const [filterId, setFilterId] = useState<string>('');
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchPreview = useCallback(async () => {
     setLoading(true);
@@ -102,6 +126,24 @@ export default function PriceLabsPreviewPage() {
                 style={{ padding: '6px 14px', fontSize: 13, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           {loading ? 'Завантаження…' : 'Оновити'}
         </button>
+        <button
+          onClick={async () => {
+            if (!confirm(`Записати ціни PriceLabs у price_calendar на ${days} днів вперед? Перепише існуючі значення для тих самих unit_type + date.`)) return;
+            setSyncing(true);
+            setSyncResult(null);
+            try {
+              const r = await fetch(`/api/pricing/pricelabs-sync-manual?days=${days}`, { method: 'POST' });
+              const j = await r.json();
+              setSyncResult(j);
+            } catch (e) {
+              setSyncResult({ ok: false, daysAhead: days, dateFrom: '', dateTo: '', eurToCzk: 0, listingsResolved: 0, listingsSkipped: 0, daysWrittenTotal: 0, perListing: [], conflicts: [], errors: [e instanceof Error ? e.message : 'failed'] });
+            } finally { setSyncing(false); }
+          }}
+          disabled={syncing}
+          style={{ padding: '6px 14px', fontSize: 13, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+        >
+          {syncing ? 'Sync…' : '⤓ Записати в price_calendar'}
+        </button>
         {data && (
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-tertiary)' }}>
             Курс EUR→CZK: <b>{data.eurToCzk.toFixed(3)}</b> · {data.from} — {data.to}
@@ -112,6 +154,46 @@ export default function PriceLabsPreviewPage() {
       {error && (
         <div style={{ padding: 16, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', marginBottom: 16 }}>
           ❌ {error}
+        </div>
+      )}
+
+      {syncResult && (
+        <div style={{ padding: 16, background: syncResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${syncResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 8, marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>
+            {syncResult.ok ? '✅ Sync завершено' : '⚠️ Sync завершено з помилками'}
+          </div>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>
+            Записано <b>{syncResult.daysWrittenTotal}</b> днів у price_calendar ({syncResult.dateFrom} → {syncResult.dateTo}).
+            Будинків: <b>{syncResult.listingsResolved}</b>
+            {syncResult.listingsSkipped > 0 && <> · пропущено: <b>{syncResult.listingsSkipped}</b></>}
+          </div>
+          {syncResult.perListing.length > 0 && (
+            <ul style={{ fontSize: 12, margin: '8px 0', paddingLeft: 20 }}>
+              {syncResult.perListing.map((p) => (
+                <li key={p.pl_id}>
+                  <b>{p.unit_name}</b> · unit_type=<code>{p.unit_type_id.slice(0, 12)}…</code> · {p.days_written} днів
+                </li>
+              ))}
+            </ul>
+          )}
+          {syncResult.conflicts.length > 0 && (
+            <div style={{ marginTop: 8, padding: 8, background: 'rgba(245,158,11,0.1)', borderRadius: 4, fontSize: 12, color: '#92400e' }}>
+              ⚠️ <b>Конфлікти unit_type</b> — кілька будинків ділять один тип, останній перезаписав попередні:
+              <ul style={{ marginTop: 4, paddingLeft: 20 }}>
+                {syncResult.conflicts.map((c, i) => (
+                  <li key={i}>{c.listing_names.join(' / ')}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {syncResult.errors.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#ef4444' }}>
+              {syncResult.errors.map((e, i) => <div key={i}>❌ {e}</div>)}
+            </div>
+          )}
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Перевір на сторінці <a href="/pricing" style={{ textDecoration: 'underline' }}>/pricing</a> чи з'явились ціни в календарі для кожного будинку.
+          </div>
         </div>
       )}
 
