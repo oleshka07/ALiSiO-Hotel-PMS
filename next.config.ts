@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
   // Allow build to succeed during modular architecture migration
   // Remove once all modules are fully migrated and TS errors resolved
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
 };
 
 export default nextConfig;
