@@ -464,6 +464,7 @@ export async function duplicateOperation(
     const src = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id) as any;
     if (!src) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
 
+    const actor = await getOptionalActor();
     const today = new Date().toISOString().substring(0, 10);
     const newId = createOperationInTx(db, orgId, {
       op_type: src.op_type,
@@ -480,7 +481,7 @@ export async function duplicateOperation(
       source: 'manual',
       status: 'completed',
       tag_ids: getTagIds(db, id),
-    });
+    }, actor);
     const created = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(newId);
     return NextResponse.json(enrichOperation(db, created), { status: 201 });
   } catch (error: any) {
