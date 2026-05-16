@@ -488,6 +488,9 @@ export default function PricingPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <a className="btn btn-secondary" href="/pricing/pricelabs" title="Подивитися ціни з PriceLabs та запустити sync">
+              📈 PriceLabs
+            </a>
             <button className="btn btn-secondary" onClick={() => setShowBulkEdit(true)}>
               <Edit3 size={16} /> Масове редагування
             </button>
