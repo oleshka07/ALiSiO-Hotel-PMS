@@ -71,6 +71,7 @@ export default function BookingViewModal({
   const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'groups' | 'tax' | 'notes' | 'history'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
+  const [savingPay, setSavingPay] = useState(false);
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
@@ -431,24 +432,41 @@ export default function BookingViewModal({
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
-                    <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
+                    <button className="btn btn-sm btn-ghost" disabled={savingPay} onClick={() => setShowPayForm(false)}>Скасувати</button>
+                    <button className="btn btn-sm btn-primary" disabled={savingPay || !payForm.amount || Number(payForm.amount) <= 0}
                       onClick={async () => {
-                        const res = await fetch('/api/payments', {
-                          method: 'POST', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }),
-                        });
-                        const data = await res.json().catch(() => ({}));
-                        setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
-                        setShowPayForm(false);
-                        onFetchPayments(b.id);
-                        onFetchBookings();
-                        const msg = data?.kind === 'marker'
-                          ? '✅ Позначка збережена. Реальна транзакція з\'явиться через Teya / банк.'
-                          : 'Платіж додано!';
-                        showToast(msg);
+                        if (savingPay) return;
+                        setSavingPay(true);
+                        try {
+                          let res: Response;
+                          try {
+                            res = await fetch('/api/payments', {
+                              method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }),
+                            });
+                          } catch (netErr: any) {
+                            showToast(`❌ Мережева помилка: ${netErr?.message || 'нема відповіді'}`);
+                            return;
+                          }
+                          const data = await res.json().catch(() => ({} as any));
+                          if (!res.ok) {
+                            showToast(`❌ ${data?.error || `Помилка ${res.status}`}`);
+                            return;
+                          }
+                          setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
+                          setShowPayForm(false);
+                          onFetchPayments(b.id);
+                          onFetchBookings();
+                          const msg = data?.kind === 'marker'
+                            ? '✅ Позначка збережена. Реальна транзакція з\'явиться через Teya / банк.'
+                            : 'Платіж додано!';
+                          showToast(msg);
+                        } finally {
+                          setSavingPay(false);
+                        }
                       }}>
-                      <Save size={12} /> {payForm.method === 'cash' ? 'Зберегти платіж' : 'Позначити як оплачено'}
+                      {savingPay ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                      {' '}{payForm.method === 'cash' ? 'Зберегти платіж' : 'Позначити як оплачено'}
                     </button>
                   </div>
                   {remaining > 0 && (

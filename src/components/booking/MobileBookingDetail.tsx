@@ -87,6 +87,7 @@ export default function MobileBookingDetail({
   const [tab, setTab] = useState<'payment' | 'registration' | 'groups'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
+  const [savingPay, setSavingPay] = useState(false);
   const [showRegForm, setShowRegForm] = useState(false);
   const [regForm, setRegForm] = useState({
     firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD',
@@ -131,27 +132,43 @@ export default function MobileBookingDetail({
   const guestPhoneClean = useMemo(() => (b.guest_phone || '').replace(/[^\d+]/g, ''), [b.guest_phone]);
 
   const handleAddPayment = async () => {
+    if (savingPay) return;
     if (!payForm.amount || Number(payForm.amount) <= 0) return;
-    const res = await fetch('/api/payments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        reservation_id: b.id,
-        amount: Number(payForm.amount),
-        method: payForm.method,
-        type: payForm.type,
-        notes: payForm.notes || undefined,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
-    setShowPayForm(false);
-    onFetchPayments(b.id);
-    onFetchBookings();
-    const msg = data?.kind === 'marker'
-      ? '✅ Позначка збережена'
-      : 'Платіж додано!';
-    showToast(msg);
+    setSavingPay(true);
+    try {
+      let res: Response;
+      try {
+        res = await fetch('/api/payments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reservation_id: b.id,
+            amount: Number(payForm.amount),
+            method: payForm.method,
+            type: payForm.type,
+            notes: payForm.notes || undefined,
+          }),
+        });
+      } catch (netErr: any) {
+        showToast(`❌ Мережева помилка: ${netErr?.message || 'нема відповіді'}`);
+        return;
+      }
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        showToast(`❌ ${data?.error || `Помилка ${res.status}`}`);
+        return;
+      }
+      setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
+      setShowPayForm(false);
+      onFetchPayments(b.id);
+      onFetchBookings();
+      const msg = data?.kind === 'marker'
+        ? '✅ Позначка збережена'
+        : 'Платіж додано!';
+      showToast(msg);
+    } finally {
+      setSavingPay(false);
+    }
   };
 
   const handleDeletePayment = async (pId: string) => {
@@ -533,12 +550,13 @@ export default function MobileBookingDetail({
                     </button>
                   )}
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button onClick={() => setShowPayForm(false)} style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    <button onClick={() => setShowPayForm(false)} disabled={savingPay}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: savingPay ? 0.5 : 1 }}>
                       Скасувати
                     </button>
-                    <button onClick={handleAddPayment} disabled={!payForm.amount || Number(payForm.amount) <= 0}
-                      style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: (!payForm.amount || Number(payForm.amount) <= 0) ? 0.5 : 1 }}>
-                      <Save size={12} /> Зберегти
+                    <button onClick={handleAddPayment} disabled={savingPay || !payForm.amount || Number(payForm.amount) <= 0}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: (savingPay || !payForm.amount || Number(payForm.amount) <= 0) ? 0.6 : 1 }}>
+                      {savingPay ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Зберегти
                     </button>
                   </div>
                 </div>
