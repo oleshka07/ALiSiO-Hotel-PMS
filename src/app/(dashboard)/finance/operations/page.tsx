@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X, History } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
 import ExportButton from '../_components/ExportButton';
@@ -56,11 +56,24 @@ export default function OperationsPage() {
   const [modalType, setModalType] = useState<OpType | null>(null);
   const [editOp, setEditOp] = useState<Operation | null>(null);
 
+  // Default window: 01.01.2025 → end of current month. The fiscal-year-
+  // since start lets the operator see the full historic context without
+  // hunting for older operations; they can narrow it later if needed.
   const today = new Date();
-  const [from, setFrom] = useState(new Date(today.getFullYear(), today.getMonth() - 2, 1).toISOString().substring(0, 10));
+  const [from, setFrom] = useState('2025-01-01');
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
+  // Multi-select account filter — toggled from the sidebar by clicking
+  // an account row. Empty set = no filter. Not persisted; resets on
+  // reload so the operator gets the full view back by default.
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  // Temporary client-side sort. Click a column header to toggle:
+  // none → asc → desc → none. Resets on reload.
+  const [sortKey, setSortKey] = useState<'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project' | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // History modal: holds the id of the operation whose audit trail is open.
+  const [historyOpId, setHistoryOpId] = useState<string | null>(null);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
 
   const fetchOps = useCallback(async () => {
@@ -68,6 +81,7 @@ export default function OperationsPage() {
     const params = new URLSearchParams({ from, to, pageSize: '500' });
     if (filterType) params.set('op_type', filterType);
     if (search.trim()) params.set('search', search.trim());
+    if (selectedAccountIds.size > 0) params.set('account_id', [...selectedAccountIds].join(','));
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
@@ -86,7 +100,7 @@ export default function OperationsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [from, to, filterType, search]);
+  }, [from, to, filterType, search, selectedAccountIds]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -151,6 +165,48 @@ export default function OperationsPage() {
   const netTotal = totalIncome - totalExpense;
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
 
+  function toggleAccount(id: string) {
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function clickSort(key: NonNullable<typeof sortKey>) {
+    // Cycle: nothing | other → asc → desc → off
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return; }
+    if (sortDir === 'asc') { setSortDir('desc'); return; }
+    setSortKey(null);
+  }
+
+  function sortValue(o: Operation, key: NonNullable<typeof sortKey>): string | number {
+    switch (key) {
+      case 'paid_at':      return o.paid_at;
+      case 'amount':       return o.amount;
+      case 'account':      return (o.account_from_name || o.account_to_name || '').toLowerCase();
+      case 'counterparty': return (o.counterparty_name || '').toLowerCase();
+      case 'category':     return (o.category_name || '').toLowerCase();
+      case 'project':      return (o.project_name || '').toLowerCase();
+    }
+  }
+
+  const displayedOps = sortKey
+    ? [...ops].sort((a, b) => {
+        const va = sortValue(a, sortKey);
+        const vb = sortValue(b, sortKey);
+        // Empty strings always sink to bottom so they're easy to triage
+        // when the operator sorts «по категорії» to fill missing ones.
+        const aEmpty = va === '' || va == null;
+        const bEmpty = vb === '' || vb == null;
+        if (aEmpty && !bEmpty) return 1;
+        if (!aEmpty && bEmpty) return -1;
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ?  1 : -1;
+        return 0;
+      })
+    : ops;
+
   return (
     <div className="page-container" style={{ maxWidth: 1400, margin: '0 auto' }}>
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -191,13 +247,34 @@ export default function OperationsPage() {
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Всього на рахунках</div>
           <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>{formatMoney(totalBalance, 'CZK')}</div>
           <hr style={{ border: 'none', borderTop: '1px solid var(--border-primary)', margin: '16px 0' }} />
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 8 }}>Мої рахунки</div>
-          {accounts.map((a) => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
-              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: a.color, marginRight: 6, verticalAlign: 'middle' }} />{a.name}</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{formatMoney(a.balance, a.currency)}</span>
-            </div>
-          ))}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Мої рахунки</div>
+            {selectedAccountIds.size > 0 && (
+              <button onClick={() => setSelectedAccountIds(new Set())}
+                      style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3, background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer', padding: 0 }}
+                      title="Скинути фільтр по рахунках">
+                <X size={11} /> Скинути ({selectedAccountIds.size})
+              </button>
+            )}
+          </div>
+          {accounts.map((a) => {
+            const active = selectedAccountIds.has(a.id);
+            return (
+              <button key={a.id} onClick={() => toggleAccount(a.id)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', padding: '6px 8px', fontSize: 13,
+                        background: active ? 'rgba(99,102,241,0.12)' : 'transparent',
+                        border: active ? '1px solid #6366f1' : '1px solid transparent',
+                        borderRadius: 6, cursor: 'pointer', color: 'var(--text-primary)',
+                        marginBottom: 2, textAlign: 'left',
+                      }}
+                      title={active ? 'Зняти фільтр' : 'Фільтрувати по цьому рахунку (можна обрати кілька)'}>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: a.color, marginRight: 6, verticalAlign: 'middle' }} />{a.name}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{formatMoney(a.balance, a.currency)}</span>
+              </button>
+            );
+          })}
         </aside>
 
         {/* Main content */}
@@ -245,18 +322,18 @@ export default function OperationsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
-                    <th style={th}>Дата</th>
-                    <th style={{ ...th, textAlign: 'right' }}>Сума</th>
-                    <th style={th}>Рахунок</th>
-                    <th style={th}>Контрагент</th>
-                    <th style={th}>Категорія</th>
-                    <th style={th}>Проєкт</th>
+                    <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
+                    <SortableTh label="Рахунок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Контрагент" sortKey="counterparty" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Категорія" sortKey="category" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    <SortableTh label="Проєкт" sortKey="project" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <th style={th}>Коментар</th>
                     <th style={{ ...th, width: 90 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ops.map((o) => {
+                  {displayedOps.map((o) => {
                     const isExpense = o.op_type === 'expense';
                     const isTransfer = o.op_type === 'transfer';
                     const amountColor = isTransfer ? 'var(--text-secondary)' : isExpense ? '#ef4444' : '#22c55e';
@@ -357,6 +434,7 @@ export default function OperationsPage() {
                               <Paperclip size={10} /> {attachCounts[o.id]}
                             </span>
                           )}
+                          <button onClick={() => setHistoryOpId(o.id)} style={iconBtn} title="Історія змін (хто створив / редагував)"><History size={14} /></button>
                           <button onClick={openModal} style={iconBtn} title="Редагувати"><Pencil size={14} /></button>
                           <button onClick={() => handleDuplicate(o)} style={iconBtn} title="Дублювати"><Copy size={14} /></button>
                           <button onClick={() => handleDelete(o)} style={{ ...iconBtn, color: '#dc2626' }} title="Видалити"><Trash2 size={14} /></button>
@@ -380,6 +458,161 @@ export default function OperationsPage() {
           onSaved={() => { setModalType(null); setEditOp(null); fetchOps(); fetchAccounts(); }}
         />
       )}
+
+      {historyOpId && (
+        <AuditHistoryModal operationId={historyOpId} onClose={() => setHistoryOpId(null)} />
+      )}
+    </div>
+  );
+}
+
+type SortKey = 'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project';
+
+function SortableTh({ label, sortKey, currentKey, dir, onClick, align }: {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey | null;
+  dir: 'asc' | 'desc';
+  onClick: (k: SortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th style={{ ...th, textAlign: align || 'left', cursor: 'pointer', userSelect: 'none' }}
+        onClick={() => onClick(sortKey)}
+        title={active ? `Сортовано ${dir === 'asc' ? '↑' : '↓'} — клік щоб ${dir === 'asc' ? 'обернути' : 'скинути'}` : 'Клік щоб сортувати'}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+        {label}
+        {active && (dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+      </span>
+    </th>
+  );
+}
+
+interface AuditEntry {
+  id: string;
+  operation_id: string;
+  action: 'create' | 'update' | 'delete' | 'convert';
+  user_id: string | null;
+  user_name: string | null;
+  before_json: string | null;
+  after_json: string | null;
+  performed_at: string;
+}
+
+// Fields we care to surface when computing the «what changed» summary
+// between before_json and after_json. Internal/computed fields like
+// `amount_company` or `updated_at` are intentionally hidden.
+const AUDIT_TRACK_FIELDS = [
+  'op_type', 'amount', 'currency', 'paid_at', 'accrued_at',
+  'account_from_id', 'account_to_id',
+  'category_id', 'project_id', 'counterparty_id',
+  'comment', 'status', 'method', 'payment_subtype', 'reservation_id',
+] as const;
+
+function AuditHistoryModal({ operationId, onClose }: { operationId: string; onClose: () => void }) {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/finance/operations/${operationId}/audit`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) { setEntries(j.items || []); setLoading(false); } })
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [operationId]);
+
+  function diffSummary(beforeJson: string | null, afterJson: string | null): string[] {
+    try {
+      const before = beforeJson ? JSON.parse(beforeJson) : null;
+      const after = afterJson ? JSON.parse(afterJson) : null;
+      const out: string[] = [];
+      for (const key of AUDIT_TRACK_FIELDS) {
+        const b = before?.[key];
+        const a = after?.[key];
+        if (b !== a) {
+          const fmt = (v: any) => (v == null || v === '' ? '∅' : String(v));
+          out.push(`${key}: ${fmt(b)} → ${fmt(a)}`);
+        }
+      }
+      return out;
+    } catch { return []; }
+  }
+
+  const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
+    create:  { label: 'Створено',  color: '#16a34a', bg: 'rgba(34,197,94,0.10)' },
+    update:  { label: 'Редаговано', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)' },
+    convert: { label: 'Конвертовано', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
+    delete:  { label: 'Видалено',  color: '#dc2626', bg: 'rgba(220,38,38,0.10)' },
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+         onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ background: 'var(--bg-primary)', borderRadius: 12, padding: 24, minWidth: 540, maxWidth: 720, maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <History size={18} /> Історія змін
+          </h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, fontFamily: 'monospace' }}>op: {operationId}</div>
+
+        {loading ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)' }}>Завантаження…</div>
+        ) : entries.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
+            Історії немає. Цю операцію створили до того як ввімкнули аудит (W4a).
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {entries.map((e) => {
+              const meta = actionMeta[e.action];
+              const changes = e.action === 'update' || e.action === 'convert' ? diffSummary(e.before_json, e.after_json) : [];
+              const isSystem = !e.user_id;
+              return (
+                <div key={e.id} style={{ border: '1px solid var(--border-primary)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: meta.color, background: meta.bg, textTransform: 'uppercase' }}>
+                      {meta.label}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {isSystem ? <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>System</span> : e.user_name}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                      {new Date(e.performed_at).toLocaleString('cs-CZ')}
+                    </span>
+                  </div>
+                  {(e.action === 'update' || e.action === 'convert') && (
+                    changes.length === 0 ? (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(зміни поза tracked fields)</div>
+                    ) : (
+                      <ul style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                        {changes.map((c, i) => <li key={i} style={{ fontFamily: 'monospace' }}>{c}</li>)}
+                      </ul>
+                    )
+                  )}
+                  {(e.action === 'create' || e.action === 'delete') && (
+                    <details style={{ fontSize: 11, marginTop: 4 }}>
+                      <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Повний snapshot</summary>
+                      <pre style={{ fontFamily: 'monospace', fontSize: 10, background: 'var(--bg-secondary)', padding: 8, borderRadius: 4, marginTop: 6, overflow: 'auto', maxHeight: 260 }}>
+                        {(() => {
+                          const raw = e.action === 'create' ? e.after_json : e.before_json;
+                          try { return JSON.stringify(JSON.parse(raw || '{}'), null, 2); } catch { return raw || ''; }
+                        })()}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

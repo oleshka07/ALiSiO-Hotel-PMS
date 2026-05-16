@@ -1,5 +1,7 @@
 // Service Worker for Kemp Carlsbad Booking Widget
-const CACHE_NAME = 'kemp-book-v1';
+// Bump CACHE_NAME on every release that changes /book bundles so users
+// don't see stale code due to cache-first /_next/static handling below.
+const CACHE_NAME = 'kemp-book-v2';
 const OFFLINE_URL = '/book/offline';
 
 const PRECACHE_URLS = [

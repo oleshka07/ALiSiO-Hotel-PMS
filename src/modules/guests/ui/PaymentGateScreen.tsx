@@ -2,14 +2,18 @@
 import { useState } from 'react';
 import type { Translations, Lang } from '@/app/guest/[token]/translations';
 
+const ALL_LANGS: Lang[] = ['en', 'de', 'cs', 'uk', 'pl', 'nl', 'fr'];
+const LANG_LABELS: Record<Lang, string> = { en: 'EN', de: 'DE', cs: 'CZ', uk: 'UA', pl: 'PL', nl: 'NL', fr: 'FR' };
+
 interface Props {
   data: any;
   t: Translations;
   lang: Lang;
+  setLang?: (l: Lang) => void;
   token: string;
 }
 
-export function PaymentGateScreen({ data, t, lang, token }: Props) {
+export function PaymentGateScreen({ data, t, lang, setLang, token }: Props) {
   const r = data.reservation;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +67,17 @@ export function PaymentGateScreen({ data, t, lang, token }: Props) {
 
   return (
     <div className="gp-payment-gate">
+      {/* Language pills */}
+      {setLang && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 4, padding: '10px 16px 0' }}>
+          {ALL_LANGS.map(l => (
+            <button key={l} className={`gp-lang-pill ${l === lang ? 'active' : ''}`}
+              onClick={() => setLang(l)}
+              style={{ fontSize: 11, padding: '4px 8px' }}>{LANG_LABELS[l]}</button>
+          ))}
+        </div>
+      )}
+
       {/* Banner */}
       <div className="gp-payment-banner">
         ⚠️ {L.banner}

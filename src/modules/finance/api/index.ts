@@ -155,7 +155,7 @@ export { getFinanceLog } from './log.handlers';
 
 // ─── Operations (PR #6) — manage_payments ─────────────────────
 export {
-  listOperations, getOperation,
+  listOperations, getOperation, getOperationAudit,
   getReservationPaymentTotals, recalcReservationPaymentStatus,
 } from './operations.handlers';
 import {
@@ -225,6 +225,11 @@ export const toggleBankInbox = withPermission('import_bank_data', _toggleBankInb
 export const testBankInbox   = withPermission('import_bank_data', _testBankInbox);
 export const runBankInboxNow = withPermission('import_bank_data', _runBankInboxNow);
 export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes);
+
+// ─── Cron-driven bank inbox poll ──────────────────────────────
+// Not wrapped with withPermission — authenticates via X-Cron-Secret
+// header against process.env.CRON_SECRET. Meant for external crontab.
+export { pollBankInboxesFromCron } from './cron-bank-inbox.handlers';
 
 // ─── Exports (PR #12) — read (no guard) ───────────────────────
 export {
@@ -308,15 +313,46 @@ export {
   listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
   getAutoRevenueForMonth,
 } from './investors.handlers';
-export { getInvestorAudit } from './investor-audit.handlers';
-import { relinkProjectToUnit as _relinkProjectToUnit } from './investor-audit.handlers';
+export { getInvestorAudit, previewCascadeDelete } from './investor-audit.handlers';
+export { listMonthlyNotes } from './investor-notes.handlers';
+import {
+  upsertMonthlyNote as _upsertMonthlyNote,
+  deleteMonthlyNote as _deleteMonthlyNote,
+} from './investor-notes.handlers';
+export const upsertMonthlyNote = withPermission('manage_investors', _upsertMonthlyNote);
+export const deleteMonthlyNote = withPermission('manage_investors', _deleteMonthlyNote);
+
+export { listDocuments, downloadDocument } from './investor-documents.handlers';
+import {
+  uploadDocument as _uploadDocument,
+  deleteDocument as _deleteDocument,
+} from './investor-documents.handlers';
+export const uploadDocument = withPermission('manage_investors', _uploadDocument);
+export const deleteDocument = withPermission('manage_investors', _deleteDocument);
+
+export { listForecastScenarios } from './forecast-scenarios.handlers';
+import {
+  upsertForecastScenario as _upsertForecastScenario,
+  deleteForecastScenario as _deleteForecastScenario,
+  copyScenariosToAll as _copyScenariosToAll,
+} from './forecast-scenarios.handlers';
+export const upsertForecastScenario = withPermission('manage_investors', _upsertForecastScenario);
+export const deleteForecastScenario = withPermission('manage_investors', _deleteForecastScenario);
+export const copyScenariosToAll     = withPermission('manage_investors', _copyScenariosToAll);
+import {
+  relinkProjectToUnit as _relinkProjectToUnit,
+  executeCascadeDelete as _executeCascadeDelete,
+} from './investor-audit.handlers';
 export const relinkProjectToUnit = withPermission('manage_investors', _relinkProjectToUnit);
+export const executeCascadeDelete = withPermission('manage_investors', _executeCascadeDelete);
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
   upsertMonthlyMetric as _upsertMonthlyMetric, deleteMonthlyMetric as _deleteMonthlyMetric,
   createPayout as _createPayout, deletePayout as _deletePayout,
+  previewMonthlyPayout as _previewMonthlyPayout, bulkMonthlyPayout as _bulkMonthlyPayout,
   createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
+  unlinkInvestorProperty as _unlinkInvestorProperty,
   upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
   sendDigestTelegram as _sendDigestTelegram,
 } from './investors.handlers';
@@ -330,8 +366,11 @@ export const upsertMonthlyMetric = withPermission('manage_investors', _upsertMon
 export const deleteMonthlyMetric = withPermission('manage_investors', _deleteMonthlyMetric);
 export const createPayout        = withPermission('manage_investors', _createPayout);
 export const deletePayout        = withPermission('manage_investors', _deletePayout);
+export const previewMonthlyPayout = withPermission('manage_investors', _previewMonthlyPayout);
+export const bulkMonthlyPayout    = withPermission('manage_investors', _bulkMonthlyPayout);
 export const createInvestorProperty = withPermission('manage_investors', _createInvestorProperty);
 export const updateInvestorProperty = withPermission('manage_investors', _updateInvestorProperty);
+export const unlinkInvestorProperty = withPermission('manage_investors', _unlinkInvestorProperty);
 export const upsertMonthlyReport    = withPermission('manage_investors', _upsertMonthlyReport);
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);

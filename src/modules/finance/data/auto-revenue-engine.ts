@@ -33,6 +33,12 @@ export interface AutoRevenueResult {
   totals_by_currency: Record<string, number>;  // { CZK: 12000, EUR: 1237.77 }
   reservations: number;                        // count of non-zero rows
   by_source: AutoRevenuePerSource[];
+  // Paid-only occupancy for the month — barter / friends (total = 0) are
+  // excluded so they don't inflate the rate the operator pastes into
+  // property_monthly_metrics. Null when the project has no linked unit.
+  occupancy_pct: number | null;
+  sold_nights: number;       // nights slept inside the month, paid bookings only
+  available_nights: number;  // days in month × units (1 unit per project)
 }
 
 /** Normalise reservation source into one of 4 buckets shown in the UI. */
@@ -91,6 +97,9 @@ export function getAutoRevenue(
     totals_by_currency: {},
     reservations: 0,
     by_source: [],
+    occupancy_pct: null,
+    sold_nights: 0,
+    available_nights: 0,
   };
   if (!unit) return result;
 
@@ -140,6 +149,48 @@ export function getAutoRevenue(
   for (const k of Object.keys(result.totals_by_currency)) {
     result.totals_by_currency[k] = +result.totals_by_currency[k].toFixed(2);
   }
+
+  // ─── Occupancy ─────────────────────────────────────────────
+  // Count nights actually slept inside the target month, but only
+  // for paid bookings. Barter / friend stays (amount = 0) are
+  // intentionally excluded — they're real nights but would skew
+  // the occupancy rate the operator copies into property_monthly_metrics
+  // as if rooms were sold at market rate.
+  const [yStr, mStr] = yearMonth.split('-');
+  const yearNum = parseInt(yStr, 10);
+  const monthNum = parseInt(mStr, 10);
+  const lastDay = new Date(Date.UTC(yearNum, monthNum, 0)).getUTCDate();
+  const monthStart = `${yearMonth}-01`;
+  const monthEnd = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
+  const occRows = db.prepare(`
+    SELECT check_in, check_out, total_price, total_rate_eur
+    FROM reservations
+    WHERE unit_id = ?
+      AND status NOT IN ('cancelled', 'no_show', 'draft')
+      AND check_in <= ?
+      AND check_out > ?
+  `).all(unit.id, monthEnd, monthStart) as Array<{
+    check_in: string;
+    check_out: string;
+    total_price: number | null;
+    total_rate_eur: number | null;
+  }>;
+
+  let soldNights = 0;
+  for (const r of occRows) {
+    const useEur = r.total_rate_eur != null && r.total_rate_eur > 0;
+    const amount = useEur ? (r.total_rate_eur as number) : (r.total_price || 0);
+    if (amount <= 0) continue;
+    const ci = r.check_in > monthStart ? r.check_in : monthStart;
+    const co = r.check_out < monthEnd ? r.check_out : monthEnd;
+    const nights = Math.max(0, (new Date(co).getTime() - new Date(ci).getTime()) / (1000 * 60 * 60 * 24));
+    soldNights += nights;
+  }
+  result.sold_nights = +soldNights.toFixed(1);
+  result.available_nights = lastDay;
+  result.occupancy_pct = lastDay > 0 ? +((soldNights / lastDay) * 100).toFixed(1) : null;
+
   return result;
 }
 

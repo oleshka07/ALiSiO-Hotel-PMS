@@ -7,6 +7,9 @@ import { loadActiveRules, applyRulesToOperation } from './auto-rules-engine';
 import { createOperationInTx } from '../api/operations.handlers';
 import { tryMatchBankOpToReceivables } from './clearing-engine';
 import { tagOpWithRecurringSuggestion } from './recurring-engine';
+import { parseKbPdf, validateParsedStatement } from './kb-pdf-parser';
+import { parseStatementWithLlm } from './llm-statement-extractor';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // ─────────────────────────────────────────────────────────────────
 // Encryption (AES-256-GCM)
@@ -41,6 +44,42 @@ export function decryptPassword(encrypted: string): string {
   decipher.setAuthTag(tag);
   const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
   return pt.toString('utf8');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Telegram alert when an attachment fails to parse or validate.
+// Dedup window keeps repeated KB layout changes from spamming chat —
+// once we've shouted, we go quiet for an hour for the same reason.
+// ─────────────────────────────────────────────────────────────────
+
+const recentAlerts = new Map<string, number>();
+const ALERT_DEDUP_MS = 60 * 60 * 1000; // 1 hour
+
+async function notifyParseFailure(inboxName: string, filename: string, reason: string) {
+  const key = `${inboxName}|${filename}|${reason.slice(0, 80)}`;
+  const last = recentAlerts.get(key);
+  const now = Date.now();
+  if (last && now - last < ALERT_DEDUP_MS) return;
+  recentAlerts.set(key, now);
+  // Trim cache so it doesn't grow unbounded over a long-running process.
+  if (recentAlerts.size > 50) {
+    const cutoff = now - ALERT_DEDUP_MS;
+    for (const [k, v] of recentAlerts) {
+      if (v < cutoff) recentAlerts.delete(k);
+    }
+  }
+  const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+  const text = [
+    `🚨 <b>Bank inbox: parser failed</b>`,
+    ``,
+    `📥 Inbox: <code>${esc(inboxName)}</code>`,
+    `📎 File: <code>${esc(filename)}</code>`,
+    `❌ Reason: ${esc(reason)}`,
+    ``,
+    `Перевір формат виписки на /finance/settings → Банк-приймач,`,
+    `або глянь чи KB змінив структуру PDF.`,
+  ].join('\n');
+  await sendTelegramMessage(text);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -242,14 +281,46 @@ export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<Check
             const filename = (att.filename || '').toLowerCase();
             const isXml = filename.endsWith('.xml') || att.contentType === 'application/xml' || att.contentType === 'text/xml';
             const isCsv = filename.endsWith('.csv') || att.contentType === 'text/csv';
-            if (!isXml && !isCsv) continue;
+            const isPdf = filename.endsWith('.pdf') || att.contentType === 'application/pdf';
+            if (!isXml && !isCsv && !isPdf) continue;
 
-            const content = att.content.toString('utf8');
             let stmt: ParsedStatement;
             try {
-              stmt = isXml ? await parseCamt053Xml(content) : parseKbCsv(content);
+              if (isXml) {
+                stmt = await parseCamt053Xml(att.content.toString('utf8'));
+              } else if (isCsv) {
+                stmt = parseKbCsv(att.content.toString('utf8'));
+              } else {
+                // PDF — LLM-based extractor (works for any bank format).
+                // If OPENAI_API_KEY is missing or LLM fails, fall back to
+                // the legacy KB-specific regex parser as a last resort.
+                if (process.env.OPENAI_API_KEY) {
+                  try {
+                    stmt = await parseStatementWithLlm(att.content as Buffer, filename, msg.uid);
+                  } catch (llmErr: any) {
+                    console.log(`[BankInbox] LLM extractor failed (${llmErr.message}), falling back to regex parser`);
+                    stmt = await parseKbPdf(att.content as Buffer);
+                  }
+                } else {
+                  stmt = await parseKbPdf(att.content as Buffer);
+                }
+              }
             } catch (e: any) {
-              result.errors.push(`Email UID ${msg.uid}, attach ${filename}: parse failed — ${e.message}`);
+              const reason = `parse failed — ${e.message}`;
+              result.errors.push(`Email UID ${msg.uid}, attach ${filename}: ${reason}`);
+              await notifyParseFailure(inbox.name, filename, reason).catch(() => {});
+              continue;
+            }
+
+            // Health-check: opening + Σ(transactions) must match closing.
+            // If KB tweaks the PDF layout (renames a header, splits a column,
+            // etc.) the parser may still extract some text but get the
+            // numbers wrong — catch that here before posting bad data.
+            const validationIssue = validateParsedStatement(stmt);
+            if (validationIssue) {
+              const reason = `validation failed — ${validationIssue}`;
+              result.errors.push(`Email UID ${msg.uid}, attach ${filename}: ${reason}`);
+              await notifyParseFailure(inbox.name, filename, reason).catch(() => {});
               continue;
             }
 

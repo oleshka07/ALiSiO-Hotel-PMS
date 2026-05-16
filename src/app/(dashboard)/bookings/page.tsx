@@ -10,13 +10,13 @@ import MobileFilterBar from '@/components/mobile/MobileFilterBar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
 import GroupViewModal from '@/components/booking/GroupViewModal';
 import BookingViewModal from '@/components/booking/BookingViewModal';
+import BookingForm from '@/components/booking/BookingForm';
 import {
   Plus,
   Search,
   Eye,
   Edit3,
   X,
-  Save,
   Users,
   Trash2,
   Check,
@@ -63,6 +63,8 @@ interface BookingRow {
   unit_type_id: string;
   unit_type_name: string;
   group_id: string | null;
+  parent_id: string | null;
+  sub_booking_count: number;
   commission_amount: number;
   guest_page_token: string | null;
   internal_notes: string | null;
@@ -131,40 +133,6 @@ const PAYMENT_STATUS_MAP: Record<string, { label: string; color: string; bg: str
 // SOURCE_MAP is built dynamically from /api/booking-sources
 
 /* ================================================================
-   Helpers
-   ================================================================ */
-function calcNights(checkIn: string, checkOut: string): number {
-  if (!checkIn || !checkOut) return 0;
-  const diff = Math.floor((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000);
-  return Math.max(0, diff);
-}
-
-function emptyForm() {
-  return {
-    category: 'glamping',
-    unitTypeId: '',
-    unitId: '',
-    source: 'direct',
-    checkIn: '',
-    checkOut: '',
-    adults: 2,
-    children: 0,
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    status: 'confirmed',
-    paymentStatus: 'unpaid',
-    totalPrice: '',
-    commissionAmount: '',
-    cityTaxAmount: '',
-    cityTaxIncluded: false,
-    cityTaxPaid: 'pending',
-    internalNotes: '',
-  };
-}
-
-/* ================================================================
    Modal
    ================================================================ */
 function Modal({ open, onClose, title, children, footer, size }: {
@@ -227,8 +195,6 @@ function BookingsDesktop() {
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [viewBooking, setViewBooking] = useState<BookingRow | null>(null);
   const [editBooking, setEditBooking] = useState<BookingRow | null>(null);
-  const [form, setForm] = useState(emptyForm());
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
   /* ── payments + activity ──────────────────────────── */
@@ -398,209 +364,34 @@ function BookingsDesktop() {
     return () => clearTimeout(debounce);
   }, [fetchBookings, fetchGroupBookings, fetchAlerts]);
 
-  /* ── cascading dropdowns ──────────────────────────── */
-  const unitTypesForCategory = useMemo(() => {
-    return unitTypes.filter(ut => ut.category_type === form.category);
-  }, [unitTypes, form.category]);
+  const openNewBooking = () => setShowNewBooking(true);
+  const openEditBooking = (b: BookingRow) => setEditBooking(b);
 
-  const unitsForType = useMemo(() => {
-    if (!form.unitTypeId) return allUnits.filter(u => u.category_type === form.category);
-    return allUnits.filter(u => u.unit_type_id === form.unitTypeId);
-  }, [allUnits, form.unitTypeId, form.category]);
-
-  const handleCategoryChange = (cat: string) => {
-    const types = unitTypes.filter(ut => ut.category_type === cat);
-    setForm(p => ({ ...p, category: cat, unitTypeId: types[0]?.id || '', unitId: '' }));
-  };
-
-  const handleUnitTypeChange = (utId: string) => {
-    setForm(p => ({ ...p, unitTypeId: utId, unitId: '' }));
-  };
-
-  /* ── open new ─────────────────────────────────────── */
-  const openNewBooking = () => {
-    const f = emptyForm();
-    const types = unitTypes.filter(ut => ut.category_type === f.category);
-    f.unitTypeId = types[0]?.id || '';
-    setForm(f);
-    setShowNewBooking(true);
-  };
-
-  /* ── open edit ────────────────────────────────────── */
-  const openEditBooking = (b: BookingRow) => {
-    setForm({
-      category: b.category_type,
-      unitTypeId: b.unit_type_id,
-      unitId: b.unit_id,
-      source: b.source,
-      checkIn: b.check_in,
-      checkOut: b.check_out,
-      adults: b.adults,
-      children: b.children,
-      firstName: b.first_name,
-      lastName: b.last_name,
-      email: b.guest_email || '',
-      phone: b.guest_phone || '',
-      status: b.status,
-      paymentStatus: b.payment_status || 'unpaid',
-      totalPrice: String(b.total_price || ''),
-      commissionAmount: String((b as any).commission_amount || ''),
-      cityTaxAmount: String((b as any).city_tax_amount || ''),
-      cityTaxIncluded: !!(b as any).city_tax_included,
-      cityTaxPaid: (b as any).city_tax_paid || 'pending',
-      internalNotes: b.internal_notes || '',
-    });
-    setEditBooking(b);
-  };
-
-  /* ── auto-calc helpers ───────────────────────────── */
-  const getSourceCommissionPct = (sourceCode: string) => {
-    const src = bookingSources.find((s: any) => s.code === sourceCode);
-    return src?.commission_percent || 0;
-  };
-
-  const recalcCommission = (price: string, sourceCode: string) => {
-    const pct = getSourceCommissionPct(sourceCode);
-    if (pct > 0 && Number(price) > 0) {
-      return String(Math.round(Number(price) * pct / 100));
-    }
-    return '0';
-  };
-
-  const recalcCityTax = (adults: number, checkIn: string, checkOut: string) => {
-    const nights = calcNights(checkIn, checkOut);
-    if (nights > 0 && adults > 0) {
-      return String(adults * nights * 25);
-    }
-    return '0';
-  };
-
-  /* ── create booking ───────────────────────────────── */
-  const handleCreate = async () => {
-    if (!form.firstName || !form.lastName || !form.checkIn || !form.checkOut) {
-      alert("Будь ласка, заповніть обов'язкові поля: Ім'я, Прізвище, Заїзд, Виїзд");
-      return;
-    }
-    const nights = calcNights(form.checkIn, form.checkOut);
-    if (nights <= 0) {
-      alert('Дата виїзду має бути після дати заїзду');
-      return;
-    }
-
-    // Find the unit ID
-    let unitId = form.unitId;
-    if (!unitId && unitsForType.length > 0) {
-      unitId = unitsForType[0].id;
-    }
-    if (!unitId) {
-      alert('Не знайдено доступних юнітів');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // Use form price or auto-calculate from pricing API
-      let totalPrice = Number(form.totalPrice) || 0;
-      if (!totalPrice) {
-        try {
-          const quoteRes = await fetch('/api/pricing/quote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ unitTypeId: form.unitTypeId, checkIn: form.checkIn, checkOut: form.checkOut, adults: form.adults, children: form.children }),
-          });
-          const quoteData = await quoteRes.json();
-          if (quoteRes.ok && quoteData.total > 0) totalPrice = quoteData.total;
-        } catch { /* fallback to 0 */ }
-      }
-
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email || null,
-          phone: form.phone || null,
-          unitId,
-          checkIn: form.checkIn,
-          checkOut: form.checkOut,
-          nights,
-          adults: form.adults,
-          children: form.children,
-          status: form.status,
-          paymentStatus: form.paymentStatus,
-          source: form.source,
-          totalPrice,
-          commissionAmount: form.commissionAmount ? Number(form.commissionAmount) : undefined,
-          cityTaxAmount: Number(form.cityTaxAmount) || 0,
-          cityTaxIncluded: form.cityTaxIncluded,
-          cityTaxPaid: form.cityTaxPaid,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setShowNewBooking(false);
-        showToast(`Бронювання створено!`);
-        fetchBookings();
-      } else {
-        alert(data.error || 'Помилка створення');
-      }
-    } catch {
-      alert('Помилка мережі');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /* ── update booking ───────────────────────────────── */
-  const handleSaveEdit = async () => {
-    if (!editBooking) return;
-    const nights = calcNights(form.checkIn, form.checkOut);
-
-    setSaving(true);
-    try {
-      const totalPrice = form.totalPrice ? Number(form.totalPrice) : undefined;
-
-      const res = await fetch(`/api/bookings/${editBooking.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unit_id: form.unitId || undefined,
-          check_in: form.checkIn,
-          check_out: form.checkOut,
-          nights: nights > 0 ? nights : undefined,
-          adults: form.adults,
-          children: form.children,
-          status: form.status,
-          payment_status: form.paymentStatus,
-          source: form.source,
-          total_price: totalPrice,
-          commission_amount: form.commissionAmount ? Number(form.commissionAmount) : 0,
-          city_tax_amount: Number(form.cityTaxAmount) || 0,
-          city_tax_included: form.cityTaxIncluded ? 1 : 0,
-          city_tax_paid: form.cityTaxPaid,
-          internal_notes: form.internalNotes || null,
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email || undefined,
-          phone: form.phone || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setEditBooking(null);
-        showToast(`Бронювання ${editBooking.id} оновлено!`);
-        fetchBookings();
-      } else {
-        alert(`Помилка збереження: ${data.error || 'Невідома помилка'}`);
-      }
-    } catch (e) {
-      console.error('Save error:', e);
-      alert('Помилка мережі при збереженні');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const editInitial = useMemo(() => {
+    if (!editBooking) return undefined;
+    return {
+      category: editBooking.category_type,
+      unitTypeId: editBooking.unit_type_id,
+      unitId: editBooking.unit_id,
+      source: editBooking.source,
+      checkIn: editBooking.check_in,
+      checkOut: editBooking.check_out,
+      adults: editBooking.adults,
+      children: editBooking.children,
+      firstName: editBooking.first_name,
+      lastName: editBooking.last_name,
+      email: editBooking.guest_email || '',
+      phone: editBooking.guest_phone || '',
+      status: editBooking.status,
+      paymentStatus: editBooking.payment_status || 'unpaid',
+      totalPrice: String(editBooking.total_price || ''),
+      commissionAmount: String(editBooking.commission_amount || ''),
+      cityTaxAmount: String(editBooking.city_tax_amount || ''),
+      cityTaxIncluded: !!editBooking.city_tax_included,
+      cityTaxPaid: editBooking.city_tax_paid || 'pending',
+      internalNotes: editBooking.internal_notes || '',
+    };
+  }, [editBooking]);
 
   /* ── delete ───────────────────────────────────────── */
   const handleDelete = async (id: string) => {
@@ -640,182 +431,6 @@ function BookingsDesktop() {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
-
-  /* ── render form ──────────────────────────────────── */
-  const renderForm = () => (
-    <>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Категорія *</label>
-          <select className="form-select" value={form.category} onChange={(e) => handleCategoryChange(e.target.value)}>
-            <option value="glamping">Glamping</option>
-            <option value="resort">Resort</option>
-            <option value="camping">Camping</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Тип розміщення *</label>
-          <select className="form-select" value={form.unitTypeId} onChange={(e) => handleUnitTypeChange(e.target.value)}>
-            {unitTypesForCategory.map(ut => (
-              <option key={ut.id} value={ut.id}>{ut.name} ({ut.unit_count})</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Юніт</label>
-          <select className="form-select" value={form.unitId} onChange={(e) => setForm(p => ({ ...p, unitId: e.target.value }))}>
-            <option value="">Автоматично (перший вільний)</option>
-            {unitsForType.map(u => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Джерело</label>
-          <select className="form-select" value={form.source} onChange={(e) => {
-            const newSource = e.target.value;
-            const newCommission = recalcCommission(form.totalPrice, newSource);
-            const src = bookingSources.find((s: any) => s.code === newSource);
-            setForm(p => ({ ...p, source: newSource, commissionAmount: newCommission, cityTaxIncluded: !!src?.city_tax_included_default }));
-          }}>
-            {bookingSources.map(s => (
-              <option key={s.code} value={s.code}>{s.name}</option>
-            ))}
-            {bookingSources.length === 0 && <option value="direct">Direct</option>}
-          </select>
-        </div>
-      </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Заїзд *</label>
-          <input className="form-input" type="date" value={form.checkIn} onChange={(e) => setForm(p => ({ ...p, checkIn: e.target.value }))} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Виїзд *</label>
-          <input className="form-input" type="date" value={form.checkOut} onChange={(e) => setForm(p => ({ ...p, checkOut: e.target.value }))} />
-        </div>
-      </div>
-      {form.checkIn && form.checkOut && calcNights(form.checkIn, form.checkOut) > 0 && (
-        <div style={{ fontSize: 13, color: 'var(--accent-primary)', marginBottom: 12 }}>
-          📅 {calcNights(form.checkIn, form.checkOut)} ночей
-        </div>
-      )}
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Дорослих</label>
-          <input className="form-input" type="number" value={form.adults} onChange={(e) => {
-            const adults = Number(e.target.value);
-            setForm(p => ({ ...p, adults, cityTaxAmount: recalcCityTax(adults, p.checkIn, p.checkOut) }));
-          }} min={1} max={10} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Дітей</label>
-          <input className="form-input" type="number" value={form.children} onChange={(e) => setForm(p => ({ ...p, children: Number(e.target.value) }))} min={0} max={6} />
-        </div>
-      </div>
-      {editBooking && (
-        <>
-        <div className="form-group">
-          <label className="form-label">Статус</label>
-          <select className="form-select" value={form.status} onChange={(e) => setForm(p => ({ ...p, status: e.target.value }))}>
-            <option value="draft">Чернетка</option>
-            <option value="tentative">Очікується</option>
-            <option value="confirmed">Підтверджено</option>
-            <option value="checked_in">Заселено</option>
-            <option value="checked_out">Виселено</option>
-            <option value="cancelled">Скасовано</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Статус оплати</label>
-          <select className="form-select" value={form.paymentStatus} onChange={(e) => setForm(p => ({ ...p, paymentStatus: e.target.value }))}>
-            {Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </select>
-        </div>
-        </>
-      )}
-      {/* ── Фінанси ── */}
-      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💰 Фінанси</h4>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Вартість (CZK)</label>
-            <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
-              onChange={(e) => {
-                const price = e.target.value;
-                setForm(p => ({ ...p, totalPrice: price, commissionAmount: recalcCommission(price, p.source) }));
-              }} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>авто: {getSourceCommissionPct(form.source)}%</span>}</label>
-            <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
-              onChange={(e) => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
-          </div>
-        </div>
-        {Number(form.totalPrice) > 0 && Number(form.commissionAmount) > 0 && (
-          <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8 }}>Чиста ставка: {(Number(form.totalPrice) - Number(form.commissionAmount)).toLocaleString()} CZK</div>
-        )}
-      </div>
-      {/* ── Туристичний збір ── */}
-      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🏛️ Туристичний збір</h4>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Сума збору (CZK){form.checkIn && form.checkOut && form.adults > 0 && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>авто: {form.adults}×{calcNights(form.checkIn, form.checkOut)}×25</span>}</label>
-            <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
-              onChange={(e) => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Статус збору</label>
-            <select className="form-select" value={form.cityTaxPaid} onChange={(e) => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
-              <option value="pending">⏳ Очікує оплати</option>
-              <option value="paid">✅ Оплачено</option>
-              <option value="exempt">🚫 Звільнено</option>
-            </select>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-          <input type="checkbox" id="cityTaxIncluded" checked={form.cityTaxIncluded}
-            onChange={(e) => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
-          <label htmlFor="cityTaxIncluded" style={{ fontSize: 13, cursor: 'pointer' }}>Збір включено у вартість бронювання</label>
-        </div>
-      </div>
-      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Дані гостя</h4>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Ім&apos;я *</label>
-            <input className="form-input" placeholder="Ім'я" value={form.firstName} onChange={(e) => setForm(p => ({ ...p, firstName: e.target.value }))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Прізвище *</label>
-            <input className="form-input" placeholder="Прізвище" value={form.lastName} onChange={(e) => setForm(p => ({ ...p, lastName: e.target.value }))} />
-          </div>
-      {/* ── Примітки ── */}
-      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📝 Примітки</h4>
-        <textarea className="form-input" placeholder="Внутрішні примітки (бачить лише персонал)..."
-          value={form.internalNotes} onChange={(e) => setForm(p => ({ ...p, internalNotes: e.target.value }))}
-          style={{ minHeight: 60, resize: 'vertical' }} />
-      </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input className="form-input" type="email" placeholder="email@example.com" value={form.email} onChange={(e) => setForm(p => ({ ...p, email: e.target.value }))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Телефон</label>
-            <input className="form-input" type="tel" placeholder="+420..." value={form.phone} onChange={(e) => setForm(p => ({ ...p, phone: e.target.value }))} />
-          </div>
-        </div>
-      </div>
-    </>
-  );
 
   return (
     <>
@@ -1096,7 +711,7 @@ function BookingsDesktop() {
                 const b = row.data;
                 return (
                   <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => openViewBooking(b)}>
-                    <td style={{ fontWeight: 500 }}>{b.first_name} {b.last_name}</td>
+                    <td style={{ fontWeight: 500 }}>{b.first_name} {b.last_name}{b.sub_booking_count > 0 && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontWeight: 700 }}>👥 {b.sub_booking_count}</span>}</td>
                     <td><span className="badge badge-primary">{b.unit_name}</span></td>
                     <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
                     <td><span className="flex items-center gap-2" style={{ fontSize: 12 }}><Users size={12} /> {b.adults}{b.children > 0 && <span style={{ color: 'var(--text-tertiary)' }}>+{b.children}</span>}</span></td>
@@ -1276,25 +891,42 @@ function BookingsDesktop() {
         )}
 
         {/* New Booking Modal */}
-        <Modal open={showNewBooking} onClose={() => setShowNewBooking(false)} title="Нове бронювання" size="lg"
-          footer={<>
-            <button className="btn btn-secondary" onClick={() => setShowNewBooking(false)}>Скасувати</button>
-            <button className="btn btn-primary" onClick={handleCreate} disabled={saving}>
-              {saving ? <Loader2 size={14} className="animate-pulse" /> : <Save size={14} />} Створити бронювання
-            </button>
-          </>}>
-          {renderForm()}
+        <Modal open={showNewBooking} onClose={() => setShowNewBooking(false)} title="Нове бронювання" size="lg">
+          {showNewBooking && (
+            <BookingForm
+              mode="create"
+              unitTypes={unitTypes}
+              allUnits={allUnits}
+              bookingSources={bookingSources}
+              onSaved={() => {
+                setShowNewBooking(false);
+                showToast('Бронювання створено!');
+                fetchBookings();
+              }}
+              onCancel={() => setShowNewBooking(false)}
+            />
+          )}
         </Modal>
 
         {/* Edit Booking Modal */}
-        <Modal open={!!editBooking} onClose={() => setEditBooking(null)} title={`Редагувати бронювання`} size="lg"
-          footer={<>
-            <button className="btn btn-secondary" onClick={() => setEditBooking(null)}>Скасувати</button>
-            <button className="btn btn-primary" onClick={handleSaveEdit} disabled={saving}>
-              {saving ? <Loader2 size={14} className="animate-pulse" /> : <Save size={14} />} Зберегти зміни
-            </button>
-          </>}>
-          {renderForm()}
+        <Modal open={!!editBooking} onClose={() => setEditBooking(null)} title="Редагувати бронювання" size="lg">
+          {editBooking && (
+            <BookingForm
+              mode="edit"
+              bookingId={editBooking.id}
+              initial={editInitial}
+              unitTypes={unitTypes}
+              allUnits={allUnits}
+              bookingSources={bookingSources}
+              onSaved={() => {
+                const closingId = editBooking.id;
+                setEditBooking(null);
+                showToast(`Бронювання ${closingId} оновлено!`);
+                fetchBookings();
+              }}
+              onCancel={() => setEditBooking(null)}
+            />
+          )}
         </Modal>
 
         {/* Group Booking Create Modal */}

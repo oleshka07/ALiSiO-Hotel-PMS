@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot'; // TODO: replace with eventBus
+import { sendBookingConfirmationEmail } from '../data/send-confirmation-email';
 
 export async function handlePaymentReturn(req: Request) {
   const url = new URL(req.url);
@@ -55,6 +56,29 @@ export async function handlePaymentReturn(req: Request) {
         // Teya merchant account and lands in the ledger only when the bank
         // statement arrives. TG notify the operator for visibility.
         if (resResult.changes > 0) {
+          // Extras (service_orders / booking_service_orders) attached to the
+          // reservation never receive a payment_id from the widget flow, so
+          // mark them paid via reservation_id. Idempotent — re-running this
+          // on already-paid orders is a no-op.
+          try {
+            db.prepare(`
+              UPDATE service_orders SET payment_status = 'paid', status = 'confirmed'
+              WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
+            `).run(reservationId);
+          } catch { /* table may not exist */ }
+          try {
+            db.prepare(`
+              UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed'
+              WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
+            `).run(reservationId);
+          } catch { /* table may not exist */ }
+
+          // Mark the booking_draft as paid so the log table stays in sync
+          // with the actual reservation state. Used by widget polling.
+          try {
+            db.prepare(`UPDATE booking_drafts SET status = 'paid' WHERE reservation_id = ?`).run(reservationId);
+          } catch { /* table may not exist */ }
+
           try {
             const res = db.prepare('SELECT total_price, currency, unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
             if (res) {
@@ -68,6 +92,12 @@ export async function handlePaymentReturn(req: Request) {
               ].join('\n')).catch(() => {});
             }
           } catch (e: any) { console.error('[Payment Return] Booking TG notify error:', e.message); }
+
+          // Confirmation email to guest. Non-blocking — failure must not
+          // prevent the redirect back to /book.
+          sendBookingConfirmationEmail(reservationId, url.origin).catch((e) => {
+            console.error('[Payment Return] Email send error:', e?.message);
+          });
         }
       }
 

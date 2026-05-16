@@ -21,10 +21,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+    // Validate file type — accept iPhone HEIC/HEIF too (the booking widget
+    // resizes them to JPEG client-side, but admin uploads via /settings may
+    // skip that step).
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
+      'image/heic', 'image/heif',
+    ];
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Invalid file type. Allowed: jpg, png, webp, gif, svg' }, { status: 400 });
+      return NextResponse.json({ error: `Invalid file type "${file.type}". Allowed: jpg, png, webp, gif, svg, heic` }, { status: 400 });
     }
 
     // Max size 10MB
@@ -56,6 +61,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url, filename, size: file.size });
   } catch (error: any) {
     console.error('POST /api/upload error:', error?.message);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+    return NextResponse.json({ error: error?.message || 'Upload failed' }, { status: 500 });
   }
 }

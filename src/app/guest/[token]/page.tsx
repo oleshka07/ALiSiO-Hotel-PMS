@@ -574,7 +574,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   if (!isPaid) {
     return (
       <div className="gp-root">
-        <PaymentGateScreen data={data} t={t} lang={lang} token={token} />
+        <PaymentGateScreen data={data} t={t} lang={lang} setLang={setLang} token={token} />
       </div>
     );
   }
@@ -1393,6 +1393,60 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
           </div>
 
+<<<<<<< HEAD
+=======
+          {/* Hidden file input for OCR photo */}
+          <input
+            ref={ocrInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setOcrLoading(true);
+              try {
+                const reader = new FileReader();
+                const base64 = await new Promise<string>((resolve) => {
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.readAsDataURL(file);
+                });
+                const res = await fetch(`/api/guest/${token}/ocr`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ image: base64 }),
+                });
+                const result = await res.json().catch(() => ({}));
+                if (!res.ok || !result.success) {
+                  const msg = result?.error || `HTTP ${res.status}`;
+                  console.error('[OCR]', msg);
+                  showToast(`OCR error: ${msg}. Please fill in manually.`, 'error');
+                } else if (result.data) {
+                  const d = result.data;
+                  setRegData(prev => ({
+                    ...prev,
+                    fullName: d.fullName || prev.fullName,
+                    dateOfBirth: d.dateOfBirth || prev.dateOfBirth,
+                    documentType: d.documentType || prev.documentType,
+                    documentNumber: d.documentNumber || prev.documentNumber,
+                    nationality: d.nationality || prev.nationality,
+                    address: d.address || prev.address,
+                  }));
+                  showToast(`✅ ${d.confidence > 70 ? 'Data extracted!' : 'Partial data — please review'}`);
+                } else {
+                  showToast('Could not read document. Please fill in manually.', 'error');
+                }
+              } catch (err) {
+                const msg = (err as Error)?.message || 'unknown';
+                console.error('[OCR]', err);
+                showToast(`OCR error: ${msg}. Please fill in manually.`, 'error');
+              }
+              setOcrLoading(false);
+              if (ocrInputRef.current) ocrInputRef.current.value = '';
+            }}
+          />
+
+>>>>>>> origin/main
           <div className="gp-reg-body">
             {/* Step 1: Guest Details */}
             {regStep === 1 && (

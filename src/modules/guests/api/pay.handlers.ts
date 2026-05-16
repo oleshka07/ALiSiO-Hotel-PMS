@@ -191,7 +191,7 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
           orderIds.push(oid);
         }
       } else {
-        const oid = actionsRepo.createPendingServiceOrder(reservation.id, r.svc.id, r.quantity, r.lineTotal, dates?.[0] || null);
+        const oid = actionsRepo.createPendingServiceOrder(reservation.id, r.svc.id, r.quantity, r.lineTotal, dates?.[0] || reservation.check_in);
         if (!oid) return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
         orderIds.push(oid);
       }

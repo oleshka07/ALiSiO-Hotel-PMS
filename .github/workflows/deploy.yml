@@ -13,11 +13,18 @@ jobs:
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          # Forward GitHub Secrets that the remote shell needs. To add a new
+          # key: define it in repo Settings → Secrets → Actions, list it
+          # here, list its name in the `envs:` field below, and append the
+          # idempotent .env-sync block at the bottom of the script.
+          PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: PRICELABS_API_KEY
           script: |
             set -euo pipefail
 
@@ -54,6 +61,69 @@ jobs:
                 git reset --hard "$PREVIOUS_COMMIT"
               fi
               exit 1
+            fi
+
+            # ─────────────────────────────────────────────────────────
+            # Idempotent VPS setup for the bank-inbox cron endpoint
+            # (PR #63). The endpoint /api/cron/poll-bank-inboxes
+            # authenticates via process.env.CRON_SECRET. Generate
+            # once + install crontab + create log file. All steps are
+            # no-ops on subsequent runs.
+            # ─────────────────────────────────────────────────────────
+            if ! grep -q '^CRON_SECRET=' .env 2>/dev/null; then
+              SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+              echo "CRON_SECRET=$SECRET" >> .env
+              echo "[setup] generated CRON_SECRET and appended to .env"
+            else
+              echo "[setup] CRON_SECRET already present in .env"
+            fi
+
+            # ─────────────────────────────────────────────────────────
+            # Sync PRICELABS_API_KEY from GitHub Secrets into .env.
+            # Idempotent: appends on first run, overwrites in place
+            # afterwards. The `[ -n ... ]` guard avoids writing an empty
+            # line when the secret is unset in the GitHub repo.
+            # ─────────────────────────────────────────────────────────
+            if [ -n "${PRICELABS_API_KEY:-}" ]; then
+              if grep -q '^PRICELABS_API_KEY=' .env 2>/dev/null; then
+                sed -i "s|^PRICELABS_API_KEY=.*|PRICELABS_API_KEY=${PRICELABS_API_KEY}|" .env
+                echo "[setup] PRICELABS_API_KEY refreshed in .env"
+              else
+                echo "PRICELABS_API_KEY=${PRICELABS_API_KEY}" >> .env
+                echo "[setup] PRICELABS_API_KEY appended to .env"
+              fi
+            else
+              echo "[setup] PRICELABS_API_KEY not set in GitHub Secrets — skipping"
+            fi
+
+            # Ensure the log file exists with the right perms so cron
+            # output has somewhere to land.
+            touch /var/log/pms-cron-bank.log
+            chmod 644 /var/log/pms-cron-bank.log
+
+            # Install crontab entry if not already present. We match
+            # the URL path rather than the full command so future
+            # tweaks (e.g. log rotation) don't double-install.
+            if ! crontab -l 2>/dev/null | grep -q 'poll-bank-inboxes'; then
+              ( crontab -l 2>/dev/null || true
+                echo '*/15 * * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1'
+              ) | crontab -
+              echo "[setup] installed crontab entry for poll-bank-inboxes"
+            else
+              echo "[setup] crontab entry for poll-bank-inboxes already present"
+            fi
+
+            # Daily PriceLabs → price_calendar sync. 04:00 lets ČNB publish
+            # the day's EUR/CZK rate first; PriceLabs refreshes overnight.
+            touch /var/log/pms-cron-pricelabs.log
+            chmod 644 /var/log/pms-cron-pricelabs.log
+            if ! crontab -l 2>/dev/null | grep -q 'sync-pricelabs'; then
+              ( crontab -l 2>/dev/null || true
+                echo '0 4 * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1'
+              ) | crontab -
+              echo "[setup] installed crontab entry for sync-pricelabs"
+            else
+              echo "[setup] crontab entry for sync-pricelabs already present"
             fi
 
             # Restart service only after a successful build.

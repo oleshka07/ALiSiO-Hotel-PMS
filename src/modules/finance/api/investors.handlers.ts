@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import * as crypto from 'crypto';
-import { createOperationInTx } from './operations.handlers';
+import { createOperationInTx, getOptionalActor } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
 import { getAutoRevenueAllProjects, getAutoRevenue } from '../data/auto-revenue-engine';
@@ -181,12 +181,13 @@ export async function createInvestment(request: NextRequest): Promise<NextRespon
     db.prepare(`
       INSERT INTO investor_investments
         (id, organization_id, investor_id, project_id, amount, currency, equity_pct,
-         invested_at, model_description, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         invested_at, model_description, is_active, target_apy, target_occupancy, cashback_schedule_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, orgId, body.investor_id, body.project_id,
       body.amount, body.currency || 'EUR', body.equity_pct ?? null,
       body.invested_at, body.model_description || null, body.is_active === false ? 0 : 1,
+      body.target_apy ?? null, body.target_occupancy ?? null, body.cashback_schedule_json ?? null,
     );
     return NextResponse.json({ id, ok: true }, { status: 201 });
   } catch (error: any) {
@@ -204,7 +205,7 @@ export async function updateInvestment(
     const body = await request.json();
     const fields: string[] = [];
     const params: any[] = [];
-    for (const k of ['amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'project_id']) {
+    for (const k of ['investor_id', 'project_id', 'amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'cashback_schedule_json', 'target_apy', 'target_occupancy']) {
       if (body[k] !== undefined) { fields.push(`${k} = ?`); params.push(body[k]); }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
@@ -342,7 +343,12 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
     const investor = db.prepare("SELECT name FROM investors WHERE id = ?").get(body.investor_id) as { name: string } | undefined;
     if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
 
-    // Resolve account: explicit, else first active bank account in matching currency
+    // Resolve account: explicit if supplied, else the first active CASH
+    // account in the matching currency, falling back to bank. Operator
+    // wants dividends to flow out of «Готівка EUR» by default — bank
+    // accounts (glamping_eur, etc.) hold operating money that shouldn't
+    // get drained for distributions. The cash account is allowed to go
+    // negative and is reconciled separately.
     const currency = body.currency || 'EUR';
     let accountFromId: string | null = body.account_from_id || null;
     if (!accountFromId) {
@@ -350,7 +356,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
         SELECT id FROM finance_accounts
         WHERE organization_id = ? AND currency = ? AND is_active = 1
           AND type IN ('bank', 'cash')
-        ORDER BY (type = 'bank') DESC, sort_order ASC
+        ORDER BY (type = 'cash') DESC, sort_order ASC
         LIMIT 1
       `).get(orgId, currency) as { id: string } | undefined;
       accountFromId = a?.id || null;
@@ -366,6 +372,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
     const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
 
     // Create the matching fin_operation
+    const actor = await getOptionalActor();
     const operationId = createOperationInTx(db, orgId, {
       op_type: 'expense',
       account_from_id: accountFromId,
@@ -380,7 +387,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
       source: 'dividend',
       source_ref: payoutId,
       status: 'completed',
-    });
+    }, actor);
 
     db.prepare(`
       INSERT INTO investor_payouts
@@ -411,6 +418,179 @@ export async function deletePayout(
     }
     db.prepare("DELETE FROM investor_payouts WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/investor-payouts/preview?investor_id=X&year_month=YYYY-MM
+ *
+ * Per-property breakdown for the «Виплатити за місяць» modal: revenue
+ * from property_monthly_metrics × equity_pct gives the accrued amount,
+ * minus any payouts already recorded for the same (investor, project,
+ * period) tuple — so the operator sees the remainder and can't
+ * accidentally pay twice for the same month.
+ */
+export async function previewMonthlyPayout(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const investorId = sp.get('investor_id');
+    const yearMonth = sp.get('year_month');
+    if (!investorId || !yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'investor_id and year_month=YYYY-MM required' }, { status: 400 });
+    }
+
+    const investments = db.prepare(`
+      SELECT ii.project_id, ii.equity_pct, ii.currency,
+             bu.name AS project_name, bu.sort_order
+      FROM investor_investments ii
+      JOIN business_units bu ON bu.id = ii.project_id
+      WHERE ii.organization_id = ?
+        AND ii.investor_id = ?
+        AND ii.is_active = 1
+        AND ii.project_id IS NOT NULL
+      ORDER BY bu.sort_order, bu.name
+    `).all(orgId, investorId) as Array<{
+      project_id: string; equity_pct: number | null; currency: string | null;
+      project_name: string; sort_order: number;
+    }>;
+
+    const items = investments.map((inv) => {
+      const metric = db.prepare(`
+        SELECT revenue FROM property_monthly_metrics
+        WHERE organization_id = ? AND project_id = ? AND year_month = ?
+      `).get(orgId, inv.project_id, yearMonth) as { revenue: number | null } | undefined;
+      const revenue = metric?.revenue ?? null;
+      const eq = (inv.equity_pct || 0) / 100;
+      const accrued = revenue != null ? +(revenue * eq).toFixed(2) : null;
+
+      const paidRow = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM investor_payouts
+        WHERE organization_id = ?
+          AND investor_id = ?
+          AND project_id = ?
+          AND period_year_month = ?
+      `).get(orgId, investorId, inv.project_id, yearMonth) as { total: number };
+      const alreadyPaid = +paidRow.total.toFixed(2);
+      const remainder = accrued != null ? +(accrued - alreadyPaid).toFixed(2) : null;
+
+      return {
+        project_id: inv.project_id,
+        project_name: inv.project_name,
+        equity_pct: inv.equity_pct,
+        currency: inv.currency || 'EUR',
+        revenue,
+        accrued,
+        already_paid: alreadyPaid,
+        remainder,
+      };
+    });
+
+    return NextResponse.json({ year_month: yearMonth, items });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/investor-payouts/bulk-monthly
+ * Body: {
+ *   investor_id, year_month, paid_at, currency?, account_from_id?,
+ *   items: [{ project_id, amount, comment? }]
+ * }
+ *
+ * Creates one investor_payouts row + one fin_operation per item in a
+ * single db.transaction(). All-or-nothing — if any row fails the whole
+ * batch rolls back, so the operator never ends up with a partially
+ * applied monthly distribution where some properties got paid and
+ * others silently didn't.
+ */
+export async function bulkMonthlyPayout(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    const { investor_id, year_month, paid_at, account_from_id, items } = body;
+    const currency = body.currency || 'EUR';
+
+    if (!investor_id || !year_month || !paid_at || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: 'investor_id, year_month, paid_at, items[] required' }, { status: 400 });
+    }
+    if (!/^\d{4}-\d{2}$/.test(year_month)) {
+      return NextResponse.json({ error: 'year_month must be YYYY-MM' }, { status: 400 });
+    }
+    const investor = db.prepare("SELECT name FROM investors WHERE id = ?").get(investor_id) as { name: string } | undefined;
+    if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
+
+    let accountFromId: string | null = account_from_id || null;
+    if (!accountFromId) {
+      const a = db.prepare(`
+        SELECT id FROM finance_accounts
+        WHERE organization_id = ? AND currency = ? AND is_active = 1
+          AND type IN ('bank', 'cash')
+        ORDER BY (type = 'cash') DESC, sort_order ASC
+        LIMIT 1
+      `).get(orgId, currency) as { id: string } | undefined;
+      accountFromId = a?.id || null;
+    }
+    if (!accountFromId) {
+      return NextResponse.json({ error: `No active bank/cash account in ${currency}` }, { status: 400 });
+    }
+    const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
+
+    type Item = { project_id: string; amount: number; comment?: string | null };
+    const validItems = (items as Item[]).filter((i) => i.project_id && +i.amount > 0);
+    if (validItems.length === 0) {
+      return NextResponse.json({ error: 'No items with positive amount' }, { status: 400 });
+    }
+
+    const created: Array<{ id: string; fin_operation_id: string; project_id: string; amount: number }> = [];
+    let totalAmount = 0;
+    const actor = await getOptionalActor();
+
+    const tx = db.transaction(() => {
+      for (const item of validItems) {
+        const payoutId = `payout_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+        const amount = +Math.abs(Number(item.amount)).toFixed(2);
+        const operationId = createOperationInTx(db, orgId, {
+          op_type: 'expense',
+          account_from_id: accountFromId!,
+          account_to_id: null,
+          amount,
+          currency,
+          paid_at,
+          project_id: item.project_id,
+          category_id: dividendCategoryId,
+          comment: item.comment || `Dividend → ${investor.name} for ${year_month}`,
+          method: 'bank_transfer',
+          source: 'dividend',
+          source_ref: payoutId,
+          status: 'completed',
+        }, actor);
+        db.prepare(`
+          INSERT INTO investor_payouts
+            (id, organization_id, investor_id, project_id, amount, currency,
+             paid_at, period_year_month, comment, fin_operation_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(payoutId, orgId, investor_id, item.project_id, amount, currency,
+               paid_at, year_month, item.comment || null, operationId);
+        created.push({ id: payoutId, fin_operation_id: operationId, project_id: item.project_id, amount });
+        totalAmount += amount;
+      }
+    });
+    tx();
+
+    return NextResponse.json({
+      ok: true,
+      created_count: created.length,
+      total_amount: +totalAmount.toFixed(2),
+      currency,
+      payouts: created,
+    }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -515,26 +695,27 @@ export async function getAutoRevenueForMonth(request: NextRequest): Promise<Next
 }
 
 // ─── Helper: get available projects for investor pickers ─────
-// Returns active BUs PLUS any (potentially archived) BU still referenced
-// by an active investor_investment. This way:
-//   - New investments can pick from active finance BUs (the 5-6 normal ones).
-//   - Existing investments on archived investor-only BUs (A1/B1 etc, that
-//     cleanup #C archived) still resolve correctly when editing.
+// Returns ONLY business_units that are investor properties — either
+// registered in investor_property_details (the canonical investor
+// property registry) or referenced by an active investor_investment.
+// This excludes operational finance categories (Ресторан, Палатки,
+// Кемпінг, Сауна …) which live in business_units but are not investor
+// objects, so they don't pollute the investor module's project dropdown.
 
 export async function listInvestorProjects(_request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
     const rows = db.prepare(`
-      SELECT id, name, sort_order, is_active
-      FROM business_units
-      WHERE organization_id = ?
+      SELECT bu.id, bu.name, bu.sort_order, bu.is_active
+      FROM business_units bu
+      WHERE bu.organization_id = ?
         AND (
-          is_active = 1
-          OR id IN (SELECT DISTINCT project_id FROM investor_investments
-                    WHERE organization_id = ? AND is_active = 1 AND project_id IS NOT NULL)
+          bu.id IN (SELECT project_id FROM investor_property_details)
+          OR bu.id IN (SELECT DISTINCT project_id FROM investor_investments
+                       WHERE organization_id = ? AND is_active = 1 AND project_id IS NOT NULL)
         )
-      ORDER BY is_active DESC, sort_order, name
+      ORDER BY bu.is_active DESC, bu.sort_order, bu.name
     `).all(orgId, orgId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
@@ -552,13 +733,19 @@ export async function listInvestorProperties(request: NextRequest): Promise<Next
   try {
     const db = getDb();
     const orgId = getOrgId(db);
-    // Default: show only business_units that actually have investor data
-    // (active investments OR explicitly attached property_details). Set
-    // ?all=1 to see every business_unit (e.g. for picking a new one).
+    // Default: show business_units that have ANY investor footprint —
+    // either an active investment OR an explicitly attached
+    // investor_property_details row. The latter is what
+    // createInvestorProperty inserts, so a freshly-created object appears
+    // here immediately even before any investment is attached.
+    // Set ?all=1 to see every business_unit (e.g. picking a new one).
     const showAll = request.nextUrl.searchParams.get('all') === '1';
     const where: string[] = ['bu.organization_id = ?'];
     if (!showAll) {
-      where.push(`EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id AND is_active = 1)`);
+      where.push(`(
+        EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id AND is_active = 1)
+        OR EXISTS (SELECT 1 FROM investor_property_details WHERE project_id = bu.id)
+      )`);
     }
     const rows = db.prepare(`
       SELECT
@@ -678,6 +865,53 @@ export async function updateInvestorProperty(
     });
     tx();
     return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/finance/investor-properties/[id]
+ *
+ * Detaches a business_unit from the investor module: removes
+ * investor_property_details, property_work_stages, property_monthly_metrics,
+ * property_monthly_reports rows that reference it. Leaves the business_unit
+ * itself (and its fin_operations / fin_budgets) alone — finance side stays.
+ *
+ * Refuses (409) if any active investor_investments still reference the BU
+ * — admin must remove those first via the audit-page cascade delete.
+ */
+export async function unlinkInvestorProperty(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+
+    const bu = db.prepare("SELECT id, name FROM business_units WHERE id = ?").get(id) as { id: string; name: string } | undefined;
+    if (!bu) return NextResponse.json({ error: 'Business unit not found' }, { status: 404 });
+
+    const activeInvCount = (db.prepare(
+      "SELECT COUNT(*) AS n FROM investor_investments WHERE project_id = ? AND is_active = 1"
+    ).get(id) as { n: number }).n;
+    if (activeInvCount > 0) {
+      return NextResponse.json(
+        { error: `Лишилися активні інвестиції (${activeInvCount}). Спочатку зробіть cascade delete на /finance/investors/audit.` },
+        { status: 409 },
+      );
+    }
+
+    const deleted = { details: 0, work_stages: 0, monthly_metrics: 0, monthly_reports: 0 };
+    const tx = db.transaction(() => {
+      deleted.details        = db.prepare("DELETE FROM investor_property_details WHERE project_id = ?").run(id).changes;
+      deleted.work_stages    = db.prepare("DELETE FROM property_work_stages WHERE project_id = ?").run(id).changes;
+      deleted.monthly_metrics = db.prepare("DELETE FROM property_monthly_metrics WHERE project_id = ?").run(id).changes;
+      deleted.monthly_reports = db.prepare("DELETE FROM property_monthly_reports WHERE project_id = ?").run(id).changes;
+    });
+    tx();
+
+    return NextResponse.json({ ok: true, deleted, bu: { id: bu.id, name: bu.name } });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

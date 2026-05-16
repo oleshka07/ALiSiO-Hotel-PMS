@@ -68,13 +68,23 @@ export default function BookingViewModal({
   onClose, onEdit, onChangeStatus, onFetchPayments, onFetchBookings, onFetchRegistrations,
   showToast, setBooking,
 }: Props) {
-  const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'tax' | 'notes' | 'history'>('payment');
+  const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'groups' | 'tax' | 'notes' | 'history'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
   const [reissuing, setReissuing] = useState(false);
+
+  // Sub-bookings state
+  const [subBookings, setSubBookings] = useState<any[]>([]);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [groupForm, setGroupForm] = useState({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' });
+  const [savingGroup, setSavingGroup] = useState(false);
+  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set());
+  const [editingLineItems, setEditingLineItems] = useState<string | null>(null);
+  const [newLineItem, setNewLineItem] = useState({ description: '', quantity: 1, unit_price: 0 });
+  const [availableUnits, setAvailableUnits] = useState<{ id: string; name: string; code: string; category_name: string }[]>([]);
 
   // Invoice-to-company override (rendered as Odberatel block in faktura HTML).
   const bAny = b as any;
@@ -127,6 +137,25 @@ export default function BookingViewModal({
       .catch(() => setInvoice(null));
   }, [b?.id, b?.payment_status]);
 
+  // Load sub-bookings
+  const fetchSubBookings = async () => {
+    if (!b?.id) return;
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/sub-bookings`);
+      const data = await res.json();
+      if (Array.isArray(data)) setSubBookings(data);
+    } catch { setSubBookings([]); }
+  };
+  useEffect(() => { fetchSubBookings(); }, [b?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load available units for unit selector
+  useEffect(() => {
+    fetch('/api/units')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setAvailableUnits(data); })
+      .catch(() => {});
+  }, []);
+
   const handleReissue = async () => {
     const isFresh = !invoice;
     const confirmMsg = isFresh
@@ -150,11 +179,13 @@ export default function BookingViewModal({
   };
 
   const total = b.total_price || 0;
-  const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
-  const remaining = Math.max(0, total - paid);
-  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
+  const paidFromOps = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
   const isPaid = b.payment_status === 'paid' || b.payment_status === 'prepaid';
+  // If DB says paid but no fin_operations exist (prepaid OTA, Teya widget), show full bar
+  const paid = isPaid && paidFromOps === 0 ? total : paidFromOps;
+  const remaining = Math.max(0, total - paid);
+  const pct = isPaid ? 100 : total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
   const isRegistered = b.registration_status === 'registered';
   const canCheckIn = isPaid && isRegistered;
   const regNeeded = b.adults || 1;
@@ -294,6 +325,7 @@ export default function BookingViewModal({
           {([
             { key: 'payment' as const, label: '💰 Оплата', badge: isPaid ? undefined : `${pct}%` },
             { key: 'registration' as const, label: '📋 Реєстрація', badge: !isRegistered ? `${registrations.length}/${regNeeded}` : undefined },
+            { key: 'groups' as const, label: '👥 Групи', badge: subBookings.length > 0 ? String(subBookings.length) : undefined },
             { key: 'tax' as const, label: '🏛️ Збір', badge: undefined as string | undefined },
             { key: 'notes' as const, label: '📝 Примітки', badge: undefined as string | undefined },
             { key: 'history' as const, label: '📊 Історія', badge: undefined as string | undefined },
@@ -393,11 +425,30 @@ export default function BookingViewModal({
                     </select>
                     <input className="form-input" placeholder="Примітка" style={{ flex: 2, fontSize: 13 }} value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
+                  {payForm.method !== 'cash' && (
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '6px 8px', background: 'rgba(99,102,241,0.08)', borderRadius: 6, lineHeight: 1.4 }}>
+                      ℹ️ Це <b>позначка статусу</b> — реальна транзакція з'явиться в Операціях, коли надійде з {payForm.method === 'card' ? 'Teya sync' : payForm.method === 'bank_transfer' ? 'банківської виписки' : payForm.method === 'booking_platform' ? 'виписки платформи' : 'фактичного джерела'}. Оплата картою / банком / платформою тут не створює подвійних записів у фінансах.
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
                     <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
-                      onClick={async () => { await fetch('/api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }) }); setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' }); setShowPayForm(false); onFetchPayments(b.id); onFetchBookings(); showToast('Платіж додано!'); }}>
-                      <Save size={12} /> Зберегти
+                      onClick={async () => {
+                        const res = await fetch('/api/payments', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
+                        setShowPayForm(false);
+                        onFetchPayments(b.id);
+                        onFetchBookings();
+                        const msg = data?.kind === 'marker'
+                          ? '✅ Позначка збережена. Реальна транзакція з\'явиться через Teya / банк.'
+                          : 'Платіж додано!';
+                        showToast(msg);
+                      }}>
+                      <Save size={12} /> {payForm.method === 'cash' ? 'Зберегти платіж' : 'Позначити як оплачено'}
                     </button>
                   </div>
                   {remaining > 0 && (
@@ -664,6 +715,327 @@ export default function BookingViewModal({
           )}
 
           {/* 📊 HISTORY TAB */}
+          {/* 👥 GROUPS / SUB-BOOKINGS TAB */}
+          {viewTab === 'groups' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {subBookings.length === 0 && !showGroupForm && (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>🏠</div>
+                  <p style={{ marginBottom: 8, fontWeight: 600, color: 'var(--text-secondary)' }}>Мульти-групове бронювання</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4, maxWidth: 360, margin: '0 auto 16px' }}>
+                    Додайте групи гостей — кожна група прив'язується до свого юніту (кімната, будинок, місце на кемпінгу).
+                    Юніт автоматично блокується в календарі на ті ж дати.
+                  </p>
+                </div>
+              )}
+
+              {/* Sub-booking cards */}
+              {subBookings.map((sb: any, idx: number) => {
+                const isExpanded = expandedSubs.has(sb.id);
+                return (
+                  <div key={sb.id} style={{
+                    border: '1px solid var(--border-primary)', borderRadius: 10,
+                    background: 'var(--bg-secondary)', overflow: 'hidden',
+                  }}>
+                    {/* Header */}
+                    <div
+                      onClick={() => setExpandedSubs(prev => {
+                        const next = new Set(prev);
+                        next.has(sb.id) ? next.delete(sb.id) : next.add(sb.id);
+                        return next;
+                      })}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        cursor: 'pointer', borderBottom: isExpanded ? '1px solid var(--border-primary)' : 'none',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700, minWidth: 20 }}>#{idx + 1}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{sb.label || 'Без назви'}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span>👥 {sb.adults} дор.{sb.children > 0 ? `, ${sb.children} діт.` : ''}</span>
+                          {sb.child_unit_name ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 6, background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 11, fontWeight: 600 }}>
+                              📅 {sb.child_unit_name} <span style={{ fontSize: 9, opacity: 0.7 }}>(в календарі)</span>
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>— той самий юніт</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
+                        {Number(sb.subtotal).toLocaleString()} CZK
+                      </div>
+                      {/* Payment status badge for child */}
+                      {sb.child_payment_status && (
+                        <span style={{
+                          fontSize: 10, padding: '2px 6px', borderRadius: 6, fontWeight: 600,
+                          color: sb.child_payment_status === 'paid' ? '#22c55e' : '#f59e0b',
+                          background: sb.child_payment_status === 'paid' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                        }}>
+                          {sb.child_payment_status === 'paid' ? '✅' : '⏳'}
+                        </span>
+                      )}
+                      {/* Guest page link */}
+                      {sb.child_guest_page_token && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); window.open(`/guest/${sb.child_guest_page_token}`, '_blank'); }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', padding: 4 }}
+                          title="Гостьова сторінка цієї групи"
+                        >
+                          <ExternalLink size={14} />
+                        </button>
+                      )}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Видалити групу «${sb.label}»?`)) return;
+                          await fetch(`/api/bookings/${b.id}/sub-bookings/${sb.id}`, { method: 'DELETE' });
+                          fetchSubBookings();
+                          if (onFetchBookings) onFetchBookings();
+                          showToast('Групу видалено');
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}
+                        title="Видалити групу"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    {/* Expanded: line items */}
+                    {isExpanded && (
+                      <div style={{ padding: '10px 14px' }}>
+                        {sb.lineItems && sb.lineItems.length > 0 ? (
+                          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--border-primary)', color: 'var(--text-tertiary)' }}>
+                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 500 }}>Опис</th>
+                                <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500, width: 50 }}>К-ть</th>
+                                <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500, width: 70 }}>Ціна</th>
+                                <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 500, width: 80 }}>Разом</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sb.lineItems.map((li: any) => (
+                                <tr key={li.id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                  <td style={{ padding: '6px 0' }}>{li.description}</td>
+                                  <td style={{ textAlign: 'right', padding: '6px 8px' }}>{li.quantity}</td>
+                                  <td style={{ textAlign: 'right', padding: '6px 8px' }}>{Number(li.unit_price).toLocaleString()}</td>
+                                  <td style={{ textAlign: 'right', padding: '6px 0', fontWeight: 600 }}>{Number(li.total).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>Немає деталізації</div>
+                        )}
+
+                        {/* Add line item form */}
+                        {editingLineItems === sb.id ? (
+                          <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'end' }}>
+                            <input placeholder="Опис" value={newLineItem.description}
+                              onChange={e => setNewLineItem(p => ({ ...p, description: e.target.value }))}
+                              style={{ flex: 1, padding: '6px 8px', fontSize: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                            <input type="number" placeholder="К-ть" value={newLineItem.quantity}
+                              onChange={e => setNewLineItem(p => ({ ...p, quantity: Number(e.target.value) }))}
+                              style={{ width: 50, padding: '6px 4px', fontSize: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)', textAlign: 'right' }} />
+                            <input type="number" placeholder="Ціна" value={newLineItem.unit_price}
+                              onChange={e => setNewLineItem(p => ({ ...p, unit_price: Number(e.target.value) }))}
+                              style={{ width: 70, padding: '6px 4px', fontSize: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)', textAlign: 'right' }} />
+                            <button
+                              onClick={async () => {
+                                if (!newLineItem.description) return;
+                                const items = [...(sb.lineItems || []), { ...newLineItem, total: newLineItem.quantity * newLineItem.unit_price }];
+                                await fetch(`/api/bookings/${b.id}/sub-bookings/${sb.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ lineItems: items.map((li: any) => ({ description: li.description, quantity: li.quantity, unit_price: li.unit_price, total: li.total, category: li.category || 'other' })) }),
+                                });
+                                setNewLineItem({ description: '', quantity: 1, unit_price: 0 });
+                                fetchSubBookings();
+                              }}
+                              style={{ padding: '6px 10px', fontSize: 12, background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              <Plus size={12} />
+                            </button>
+                            <button onClick={() => setEditingLineItems(null)}
+                              style={{ padding: '6px 8px', fontSize: 12, background: 'none', border: '1px solid var(--border-primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)' }}
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setEditingLineItems(sb.id)}
+                            style={{ marginTop: 8, padding: '4px 10px', fontSize: 11, background: 'none', border: '1px dashed var(--border-primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)' }}
+                          >
+                            + Додати рядок
+                          </button>
+                        )}
+
+                        {sb.notes && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8, fontStyle: 'italic' }}>💬 {sb.notes}</div>}
+
+                        {/* Guest page link for child reservation */}
+                        {sb.child_guest_page_token && (
+                          <div style={{
+                            marginTop: 10, padding: '8px 10px', borderRadius: 8,
+                            background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
+                            display: 'flex', alignItems: 'center', gap: 8,
+                          }}>
+                            <ExternalLink size={13} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Гостьова сторінка цієї групи</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                /guest/{sb.child_guest_page_token}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const url = `${window.location.origin}/guest/${sb.child_guest_page_token}`;
+                                navigator.clipboard.writeText(url);
+                                showToast('🔗 Посилання скопійовано');
+                              }}
+                              style={{ padding: '3px 8px', fontSize: 10, background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}
+                            >
+                              <Copy size={10} /> Копіювати
+                            </button>
+                            <button
+                              onClick={() => window.open(`/guest/${sb.child_guest_page_token}`, '_blank')}
+                              style={{ padding: '3px 8px', fontSize: 10, background: 'none', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              Відкрити
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Sum verification */}
+              {subBookings.length > 0 && (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '12px 14px', borderRadius: 10,
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Σ Sub-bookings</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {subBookings.reduce((s: number, sb: any) => s + Number(sb.subtotal || 0), 0).toLocaleString()} CZK
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Total бронювання</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {Number(b.total_price || 0).toLocaleString()} CZK
+                    </div>
+                  </div>
+                  {(() => {
+                    const subSum = subBookings.reduce((s: number, sb: any) => s + Number(sb.subtotal || 0), 0);
+                    const diff = Math.abs(subSum - Number(b.total_price || 0));
+                    if (diff < 1) return <span style={{ fontSize: 18 }}>✅</span>;
+                    return <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>⚠️ Δ {diff.toLocaleString()}</span>;
+                  })()}
+                </div>
+              )}
+
+              {showGroupForm ? (
+                <div style={{
+                  border: '1px solid var(--accent-primary)', borderRadius: 10,
+                  padding: 14, background: 'var(--bg-secondary)',
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>➕ Нова група гостей</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>🏠 Юніт (кімната / місце) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                      <select value={groupForm.unitId} onChange={e => setGroupForm(p => ({ ...p, unitId: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }}>
+                        <option value="">— Той самий юніт що й master ({(b as any).unit_name}) —</option>
+                        {availableUnits.filter(u => u.id !== (b as any).unit_id).map(u => (
+                          <option key={u.id} value={u.id}>{u.name} ({u.code}) — {u.category_name}</option>
+                        ))}
+                      </select>
+                      {groupForm.unitId && (
+                        <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          📅 Цей юніт буде заблоковано в календарі на {(b as any).check_in} — {(b as any).check_out}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Назва групи</label>
+                      <input value={groupForm.label} onChange={e => setGroupForm(p => ({ ...p, label: e.target.value }))}
+                        placeholder="Напр. Сім'я Петренко — Mirror 1" style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Дорослі</label>
+                      <input type="number" min={1} value={groupForm.adults} onChange={e => setGroupForm(p => ({ ...p, adults: Number(e.target.value) }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Діти</label>
+                      <input type="number" min={0} value={groupForm.children} onChange={e => setGroupForm(p => ({ ...p, children: Number(e.target.value) }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>💰 Вартість цієї групи (CZK)</label>
+                      <input type="number" min={0} value={groupForm.subtotal} onChange={e => setGroupForm(p => ({ ...p, subtotal: Number(e.target.value) }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Примітка</label>
+                      <input value={groupForm.notes} onChange={e => setGroupForm(p => ({ ...p, notes: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+                    <button onClick={() => { setShowGroupForm(false); setGroupForm({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' }); }}
+                      style={{ padding: '6px 14px', fontSize: 12, background: 'none', border: '1px solid var(--border-primary)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    >Скасувати</button>
+                    <button
+                      disabled={savingGroup || !groupForm.label}
+                      onClick={async () => {
+                        setSavingGroup(true);
+                        try {
+                          const res = await fetch(`/api/bookings/${b.id}/sub-bookings`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ...groupForm, unitId: groupForm.unitId || undefined }),
+                          });
+                          if (res.ok) {
+                            showToast(groupForm.unitId ? '✅ Групу додано — юніт заблоковано в календарі' : '✅ Групу додано');
+                            setShowGroupForm(false);
+                            setGroupForm({ label: '', unitId: '', adults: 1, children: 0, subtotal: 0, notes: '' });
+                            fetchSubBookings();
+                            if (onFetchBookings) onFetchBookings();
+                          } else {
+                            const err = await res.json();
+                            showToast(err.error || 'Помилка');
+                          }
+                        } finally { setSavingGroup(false); }
+                      }}
+                      style={{ padding: '6px 14px', fontSize: 12, background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      {savingGroup ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
+                      Додати групу
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowGroupForm(true)}
+                  style={{
+                    padding: '10px 16px', fontSize: 13, fontWeight: 600,
+                    background: 'none', border: '1px dashed var(--accent-primary)',
+                    borderRadius: 10, cursor: 'pointer', color: 'var(--accent-primary)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <Plus size={14} /> Додати групу
+                </button>
+              )}
+            </div>
+          )}
+
           {viewTab === 'history' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {activityLog.length === 0 && <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Немає записів</div>}

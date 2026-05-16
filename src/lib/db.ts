@@ -189,6 +189,9 @@ function initSchema(database: any) {
       notes TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
+      -- Virtual "staging pool" unit used by the room-allocation modal to
+      -- park bookings without a real room. Hidden from regular listings.
+      is_pool INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(property_id, code)
@@ -1012,6 +1015,34 @@ function runMigrations(database: any) {
     }
   } catch (e: any) {
     console.log('[DB] gender migration note:', e.message);
+  }
+
+  // --- Migration: add is_pool column to units + seed pool unit for Building F ---
+  // The room-allocation modal uses pool units as a "staging" location for
+  // bookings without a confirmed room. Pool units are real DB rows so the
+  // existing PATCH unit_id flow works unchanged, but they are filtered out
+  // of every regular list (calendar, bookings, etc.) so they never show up
+  // as bookable rooms.
+  try {
+    const unitsCols = database.prepare("PRAGMA table_info(units)").all().map((c: any) => c.name);
+    if (!unitsCols.includes('is_pool')) {
+      database.exec("ALTER TABLE units ADD COLUMN is_pool INTEGER NOT NULL DEFAULT 0");
+      console.log('[DB] Added is_pool column to units');
+    }
+    // Seed pool unit for Building F (idempotent).
+    const fBldg = database.prepare("SELECT id, property_id, category_id FROM buildings WHERE code = 'F' LIMIT 1").get() as { id: string; property_id: string; category_id: string } | undefined;
+    if (fBldg) {
+      const fUtAny = database.prepare("SELECT id FROM unit_types WHERE building_id = ? LIMIT 1").get(fBldg.id) as { id: string } | undefined;
+      const existing = database.prepare("SELECT id FROM units WHERE building_id = ? AND is_pool = 1 LIMIT 1").get(fBldg.id) as { id: string } | undefined;
+      if (!existing && fUtAny) {
+        database.prepare(
+          "INSERT INTO units (id, unit_type_id, property_id, category_id, building_id, name, code, beds, sort_order, is_pool, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)"
+        ).run('u_f_pool', fUtAny.id, fBldg.property_id, fBldg.category_id, fBldg.id, 'Чорновик F', 'F-POOL', 99, 9999);
+        console.log('[DB] Seeded staging pool unit for Building F');
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] is_pool migration note:', e.message);
   }
 
   // --- Migration: extend additional_services with service_type, duration, photo ---
@@ -3440,6 +3471,364 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] Cleanup #C archive supabase BUs:', e.message); }
 
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Finance PR #G: payment_webhook_log — audit trail for every Teya
+  // webhook call. Captures raw payload + outcome so that when a payment
+  // doesn't show up in the system, the admin can look here to see whether
+  // the webhook was received, parsed, matched to an order, and recorded.
+  // ═══════════════════════════════════════════════════════════════════
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_log (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      provider TEXT NOT NULL,
+      event_type TEXT,
+      session_id TEXT,
+      transaction_id TEXT,
+      payment_ref TEXT,
+      amount REAL,
+      currency TEXT,
+      result TEXT NOT NULL CHECK (result IN ('recorded','no_match','duplicate','signature_invalid','parse_error','unhandled','error')),
+      error_message TEXT,
+      reservation_id TEXT,
+      operation_id TEXT,
+      raw_payload TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_created ON payment_webhook_log(created_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #D: backfill needs_review on legacy null-account ops.
+  //
+  // The migrations from `income`, `expenses`, `transfers`, `payments`
+  // copied rows into fin_operations even when account_id was NULL.
+  // createOperationInTx now rejects such rows on creation (see
+  // operations.handlers.ts:185-192), but the historical leftovers stay
+  // invisible — they don't show up in /finance/reconcile because their
+  // needs_review flag was never set, and their balance impact is hidden
+  // by PR #signals-filter (the latest fix).
+  //
+  // Mark them needs_review=1 so the operator sees them in the existing
+  // triage queue (`/finance/operations?needs_review=1`) and can either
+  // assign an account or archive them. Idempotent: only flips rows
+  // currently at 0.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const result = database.prepare(`
+      UPDATE fin_operations
+      SET needs_review = 1
+      WHERE needs_review = 0
+        AND (
+          (op_type = 'income'   AND account_to_id   IS NULL) OR
+          (op_type = 'expense'  AND account_from_id IS NULL) OR
+          (op_type = 'transfer' AND (account_from_id IS NULL OR account_to_id IS NULL))
+        )
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #D: flagged ${result.changes} legacy null-account fin_operations as needs_review=1`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #D needs_review backfill:', e.message);
+  }
+
+  // (Cleanup #E lived here — deleted legacy Hostex signal fin_operations.
+  //  It served its purpose during clean-2 deploy. Since clean-3 drops the
+  //  is_pms_signal column entirely, the migration is a no-op and was
+  //  removed to avoid noisy «no such column» errors on every startup.)
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
+  //
+  // After clean-6 the /finance/operations list still contained ~67
+  // source='manual' rows with NULL account_to_id AND NULL account_from_id
+  // (legacy migration artefacts from old `income/expenses/transfers/
+  // payments` tables that pre-dated proper account assignment), plus one
+  // Finmap wizard import experiment and a -50,005,000 CZK «Test
+  // Transaction». None represent real money — NULL accounts make every
+  // balance / P&L aggregation skip them anyway. They only pollute the
+  // operations list.
+  //
+  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
+  // unattributed). Manual ops with a real account_to / account_from stay
+  // untouched even if they look auto-imported — operator can hide those
+  // individually via the row UI.
+  //
+  // Bank-transaction matched_operation_id nulled before DELETE so the FK
+  // does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const idsToWipe = database.prepare(`
+      SELECT id FROM fin_operations
+      WHERE source = 'wizard_import'
+         OR (source = 'manual'
+             AND account_to_id IS NULL
+             AND account_from_id IS NULL)
+         OR comment LIKE '%Test Transaction%'
+    `).all() as Array<{ id: string }>;
+    if (idsToWipe.length > 0) {
+      const placeholders = idsToWipe.map(() => '?').join(',');
+      const ids = idsToWipe.map((r) => r.id);
+      database.prepare(
+        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
+      ).run(...ids);
+      const result = database.prepare(
+        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
+      ).run(...ids);
+      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #G: purge auto-created fin_operations.
+  //
+  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
+  // return), four code paths created fin_operations on every guest tap
+  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
+  // had never manually entered. The actual money still lives at the
+  // platform / Teya merchant until the bank statement arrives, so these
+  // rows were essentially a parallel ledger that diverged from reality.
+  //
+  // After clean-5 no NEW rows are created. This migration sweeps the
+  // accumulated ones — sources hostex / teia / booking_widget. Manual
+  // cash entries (source='manual') and bank-import rows (source='bank'
+  // / 'manual_bank' / 'kb_inbox') are preserved.
+  //
+  // Bank-transaction match pointers are nulled before the DELETE so the
+  // FK does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    database.prepare(`
+      UPDATE bank_transactions SET matched_operation_id = NULL
+      WHERE matched_operation_id IN (
+        SELECT id FROM fin_operations
+        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+      )
+    `).run();
+    const result = database.prepare(`
+      DELETE FROM fin_operations
+      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #I: drop dead FK columns on bank_transactions
+  //
+  // matched_payment_id REFERENCES payments(id) — payments table was DROPed
+  // matched_expense_id REFERENCES expenses(id) — expenses table was DROPed
+  //
+  // Both were superseded by matched_operation_id (REFERENCES fin_operations)
+  // in PR #6. The dead FK target makes ANY insert that touches these
+  // columns blow up with "no such table: main.payments" (even when the
+  // value is NULL — SQLite still validates FK target exists at write time
+  // with foreign_keys=ON). bank-inbox-engine inserts into bank_transactions
+  // on every parsed PDF row, hence the recurring email-import errors.
+  //
+  // SQLite ≥3.35 supports ALTER TABLE DROP COLUMN. Wrap in try in case
+  // the column was already dropped on a fresh install.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const btxCols = database.prepare("PRAGMA table_info(bank_transactions)").all() as { name: string }[];
+    if (btxCols.some((c) => c.name === 'matched_payment_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_payment_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_payment_id (FK→payments)');
+    }
+    if (btxCols.some((c) => c.name === 'matched_expense_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_expense_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_expense_id (FK→expenses)');
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #I drop dead FK columns:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Finance PR #G: payment_webhook_log — audit trail for every Teya
+  // webhook call. Captures raw payload + outcome so that when a payment
+  // doesn't show up in the system, the admin can look here to see whether
+  // the webhook was received, parsed, matched to an order, and recorded.
+  // ═══════════════════════════════════════════════════════════════════
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_log (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      provider TEXT NOT NULL,
+      event_type TEXT,
+      session_id TEXT,
+      transaction_id TEXT,
+      payment_ref TEXT,
+      amount REAL,
+      currency TEXT,
+      result TEXT NOT NULL CHECK (result IN ('recorded','no_match','duplicate','signature_invalid','parse_error','unhandled','error')),
+      error_message TEXT,
+      reservation_id TEXT,
+      operation_id TEXT,
+      raw_payload TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_created ON payment_webhook_log(created_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #D: backfill needs_review on legacy null-account ops.
+  //
+  // The migrations from `income`, `expenses`, `transfers`, `payments`
+  // copied rows into fin_operations even when account_id was NULL.
+  // createOperationInTx now rejects such rows on creation (see
+  // operations.handlers.ts:185-192), but the historical leftovers stay
+  // invisible — they don't show up in /finance/reconcile because their
+  // needs_review flag was never set, and their balance impact is hidden
+  // by PR #signals-filter (the latest fix).
+  //
+  // Mark them needs_review=1 so the operator sees them in the existing
+  // triage queue (`/finance/operations?needs_review=1`) and can either
+  // assign an account or archive them. Idempotent: only flips rows
+  // currently at 0.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const result = database.prepare(`
+      UPDATE fin_operations
+      SET needs_review = 1
+      WHERE needs_review = 0
+        AND (
+          (op_type = 'income'   AND account_to_id   IS NULL) OR
+          (op_type = 'expense'  AND account_from_id IS NULL) OR
+          (op_type = 'transfer' AND (account_from_id IS NULL OR account_to_id IS NULL))
+        )
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #D: flagged ${result.changes} legacy null-account fin_operations as needs_review=1`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #D needs_review backfill:', e.message);
+  }
+
+  // (Cleanup #E lived here — deleted legacy Hostex signal fin_operations.
+  //  It served its purpose during clean-2 deploy. Since clean-3 drops the
+  //  is_pms_signal column entirely, the migration is a no-op and was
+  //  removed to avoid noisy «no such column» errors on every startup.)
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
+  //
+  // After clean-6 the /finance/operations list still contained ~67
+  // source='manual' rows with NULL account_to_id AND NULL account_from_id
+  // (legacy migration artefacts from old `income/expenses/transfers/
+  // payments` tables that pre-dated proper account assignment), plus one
+  // Finmap wizard import experiment and a -50,005,000 CZK «Test
+  // Transaction». None represent real money — NULL accounts make every
+  // balance / P&L aggregation skip them anyway. They only pollute the
+  // operations list.
+  //
+  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
+  // unattributed). Manual ops with a real account_to / account_from stay
+  // untouched even if they look auto-imported — operator can hide those
+  // individually via the row UI.
+  //
+  // Bank-transaction matched_operation_id nulled before DELETE so the FK
+  // does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const idsToWipe = database.prepare(`
+      SELECT id FROM fin_operations
+      WHERE source = 'wizard_import'
+         OR (source = 'manual'
+             AND account_to_id IS NULL
+             AND account_from_id IS NULL)
+         OR comment LIKE '%Test Transaction%'
+    `).all() as Array<{ id: string }>;
+    if (idsToWipe.length > 0) {
+      const placeholders = idsToWipe.map(() => '?').join(',');
+      const ids = idsToWipe.map((r) => r.id);
+      database.prepare(
+        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
+      ).run(...ids);
+      const result = database.prepare(
+        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
+      ).run(...ids);
+      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #G: purge auto-created fin_operations.
+  //
+  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
+  // return), four code paths created fin_operations on every guest tap
+  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
+  // had never manually entered. The actual money still lives at the
+  // platform / Teya merchant until the bank statement arrives, so these
+  // rows were essentially a parallel ledger that diverged from reality.
+  //
+  // After clean-5 no NEW rows are created. This migration sweeps the
+  // accumulated ones — sources hostex / teia / booking_widget. Manual
+  // cash entries (source='manual') and bank-import rows (source='bank'
+  // / 'manual_bank' / 'kb_inbox') are preserved.
+  //
+  // Bank-transaction match pointers are nulled before the DELETE so the
+  // FK does not dangle. Idempotent — re-runs delete 0 rows.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    database.prepare(`
+      UPDATE bank_transactions SET matched_operation_id = NULL
+      WHERE matched_operation_id IN (
+        SELECT id FROM fin_operations
+        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+      )
+    `).run();
+    const result = database.prepare(`
+      DELETE FROM fin_operations
+      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #I: drop dead FK columns on bank_transactions
+  //
+  // matched_payment_id REFERENCES payments(id) — payments table was DROPed
+  // matched_expense_id REFERENCES expenses(id) — expenses table was DROPed
+  //
+  // Both were superseded by matched_operation_id (REFERENCES fin_operations)
+  // in PR #6. The dead FK target makes ANY insert that touches these
+  // columns blow up with "no such table: main.payments" (even when the
+  // value is NULL — SQLite still validates FK target exists at write time
+  // with foreign_keys=ON). bank-inbox-engine inserts into bank_transactions
+  // on every parsed PDF row, hence the recurring email-import errors.
+  //
+  // SQLite ≥3.35 supports ALTER TABLE DROP COLUMN. Wrap in try in case
+  // the column was already dropped on a fresh install.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const btxCols = database.prepare("PRAGMA table_info(bank_transactions)").all() as { name: string }[];
+    if (btxCols.some((c) => c.name === 'matched_payment_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_payment_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_payment_id (FK→payments)');
+    }
+    if (btxCols.some((c) => c.name === 'matched_expense_id')) {
+      database.exec('ALTER TABLE bank_transactions DROP COLUMN matched_expense_id');
+      console.log('[DB] Cleanup #I: dropped dead bank_transactions.matched_expense_id (FK→expenses)');
+    }
+  } catch (e: any) {
+    console.log('[DB] Cleanup #I drop dead FK columns:', e.message);
+  }
+
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
@@ -3614,6 +4003,80 @@ function runMigrations(database: any) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Investor Portal v2 — Phase 1 (Foundation)
+  //
+  // New columns + tables to support contractual cashback schedules,
+  // performance targets, CEO monthly notes, investor documents, and
+  // 3-scenario forward projections.
+  //
+  // - cashback_schedule_json: full contractual monthly/quarterly plan
+  // - target_apy / target_occupancy: baselines for the above/on/below
+  //   performance indicator on the assets list
+  // - units_count: how many physical units in a business_unit (1 by
+  //   default; e.g. "B1-B3 STEALTH" has 3)
+  // - investor_monthly_notes: CEO commentary per month, scope=portfolio|asset
+  // - investor_documents: filesystem-backed PDF vault (agreements, monthly
+  //   reports, tax statements)
+  // - forecast_scenarios: 3 scenarios (pessimistic/base/optimistic) per BU
+  // ═══════════════════════════════════════════════════════════════════
+  addCol('investor_investments', 'cashback_schedule_json', 'TEXT');
+  addCol('investor_investments', 'target_apy',             'NUMERIC');
+  addCol('investor_investments', 'target_occupancy',       'NUMERIC');
+  addCol('business_units',       'units_count',            'INTEGER NOT NULL DEFAULT 1');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_monthly_notes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL CHECK (scope IN ('portfolio', 'asset')),
+      scope_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      ceo_name TEXT,
+      body_md TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (scope, scope_id, month)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_notes_scope ON investor_monthly_notes(scope, scope_id, month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_documents (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      investor_id TEXT REFERENCES investors(id) ON DELETE CASCADE,
+      business_unit_id TEXT REFERENCES business_units(id) ON DELETE SET NULL,
+      type TEXT NOT NULL CHECK (type IN ('agreement', 'monthly_report', 'tax_statement', 'bank_statement', 'other')),
+      name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER,
+      mime_type TEXT,
+      period_start TEXT,
+      period_end TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      uploaded_by TEXT,
+      is_archived INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_docs_investor ON investor_documents(investor_id, is_archived)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_docs_bu ON investor_documents(business_unit_id, is_archived)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS forecast_scenarios (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      business_unit_id TEXT NOT NULL REFERENCES business_units(id) ON DELETE CASCADE,
+      scenario TEXT NOT NULL CHECK (scenario IN ('pessimistic', 'base', 'optimistic')),
+      assumptions_json TEXT,
+      monthly_cashback_projection_json TEXT,
+      full_repayment_eta TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (business_unit_id, scenario)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_forecast_bu ON forecast_scenarios(business_unit_id)');
 
   // PR #27: email-forward receipts inbox (separate from bank inbox)
   // User forwards email with invoice/receipt → IMAP poll extracts attachments
@@ -3922,6 +4385,119 @@ function runMigrations(database: any) {
   try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
 
   console.log('[DB] voucher_bundles ready');
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Sub-Bookings: multi-group booking architecture.
+  //
+  // Adds parent_id to reservations for parent↔child linking (child
+  // reservation = same dates/guest, different unit, auto-mirrors
+  // status/payment from parent). reservation_sub_bookings holds per-
+  // group metadata (label, adults, subtotal). reservation_line_items
+  // provides optional price breakdown per sub-booking.
+  //
+  // Old reservation_groups table stays (empty, 0 rows) — no data to
+  // migrate, but keeping the DDL so the existing group_id FK doesn't
+  // complain. group_id on reservations is deprecated (always NULL for
+  // new bookings).
+  // ═══════════════════════════════════════════════════════════════════
+
+  // --- Migration: add parent_id to reservations ---
+  try {
+    const resCols = database.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];
+    if (!resCols.some((c: any) => c.name === 'parent_id')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN parent_id TEXT REFERENCES reservations(id) ON DELETE CASCADE");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_reservations_parent ON reservations(parent_id)");
+      console.log('[DB] Sub-Bookings: added parent_id column to reservations');
+    }
+  } catch (e: any) { console.log('[DB] Sub-Bookings parent_id migration:', e.message); }
+
+  // --- Migration: create reservation_sub_bookings table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS reservation_sub_bookings (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      child_reservation_id TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      label TEXT NOT NULL DEFAULT '',
+      adults INTEGER NOT NULL DEFAULT 1,
+      children INTEGER NOT NULL DEFAULT 0,
+      infants INTEGER NOT NULL DEFAULT 0,
+      subtotal REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_sub_bookings_res ON reservation_sub_bookings(reservation_id)');
+
+  // --- Migration: create reservation_line_items table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS reservation_line_items (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      sub_booking_id TEXT NOT NULL REFERENCES reservation_sub_bookings(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      category TEXT DEFAULT 'other',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_line_items_sub ON reservation_line_items(sub_booking_id)');
+
+  // --- Migration: add sub_booking_id to reservation_guests ---
+  try {
+    const rgCols2 = database.prepare("PRAGMA table_info(reservation_guests)").all() as { name: string }[];
+    if (!rgCols2.some((c: any) => c.name === 'sub_booking_id')) {
+      database.exec("ALTER TABLE reservation_guests ADD COLUMN sub_booking_id TEXT REFERENCES reservation_sub_bookings(id)");
+      console.log('[DB] Sub-Bookings: added sub_booking_id to reservation_guests');
+    }
+  } catch (e: any) { console.log('[DB] Sub-Bookings sub_booking_id migration:', e.message); }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Operations audit (W4 from finance UX upgrade).
+  //
+  // Adds `created_by_user_id` + `updated_by_user_id` to `fin_operations`
+  // so the operator sees who recorded / last edited each row (e.g.
+  // Андрій checking in a guest with cash payment vs. Олег reconciling
+  // a bank statement). NULL on legacy rows; backfill is intentionally
+  // skipped because we don't know who created them.
+  //
+  // `fin_operation_audit` stores the full change history. Each insert /
+  // update / delete / op_type conversion writes one row with full
+  // before/after JSON snapshots (chose `full` over `diff` for easier
+  // debugging — disk is cheap, payments need bulletproof audit trail).
+  //
+  // No FK on operation_id deliberately: audit must survive op deletion
+  // so we keep history even after the original row is removed.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const finOpCols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
+    if (!finOpCols.some((c: any) => c.name === 'created_by_user_id')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN created_by_user_id TEXT");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fin_operations_created_by ON fin_operations(created_by_user_id)");
+      console.log('[DB] Audit: added created_by_user_id to fin_operations');
+    }
+    if (!finOpCols.some((c: any) => c.name === 'updated_by_user_id')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN updated_by_user_id TEXT");
+      console.log('[DB] Audit: added updated_by_user_id to fin_operations');
+    }
+  } catch (e: any) { console.log('[DB] Audit fin_operations columns:', e.message); }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_operation_audit (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      operation_id TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('create', 'update', 'delete', 'convert')),
+      user_id TEXT,
+      user_name TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      performed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_op ON fin_operation_audit(operation_id, performed_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_user ON fin_operation_audit(user_id, performed_at DESC)');
+
 
 }
 

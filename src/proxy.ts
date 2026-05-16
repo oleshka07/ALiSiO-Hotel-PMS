@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 const MOBILE_UA = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
 
   // Allow force override via cookie (for testing)

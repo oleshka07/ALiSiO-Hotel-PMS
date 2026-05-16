@@ -13,9 +13,9 @@ export async function POST(
     const { image } = await request.json();
     if (!image) return NextResponse.json({ error: 'Missing image' }, { status: 400 });
 
-    // Extract base64 data (remove data URL prefix if present)
-    const base64Data = image.includes(',') ? image.split(',')[1] : image;
-    const result = await ocrDocument(base64Data);
+    // Pass the full data URL (data:image/...;base64,...) to OCR
+    const dataUrl = image.includes('base64,') ? image : `data:image/jpeg;base64,${image}`;
+    const result = await ocrDocument(dataUrl);
 
     return NextResponse.json({ success: true, data: result });
   } catch (err: any) {

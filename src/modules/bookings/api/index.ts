@@ -3,9 +3,12 @@ export { listReservations, createReservation } from './reservations.handlers';
 export { getReservation, updateReservation, deleteReservation } from './reservation.handlers';
 export { listActivity, createActivity } from './reservation-activity.handlers';
 export { listRegistrations, registerGuest, removeRegistration } from './reservation-registrations.handlers';
+// Legacy group bookings — kept for backward compat during migration, will be deleted
 export { listGroupBookings, createGroupBooking } from './group-bookings.handlers';
 export { getGroupBooking, updateGroupBooking, deleteGroupBooking } from './group-booking.handlers';
 export { assignGuest } from './group-booking-assign.handlers';
+// Sub-bookings (replaces group bookings)
+export { listSubBookings, createSubBooking, updateSubBooking, deleteSubBooking } from './sub-bookings.handlers';
 export { listBookingSources, createBookingSource } from './booking-sources.handlers';
 export { updateBookingSource, deleteBookingSource } from './booking-source.handlers';
 export { getAvailability, getAvailabilityOptions } from './widget-availability.handlers';

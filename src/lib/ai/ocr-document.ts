@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 export interface OcrResult {
   firstName: string;
   lastName: string;
+  fullName: string;
   dateOfBirth: string | null;
   documentNumber: string | null;
   documentType: 'id_card' | 'passport' | 'driving_license' | 'other';
@@ -17,7 +18,9 @@ export interface OcrResult {
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) {
-    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set on the server');
+    _client = new OpenAI({ apiKey });
   }
   return _client;
 }
@@ -44,13 +47,14 @@ Rules:
 export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
   const response = await getClient().chat.completions.create({
     model: 'gpt-4o',
-    max_tokens: 300,
+    max_tokens: 800,
+    response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'Extract the personal data from this ID document.' },
+          { type: 'text', text: 'Extract the personal data from this ID document. Respond with JSON only.' },
           { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } },
         ],
       },
@@ -59,18 +63,38 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
 
   const raw = response.choices[0]?.message?.content?.trim() || '{}';
 
-  // Strip markdown fences if model adds them
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+  // response_format=json_object guarantees pure JSON, but stay defensive in case
+  // the model wraps it in markdown fences on edge inputs.
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
 
-  const parsed = JSON.parse(cleaned);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    console.error('[OCR] Failed to parse model response:', raw);
+    throw new Error(`OCR returned invalid JSON: ${(err as Error).message}`);
+  }
+
+  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const firstName = str(parsed.firstName) || 'Unknown';
+  const lastName = str(parsed.lastName) || '';
+  const docType = str(parsed.documentType);
+  const allowedDocTypes = ['id_card', 'passport', 'driving_license', 'other'] as const;
+  const documentType: OcrResult['documentType'] =
+    (allowedDocTypes as readonly string[]).includes(docType || '')
+      ? (docType as OcrResult['documentType'])
+      : 'other';
+
+  console.log(`[OCR] Extracted: ${firstName} ${lastName} | confidence: ${parsed.confidence} | doc: ${documentType}`);
   return {
-    firstName: parsed.firstName || 'Unknown',
-    lastName: parsed.lastName || '',
-    dateOfBirth: parsed.dateOfBirth || null,
-    documentNumber: parsed.documentNumber || null,
-    documentType: parsed.documentType || 'other',
-    nationality: parsed.nationality || null,
-    address: parsed.address || null,
+    firstName,
+    lastName,
+    fullName: `${firstName} ${lastName}`.trim(),
+    dateOfBirth: str(parsed.dateOfBirth),
+    documentNumber: str(parsed.documentNumber),
+    documentType,
+    nationality: str(parsed.nationality),
+    address: str(parsed.address),
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 50,
   };
 }

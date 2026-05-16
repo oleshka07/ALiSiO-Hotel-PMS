@@ -14,7 +14,20 @@ export async function getGuestPortal(
     const { token } = await params;
 
     const reservation = portalRepo.getReservationByToken(token);
-    if (!reservation) return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+    if (!reservation) {
+      // Tell apart "no such token" from "token exists but refs are broken"
+      // so the client can show a useful message and we can find the row in
+      // /finance / room-allocation manually.
+      const stub = portalRepo.getReservationStubByToken(token);
+      if (stub) {
+        console.warn(`[GuestPortal] Token resolves to reservation ${stub.id} but full JOIN failed`);
+        return NextResponse.json(
+          { error: 'Booking data incomplete', code: 'JOIN_FAILED', reservation_id: stub.id },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+    }
 
     const now = new Date();
     const checkOut = new Date(reservation.check_out + 'T00:00:00');

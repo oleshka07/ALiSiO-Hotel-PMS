@@ -26,7 +26,38 @@ export async function getReservation(_request: NextRequest, { params }: { params
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    return NextResponse.json(row);
+    // Attach sub-bookings + line items
+    const subBookings = db.prepare(`
+      SELECT sb.*,
+        cr.unit_id as child_unit_id,
+        cr.payment_status as child_payment_status,
+        cr.guest_page_token as child_guest_page_token,
+        u2.name as child_unit_name, u2.code as child_unit_code
+      FROM reservation_sub_bookings sb
+      LEFT JOIN reservations cr ON sb.child_reservation_id = cr.id
+      LEFT JOIN units u2 ON cr.unit_id = u2.id
+      WHERE sb.reservation_id = ?
+      ORDER BY sb.sort_order, sb.created_at
+    `).all(id) as any[];
+
+    const lineItemsStmt = db.prepare(
+      'SELECT * FROM reservation_line_items WHERE sub_booking_id = ? ORDER BY sort_order'
+    );
+    const subBookingsWithItems = subBookings.map((sb: any) => ({
+      ...sb,
+      lineItems: lineItemsStmt.all(sb.id),
+    }));
+
+    // Count children
+    const childCount = (db.prepare(
+      'SELECT COUNT(*) as n FROM reservations WHERE parent_id = ?'
+    ).get(id) as any).n;
+
+    return NextResponse.json({
+      ...row as any,
+      subBookings: subBookingsWithItems,
+      childReservationCount: childCount,
+    });
   } catch (error: any) {
     console.error('GET /api/bookings/[id] error:', error?.message || error);
     return NextResponse.json({ error: error?.message || 'Failed to fetch booking' }, { status: 500 });
@@ -76,6 +107,38 @@ export async function updateReservation(request: NextRequest, { params }: { para
         'SELECT u.name AS unit_name, r.unit_id FROM reservations r LEFT JOIN units u ON u.id = r.unit_id WHERE r.id = ?',
       ).get(id) as { unit_name?: string; unit_id?: string } | undefined;
       prevUnitLabel = prevRow?.unit_name || prevRow?.unit_id || null;
+    }
+
+    // Overlap guard: if unit_id and/or date range is changing, make sure
+    // the target unit is free across the (possibly new) dates. POST has
+    // this check; PATCH historically did not, so unit reassignment via
+    // edit forms or the room-allocation modal could silently double-book.
+    // Staging pool units intentionally hold many bookings at once — skip
+    // the check when the target unit is a pool.
+    if (body.unit_id !== undefined || body.check_in !== undefined || body.check_out !== undefined) {
+      const current = db.prepare(
+        'SELECT unit_id, check_in, check_out FROM reservations WHERE id = ?',
+      ).get(id) as { unit_id: string; check_in: string; check_out: string } | undefined;
+      if (current) {
+        const targetUnit = body.unit_id !== undefined ? body.unit_id : current.unit_id;
+        const targetIn  = body.check_in   !== undefined ? body.check_in  : current.check_in;
+        const targetOut = body.check_out  !== undefined ? body.check_out : current.check_out;
+        const targetUnitRow = db.prepare('SELECT is_pool FROM units WHERE id = ?').get(targetUnit) as { is_pool?: number } | undefined;
+        if (!targetUnitRow?.is_pool) {
+          const overlap = db.prepare(`
+            SELECT id FROM reservations
+            WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show')
+              AND check_in < ? AND check_out > ?
+            LIMIT 1
+          `).get(targetUnit, id, targetOut, targetIn) as { id: string } | undefined;
+          if (overlap) {
+            return NextResponse.json(
+              { error: 'Кімната зайнята на ці дати іншим бронюванням', conflictBookingId: overlap.id },
+              { status: 409 },
+            );
+          }
+        }
+      }
     }
 
     for (const key of allowed) {
@@ -144,6 +207,26 @@ export async function updateReservation(request: NextRequest, { params }: { para
     if (body.payment_status === 'paid') {
       generateInvoiceForReservation(id);
     }
+
+    // ── Cascade to child reservations ──
+    // When master's status or payment_status changes, mirror to all children
+    try {
+      const cascadeFields: string[] = [];
+      const cascadeValues: any[] = [];
+      if (body.status) { cascadeFields.push('status = ?'); cascadeValues.push(body.status); }
+      if (body.payment_status) { cascadeFields.push('payment_status = ?'); cascadeValues.push(body.payment_status); }
+      if (body.check_in) { cascadeFields.push('check_in = ?'); cascadeValues.push(body.check_in); }
+      if (body.check_out) { cascadeFields.push('check_out = ?'); cascadeValues.push(body.check_out); }
+      if (body.nights) { cascadeFields.push('nights = ?'); cascadeValues.push(body.nights); }
+      if (body.source) { cascadeFields.push('source = ?'); cascadeValues.push(body.source); }
+      if (cascadeFields.length > 0) {
+        cascadeFields.push("updated_at = datetime('now')");
+        cascadeValues.push(id);
+        db.prepare(
+          `UPDATE reservations SET ${cascadeFields.join(', ')} WHERE parent_id = ?`
+        ).run(...cascadeValues);
+      }
+    } catch (cascErr) { console.error('[PATCH] cascade to children error (non-fatal):', cascErr); }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

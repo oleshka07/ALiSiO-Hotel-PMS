@@ -17,12 +17,13 @@ export async function listReservations(request: NextRequest) {
       SELECT
         r.id, r.check_in, r.check_out, r.nights, r.adults, r.children,
         r.status, r.payment_status, r.source, r.total_price, r.notes, r.internal_notes, r.created_at, r.guest_page_token,
-        r.group_id, r.commission_amount,
+        r.group_id, r.parent_id, r.commission_amount,
         r.city_tax_amount, r.city_tax_included, r.city_tax_paid,
         r.registration_status, r.hostex_channel_type, r.hostex_reservation_code,
         r.is_multi_room, r.multi_room_marker,
+        (SELECT COUNT(*) FROM reservation_sub_bookings WHERE reservation_id = r.id) as sub_booking_count,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone, g.nationality,
-        u.id as unit_id, u.name as unit_name, u.code as unit_code,
+        u.id as unit_id, u.name as unit_name, u.code as unit_code, u.is_pool as unit_is_pool,
         c.id as category_id, c.name as category_name, c.type as category_type,
         ut.id as unit_type_id, ut.name as unit_type_name
       FROM reservations r
@@ -30,7 +31,7 @@ export async function listReservations(request: NextRequest) {
       JOIN units u ON r.unit_id = u.id
       JOIN categories c ON u.category_id = c.id
       JOIN unit_types ut ON u.unit_type_id = ut.id
-      WHERE 1=1
+      WHERE r.parent_id IS NULL
     `;
 
     const params: string[] = [];
@@ -71,6 +72,14 @@ export async function listReservations(request: NextRequest) {
     if (dateTo) {
       query += ' AND r.check_in <= ?';
       params.push(dateTo);
+    }
+
+    // Hide bookings already checked out before given date. Use this for
+    // "current + upcoming" lists where stale departures are noise.
+    const checkOutFrom = searchParams.get('check_out_from') || '';
+    if (checkOutFrom) {
+      query += ' AND r.check_out >= ?';
+      params.push(checkOutFrom);
     }
 
     const sourceFilter = searchParams.get('source') || '';

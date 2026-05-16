@@ -1,12 +1,54 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getDb } from '@core/db';
+import { getSessionUser } from '@/lib/auth';
 
 const OP_TYPES = ['income', 'expense', 'transfer'] as const;
 type OpType = typeof OP_TYPES[number];
 
 const STATUSES = ['completed', 'pending', 'failed', 'refunded'] as const;
 type Status = typeof STATUSES[number];
+
+// Actor of an operation mutation, attached to the audit row. Null on
+// system flows (Hostex sync, Teia webhook, bank inbox parser).
+export interface OperationActor { id: string; name: string }
+
+export async function getOptionalActor(): Promise<OperationActor | null> {
+  try {
+    const store = await cookies();
+    const sessionId = store.get('session_id')?.value;
+    const user = await getSessionUser(sessionId);
+    if (!user) return null;
+    return { id: user.id, name: user.full_name };
+  } catch { return null; }
+}
+
+export function writeOperationAudit(
+  db: any,
+  operationId: string,
+  action: 'create' | 'update' | 'delete' | 'convert',
+  actor: OperationActor | null,
+  beforeRow: any,
+  afterRow: any,
+): void {
+  const id = `aud_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    db.prepare(`
+      INSERT INTO fin_operation_audit
+        (id, operation_id, action, user_id, user_name, before_json, after_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, operationId, action,
+      actor?.id || null, actor?.name || null,
+      beforeRow ? JSON.stringify(beforeRow) : null,
+      afterRow ? JSON.stringify(afterRow) : null,
+    );
+  } catch (e: any) {
+    // Audit must never break the main mutation. Log and continue.
+    console.error('[fin_operation_audit] write failed (non-fatal):', e?.message);
+  }
+}
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -71,7 +113,12 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const opType = sp.get('op_type');
     const from = sp.get('from');
     const to = sp.get('to');
-    const accountId = sp.get('account_id');
+    // account_id supports both single value and comma-separated list of
+     // ids — the operator can multi-select accounts in the sidebar.
+    const accountIdRaw = sp.get('account_id');
+    const accountIds = accountIdRaw
+      ? accountIdRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
     const categoryId = sp.get('category_id');
     const projectId = sp.get('project_id');
     const counterpartyId = sp.get('counterparty_id');
@@ -91,7 +138,11 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
     if (to) { where.push('o.paid_at <= ?'); params.push(to); }
-    if (accountId) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(accountId, accountId); }
+    if (accountIds.length > 0) {
+      const ph = accountIds.map(() => '?').join(',');
+      where.push(`(o.account_from_id IN (${ph}) OR o.account_to_id IN (${ph}))`);
+      params.push(...accountIds, ...accountIds);
+    }
     if (categoryId) { where.push('o.category_id = ?'); params.push(categoryId); }
     if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
     if (counterpartyId) { where.push('o.counterparty_id = ?'); params.push(counterpartyId); }
@@ -186,7 +237,13 @@ interface CreateOperationInput {
   needs_review?: number;
 }
 
-export function createOperationInTx(db: any, orgId: string, input: CreateOperationInput, createdBy?: string | null): string {
+export function createOperationInTx(
+  db: any,
+  orgId: string,
+  input: CreateOperationInput,
+  actor?: OperationActor | null,
+): string {
+  const createdBy = actor?.id || null;
   const { op_type, amount, paid_at } = input;
   if (!(OP_TYPES as readonly string[]).includes(op_type)) {
     throw new Error(`op_type must be one of ${OP_TYPES.join(', ')}`);
@@ -246,6 +303,12 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
     for (const tagId of input.tag_ids) insertTag.run(id, tagId);
   }
 
+  if (createdBy) {
+    db.prepare('UPDATE fin_operations SET updated_by_user_id = ? WHERE id = ?').run(createdBy, id);
+  }
+  const afterRow = db.prepare('SELECT * FROM fin_operations WHERE id = ?').get(id);
+  writeOperationAudit(db, id, 'create', actor || null, null, afterRow);
+
   return id;
 }
 
@@ -254,7 +317,8 @@ export async function createOperation(request: NextRequest): Promise<NextRespons
     const db = getDb();
     const orgId = getOrgId(db);
     const body = (await request.json()) as CreateOperationInput;
-    const id = createOperationInTx(db, orgId, body);
+    const actor = await getOptionalActor();
+    const id = createOperationInTx(db, orgId, body, actor);
     const created = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
 
     if (body.reservation_id) recalcReservationPaymentStatus(db, body.reservation_id);
@@ -277,12 +341,19 @@ export async function updateOperation(
 
     const body = await request.json();
     const allowed: (keyof CreateOperationInput)[] = [
+      'op_type',
       'account_from_id', 'account_to_id', 'amount', 'currency', 'amount_to', 'currency_to',
       'paid_at', 'accrued_at', 'period_from', 'period_to',
       'category_id', 'project_id', 'counterparty_id',
       'reservation_id', 'status', 'method', 'payment_subtype',
       'comment', 'is_planned', 'source', 'source_ref',
     ];
+
+    // op_type changes are allowed (e.g. «Перетворити в переказ» UI flow).
+    // Validate so the column doesn't get a bogus value.
+    if (body.op_type !== undefined && !(OP_TYPES as readonly string[]).includes(body.op_type)) {
+      return NextResponse.json({ error: `op_type must be one of ${OP_TYPES.join(', ')}` }, { status: 400 });
+    }
 
     const fields: string[] = [];
     const params: any[] = [];
@@ -300,6 +371,11 @@ export async function updateOperation(
       fields.push('amount_company = ?');
       params.push(computeAmountCompany(db, newAmount, newCurrency, newPaid));
     }
+    const actor = await getOptionalActor();
+    if (actor) {
+      fields.push('updated_by_user_id = ?');
+      params.push(actor.id);
+    }
     fields.push("updated_at = datetime('now')");
 
     if (fields.length === 1) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
@@ -315,6 +391,11 @@ export async function updateOperation(
     const updated = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
     const resId = (updated as any)?.reservation_id ?? existing.reservation_id;
     if (resId) recalcReservationPaymentStatus(db, resId);
+
+    // Mark 'convert' when op_type changed (e.g. expense → transfer), else
+    // a routine 'update' — lets the audit UI render them differently.
+    const action: 'update' | 'convert' = body.op_type !== undefined && body.op_type !== existing.op_type ? 'convert' : 'update';
+    writeOperationAudit(db, id, action, actor, existing, updated);
 
     return NextResponse.json(enrichOperation(db, updated));
   } catch (error: any) {
@@ -332,11 +413,41 @@ export async function deleteOperation(
     const existing = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id) as any;
     if (!existing) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
 
+    // Capture actor + snapshot the row BEFORE delete so the audit row
+    // survives the row being gone (FK-free by design — see W4a).
+    const actor = await getOptionalActor();
+    writeOperationAudit(db, id, 'delete', actor, existing, null);
+
     db.prepare('UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id = ?').run(id);
     db.prepare('DELETE FROM fin_operations WHERE id = ?').run(id);
 
     if (existing.reservation_id) recalcReservationPaymentStatus(db, existing.reservation_id);
     return NextResponse.json({ ok: true, deleted_id: id });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/operations/[id]/audit
+ * Returns the full change history for one operation, newest first.
+ * Powers the «👤 Хто створив / редагував» hover modal.
+ */
+export async function getOperationAudit(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+    const rows = db.prepare(`
+      SELECT id, operation_id, action, user_id, user_name,
+             before_json, after_json, performed_at
+      FROM fin_operation_audit
+      WHERE operation_id = ?
+      ORDER BY performed_at DESC, id DESC
+    `).all(id);
+    return NextResponse.json({ items: rows });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -353,6 +464,7 @@ export async function duplicateOperation(
     const src = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id) as any;
     if (!src) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
 
+    const actor = await getOptionalActor();
     const today = new Date().toISOString().substring(0, 10);
     const newId = createOperationInTx(db, orgId, {
       op_type: src.op_type,
@@ -369,7 +481,7 @@ export async function duplicateOperation(
       source: 'manual',
       status: 'completed',
       tag_ids: getTagIds(db, id),
-    });
+    }, actor);
     const created = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(newId);
     return NextResponse.json(enrichOperation(db, created), { status: 201 });
   } catch (error: any) {

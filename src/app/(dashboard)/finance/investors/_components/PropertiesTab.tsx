@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Edit, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Plus, Edit, ExternalLink, Image as ImageIcon, X } from 'lucide-react';
 
 interface WorkStage {
   id?: string;
@@ -87,6 +87,20 @@ export default function PropertiesTab() {
     setEditing({ ...p, work_stages: p.work_stages.length > 0 ? p.work_stages.map((s) => ({ ...s })) : DEFAULT_STAGES.map((s) => ({ ...s })) });
   }
 
+  async function unlink(p: Property) {
+    if (p.active_lots > 0) {
+      alert(`«${p.name}» має ${p.active_lots} активних лотів. Спочатку приберіть лоти через cascade-delete на /finance/investors/audit.`);
+      return;
+    }
+    if (!confirm(`Прибрати «${p.name}» з інвесторського блоку?\n\nBusiness_unit залишиться для фінансів, але буде відв'язано:\n• investor_property_details (картинка, локація, статус, etc.)\n• work_stages\n• monthly_metrics + monthly_reports`)) return;
+    const res = await fetch(`/api/finance/investor-properties/${p.project_id}`, { method: 'DELETE' });
+    const j = await res.json();
+    if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+    const d = j.deleted;
+    alert(`✓ Відв'язано «${p.name}»:\n• ${d.details} property_details\n• ${d.work_stages} work_stages\n• ${d.monthly_metrics} метрик\n• ${d.monthly_reports} звітів\n\nBusiness_unit залишився.`);
+    fetchAll();
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -150,6 +164,13 @@ export default function PropertiesTab() {
                   {p.airbnb_url && (
                     <a href={p.airbnb_url} target="_blank" rel="noopener noreferrer" style={{ ...btn, textDecoration: 'none' }}><ExternalLink size={13} /> Airbnb</a>
                   )}
+                  <button
+                    onClick={() => unlink(p)}
+                    style={{ ...btn, marginLeft: 'auto', color: '#dc2626', borderColor: '#dc2626' }}
+                    title="Відв'язати BU від інвесторського блоку (BU + фінанси залишаться)"
+                  >
+                    <X size={13} /> Прибрати
+                  </button>
                 </div>
               </div>
             );

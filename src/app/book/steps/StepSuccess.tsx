@@ -3,6 +3,33 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { formatPrice } from '../lib/pricing';
 
+// Phone photos are routinely 5-10 MB. Default nginx `client_max_body_size`
+// is 1 MB, so we resize to a max dimension and re-encode as JPEG before
+// upload. Also normalises HEIC/HEIF (iPhone) to JPEG since the browser
+// already decoded them into the <img> element.
+async function resizeImageDataUrl(dataUrl: string, maxDim = 1600, quality = 0.85): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(maxDim / img.width, maxDim / img.height, 1);
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('canvas context unavailable'));
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (b) => b ? resolve(b) : reject(new Error('canvas.toBlob returned null')),
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => reject(new Error('Could not decode image. iPhone HEIC may need to be exported as JPEG.'));
+    img.src = dataUrl;
+  });
+}
+
 interface Props {
   status: 'success' | 'failed' | 'pending' | 'admin_pending';
   reservationId?: string;
@@ -12,6 +39,7 @@ interface Props {
   nights: number;
   total: number;
   adults?: number;
+  guestEmail?: string | null;
   guestPageToken?: string;
   paymentUrl?: string;
   qrCodeUrl?: string;
@@ -262,9 +290,10 @@ function GuestPageLink({ token }: { token: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
-  nights, total, adults = 1, guestPageToken, paymentUrl, qrCodeUrl,
+  nights, total, adults = 1, guestEmail, guestPageToken, paymentUrl, qrCodeUrl,
   onReset, onAdminConfirm,
 }: Props) {
+  const hasEmail = !!(guestEmail && guestEmail.trim());
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
   const [currentGuest, setCurrentGuest] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
@@ -294,20 +323,45 @@ export default function StepSuccess({
     try {
       const uploadedUrls: string[] = [];
       for (const photo of photos) {
-        const blob = await fetch(photo).then(r => r.blob());
+        // Resize before upload — phone photos are bigger than nginx 1 MB default.
+        let blob: Blob;
+        try {
+          blob = await resizeImageDataUrl(photo);
+        } catch (resizeErr) {
+          console.warn('[Registration] resize failed, falling back to raw:', resizeErr);
+          blob = await fetch(photo).then(r => r.blob());
+        }
         const formData = new FormData();
         formData.append('file', blob, `doc_guest${currentGuest + 1}_${Date.now()}.jpg`);
         formData.append('folder', `guest_docs/${reservationId}`);
+
         const uploadRes = await fetch('/api/file-upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) {
+          const txt = await uploadRes.text().catch(() => '');
+          // Try to parse JSON error, otherwise surface status + truncated body
+          let detail = '';
+          try {
+            const j = JSON.parse(txt);
+            detail = j?.error || txt;
+          } catch {
+            // nginx 413 returns HTML — show just the status code
+            detail = `HTTP ${uploadRes.status}${uploadRes.status === 413 ? ' (file too large)' : ''}`;
+          }
+          throw new Error(detail);
+        }
         const uploadData = await uploadRes.json();
-        if (uploadData.url) uploadedUrls.push(uploadData.url);
+        if (!uploadData.url) throw new Error(uploadData.error || 'upload returned no URL');
+        uploadedUrls.push(uploadData.url);
       }
       if (uploadedUrls.length > 0) {
         const regRes = await fetch('/api/booking/register-guest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
         });
-        const regData = await regRes.json();
+        const regData = await regRes.json().catch(() => ({}));
+        if (!regRes.ok) {
+          throw new Error(regData?.error || `Registration HTTP ${regRes.status}`);
+        }
         if (regData.ocr_results) {
           const names = (regData.ocr_results as { firstName: string; lastName: string }[])
             .map(r => `${r.firstName} ${r.lastName}`.trim()).filter(Boolean);
@@ -318,8 +372,9 @@ export default function StepSuccess({
       if (nextGuest < adults) { setCurrentGuest(nextGuest); setPhotos([]); }
       else setRegStep('done');
     } catch (err) {
+      const msg = (err as Error)?.message || 'unknown';
       console.error('[Registration]', err);
-      setError('Upload failed. Please try again.');
+      setError(`Upload failed: ${msg}`);
     } finally { setUploading(false); }
   };
 
@@ -330,6 +385,12 @@ export default function StepSuccess({
         <div className="kc-success-icon" style={{ background: 'var(--kc-error-light)', color: 'var(--kc-error)' }}>✗</div>
         <h2>Payment failed</h2>
         <p>Your payment was not completed. Please try again or contact us.</p>
+        {reservationId && (
+          <div style={{ background: 'var(--kc-bg-card, #f8fafb)', borderRadius: 'var(--kc-radius-sm)', padding: '10px 14px', margin: '12px auto', display: 'inline-block', border: '1px solid var(--kc-border, #e2e8f0)' }}>
+            <div style={{ fontSize: 11, color: 'var(--kc-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Booking reference</div>
+            <div style={{ fontSize: 15, fontWeight: 600, fontFamily: 'monospace' }}>{reservationId}</div>
+          </div>
+        )}
         <button className="kc-btn kc-btn-primary" onClick={onReset} type="button">Try again</button>
         <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact us via WhatsApp</a>
       </div>
@@ -405,7 +466,12 @@ export default function StepSuccess({
     <div className="kc-fade-in kc-success">
       <div className="kc-success-icon">✓</div>
       <h2>Booking confirmed!</h2>
-      <p>Thank you for your reservation. We&apos;ll send a confirmation email shortly.</p>
+      <p>
+        Thank you for your reservation.
+        {hasEmail
+          ? ' A confirmation email has been sent to the address you provided.'
+          : ' Please save your booking ID below — we can use it to look up your stay at check-in.'}
+      </p>
 
       {reservationId && (
         <div style={{ background: 'var(--kc-green-light)', borderRadius: 'var(--kc-radius-sm)', padding: '12px 16px', margin: '16px auto', display: 'inline-block' }}>
@@ -500,7 +566,7 @@ export default function StepSuccess({
       </button>
 
       <div className="kc-footer">
-        📧 Confirmation sent to your email<br />
+        {hasEmail && <>📧 Confirmation sent to <strong>{guestEmail}</strong><br /></>}
         📞 +420 723 565 616
       </div>
     </div>

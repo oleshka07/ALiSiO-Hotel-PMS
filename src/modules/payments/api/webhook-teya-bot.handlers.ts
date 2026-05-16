@@ -49,11 +49,11 @@ async function handleCrmDepositPaid(metadata: Record<string, string>, amountCzk:
         WHERE id = ?
       `).run(paidAt, resId);
 
-      const payId = `pay_dep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      db.prepare(`
-        INSERT OR IGNORE INTO payments (id, reservation_id, amount, method, type, status, paid_at, notes, auto_created)
-        VALUES (?, ?, ?, 'card', 'deposit', 'completed', ?, ?, 1)
-      `).run(payId, resId, amountCzk, paidAt, `Teya deposit ${depositPercent}% | session: ${sessionId}`);
+      // Legacy: this used to INSERT into the `payments` table, which was
+      // dropped in the finance refactor (clean-7). PMS-side state above
+      // (reservations.payment_status = 'prepaid') is now the source of
+      // truth; the fin_operation only appears once the bank statement
+      // import sees the matching Teya payout.
     }
 
     if (leadId) {

@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
-import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
+import {
+  createOperationInTx,
+  recalcReservationPaymentStatus,
+  type OperationActor,
+} from './operations.handlers';
 import { applyRulesToOperation, loadActiveRules } from '../data/auto-rules-engine';
 
 export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'invoice' | 'online' | 'booking_platform';
@@ -26,6 +30,13 @@ export interface CreatePaymentOperationInput {
    * defaulting to the first cash account.
    */
   channelType?: string;
+  /**
+   * Who triggered this payment. Forwarded into the fin_operation as
+   * `created_by_user_id` + recorded in the audit table. Null for
+   * system flows (Hostex sync, Teia webhook, etc.) where there's no
+   * HTTP user — those audit rows read «System» in the UI.
+   */
+  actor?: OperationActor | null;
 }
 
 /**
@@ -81,6 +92,38 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
   const isRefund = paymentSubtype === 'refund';
   const opType = isRefund ? 'expense' : 'income';
 
+  // Auto-comment: when caller didn't supply one, build a short, info-rich
+  // string from reservation context so the operator scanning the
+  // operations list immediately sees which booking the money is for
+  // («Hostex Airbnb · RES-123 · John Doe · 2026-05-20»). Caller's
+  // explicit comment always wins.
+  const autoComment = (() => {
+    if (comment) return comment;
+    try {
+      const ctx = db.prepare(`
+        SELECT r.id, r.check_in,
+               TRIM(COALESCE(g.first_name, '') || ' ' || COALESCE(g.last_name, '')) AS guest_name
+        FROM reservations r
+        LEFT JOIN guests g ON g.id = r.guest_id
+        WHERE r.id = ?
+      `).get(reservationId) as { id: string; check_in: string | null; guest_name: string | null } | undefined;
+      if (!ctx) return null;
+      const sourceLabel = source === 'hostex'
+        ? `Hostex${input.channelType ? ' ' + input.channelType : ''}`
+        : source === 'teia' ? 'Teya'
+        : source === 'booking_widget' ? 'Booking widget'
+        : 'Manual';
+      const subtypeLabel = isRefund ? 'refund' : paymentSubtype;
+      const parts = [
+        `${sourceLabel} · ${subtypeLabel}`,
+        `RES ${ctx.id.slice(0, 8)}`,
+        ctx.guest_name && ctx.guest_name.length > 0 ? ctx.guest_name : null,
+        ctx.check_in ? `check-in ${ctx.check_in.substring(0, 10)}` : null,
+      ].filter(Boolean);
+      return parts.join(' · ');
+    } catch { return null; }
+  })();
+
   // Resolve account in 3 stages:
   //   1) Explicit accountId from caller — always honoured.
   //   2) For channel signals (Hostex prepaid via Booking/Airbnb/VRBO),
@@ -118,11 +161,11 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     status,
     method,
     payment_subtype: paymentSubtype,
-    comment: comment || null,
+    comment: autoComment,
     source,
     source_ref: sourceRef || reservationId,
     needs_review: needsReview,
-  });
+  }, input.actor || null);
 
   recalcReservationPaymentStatus(db, reservationId);
 
