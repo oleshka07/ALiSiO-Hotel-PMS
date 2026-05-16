@@ -3,6 +3,33 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { formatPrice } from '../lib/pricing';
 
+// Phone photos are routinely 5-10 MB. Default nginx `client_max_body_size`
+// is 1 MB, so we resize to a max dimension and re-encode as JPEG before
+// upload. Also normalises HEIC/HEIF (iPhone) to JPEG since the browser
+// already decoded them into the <img> element.
+async function resizeImageDataUrl(dataUrl: string, maxDim = 1600, quality = 0.85): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(maxDim / img.width, maxDim / img.height, 1);
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('canvas context unavailable'));
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (b) => b ? resolve(b) : reject(new Error('canvas.toBlob returned null')),
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => reject(new Error('Could not decode image. iPhone HEIC may need to be exported as JPEG.'));
+    img.src = dataUrl;
+  });
+}
+
 interface Props {
   status: 'success' | 'failed' | 'pending' | 'admin_pending';
   reservationId?: string;
@@ -296,20 +323,45 @@ export default function StepSuccess({
     try {
       const uploadedUrls: string[] = [];
       for (const photo of photos) {
-        const blob = await fetch(photo).then(r => r.blob());
+        // Resize before upload — phone photos are bigger than nginx 1 MB default.
+        let blob: Blob;
+        try {
+          blob = await resizeImageDataUrl(photo);
+        } catch (resizeErr) {
+          console.warn('[Registration] resize failed, falling back to raw:', resizeErr);
+          blob = await fetch(photo).then(r => r.blob());
+        }
         const formData = new FormData();
         formData.append('file', blob, `doc_guest${currentGuest + 1}_${Date.now()}.jpg`);
         formData.append('folder', `guest_docs/${reservationId}`);
+
         const uploadRes = await fetch('/api/file-upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) {
+          const txt = await uploadRes.text().catch(() => '');
+          // Try to parse JSON error, otherwise surface status + truncated body
+          let detail = '';
+          try {
+            const j = JSON.parse(txt);
+            detail = j?.error || txt;
+          } catch {
+            // nginx 413 returns HTML — show just the status code
+            detail = `HTTP ${uploadRes.status}${uploadRes.status === 413 ? ' (file too large)' : ''}`;
+          }
+          throw new Error(detail);
+        }
         const uploadData = await uploadRes.json();
-        if (uploadData.url) uploadedUrls.push(uploadData.url);
+        if (!uploadData.url) throw new Error(uploadData.error || 'upload returned no URL');
+        uploadedUrls.push(uploadData.url);
       }
       if (uploadedUrls.length > 0) {
         const regRes = await fetch('/api/booking/register-guest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
         });
-        const regData = await regRes.json();
+        const regData = await regRes.json().catch(() => ({}));
+        if (!regRes.ok) {
+          throw new Error(regData?.error || `Registration HTTP ${regRes.status}`);
+        }
         if (regData.ocr_results) {
           const names = (regData.ocr_results as { firstName: string; lastName: string }[])
             .map(r => `${r.firstName} ${r.lastName}`.trim()).filter(Boolean);
@@ -320,8 +372,9 @@ export default function StepSuccess({
       if (nextGuest < adults) { setCurrentGuest(nextGuest); setPhotos([]); }
       else setRegStep('done');
     } catch (err) {
+      const msg = (err as Error)?.message || 'unknown';
       console.error('[Registration]', err);
-      setError('Upload failed. Please try again.');
+      setError(`Upload failed: ${msg}`);
     } finally { setUploading(false); }
   };
 

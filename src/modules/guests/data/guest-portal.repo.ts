@@ -2,7 +2,8 @@
 import { getDb } from '@core/db';
 
 export function getReservationByToken(token: string) {
-  return getDb().prepare(`
+  const db = getDb();
+  const row = db.prepare(`
     SELECT
       r.id, r.check_in, r.check_out, r.nights, r.adults, r.children, r.infants,
       r.status, r.payment_status, r.total_price, r.currency, r.notes, r.source,
@@ -26,6 +27,32 @@ export function getReservationByToken(token: string) {
     JOIN properties p ON r.property_id = p.id
     WHERE r.guest_page_token = ?
   `).get(token) as any;
+
+  // Diagnostic: when the full JOIN returns nothing, separate "token doesn't
+  // exist" from "token exists but a referenced row is missing/broken" — the
+  // latter looks identical to the user (Booking not found) without logs.
+  if (!row) {
+    const bareRow = db.prepare(
+      'SELECT id, guest_id, unit_id, property_id FROM reservations WHERE guest_page_token = ?'
+    ).get(token) as any;
+    if (bareRow) {
+      console.error(
+        `[GuestPortal] Reservation ${bareRow.id} exists for token ${token.slice(0, 6)}… but ` +
+        `the JOIN returned nothing — check guest(${bareRow.guest_id}), unit(${bareRow.unit_id}), ` +
+        `property(${bareRow.property_id}) and the unit's category/unit_type rows.`
+      );
+    }
+  }
+  return row;
+}
+
+// Cheap existence check: used by the portal handler to distinguish
+// "this token has never been issued" from "the token maps to a reservation
+// whose related rows are broken (data integrity issue)".
+export function getReservationStubByToken(token: string) {
+  return getDb().prepare(
+    'SELECT id, guest_id, unit_id, property_id FROM reservations WHERE guest_page_token = ?'
+  ).get(token) as { id: string; guest_id: string; unit_id: string; property_id: string } | undefined;
 }
 
 export function getUnitTypesForRebooking() {
