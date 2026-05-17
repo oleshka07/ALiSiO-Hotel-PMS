@@ -4,14 +4,62 @@ on:
   push:
     branches: [main]
 
+# Build on the GitHub-hosted runner (7 GB RAM) instead of the
+# memory-constrained VPS. The VPS only receives the prebuilt `.next`
+# directory and runs `npm ci` to compile native modules (better-sqlite3)
+# for its own platform.
+
 jobs:
-  deploy:
+  build:
+    name: Build .next on runner
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to VPS via SSH
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --production=false
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Package .next
+        run: tar -czf next-build.tar.gz .next
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: next-build.tar.gz
+          retention-days: 3
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+
+      - name: SCP .next tarball to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "next-build.tar.gz"
+          target: "/root/projects/alisio-pms/"
+
+      - name: Activate build on VPS
         uses: appleboy/ssh-action@v1
         env:
           # Forward GitHub Secrets that the remote shell needs. To add a new
@@ -19,12 +67,13 @@ jobs:
           # here, list its name in the `envs:` field below, and append the
           # idempotent .env-sync block at the bottom of the script.
           PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          envs: PRICELABS_API_KEY
+          envs: PRICELABS_API_KEY,DEPLOY_SHA
           script: |
             set -euo pipefail
 
@@ -32,17 +81,21 @@ jobs:
 
             PREVIOUS_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
             echo "Previous commit: $PREVIOUS_COMMIT"
+            echo "Target commit:   $DEPLOY_SHA"
 
-            # Pull latest code
+            # Ensure repo exists. Source code is still pulled via git because
+            # Next.js needs the source at runtime (App Router/RSC).
             if [ ! -d ".git" ]; then
               cd ..
               rm -rf alisio-pms
               git clone git@github.com:oleshka07/ALiSiO-Hotel-PMS.git alisio-pms
               cd alisio-pms
-            else
-              git fetch origin
-              git reset --hard origin/main
             fi
+
+            git fetch origin
+            # Pin to the exact SHA the runner built — guarantees source on VPS
+            # matches the .next tarball even if main moved during the deploy.
+            git reset --hard "$DEPLOY_SHA"
 
             NEW_COMMIT=$(git rev-parse HEAD)
             echo "New commit:      $NEW_COMMIT"
@@ -50,18 +103,26 @@ jobs:
             # Ensure data dir exists (DB lives here, excluded from git)
             mkdir -p data
 
-            # Install dependencies
-            npm ci --production=false
+            # Back up current .next so we can roll back if startup fails.
+            if [ -d ".next" ]; then
+              rm -rf .next.prev
+              mv .next .next.prev
+            fi
 
-            # Build Next.js
-            if ! npm run build; then
-              echo "Build failed — aborting deploy. Live service untouched."
-              if [ -n "$PREVIOUS_COMMIT" ]; then
-                echo "Rolling working tree back to $PREVIOUS_COMMIT"
-                git reset --hard "$PREVIOUS_COMMIT"
-              fi
+            # Unpack the build produced on the GitHub runner.
+            if [ ! -f "next-build.tar.gz" ]; then
+              echo "next-build.tar.gz missing — SCP step likely failed"
+              if [ -d ".next.prev" ]; then mv .next.prev .next; fi
               exit 1
             fi
+            tar -xzf next-build.tar.gz
+            rm -f next-build.tar.gz
+
+            # Install dependencies on the VPS. This (re)compiles native
+            # modules like better-sqlite3 for the VPS architecture/libc.
+            # Memory cost is much lower than `next build`, so the VPS
+            # handles it fine.
+            npm ci --production=false
 
             # ─────────────────────────────────────────────────────────
             # Idempotent VPS setup for the bank-inbox cron endpoint
@@ -126,22 +187,29 @@ jobs:
               echo "[setup] crontab entry for sync-pricelabs already present"
             fi
 
-            # Restart service only after a successful build.
+            # Restart service only after a successful unpack + install.
             systemctl restart alisio-pms
             sleep 3
 
-            # Verify the service actually came up.
+            # Verify the service actually came up; roll back if not.
             if ! systemctl is-active --quiet alisio-pms; then
               echo "Service failed to start after restart — rolling back"
+              # Restore previous .next if we have it.
+              if [ -d ".next.prev" ]; then
+                rm -rf .next
+                mv .next.prev .next
+              fi
               if [ -n "$PREVIOUS_COMMIT" ]; then
                 git reset --hard "$PREVIOUS_COMMIT"
                 npm ci --production=false
-                npm run build
-                systemctl restart alisio-pms
-                echo "Rolled back to $PREVIOUS_COMMIT"
               fi
+              systemctl restart alisio-pms
+              echo "Rolled back to $PREVIOUS_COMMIT"
               exit 1
             fi
+
+            # Successful deploy — drop the rollback snapshot.
+            rm -rf .next.prev
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
