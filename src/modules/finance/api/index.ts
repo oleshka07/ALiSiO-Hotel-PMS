@@ -153,6 +153,11 @@ export const deleteExchangeRate = withPermission('manage_finance_settings', _del
 // ─── Audit log ────────────────────────────────────────────────
 export { getFinanceLog } from './log.handlers';
 
+// ─── Read-only finance audit (hidden /finance/audit page) ─────
+// Pure SELECT, no mutations. Surfaces ledger inconsistencies before
+// we change any live logic. Safe to keep on prod.
+export { getFinanceAudit } from './audit.handlers';
+
 // ─── Operations (PR #6) — manage_payments ─────────────────────
 export {
   listOperations, getOperation, getOperationAudit,
