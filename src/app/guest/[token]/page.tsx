@@ -97,8 +97,11 @@ function ListRow({ icon, label, value, valueClass, onClick, chevron = true, last
 // ═════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════
-export default function GuestPage({ params }: { params: Promise<{ token: string }> }) {
-  const [token, setToken] = useState('');
+import { useParams } from 'next/navigation';
+
+export default function GuestPage() {
+  const params = useParams<{ token: string }>();
+  const [token, setToken] = useState(params?.token || '');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,8 +142,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // Weather state
   const [weather, setWeather] = useState<{ temp: number; desc: string; icon: string } | null>(null);
 
-  // Resolve async params
-  useEffect(() => { params.then(p => setToken(p.token)); }, [params]);
+  // Set token from params
+  useEffect(() => { if (params?.token) setToken(params.token); }, [params?.token]);
 
   // Fetch data
   useEffect(() => {
