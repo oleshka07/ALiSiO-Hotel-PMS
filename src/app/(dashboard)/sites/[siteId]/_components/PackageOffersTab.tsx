@@ -20,9 +20,9 @@ interface Bundle {
   validity_months: number;
   is_active: number;
   issued_count: number;
-  redeemed_count: number;
+  activated_count: number;
   allowed_days: string | null;
-  promo_code: string | null;
+  coupon_code: string | null;
   redemption_limit: number;
   current_uses: number;
   applied_listings: string | null;
@@ -43,7 +43,7 @@ const emptyBundle = () => ({
   validity_months: 12,
   included_services: [] as IncludedService[],
   allowed_days: [] as number[],
-  promo_code: '',
+  coupon_code: '',
   redemption_limit: 100,
   applied_listings: [] as string[],
 });
@@ -101,7 +101,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
   };
 
   const handleCreate = async () => {
-    if (!form.name || !form.price || !form.promo_code) { alert('Вкажіть назву, ціну та промокод'); return; }
+    if (!form.name || !form.price || !form.coupon_code) { alert('Вкажіть назву, ціну та промокод'); return; }
     setCreating(true);
     try {
       const isEdit = !!editId;
@@ -177,13 +177,13 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                         {!b.is_active && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#ef444422', color: '#ef4444', fontWeight: 600 }}>Архів</span>}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        {b.promo_code && (
+                        {b.coupon_code && (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            🏷 Код: <strong>{b.promo_code}</strong>
+                            🏷 Код: <strong>{b.coupon_code}</strong>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigator.clipboard.writeText(b.promo_code || '');
+                                navigator.clipboard.writeText(b.coupon_code || '');
                                 showToast('Код скопійовано!');
                               }}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0 2px', display: 'inline-flex', alignItems: 'center' }}
@@ -210,7 +210,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {b.promo_code && (
+                      {b.coupon_code && (
                         <button className="btn btn-ghost" style={{ padding: '5px 8px', color: 'var(--text-secondary)' }}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -232,7 +232,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                             included_services: (() => { try { const p = JSON.parse(b.included_services); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             allowed_days: (() => { try { const p = JSON.parse(b.allowed_days || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             applied_listings: (() => { try { const p = JSON.parse(b.applied_listings || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
-                            promo_code: b.promo_code || '',
+                            coupon_code: b.coupon_code || '',
                             redemption_limit: b.redemption_limit || 100,
                           });
                           setEditId(b.id);
@@ -253,7 +253,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                             included_services: (() => { try { const p = JSON.parse(b.included_services); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             allowed_days: (() => { try { const p = JSON.parse(b.allowed_days || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             applied_listings: (() => { try { const p = JSON.parse(b.applied_listings || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
-                            promo_code: b.promo_code ? b.promo_code + 'COPY' : '',
+                            coupon_code: b.coupon_code ? b.coupon_code + 'COPY' : '',
                             redemption_limit: b.redemption_limit || 100,
                           });
                           setEditId(null);
@@ -338,10 +338,10 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
           <div className="form-row" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: 8, border: '1px solid rgba(59, 130, 246, 0.15)' }}>
             <div className="form-group">
               <label className="form-label">Промокод пакету *</label>
-              <input className="form-input" placeholder="Напр., WEEKEND26" value={form.promo_code}
-                onChange={e => setForm(f => ({ ...f, promo_code: e.target.value.toUpperCase() }))} />
+              <input className="form-input" placeholder="Напр., WEEKEND26" value={form.coupon_code}
+                onChange={e => setForm(f => ({ ...f, coupon_code: e.target.value.toUpperCase() }))} />
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Гості зможуть застосувати цей пакет за кодом</div>
-              {editId && form.promo_code && (
+              {editId && form.coupon_code && (
                 <button type="button" className="btn btn-ghost" style={{ marginTop: 8, padding: '4px 8px', fontSize: 12, display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={() => {
                   const b = bundles.find(x => x.id === editId);
                   if (b) setShowCodeModal(b);
@@ -352,7 +352,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
             </div>
             <div className="form-group">
               <label className="form-label">Ліміт використань</label>
-              <input className="form-input" type="number" min={1} disabled={!form.promo_code}
+              <input className="form-input" type="number" min={1} disabled={!form.coupon_code}
                 value={form.redemption_limit} onChange={e => setForm(f => ({ ...f, redemption_limit: +e.target.value }))} />
             </div>
           </div>
@@ -470,7 +470,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                     }
                   } catch {}
                   const langParam = widgetLang ? `&lang=${widgetLang}` : '';
-                  return `<iframe\n  src="${typeof window !== 'undefined' ? window.location.origin : ''}/w/${siteId}?bundle=${showCodeModal.promo_code}${specificUnitId}${langParam}"\n  width="100%"\n  height="700px"\n  frameborder="0"\n  style="border: none; border-radius: 12px; overflow: hidden; min-height: 700px;"\n></iframe>`;
+                  return `<iframe\n  src="${typeof window !== 'undefined' ? window.location.origin : ''}/w/${siteId}?bundle=${showCodeModal.coupon_code}${specificUnitId}${langParam}"\n  width="100%"\n  height="700px"\n  frameborder="0"\n  style="border: none; border-radius: 12px; overflow: hidden; min-height: 700px;"\n></iframe>`;
                 })()}
               </pre>
             </div>
@@ -485,7 +485,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
               } catch {}
               
               const langParam = widgetLang ? `&lang=${widgetLang}` : '';
-              const widgetUrl = `${window.location.origin}/w/${siteId}?bundle=${showCodeModal.promo_code}${specificUnitId}${langParam}`;
+              const widgetUrl = `${window.location.origin}/w/${siteId}?bundle=${showCodeModal.coupon_code}${specificUnitId}${langParam}`;
               const iframeCode = `<iframe src="${widgetUrl}" width="100%" height="700px" frameborder="0" style="border: none; border-radius: 12px; overflow: hidden; min-height: 700px;"></iframe>`;
               if (navigator.clipboard) {
                 navigator.clipboard.writeText(iframeCode).then(() => { setShowCodeModal(null); showToast('Код віджета скопійовано!'); }).catch(() => alert('Не вдалося скопіювати.'));

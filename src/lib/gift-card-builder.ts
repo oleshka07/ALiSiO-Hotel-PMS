@@ -93,7 +93,7 @@ export const GIFT_CARD_TEMPLATES: GiftCardTemplate[] = [
     config_json: {
       condition: 'birthday_month',
       max_nights: 2,
-      sauna_free_sessions: 1,
+      sauna_included_sessions: 1,
       sauna_discount_percent: 50,
     },
   },
@@ -111,7 +111,7 @@ export const GIFT_CARD_TEMPLATES: GiftCardTemplate[] = [
     config_json: {
       days_allowed: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'],
       second_night_discount_percent: 50,
-      sauna_free_sessions: 1,
+      sauna_included_sessions: 1,
       sauna_discount_percent: 50,
     },
   },

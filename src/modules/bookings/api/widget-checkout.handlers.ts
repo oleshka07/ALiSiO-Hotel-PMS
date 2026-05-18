@@ -75,12 +75,12 @@ export async function createWidgetCheckoutSession(req: Request) {
       // Apply Coupon code discount if provided
       if (body.couponCode) {
         try {
-          const offer = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND is_active = 1").get(body.couponCode) as any;
+          const offer = db.prepare("SELECT discount_type, offer_amount FROM coupons WHERE code = ? AND is_active = 1").get(body.couponCode) as any;
           if (offer) {
             if (offer.discount_type === 'fixed_price') {
-              basePrice = offer.discount_value;
+              basePrice = offer.offer_amount;
             } else if (offer.discount_type === 'percentage') {
-              basePrice = Math.round(svc.price * (1 - offer.discount_value / 100));
+              basePrice = Math.round(svc.price * (1 - offer.offer_amount / 100));
             }
           }
         } catch { /* offer lookup failed — use full price */ }

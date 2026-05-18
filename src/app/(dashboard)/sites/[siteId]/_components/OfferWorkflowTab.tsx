@@ -13,7 +13,7 @@ interface AutoRule {
   name: string;
   template_id: string | null;
   discount_type: string;
-  discount_value: number;
+  offer_amount: number;
   valid_from: string | null;
   valid_until: string | null;
   min_nights: number | null;
@@ -32,7 +32,7 @@ const emptyForm = () => ({
   rule_name: '',
   count: 20,
   discount_type: 'percentage' as 'percentage' | 'fixed_amount',
-  discount_value: 15,
+  offer_amount: 15,
   valid_from: '',
   valid_until: '',
   min_nights: 1,
@@ -145,7 +145,7 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
   useEffect(() => { load(); }, [load]);
 
   const handleCreate = async () => {
-    if (!form.discount_value) { alert('Вкажіть знижку'); return; }
+    if (!form.offer_amount) { alert('Вкажіть знижку'); return; }
     setCreating(true);
     try {
       const body = {
@@ -154,7 +154,7 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
         rule_name: form.rule_name || undefined,
         count: form.count,
         discount_type: form.discount_type,
-        discount_value: form.discount_value,
+        offer_amount: form.offer_amount,
         valid_from: form.valid_from || null,
         valid_until: form.valid_until || null,
         min_nights: form.min_nights || null,
@@ -232,7 +232,7 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
                       {tpl && <span style={{ fontSize: 18 }}>{tpl.emoji}</span>}
                       <span style={{ fontWeight: 700, fontSize: 14 }}>{rule.name}</span>
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'rgba(139,92,246,0.1)', color: '#8b5cf6', fontWeight: 600 }}>
-                        {rule.discount_value}{rule.discount_type === 'percentage' ? '%' : ` ${rule.applies_to === 'listings' ? 'CZK' : 'CZK'}`} знижка
+                        {rule.offer_amount}{rule.discount_type === 'percentage' ? '%' : ` ${rule.applies_to === 'listings' ? 'CZK' : 'CZK'}`} знижка
                       </span>
                     </div>
 
@@ -269,7 +269,7 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
                         rule_name: rule.name + ' (Копія)',
                         count: 10,
                         discount_type: rule.discount_type as any,
-                        discount_value: String(rule.discount_value) as any,
+                        offer_amount: String(rule.offer_amount) as any,
                         valid_from: rule.valid_from || '',
                         valid_until: rule.valid_until || '',
                         min_nights: rule.min_nights || 1,
@@ -347,8 +347,8 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
             </div>
             <div className="form-group">
               <label className="form-label">Розмір знижки</label>
-              <input className="form-input" type="number" min={0} value={form.discount_value}
-                onChange={e => setForm(f => ({ ...f, discount_value: +e.target.value }))}
+              <input className="form-input" type="number" min={0} value={form.offer_amount}
+                onChange={e => setForm(f => ({ ...f, offer_amount: +e.target.value }))}
                 placeholder={form.discount_type === 'percentage' ? '15' : '500'} />
             </div>
           </div>

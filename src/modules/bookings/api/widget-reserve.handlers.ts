@@ -141,7 +141,7 @@ export async function createWidgetReservation(request: NextRequest) {
       try {
         const code = String(couponCode).toUpperCase().trim();
         let offer = db.prepare(`
-          SELECT * FROM promo_codes
+          SELECT * FROM coupons
           WHERE code = ? AND is_active = 1
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until >= ?)
@@ -152,8 +152,8 @@ export async function createWidgetReservation(request: NextRequest) {
 
         if (!offer) {
           offer = db.prepare(`
-            SELECT * FROM voucher_bundles 
-            WHERE promo_code = ? AND is_active = 1 
+            SELECT * FROM gift_card_bundles 
+            WHERE coupon_code = ? AND is_active = 1 
               AND (redemption_limit IS NULL OR current_uses < redemption_limit)
           `).get(code) as any;
           if (offer) isBundle = true;
@@ -163,16 +163,16 @@ export async function createWidgetReservation(request: NextRequest) {
           if (isBundle) {
             // Package overrides the totalPrice completely
             offerDiscount = Math.max(0, totalPrice - offer.price);
-            db.prepare('UPDATE voucher_bundles SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+            db.prepare('UPDATE gift_card_bundles SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
           } else {
             if (offer.discount_type === 'percentage') {
-              offerDiscount = Math.round(totalPrice * offer.discount_value / 100);
+              offerDiscount = Math.round(totalPrice * offer.offer_amount / 100);
             } else if (offer.discount_type === 'fixed_price' || offer.discount_type === 'fixed_amount') {
-              offerDiscount = Math.max(0, totalPrice - offer.discount_value);
+              offerDiscount = Math.max(0, totalPrice - offer.offer_amount);
             } else {
-              offerDiscount = offer.discount_value;
+              offerDiscount = offer.offer_amount;
             }
-            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+            db.prepare('UPDATE coupons SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
           }
         }
       } catch (err: any) { 

@@ -25,11 +25,11 @@ export async function validatePromo(request: NextRequest) {
     }
 
     const db = getDb();
-    let offer = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(code) as any;
+    let offer = db.prepare('SELECT * FROM coupons WHERE code = ? AND is_active = 1').get(code) as any;
     let isBundle = false;
 
     if (!offer) {
-      offer = db.prepare('SELECT * FROM voucher_bundles WHERE promo_code = ? AND is_active = 1').get(code) as any;
+      offer = db.prepare('SELECT * FROM gift_card_bundles WHERE coupon_code = ? AND is_active = 1').get(code) as any;
       if (offer) isBundle = true;
     }
 
@@ -54,9 +54,9 @@ export async function validatePromo(request: NextRequest) {
       }
       return NextResponse.json({
         valid: true,
-        code: offer.promo_code,
+        code: offer.coupon_code,
         discount_type: 'package',
-        discount_value: offer.price,
+        offer_amount: offer.price,
         description: offer.name,
         bundle: {
           price: offer.price,
@@ -117,7 +117,7 @@ export async function validatePromo(request: NextRequest) {
       valid: true,
       code: offer.code,
       discount_type: offer.discount_type,
-      discount_value: offer.discount_value,
+      offer_amount: offer.offer_amount,
       description: offer.description,
     }, { headers: CORS_HEADERS });
 

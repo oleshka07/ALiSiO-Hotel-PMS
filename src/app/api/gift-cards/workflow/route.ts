@@ -7,7 +7,7 @@
  *   template_id     — ID шаблону ваучера
  *   count           — скільки промокодів згенерувати (1..500)
  *   discount_type   — 'percentage' | 'fixed_amount'
- *   discount_value  — величина знижки
+ *   offer_amount  — величина знижки
  *   valid_from      — (optional) ISO date
  *   valid_until     — (optional) ISO date
  *   min_nights      — (optional) мін. ночей
@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
       SELECT r.*,
              COUNT(p.id) AS total_codes,
              SUM(CASE WHEN p.current_uses > 0 THEN 1 ELSE 0 END) AS used_codes
-      FROM voucher_automation_rules r
-      LEFT JOIN promo_codes p ON p.voucher_rule_id = r.id
+      FROM gift_card_automation_rules r
+      LEFT JOIN coupons p ON p.gift_card_rule_id = r.id
       WHERE r.site_id = ?
       GROUP BY r.id
       ORDER BY r.created_at DESC
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
       template_id,
       count = 10,
       discount_type = 'percentage',
-      discount_value,
+      offer_amount,
       valid_from,
       valid_until,
       min_nights,
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     } = body;
 
     if (!site_id) return NextResponse.json({ error: 'site_id required' }, { status: 400 });
-    if (!discount_value && discount_value !== 0) return NextResponse.json({ error: 'discount_value required' }, { status: 400 });
+    if (!offer_amount && offer_amount !== 0) return NextResponse.json({ error: 'offer_amount required' }, { status: 400 });
     if (count < 1 || count > 500) return NextResponse.json({ error: 'count must be 1-500' }, { status: 400 });
 
     const tpl = template_id ? getGiftCardTemplate(template_id) : null;
@@ -98,14 +98,14 @@ export async function POST(req: NextRequest) {
     // Зберегти правило
     const ruleId = `vr_${Date.now()}`;
     db.prepare(`
-      INSERT INTO voucher_automation_rules
-        (id, site_id, template_id, name, discount_type, discount_value,
+      INSERT INTO gift_card_automation_rules
+        (id, site_id, template_id, name, discount_type, offer_amount,
          valid_from, valid_until, min_nights, max_nights,
          allowed_days, applies_to, redemption_limit, generated_count, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
     `).run(
       ruleId, site_id, template_id || null, resolvedName,
-      discount_type, Number(discount_value),
+      discount_type, Number(offer_amount),
       valid_from || null, valid_until || null,
       min_nights ? Number(min_nights) : null,
       max_nights ? Number(max_nights) : null,
@@ -118,11 +118,11 @@ export async function POST(req: NextRequest) {
 
     // Генерувати промокоди в транзакції
     const insertPromo = db.prepare(`
-      INSERT INTO promo_codes
-        (id, code, discount_type, discount_value,
+      INSERT INTO coupons
+        (id, code, discount_type, offer_amount,
          valid_from, valid_until, min_nights, max_nights,
          max_uses, redemption_limit, site_id, allowed_days,
-         applies_to, is_active, voucher_rule_id, created_at)
+         applies_to, is_active, gift_card_rule_id, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,datetime('now'))
     `);
 
@@ -132,11 +132,11 @@ export async function POST(req: NextRequest) {
       while (generated.length < count && attempts < count * 3) {
         attempts++;
         const code = generateCampaignToken(prefix);
-        const exists = db.prepare('SELECT id FROM promo_codes WHERE code = ?').get(code);
+        const exists = db.prepare('SELECT id FROM coupons WHERE code = ?').get(code);
         if (exists) continue;
         const pid = `p_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         insertPromo.run(
-          pid, code, discount_type, Number(discount_value),
+          pid, code, discount_type, Number(offer_amount),
           valid_from || null, valid_until || null,
           min_nights ? Number(min_nights) : null,
           max_nights ? Number(max_nights) : null,
@@ -175,8 +175,8 @@ export async function DELETE(req: NextRequest) {
     if (!ruleId) return NextResponse.json({ error: 'rule_id required' }, { status: 400 });
 
     // Не видаляти вже використані коди — лише деактивувати
-    db.prepare(`UPDATE promo_codes SET is_active = 0 WHERE voucher_rule_id = ? AND current_uses = 0`).run(ruleId);
-    db.prepare(`DELETE FROM voucher_automation_rules WHERE id = ?`).run(ruleId);
+    db.prepare(`UPDATE coupons SET is_active = 0 WHERE gift_card_rule_id = ? AND current_uses = 0`).run(ruleId);
+    db.prepare(`DELETE FROM gift_card_automation_rules WHERE id = ?`).run(ruleId);
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

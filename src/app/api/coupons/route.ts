@@ -14,11 +14,11 @@ export async function GET(req: NextRequest) {
     const siteId = url.searchParams.get('site_id');
     const ruleId = url.searchParams.get('rule_id');
 
-    let sql = 'SELECT * FROM promo_codes WHERE 1=1';
+    let sql = 'SELECT * FROM coupons WHERE 1=1';
     const params: (string | number)[] = [];
 
     if (siteId) { sql += ' AND site_id = ?'; params.push(siteId); }
-    if (ruleId) { sql += ' AND voucher_rule_id = ?'; params.push(ruleId); }
+    if (ruleId) { sql += ' AND gift_card_rule_id = ?'; params.push(ruleId); }
 
     sql += ' ORDER BY created_at DESC';
     const codes = db.prepare(sql).all(...params);
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const {
-      code, discount_type, discount_value,
+      code, discount_type, offer_amount,
       valid_from, valid_until,
       min_nights, max_nights,
       redemption_limit, site_id,
@@ -47,16 +47,16 @@ export async function POST(req: NextRequest) {
       applies_to,
     } = body;
 
-    if (!code || discount_value === undefined || discount_value === '') {
-      return NextResponse.json({ error: 'code and discount_value are required' }, { status: 400 });
+    if (!code || offer_amount === undefined || offer_amount === '') {
+      return NextResponse.json({ error: 'code and offer_amount are required' }, { status: 400 });
     }
 
     const db = getDb();
 
     const id = `promo_${Date.now()}`;
     db.prepare(`
-      INSERT INTO promo_codes
-        (id, code, description, discount_type, discount_value,
+      INSERT INTO coupons
+        (id, code, description, discount_type, offer_amount,
          valid_from, valid_until,
          min_nights, max_nights,
          max_uses, redemption_limit,
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       String(code).toUpperCase().trim(),
       description || null,
       discount_type || 'percentage',
-      Number(discount_value),
+      Number(offer_amount),
       valid_from || null,
       valid_until || null,
       min_nights ? Number(min_nights) : null,
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       applies_to || 'services',
     );
 
-    const created = db.prepare('SELECT * FROM promo_codes WHERE id = ?').get(id);
+    const created = db.prepare('SELECT * FROM coupons WHERE id = ?').get(id);
     return NextResponse.json({ code: created }, { status: 201 });
   } catch (e: any) {
     if (e?.message?.includes('UNIQUE')) {

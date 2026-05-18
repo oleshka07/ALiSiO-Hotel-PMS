@@ -13,12 +13,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'reservation_id is required' }, { status: 400 });
     }
 
-    const voucher = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const gift_card = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!giftCard) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
 
     // Перевірки
-    if (giftCard.status === 'redeemed') {
-      return NextResponse.json({ error: 'GiftCard already redeemed' }, { status: 409 });
+    if (giftCard.status === 'activated') {
+      return NextResponse.json({ error: 'GiftCard already activated' }, { status: 409 });
     }
     if (giftCard.status === 'cancelled') {
       return NextResponse.json({ error: 'GiftCard is cancelled' }, { status: 409 });
@@ -37,17 +37,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     db.prepare(`
-      UPDATE vouchers
-      SET status = 'redeemed',
+      UPDATE gift_cards
+      SET status = 'activated',
           reservation_id = ?,
-          redeemed_at = datetime('now'),
+          activated_at = datetime('now'),
           updated_at = datetime('now')
       WHERE id = ?
     `).run(reservation_id, id);
 
     const updated = db.prepare(`
       SELECT v.*, r.check_in, r.check_out, u.name as unit_name
-      FROM vouchers v
+      FROM gift_cards v
       LEFT JOIN reservations r ON v.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE v.id = ?

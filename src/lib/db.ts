@@ -1167,22 +1167,22 @@ function runMigrations(database: any) {
     // Columns already exist — ignore
   }
 
-  // --- Migration: add promo_code column to booking_service_orders ---
+  // --- Migration: add coupon_code column to booking_service_orders ---
   try {
-    database.exec(`ALTER TABLE booking_service_orders ADD COLUMN promo_code TEXT`);
-    console.log('[DB] Added promo_code column to booking_service_orders');
+    database.exec(`ALTER TABLE booking_service_orders ADD COLUMN coupon_code TEXT`);
+    console.log('[DB] Added coupon_code column to booking_service_orders');
   } catch {
     // Column already exists — ignore
   }
 
-  // --- Migration: create promo_codes table ---
+  // --- Migration: create coupons table ---
   database.exec(`
-    CREATE TABLE IF NOT EXISTS promo_codes (
+    CREATE TABLE IF NOT EXISTS coupons (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       code TEXT UNIQUE NOT NULL,
       description TEXT,
       discount_type TEXT NOT NULL DEFAULT 'fixed_price' CHECK (discount_type IN ('fixed_price', 'percentage', 'fixed_amount')),
-      discount_value REAL NOT NULL,
+      offer_amount REAL NOT NULL,
       applicable_services TEXT,
       valid_from TEXT,
       valid_until TEXT,
@@ -1195,10 +1195,10 @@ function runMigrations(database: any) {
 
   // Seed GLAMPING promo code: 310 CZK/hour for sauna (instead of 600)
   try {
-    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get();
+    const glamExists = database.prepare("SELECT id FROM coupons WHERE code = 'GLAMPING'").get();
     if (!glamExists) {
       database.prepare(`
-        INSERT INTO promo_codes (id, code, description, discount_type, discount_value, applicable_services, is_active)
+        INSERT INTO coupons (id, code, description, discount_type, offer_amount, applicable_services, is_active)
         VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna"]', 1)
       `).run();
       console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna)');
@@ -2926,12 +2926,12 @@ function runMigrations(database: any) {
   try { database.exec('ALTER TABLE payment_accounts ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
   try { database.exec('ALTER TABLE payment_accounts ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0'); } catch { /* */ }
 
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* */ }
-  try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* */ }
+  try { database.exec('ALTER TABLE coupons ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
+  try { database.exec('ALTER TABLE coupons ADD COLUMN redemption_limit INTEGER'); } catch { /* */ }
+  try { database.exec('ALTER TABLE coupons ADD COLUMN applied_listings TEXT'); } catch { /* */ }
+  try { database.exec('ALTER TABLE coupons ADD COLUMN max_nights INTEGER'); } catch { /* */ }
+  try { database.exec('ALTER TABLE coupons ADD COLUMN allowed_days TEXT'); } catch { /* */ }
+  try { database.exec("ALTER TABLE coupons ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* */ }
 
   try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
   try { database.exec('ALTER TABLE site_services ADD COLUMN photo_override TEXT'); } catch { /* */ }
@@ -4269,9 +4269,9 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 receivables backfill:', e.message); }
 
-  // --- Migration: create vouchers table (feature/vouchers) ---
+  // --- Migration: create gift_cards table (feature/gift_cards) ---
   database.exec(`
-    CREATE TABLE IF NOT EXISTS vouchers (
+    CREATE TABLE IF NOT EXISTS gift_cards (
       id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       property_id     TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
       code            TEXT NOT NULL UNIQUE,
@@ -4284,7 +4284,7 @@ function runMigrations(database: any) {
       face_value      REAL NOT NULL DEFAULT 0,
       currency        TEXT NOT NULL DEFAULT 'CZK',
       status          TEXT NOT NULL DEFAULT 'draft'
-                      CHECK (status IN ('draft', 'active', 'paid', 'redeemed', 'expired', 'cancelled')),
+                      CHECK (status IN ('draft', 'active', 'paid', 'activated', 'expired', 'cancelled')),
       recipient_name  TEXT,
       recipient_email TEXT,
       buyer_name      TEXT,
@@ -4293,7 +4293,7 @@ function runMigrations(database: any) {
       message         TEXT,
       expires_at      TEXT,
       paid_at         TEXT,
-      redeemed_at     TEXT,
+      activated_at     TEXT,
       reservation_id  TEXT REFERENCES reservations(id) ON DELETE SET NULL,
       config_json     TEXT NOT NULL DEFAULT '{}',
       notes           TEXT,
@@ -4301,20 +4301,20 @@ function runMigrations(database: any) {
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_property ON vouchers(property_id)');
-  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)');
-  console.log('[DB] vouchers table ready');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_gift_cards_property ON gift_cards(property_id)');
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_gift_cards_status ON gift_cards(status)');
+  console.log('[DB] gift_cards table ready');
 
-  // --- Migration: voucher automation rules table ---
+  // --- Migration: gift_card automation rules table ---
   database.exec(`
-    CREATE TABLE IF NOT EXISTS voucher_automation_rules (
+    CREATE TABLE IF NOT EXISTS gift_card_automation_rules (
       id               TEXT PRIMARY KEY,
       site_id          TEXT NOT NULL,
       template_id      TEXT,
       name             TEXT NOT NULL DEFAULT 'Автоматизований ваучер',
       discount_type    TEXT NOT NULL DEFAULT 'percentage',
-      discount_value   REAL NOT NULL DEFAULT 0,
+      offer_amount   REAL NOT NULL DEFAULT 0,
       valid_from       TEXT,
       valid_until      TEXT,
       min_nights       INTEGER,
@@ -4326,15 +4326,15 @@ function runMigrations(database: any) {
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_var_site ON voucher_automation_rules(site_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_var_site ON gift_card_automation_rules(site_id)');
 
-  // --- Migration: add voucher_rule_id to promo_codes ---
+  // --- Migration: add gift_card_rule_id to coupons ---
   try {
-    database.exec(`ALTER TABLE promo_codes ADD COLUMN voucher_rule_id TEXT REFERENCES voucher_automation_rules(id) ON DELETE SET NULL`);
-    console.log('[DB] Added voucher_rule_id to promo_codes');
+    database.exec(`ALTER TABLE coupons ADD COLUMN gift_card_rule_id TEXT REFERENCES gift_card_automation_rules(id) ON DELETE SET NULL`);
+    console.log('[DB] Added gift_card_rule_id to coupons');
   } catch { /* column already exists */ }
 
-  // --- Migration: add extra fields to promo_codes (min_nights, max_nights, redemption_limit, site_id, allowed_days, applies_to) ---
+  // --- Migration: add extra fields to coupons (min_nights, max_nights, redemption_limit, site_id, allowed_days, applies_to) ---
   for (const col of [
     'min_nights INTEGER',
     'max_nights INTEGER',
@@ -4343,14 +4343,14 @@ function runMigrations(database: any) {
     'allowed_days TEXT',
     'applies_to TEXT DEFAULT \'services\'',
   ]) {
-    try { database.exec(`ALTER TABLE promo_codes ADD COLUMN ${col}`); } catch { /* already exists */ }
+    try { database.exec(`ALTER TABLE coupons ADD COLUMN ${col}`); } catch { /* already exists */ }
   }
 
-  console.log('[DB] voucher_automation_rules ready');
+  console.log('[DB] gift_card_automation_rules ready');
 
-  // --- Migration: voucher_bundles (bundle/package vouchers) ---
+  // --- Migration: gift_card_bundles (bundle/package gift_cards) ---
   database.exec(`
-    CREATE TABLE IF NOT EXISTS voucher_bundles (
+    CREATE TABLE IF NOT EXISTS gift_card_bundles (
       id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       site_id         TEXT NOT NULL,
       name            TEXT NOT NULL,
@@ -4366,25 +4366,25 @@ function runMigrations(database: any) {
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_vb_site ON voucher_bundles(site_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vb_site ON gift_card_bundles(site_id)');
 
-  // --- Migration: add bundle_id to vouchers ---
+  // --- Migration: add bundle_id to gift_cards ---
   try {
-    database.exec(`ALTER TABLE vouchers ADD COLUMN bundle_id TEXT REFERENCES voucher_bundles(id) ON DELETE SET NULL`);
+    database.exec(`ALTER TABLE gift_cards ADD COLUMN bundle_id TEXT REFERENCES gift_card_bundles(id) ON DELETE SET NULL`);
   } catch { /* already exists */ }
 
-  // --- Migration: add allowed_days to voucher_bundles ---
+  // --- Migration: add allowed_days to gift_card_bundles ---
   try {
-    database.exec(`ALTER TABLE voucher_bundles ADD COLUMN allowed_days TEXT`);
+    database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN allowed_days TEXT`);
   } catch { /* already exists */ }
 
-  // --- Migration: add promo_code, redemption_limit, current_uses to voucher_bundles ---
-  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN promo_code TEXT`); } catch { /* already exists */ }
-  try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_promo_code ON voucher_bundles(promo_code) WHERE promo_code IS NOT NULL`); } catch { }
-  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN redemption_limit INTEGER DEFAULT 1`); } catch { /* already exists */ }
-  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
+  // --- Migration: add coupon_code, redemption_limit, current_uses to gift_card_bundles ---
+  try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN coupon_code TEXT`); } catch { /* already exists */ }
+  try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_coupon_code ON gift_card_bundles(coupon_code) WHERE coupon_code IS NOT NULL`); } catch { }
+  try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN redemption_limit INTEGER DEFAULT 1`); } catch { /* already exists */ }
+  try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
 
-  console.log('[DB] voucher_bundles ready');
+  console.log('[DB] gift_card_bundles ready');
 
   // ═══════════════════════════════════════════════════════════════════
   // Sub-Bookings: multi-group booking architecture.

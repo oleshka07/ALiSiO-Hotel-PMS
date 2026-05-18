@@ -13,7 +13,7 @@ export const TABS = [
   { id: 'widget',     label: 'Віджет пошуку',  icon: <Code2 size={16} /> },
   { id: 'payments',   label: 'Платежі',         icon: <CreditCard size={16} /> },
   { id: 'rate-plans', label: 'Тарифні плани',  icon: <Tag size={16} /> },
-  { id: 'promo-codes',label: 'Промокоди',       icon: <Percent size={16} /> },
+  { id: 'coupons',label: 'Промокоди',       icon: <Percent size={16} /> },
   { id: 'packages',   label: 'Пакети',           icon: <Package size={16} /> },
 ] as const;
 

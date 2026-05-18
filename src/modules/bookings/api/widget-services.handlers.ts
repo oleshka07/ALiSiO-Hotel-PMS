@@ -186,7 +186,7 @@ export async function bookWidgetService(request: NextRequest) {
 
       let appliedPromo: string | null = null;
       if (couponCode) {
-        const offer = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(String(couponCode).toUpperCase().trim()) as any;
+        const offer = db.prepare('SELECT * FROM coupons WHERE code = ? AND is_active = 1').get(String(couponCode).toUpperCase().trim()) as any;
         if (offer) {
           let applicable = true;
           if (offer.applicable_services) {
@@ -203,11 +203,11 @@ export async function bookWidgetService(request: NextRequest) {
           if (applicable) {
             appliedCoupon = offer.code;
             if (offer.discount_type === 'fixed_price') {
-              pricePerHour = offer.discount_value;
+              pricePerHour = offer.offer_amount;
             } else if (offer.discount_type === 'percentage') {
-              pricePerHour = pricePerHour * (1 - offer.discount_value / 100);
+              pricePerHour = pricePerHour * (1 - offer.offer_amount / 100);
             }
-            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
+            db.prepare('UPDATE coupons SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
             console.log('[Booking] Applied offer:', offer.code, '→', pricePerHour, 'CZK/hr');
           }
         }
@@ -285,7 +285,7 @@ export async function bookWidgetService(request: NextRequest) {
         const orderId = `bso_${Date.now()}`;
         const { site_id } = body;
         db.prepare(`
-          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, promo_code, site_id)
+          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, coupon_code, site_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
         `).run(
           orderId, reservationId || null, serviceId, hours, date, slotIds[0],

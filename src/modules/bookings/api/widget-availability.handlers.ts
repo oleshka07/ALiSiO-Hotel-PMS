@@ -45,7 +45,7 @@ export async function getAvailability(request: NextRequest) {
     }
 
     if (bundleId) {
-      activeBundle = db.prepare('SELECT * FROM voucher_bundles WHERE id = ? OR promo_code = ?').get(bundleId, bundleId);
+      activeBundle = db.prepare('SELECT * FROM gift_card_bundles WHERE id = ? OR coupon_code = ?').get(bundleId, bundleId);
     }
 
 
@@ -288,11 +288,11 @@ export async function getAvailability(request: NextRequest) {
       });
     }
 
-    let offerDiscount: { name: string; discountType: string; discountValue: number; finalDiscount: number } | null = null;
+    let offerDiscount: { name: string; discountType: string; offerAmount: number; finalDiscount: number } | null = null;
     if (couponCode && hasPromotions) {
       const offer = db.prepare(`
         SELECT * FROM promotions
-        WHERE promo_code = ? AND is_active = 1
+        WHERE coupon_code = ? AND is_active = 1
           AND (date_from IS NULL OR date_from <= ?)
           AND (date_to IS NULL OR date_to >= ?)
           AND (usage_limit IS NULL OR usage_count < usage_limit)
@@ -302,7 +302,7 @@ export async function getAvailability(request: NextRequest) {
         offerDiscount = {
           name: offer.name,
           discountType: offer.discount_type,
-          discountValue: offer.discount_value,
+          offerAmount: offer.offer_amount,
           finalDiscount: 0,
         };
       }

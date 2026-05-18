@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     let sql = `
       SELECT v.*,
              r.check_in, r.check_out, r.unit_id
-      FROM vouchers v
+      FROM gift_cards v
       LEFT JOIN reservations r ON v.reservation_id = r.id
       WHERE 1=1
     `;
@@ -44,13 +44,13 @@ export async function GET(req: Request) {
 
     // Auto-expire: оновити статус прострочених ваучерів
     db.prepare(`
-      UPDATE vouchers SET status = 'expired', updated_at = datetime('now')
+      UPDATE gift_cards SET status = 'expired', updated_at = datetime('now')
       WHERE status IN ('active', 'paid')
         AND expires_at IS NOT NULL
         AND expires_at < date('now')
     `).run();
 
-    return NextResponse.json({ vouchers, templates: GIFT_CARD_TEMPLATES });
+    return NextResponse.json({ gift_cards, templates: GIFT_CARD_TEMPLATES });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('GET /api/gift-cards error:', message);
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
     let code = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidate = buildGiftCode();
-      const existing = db.prepare('SELECT id FROM vouchers WHERE code = ?').get(candidate);
+      const existing = db.prepare('SELECT id FROM gift_cards WHERE code = ?').get(candidate);
       if (!existing) { code = candidate; break; }
     }
     if (!code) {
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     }
 
     const id = db.prepare(`
-      INSERT INTO vouchers (
+      INSERT INTO gift_cards (
         property_id, code, template_id, name, type, value_type,
         face_value, currency, status,
         recipient_name, recipient_email,
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
       message || null, resolvedExpires, JSON.stringify(resolvedConfig), notes || null,
     ) as { id: string };
 
-    const voucher = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(id.id);
+    const gift_card = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(id.id);
     return NextResponse.json({ giftCard }, { status: 201 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

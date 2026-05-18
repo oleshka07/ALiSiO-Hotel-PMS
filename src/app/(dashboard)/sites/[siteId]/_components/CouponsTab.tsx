@@ -13,7 +13,7 @@ const DAYS = [
 const DAY_LABELS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
 
 const emptyForm = () => ({
-  code: '', discount_type: 'percent', discount_value: '',
+  code: '', discount_type: 'percent', offer_amount: '',
   valid_from: '', valid_until: '',
   min_nights: 1, max_nights: '', redemption_limit: '',
   allowed_days: [] as number[],
@@ -56,7 +56,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
   };
 
   const handleCreate = async () => {
-    if (!form.code.trim() || !form.discount_value) { alert('Введіть код та знижку'); return; }
+    if (!form.code.trim() || !form.offer_amount) { alert('Введіть код та знижку'); return; }
     setCreating(true);
     try {
       const isEdit = !!editId;
@@ -66,7 +66,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
         body: JSON.stringify({
           code: form.code,
           discount_type: form.discount_type === 'percent' ? 'percentage' : 'fixed_amount',
-          discount_value: +form.discount_value,
+          offer_amount: +form.offer_amount,
           valid_from: form.valid_from || null,
           valid_until: form.valid_until || null,
           min_nights: form.min_nights || null,
@@ -133,7 +133,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                     {copiedId === c.id ? <Check size={14} style={{ color: '#22c55e' }} /> : <Copy size={14} />}
                   </button>
                 </td>
-                <td>{c.discount_value as number}{(c.discount_type as string) === 'percentage' ? '%' : ` ${siteCurrency}`}</td>
+                <td>{c.offer_amount as number}{(c.discount_type as string) === 'percentage' ? '%' : ` ${siteCurrency}`}</td>
                 <td style={{ fontSize: 12 }}>
                   {(c.applies_to as string) === 'listings' ? '🏠 Оголошення'
                     : (c.applies_to as string) === 'both' ? '🏠+🛎 Обидва'
@@ -153,7 +153,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                       setForm({
                         code: String(c.code),
                         discount_type: c.discount_type === 'fixed_amount' ? 'fixed' : 'percent',
-                        discount_value: String(c.discount_value),
+                        offer_amount: String(c.offer_amount),
                         valid_from: c.valid_from ? String(c.valid_from) : '',
                         valid_until: c.valid_until ? String(c.valid_until) : '',
                         min_nights: c.min_nights ? Number(c.min_nights) : 1,
@@ -171,7 +171,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                       setForm({
                         code: String(c.code) + '_COPY',
                         discount_type: c.discount_type === 'fixed_amount' ? 'fixed' : 'percent',
-                        discount_value: String(c.discount_value),
+                        offer_amount: String(c.offer_amount),
                         valid_from: c.valid_from ? String(c.valid_from) : '',
                         valid_until: c.valid_until ? String(c.valid_until) : '',
                         min_nights: c.min_nights ? Number(c.min_nights) : 1,
@@ -245,7 +245,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
             <label className="form-label">Значення *</label>
             <input className="form-input" type="number" min={0}
               placeholder={form.discount_type === 'percent' ? '20' : '500'}
-              value={form.discount_value} onChange={e => setForm(f => ({ ...f, discount_value: e.target.value }))} />
+              value={form.offer_amount} onChange={e => setForm(f => ({ ...f, offer_amount: e.target.value }))} />
           </div>
         </div>
 

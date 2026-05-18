@@ -1393,8 +1393,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
           </div>
 
-<<<<<<< HEAD
-=======
+
           {/* Hidden file input for OCR photo */}
           <input
             ref={ocrInputRef}
@@ -1446,7 +1445,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             }}
           />
 
->>>>>>> origin/main
+
           <div className="gp-reg-body">
             {/* Step 1: Guest Details */}
             {regStep === 1 && (

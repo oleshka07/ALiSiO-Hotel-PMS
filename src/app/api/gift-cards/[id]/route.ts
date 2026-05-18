@@ -6,11 +6,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const db = getDb();
     const { id } = await params;
-    const voucher = db.prepare(`
+    const gift_card = db.prepare(`
       SELECT v.*,
              r.check_in, r.check_out, r.unit_id,
              u.name as unit_name
-      FROM vouchers v
+      FROM gift_cards v
       LEFT JOIN reservations r ON v.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE v.id = ?
@@ -30,7 +30,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params;
     const body = await req.json();
 
-    const existing = db.prepare('SELECT id, status FROM vouchers WHERE id = ?').get(id) as { id: string; status: string } | undefined;
+    const existing = db.prepare('SELECT id, status FROM gift_cards WHERE id = ?').get(id) as { id: string; status: string } | undefined;
     if (!existing) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
 
     // Дозволені поля для оновлення
@@ -57,9 +57,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     sets.push("updated_at = datetime('now')");
     vals.push(id);
 
-    db.prepare(`UPDATE vouchers SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    db.prepare(`UPDATE gift_cards SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
 
-    const updated = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(id);
+    const updated = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(id);
     return NextResponse.json({ giftCard: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -72,15 +72,15 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   try {
     const db = getDb();
     const { id } = await params;
-    const existing = db.prepare('SELECT id, status FROM vouchers WHERE id = ?').get(id) as { id: string; status: string } | undefined;
+    const existing = db.prepare('SELECT id, status FROM gift_cards WHERE id = ?').get(id) as { id: string; status: string } | undefined;
     if (!existing) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
 
-    if (existing.status === 'redeemed') {
-      return NextResponse.json({ error: 'Cannot cancel a redeemed giftCard' }, { status: 409 });
+    if (existing.status === 'activated') {
+      return NextResponse.json({ error: 'Cannot cancel a activated giftCard' }, { status: 409 });
     }
 
     db.prepare(`
-      UPDATE vouchers SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?
+      UPDATE gift_cards SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?
     `).run(id);
 
     return NextResponse.json({ success: true });

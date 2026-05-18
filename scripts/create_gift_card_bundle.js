@@ -13,7 +13,7 @@ const services = [
 ];
 
 db.prepare(`
-  INSERT INTO voucher_bundles (id, site_id, name, description, price, currency, nights_included, included_services, validity_months, promo_code, redemption_limit)
+  INSERT INTO gift_card_bundles (id, site_id, name, description, price, currency, nights_included, included_services, validity_months, coupon_code, redemption_limit)
   VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(
   siteId,

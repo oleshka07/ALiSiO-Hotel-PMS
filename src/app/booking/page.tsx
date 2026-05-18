@@ -46,7 +46,7 @@ interface AvailabilityResponse {
   checkOut: string;
   nights: number;
   units: UnitResult[];
-  offerDiscount: { name: string; discountType: string; discountValue: number } | null;
+  offerDiscount: { name: string; discountType: string; offerAmount: number } | null;
   certificate: { code: string; amount: number } | null;
 }
 
@@ -379,9 +379,9 @@ export default function BookingPage() {
     if (availability?.offerDiscount) {
       const pd = availability.offerDiscount;
       if (pd.discountType === 'percentage') {
-        total -= Math.round(total * pd.discountValue / 100);
+        total -= Math.round(total * pd.offerAmount / 100);
       } else {
-        total -= pd.discountValue;
+        total -= pd.offerAmount;
       }
     }
     if (availability?.certificate?.amount) {

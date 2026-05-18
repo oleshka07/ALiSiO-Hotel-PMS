@@ -33,8 +33,8 @@ filePaths.forEach((file) => {
     .replace(/promo\b/g, 'offer');
   
   // Undo DB column replacements just in case
-  newContent = newContent.replace(/offer_code/g, 'promo_code');
-  newContent = newContent.replace(/offer_codes/g, 'promo_codes');
+  newContent = newContent.replace(/offer_code/g, 'coupon_code');
+  newContent = newContent.replace(/offer_codes/g, 'coupons');
 
   if (content !== newContent) {
     fs.writeFileSync(file, newContent, 'utf8');

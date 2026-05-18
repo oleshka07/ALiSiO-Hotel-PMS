@@ -16,12 +16,12 @@ const newRatePlanLogic = `
     }
 
     if (bundleId) {
-      activeBundle = db.prepare('SELECT * FROM voucher_bundles WHERE id = ? OR promo_code = ?').get(bundleId, bundleId);
+      activeBundle = db.prepare('SELECT * FROM gift_card_bundles WHERE id = ? OR coupon_code = ?').get(bundleId, bundleId);
     }
 `;
 
 content = content.replace(
-  /    let activeRatePlan: any = null;\n    let activeBundle: any = null;\n\n    if \(ratePlanId\) \{\n      activeRatePlan = db\.prepare\('SELECT \* FROM rate_plans WHERE id = \? OR code = \?'\)\.get\(ratePlanId, ratePlanId\);\n    \}\n    if \(bundleId\) \{\n      activeBundle = db\.prepare\('SELECT \* FROM voucher_bundles WHERE id = \? OR promo_code = \?'\)\.get\(bundleId, bundleId\);\n    \}/g,
+  /    let activeRatePlan: any = null;\n    let activeBundle: any = null;\n\n    if \(ratePlanId\) \{\n      activeRatePlan = db\.prepare\('SELECT \* FROM rate_plans WHERE id = \? OR code = \?'\)\.get\(ratePlanId, ratePlanId\);\n    \}\n    if \(bundleId\) \{\n      activeBundle = db\.prepare\('SELECT \* FROM gift_card_bundles WHERE id = \? OR coupon_code = \?'\)\.get\(bundleId, bundleId\);\n    \}/g,
   newRatePlanLogic
 );
 

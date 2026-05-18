@@ -60,7 +60,7 @@ export default function SiteDetailPage() {
     return ref.fn;
   }, []);
 
-  const couponCountCb = useRef(setCount('promo-codes')).current;
+  const couponCountCb = useRef(setCount('coupons')).current;
   const ratePlanCountCb = useRef(setCount('rate-plans')).current;
   const packageCountCb = useRef(setCount('packages')).current;
 
@@ -160,7 +160,7 @@ export default function SiteDetailPage() {
         {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: cfg } : s)} />}
         {activeTab === 'payments'    && <PaymentsTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, payment_config: cfg } : s)} />}
         {activeTab === 'rate-plans'  && <RatePlansTab siteId={siteId} onCountChange={ratePlanCountCb} />}
-        {activeTab === 'promo-codes' && <CouponsTab siteId={siteId} siteCurrency={site.currency} onCountChange={couponCountCb} />}
+        {activeTab === 'coupons' && <CouponsTab siteId={siteId} siteCurrency={site.currency} onCountChange={couponCountCb} />}
         {activeTab === 'packages'    && <PackageOffersTab siteId={siteId} siteCurrency={site.currency} onCountChange={packageCountCb} />}
       </div>
     </div>

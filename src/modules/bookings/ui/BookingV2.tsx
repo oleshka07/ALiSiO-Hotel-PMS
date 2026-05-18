@@ -866,7 +866,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const res = await fetch(`${API_BASE}/api/booking/activate?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
       const data = await res.json();
       if (data.valid) {
-        setOfferApplied({ code: data.code, offerType: data.discount_type, offerAmount: data.discount_value, description: data.description, bundle: data.bundle ? { ...data.bundle, included_services: data.bundle.included_services?.map((inc: any) => ({ service_id: inc.service_id, isIncluded: inc.free })) } : undefined });
+        setOfferApplied({ code: data.code, offerType: data.discount_type, offerAmount: data.offer_amount, description: data.description, bundle: data.bundle ? { ...data.bundle, included_services: data.bundle.included_services?.map((inc: any) => ({ service_id: inc.service_id, isIncluded: inc.free })) } : undefined });
         setShowOffer(false);
         // If it's a package, automatically select the included services
         if (data.discount_type === 'package' && data.bundle?.included_services) {

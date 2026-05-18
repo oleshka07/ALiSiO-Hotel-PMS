@@ -20,31 +20,31 @@ const files = walk('C:/Projects/web dev/ALiSiO-Hotel-PMS/src');
 files.forEach((file) => {
   let content = fs.readFileSync(file, 'utf8');
   let newContent = content
-    // Replace VoucherTemplate with GiftCardTemplate
-    .replace(/VoucherTemplate/g, 'GiftCardTemplate')
-    // Replace Voucher with GiftCard (but avoid matching 'Vouchers')
-    .replace(/\bVoucher\b/g, 'GiftCard')
+    // Replace GiftCardTemplate with GiftCardTemplate
+    .replace(/GiftCardTemplate/g, 'GiftCardTemplate')
+    // Replace GiftCard with GiftCard (but avoid matching 'GiftCards')
+    .replace(/\bGiftCard\b/g, 'GiftCard')
     // Replace variable names
-    .replace(/\bsetVouchers\b/g, 'setGiftCards')
-    .replace(/\bvouchers\.map\b/g, 'giftCards.map')
-    .replace(/\bvouchers\.length\b/g, 'giftCards.length')
-    .replace(/d\.vouchers/g, 'd.giftCards')
-    .replace(/const vouchers/g, 'const giftCards')
-    .replace(/let vouchers/g, 'let giftCards')
-    .replace(/setVoucher\b/g, 'setGiftCard')
-    .replace(/redeemVoucher/g, 'activeCard')
-    .replace(/redeemV\b/g, 'activeCard')
-    .replace(/setRedeemV\b/g, 'setActiveCard')
-    .replace(/redeemId\b/g, 'activationId')
-    .replace(/setRedeemId\b/g, 'setActivationId')
-    .replace(/redeeming\b/g, 'activating')
-    .replace(/setRedeeming\b/g, 'setActivating')
-    .replace(/handleRedeem\b/g, 'handleActivation')
+    .replace(/\bsetGiftCards\b/g, 'setGiftCards')
+    .replace(/\bgift_cards\.map\b/g, 'giftCards.map')
+    .replace(/\bgift_cards\.length\b/g, 'giftCards.length')
+    .replace(/d\.gift_cards/g, 'd.giftCards')
+    .replace(/const gift_cards/g, 'const giftCards')
+    .replace(/let gift_cards/g, 'let giftCards')
+    .replace(/setGiftCard\b/g, 'setGiftCard')
+    .replace(/activateGiftCard/g, 'activeCard')
+    .replace(/activateV\b/g, 'activeCard')
+    .replace(/setActivateV\b/g, 'setActiveCard')
+    .replace(/activateId\b/g, 'activationId')
+    .replace(/setActivateId\b/g, 'setActivationId')
+    .replace(/activateing\b/g, 'activating')
+    .replace(/setActivateing\b/g, 'setActivating')
+    .replace(/handleActivate\b/g, 'handleActivation')
     .replace(/VOUCHER_STATUS_CFG/g, 'GIFT_CARD_STATUS_CFG')
     .replace(/VOUCHER_STATUS/g, 'GIFT_CARD_STATUS')
-    .replace(/voucherCountCb/g, 'giftCardCountCb')
-    .replace(/redeemResId/g, 'activationResId')
-    .replace(/setRedeemResId/g, 'setActivationResId');
+    .replace(/gift_cardCountCb/g, 'giftCardCountCb')
+    .replace(/activateResId/g, 'activationResId')
+    .replace(/setActivateResId/g, 'setActivationResId');
 
   if (content !== newContent) {
     fs.writeFileSync(file, newContent, 'utf8');

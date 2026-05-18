@@ -8,12 +8,12 @@ const GIFT_CARD_STATUS_CFG: Record<string, { label: string; color: string; bg: s
   draft:     { label: 'Чернетка',    color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
   active:    { label: 'Активний',    color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
   paid:      { label: 'Оплачено',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)'  },
-  redeemed:  { label: 'Погашено',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
+  activated:  { label: 'Погашено',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
   expired:   { label: 'Прострочено', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
   cancelled: { label: 'Скасовано',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
 };
 
-const FILTERS = [['all', 'Всі'], ['active', 'Активні'], ['paid', 'Оплачені'], ['redeemed', 'Погашені'], ['expired', 'Прострочені']];
+const FILTERS = [['all', 'Всі'], ['active', 'Активні'], ['paid', 'Оплачені'], ['activated', 'Погашені'], ['expired', 'Прострочені']];
 
 const emptyForm = () => ({
   recipient_name: '', recipient_email: '', buyer_name: '',
@@ -193,7 +193,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
                   {v.recipient_name && <span>🎁 {v.recipient_name}</span>}
                   <span>💰 {v.face_value?.toLocaleString('cs-CZ')} {v.currency}</span>
                   {v.expires_at && <span>⏳ До: {new Date(v.expires_at).toLocaleDateString('uk-UA')}</span>}
-                  {v.status === 'redeemed' && v.check_in && <span>✅ {new Date(v.check_in).toLocaleDateString('uk-UA')}</span>}
+                  {v.status === 'activated' && v.check_in && <span>✅ {new Date(v.check_in).toLocaleDateString('uk-UA')}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
                   {(v.status === 'active' || v.status === 'paid') && (
@@ -224,7 +224,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
                     }} title="Дублювати ваучер (створить новий)">
                       <CopyPlus size={12} />
                     </button>
-                    {!['redeemed', 'cancelled'].includes(v.status) && (
+                    {!['activated', 'cancelled'].includes(v.status) && (
                       <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px', color: '#ef4444' }} onClick={() => handleDelete(v)} title="Видалити">
                         <Trash2 size={12} />
                       </button>

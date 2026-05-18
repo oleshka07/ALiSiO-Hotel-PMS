@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const db = getDb();
     const body = await req.json();
-    const allowed = ['name','description','price','currency','nights_included','listing_type','included_services','validity_months','is_active', 'allowed_days', 'promo_code', 'redemption_limit'];
+    const allowed = ['name','description','price','currency','nights_included','listing_type','included_services','validity_months','is_active', 'allowed_days', 'coupon_code', 'redemption_limit'];
     const sets: string[] = [];
     const vals: unknown[] = [];
     for (const k of allowed) {
@@ -25,14 +25,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         sets.push(`${k} = ?`);
         let val = body[k];
         if (k === 'included_services' || k === 'allowed_days') val = val ? JSON.stringify(val) : null;
-        if (k === 'promo_code') val = val ? String(val).trim().toUpperCase() : null;
+        if (k === 'coupon_code') val = val ? String(val).trim().toUpperCase() : null;
         vals.push(val);
       }
     }
     if (!sets.length) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
     sets.push(`updated_at = datetime('now')`);
     vals.push(id);
-    db.prepare(`UPDATE voucher_bundles SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    db.prepare(`UPDATE gift_card_bundles SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Error' }, { status: 500 });
@@ -45,7 +45,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const { id } = await ctx.params;
     const db = getDb();
-    db.prepare(`UPDATE voucher_bundles SET is_active = 0, updated_at = datetime('now') WHERE id = ?`).run(id);
+    db.prepare(`UPDATE gift_card_bundles SET is_active = 0, updated_at = datetime('now') WHERE id = ?`).run(id);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Error' }, { status: 500 });
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const db = getDb();
 
-    const bundle = db.prepare('SELECT * FROM voucher_bundles WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const bundle = db.prepare('SELECT * FROM gift_card_bundles WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!bundle) return NextResponse.json({ error: 'Bundle not found' }, { status: 404 });
 
     const body = await req.json().catch(() => ({}));
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     let code = '';
     for (let i = 0; i < 5; i++) {
       const c = buildGiftCode();
-      if (!db.prepare('SELECT id FROM vouchers WHERE code = ?').get(c)) { code = c; break; }
+      if (!db.prepare('SELECT id FROM gift_cards WHERE code = ?').get(c)) { code = c; break; }
     }
     if (!code) return NextResponse.json({ error: 'Code generation failed' }, { status: 500 });
 
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
 
     const row = db.prepare(`
-      INSERT INTO vouchers
+      INSERT INTO gift_cards
         (property_id, code, bundle_id, name, type, value_type,
          face_value, currency, status,
          recipient_name, recipient_email, buyer_name, buyer_phone,
@@ -100,8 +100,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       configJson, notes || null,
     ) as { id: string };
 
-    const voucher = db.prepare('SELECT * FROM vouchers WHERE id = ?').get(row.id);
-    return NextResponse.json({ giftCard: voucher }, { status: 201 });
+    const gift_card = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(row.id);
+    return NextResponse.json({ giftCard: gift_card }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Error' }, { status: 500 });
   }
