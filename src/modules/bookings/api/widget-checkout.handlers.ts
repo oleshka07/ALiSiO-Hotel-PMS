@@ -41,7 +41,8 @@ export async function createWidgetCheckoutSession(req: Request) {
     let payCfg: any = {};
 
     if (site_slug) {
-      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
+      // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
+      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ? OR id = ?').get(site_slug, site_slug) as any;
       if (!site) {
         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
       }
