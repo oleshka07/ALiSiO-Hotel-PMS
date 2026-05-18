@@ -4383,6 +4383,7 @@ function runMigrations(database: any) {
   try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_coupon_code ON gift_card_bundles(coupon_code) WHERE coupon_code IS NOT NULL`); } catch { }
   try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN redemption_limit INTEGER DEFAULT 1`); } catch { /* already exists */ }
   try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
+  try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN applied_listings TEXT`); } catch { /* already exists */ }
 
   console.log('[DB] gift_card_bundles ready');
 
