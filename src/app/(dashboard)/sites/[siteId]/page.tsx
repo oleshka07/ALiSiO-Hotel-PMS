@@ -29,7 +29,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function SiteDetailPage() {
-  const { siteId } = useParams<{ siteId: string }>();
+  const params = useParams<{ siteId: string }>();
+  const siteId = params?.siteId as string;
   const router = useRouter();
   const onMenuClick = useMobileMenu();
 

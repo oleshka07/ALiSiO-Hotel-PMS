@@ -10,7 +10,9 @@ const BookingV2 = dynamicImport(() => import('@/modules/bookings/ui/BookingV2'),
 
 export default function WidgetPage() {
   const params = useParams();
-  const siteSlug = params.siteSlug as string;
+  const siteSlug = (params?.siteSlug as string) || '';
+
+  if (!siteSlug) return <div style={{ minHeight: '100vh', background: '#FAFAF7' }} />;
 
   return (
     <BookingV2 siteSlug={siteSlug} />
