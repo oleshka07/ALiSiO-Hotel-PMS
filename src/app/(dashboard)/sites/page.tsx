@@ -71,7 +71,7 @@ export default function SitesPage() {
   /* create modal */
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<'widget' | 'self-hosted'>('self-hosted');
+  const [newType, setNewType] = useState<'widget' | 'self-hosted'>('widget');
   const [newCurrency, setNewCurrency] = useState('CZK');
   const [creating, setCreating] = useState(false);
 
@@ -79,7 +79,7 @@ export default function SitesPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editSiteId, setEditSiteId] = useState('');
   const [editName, setEditName] = useState('');
-  const [editType, setEditType] = useState<'widget' | 'self-hosted'>('self-hosted');
+  const [editType, setEditType] = useState<'widget' | 'self-hosted'>('widget');
   const [editCurrency, setEditCurrency] = useState('CZK');
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -386,8 +386,8 @@ export default function SitesPage() {
                 <div className="form-group">
                   <label className="form-label">Тип</label>
                   <select className="form-select" value={newType} onChange={e => setNewType(e.target.value as 'widget' | 'self-hosted')}>
-                    <option value="self-hosted">Self-hosted</option>
                     <option value="widget">Лише віджет</option>
+                    <option value="self-hosted">Self-hosted</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -449,8 +449,8 @@ export default function SitesPage() {
                 <div className="form-group">
                   <label className="form-label">Тип</label>
                   <select className="form-select" value={editType} onChange={e => setEditType(e.target.value as 'widget' | 'self-hosted')}>
-                    <option value="self-hosted">Self-hosted</option>
                     <option value="widget">Лише віджет</option>
+                    <option value="self-hosted">Self-hosted</option>
                   </select>
                 </div>
                 <div className="form-group">
