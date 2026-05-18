@@ -35,6 +35,7 @@ export interface WidgetConfig {
   enable_prefill?: boolean;
   default_lang?: string;
   supportContact?: string;
+  site_url?: string;
 }
 
 export interface Listing {

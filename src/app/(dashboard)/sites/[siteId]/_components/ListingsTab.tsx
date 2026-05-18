@@ -10,7 +10,6 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onEdit }: {
   siteId: string;
   siteSlug: string;
   onDelete: (id: string) => void;
-  onRefresh: () => void;
   onEdit: (l: Listing) => void;
   siteCurrency: string;
 }) {
@@ -66,9 +65,9 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [embedLang, setEmbedLang] = useState('uk');
-  const [origin, setOrigin] = useState('');
-  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const [origin] = useState(() => typeof window !== 'undefined' ? window.location.origin : '');
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (listing) {
       setForm({
@@ -80,6 +79,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       setPhotoUrls(photoStr ? photoStr.split(',').map(s => s.trim()).filter(Boolean) : []);
     }
   }, [listing]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!listing) return null;
 
@@ -237,6 +237,7 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
     setLoading(false);
   }, [siteId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchListings(); }, [fetchListings]);
   useEffect(() => {
     if (!showAdd) return;

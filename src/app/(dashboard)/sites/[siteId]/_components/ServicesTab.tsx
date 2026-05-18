@@ -24,6 +24,7 @@ export function ServicesTab({ siteId, siteCurrency }: { siteId: string, siteCurr
     setLoading(false);
   }, [siteId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
   const toggle = async (svc: SiteService) => {

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
 import {
-  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Ticket, Zap, Package,
+  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package,
 } from 'lucide-react';
 
 export const TABS = [

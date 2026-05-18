@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Plus, Trash2, Package, Ticket, ChevronDown, ChevronUp, Edit3, CopyPlus, Copy, Check, Code } from 'lucide-react';
+import { Loader2, Plus, Trash2, Package, ChevronDown, ChevronUp, Edit3, CopyPlus, Copy, Check, Code } from 'lucide-react';
 import { Modal } from './SiteHelpers';
-import type { SiteService } from '../_types';
+import type { SiteService, Listing } from '../_types';
 
 const DAY_LABELS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
 const DAYS = [1, 2, 3, 4, 5, 6, 7];
@@ -53,7 +53,7 @@ const emptyBundle = () => ({
 export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }: { siteId: string; siteCurrency?: string; onCountChange?: (n: number) => void }) {
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [services, setServices] = useState<SiteService[]>([]);
-  const [listings, setListings] = useState<any[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ ...emptyBundle(), currency: siteCurrency });
@@ -78,11 +78,12 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
         setBundles(bd.bundles);
         onCountChange?.(bd.bundles.length);
       }
-      if (Array.isArray(sd.services)) setServices(sd.services.filter((s: any) => s.is_enabled));
+      if (Array.isArray(sd.services)) setServices(sd.services.filter((s: SiteService) => s.is_enabled));
       if (Array.isArray(ld.listings)) setListings(ld.listings);
     } finally { setLoading(false); }
   }, [siteId, onCountChange]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const toggleService = (svcId: string) => {

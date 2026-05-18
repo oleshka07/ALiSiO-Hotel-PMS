@@ -143,7 +143,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(139,92,246,0.06)', borderRadius: 10, border: '1px solid rgba(139,92,246,0.15)', display: 'flex', gap: 8, maxWidth: 400 }}>
         <Gift size={16} style={{ color: '#8b5cf6', flexShrink: 0, marginTop: 1 }} />
         <span>
-          <strong>Подарунковий ваучер (Грошовий сертифікат)</strong> — це унікальний код на певну суму (напр., 2000 CZK), який ви видаєте конкретному гостю. Він працює як засіб платежу. Якщо ви хочете створити загальну акційну пропозицію для всіх (наприклад, пакет "Осінній релакс" або єдиний код знижки), використовуйте вкладки <strong>Пакети</strong> або <strong>Промокоди</strong>.
+          <strong>Подарунковий ваучер (Грошовий сертифікат)</strong> — це унікальний код на певну суму (напр., 2000 CZK), який ви видаєте конкретному гостю. Він працює як засіб платежу. Якщо ви хочете створити загальну акційну пропозицію для всіх (наприклад, пакет &quot;Осінній релакс&quot; або єдиний код знижки), використовуйте вкладки <strong>Пакети</strong> або <strong>Промокоди</strong>.
         </span>
       </div>
 

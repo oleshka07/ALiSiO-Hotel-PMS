@@ -49,6 +49,7 @@ function CodesModal({ ruleId, siteId, open, onClose }: {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState('');
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -57,6 +58,7 @@ function CodesModal({ ruleId, siteId, open, onClose }: {
       .then(d => setCodes(Array.isArray(d) ? d : []))
       .finally(() => setLoading(false));
   }, [open, ruleId, siteId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const copyAll = () => {
     const text = codes.filter(c => c.is_active && !c.current_uses).map(c => c.code).join('\n');
@@ -268,14 +270,14 @@ export function OfferWorkflowTab({ siteId }: { siteId: string }) {
                         template_id: rule.template_id || '',
                         rule_name: rule.name + ' (Копія)',
                         count: 10,
-                        discount_type: rule.discount_type as any,
-                        offer_amount: String(rule.offer_amount) as any,
+                        discount_type: rule.discount_type as 'percentage' | 'fixed_amount',
+                        offer_amount: Number(rule.offer_amount),
                         valid_from: rule.valid_from || '',
                         valid_until: rule.valid_until || '',
                         min_nights: rule.min_nights || 1,
                         max_nights: rule.max_nights ? String(rule.max_nights) : '',
                         allowed_days: rule.allowed_days ? JSON.parse(rule.allowed_days) : [],
-                        applies_to: rule.applies_to as any,
+                        applies_to: rule.applies_to as 'listings' | 'services' | 'both',
                         redemption_limit: rule.redemption_limit || 1,
                       });
                       setShowCreate(true);

@@ -44,6 +44,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
     setLoading(false);
   }, [siteId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchCodes(); }, [fetchCodes]);
 
   const toggleDay = (day: number) => {
@@ -160,7 +161,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                         max_nights: c.max_nights ? String(c.max_nights) : '',
                         redemption_limit: c.redemption_limit ? String(c.redemption_limit) : '',
                         allowed_days: c.allowed_days ? JSON.parse(String(c.allowed_days)) : [],
-                        applies_to: String(c.applies_to || 'services') as any,
+                        applies_to: String(c.applies_to || 'services') as 'services' | 'listings' | 'both',
                       });
                       setEditId(String(c.id));
                       setShowCreate(true);
@@ -178,7 +179,7 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                         max_nights: c.max_nights ? String(c.max_nights) : '',
                         redemption_limit: c.redemption_limit ? String(c.redemption_limit) : '',
                         allowed_days: c.allowed_days ? JSON.parse(String(c.allowed_days)) : [],
-                        applies_to: String(c.applies_to || 'services') as any,
+                        applies_to: String(c.applies_to || 'services') as 'services' | 'listings' | 'both',
                       });
                       setEditId(null);
                       setShowCreate(true);

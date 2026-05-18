@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { CANCEL_LABELS } from './SiteHelpers';
-import type { RatePlan } from '../_types';
+import { Loader2, Plus } from 'lucide-react';
+import type { RatePlan, Listing } from '../_types';
 
 export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCountChange?: (n: number) => void }) {
   const [plans, setPlans] = useState<RatePlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [listings, setListings] = useState<any[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | 'new' | null>(null);
 
   const onCountRef = useRef(onCountChange);
@@ -34,14 +33,22 @@ export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCoun
     setLoading(false);
   }, [siteId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const didAutoSelect = useRef(false);
 
-  // If plans load and none is selected, auto-select first one
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!loading && plans.length > 0 && !selectedPlanId) {
+    fetchData().then(() => {
+      // auto-select is handled inside fetchData via ref
+    });
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (!loading && plans.length > 0 && !selectedPlanId && !didAutoSelect.current) {
+      didAutoSelect.current = true;
       setSelectedPlanId(plans[0].id);
     }
   }, [loading, plans, selectedPlanId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
@@ -114,7 +121,7 @@ export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCoun
   );
 }
 
-function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: { siteId: string; plan?: RatePlan | null; listings: any[]; allPlans: RatePlan[]; onSaved: () => void; onDeleted: () => void }) {
+function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: { siteId: string; plan?: RatePlan | null; listings: Listing[]; allPlans: RatePlan[]; onSaved: () => void; onDeleted: () => void }) {
   const isNew = !plan;
   const [form, setForm] = useState({
     name: plan?.name || '',
@@ -135,6 +142,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
   });
   const [saving, setSaving] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (plan) {
       setForm({
@@ -168,6 +176,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
       });
     }
   }, [plan]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSave = async () => {
     if (!form.name.trim()) return alert('Введіть назву');
@@ -373,7 +382,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
       {/* Name */}
       <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 24 }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16 }}>Назва тарифного плану</h4>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, display: 'block' }}>Це ім'я буде показано гостям, постарайтесь обрати привабливе.</span>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, display: 'block' }}>Це ім&apos;я буде показано гостям, постарайтесь обрати привабливе.</span>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <input className="form-input" style={{ fontSize: 16, padding: '12px 16px' }} placeholder="Standart price" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         </div>

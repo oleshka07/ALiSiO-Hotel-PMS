@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Loader2, Check, Save } from 'lucide-react';
 import { CopyBtn } from './SiteHelpers';
 import type { Site, WidgetConfig } from '../_types';
@@ -21,9 +21,7 @@ export function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Widg
   const [cfg, setCfg] = useState<WidgetConfig>(site.widget_config || {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [origin, setOrigin] = useState('');
-
-  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const [origin] = useState(() => typeof window !== 'undefined' ? window.location.origin : '');
 
   const lang = cfg.default_lang || 'uk';
   const scriptTag = `<script \n  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" \n  data-site="${site.slug}" \n  data-lang="${lang}">\n</script>`;
@@ -111,7 +109,7 @@ export function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Widg
           <label className="form-label">URL вашого сайту (де вбудовано віджет)</label>
           <input className="form-input" placeholder="https://book.kemp-carlsbad.cz"
             value={site.site_url || ''}
-            onChange={e => onUpdate({ ...site, site_url: e.target.value } as unknown as WidgetConfig)} />
+            onChange={e => onUpdate({ ...cfg, site_url: e.target.value })} />
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Допомагає правильно генерувати посилання на бронювання</div>
         </div>
       </Step>

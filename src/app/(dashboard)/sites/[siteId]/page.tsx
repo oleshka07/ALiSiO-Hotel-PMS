@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { Globe, ArrowLeft, Loader2 } from 'lucide-react';
@@ -36,34 +36,25 @@ export default function SiteDetailPage() {
 
   const [site, setSite] = useState<Site | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('listings');
-  const [isMounted, setIsMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      return p.get('tab') || 'listings';
+    }
+    return 'listings';
+  });
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (tab) setActiveTab(tab);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isMounted) return;
     const url = new URL(window.location.href);
     url.searchParams.set('tab', activeTab);
     window.history.replaceState(null, '', url.toString());
-  }, [activeTab, isMounted]);
+  }, [activeTab]);
 
 
-  const setCount = useCallback((tabId: string) => {
-    const ref = { fn: (n: number) => setTabCounts(prev => ({ ...prev, [tabId]: n })) };
-    return ref.fn;
-  }, []);
-
-  const couponCountCb = useRef(setCount('coupons')).current;
-  const ratePlanCountCb = useRef(setCount('rate-plans')).current;
-  const packageCountCb = useRef(setCount('packages')).current;
+  const couponCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, coupons: n })), []);
+  const ratePlanCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, 'rate-plans': n })), []);
+  const packageCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, packages: n })), []);
 
   const fetchSite = useCallback(async () => {
     const res = await fetch(`/api/booking-sites/${siteId}`);
@@ -72,8 +63,8 @@ export default function SiteDetailPage() {
     setLoading(false);
   }, [siteId]);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setIsMounted(true);
     fetchSite();
 
     // Pre-fetch counts for tabs so badges display immediately
@@ -87,8 +78,9 @@ export default function SiteDetailPage() {
       if (ratePlanData?.ratePlans) ratePlanCountCb(ratePlanData.ratePlans.length);
     });
   }, [fetchSite, siteId, couponCountCb, packageCountCb, ratePlanCountCb]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  if (!isMounted || loading) return (
+  if (loading) return (
     <div className="page-layout">
       <Header title="Завантаження..." onMenuClick={onMenuClick} />
       <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
