@@ -1,818 +1,16 @@
 'use client';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import './booking-v2.css';
-import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
-import type { UnitResult, AvailabilityResponse, ReserveResponse, DesignConfig } from './types';
-import { fmtDate, parseDate, formatDisplayDate, formatFullDate, formatPrice, getDaysInMonth, getFirstDayOfMonth } from './utils';
-import { v3Locales, commonTranslations, tName } from './locales';
+import { tName } from './locales';
+import { formatDisplayDate, formatFullDate, formatPrice, getDaysInMonth, getFirstDayOfMonth, parseDate } from './utils';
+import type { DesignConfig } from './types';
+import type { BookingLang } from './translations';
+import { useBookingWidget } from './hooks/useBookingWidget';
+
+export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
+  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
 
-// API base URL
-const API_BASE = process.env.NEXT_PUBLIC_PMS_API_URL || '';
-
-export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean, lang?: BookingLang }) {
-  // ─── State ───
-  const [isMounted, setIsMounted] = useState(false);
-  const [lang, setLang] = useState<BookingLang>(initialLang || 'uk');
-  const t = useMemo(() => getBookingTranslations(lang), [lang]);
-  const v3t = useMemo(() => v3Locales[lang] || v3Locales.uk, [lang]);
-
-  const getOccupancyString = (u: any) => {
-    if (u.maxChildren > 0) {
-      return `до ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`;
-    }
-    return `до ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`;
-  };
-  const [step, setStep] = useState(1);
-  const [checkIn, setCheckIn] = useState<string | null>(null);
-  const [checkOut, setCheckOut] = useState<string | null>(null);
-  const [selectingCheckOut, setSelectingCheckOut] = useState(false);
-  const [adults, setAdults] = useState(2);
-  const [kids, setKids] = useState(0);
-  const [calMonthOffset, setCalMonthOffset] = useState(0);
-  const [calOpen, setCalOpen] = useState(false);
-  const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
-  const [partialDates, setPartialDates] = useState<Set<string>>(new Set());
-  const [socialProof, setSocialProof] = useState<{ viewers: number, lastBooking?: string } | null>(null);
-  const [waitlistStatus, setWaitlistStatus] = useState<'none' | 'submitting' | 'success'>('none');
-  const [nextAvailable, setNextAvailable] = useState<string | null>(null);
-
-  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
-  const [loadingAvail, setLoadingAvail] = useState(false);
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
-  const [unitInfo, setUnitInfo] = useState<UnitResult | null>(null); // unit data without dates
-  const [currentImgIndex, setCurrentImgIndex] = useState(0);
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reservation, setReservation] = useState<ReserveResponse | null>(null);
-  const [couponCode, setCouponCode] = useState('');
-  const [showOffer, setShowOffer] = useState(false);
-  const [offerApplied, setOfferApplied] = useState<{ code: string; offerType: string; offerAmount: number; description?: string; bundle?: any } | null>(null);
-  const [offerError, setOfferError] = useState('');
-  const [applyingOffer, setApplyingOffer] = useState(false);
-  const [isHiddenBundle, setIsHiddenBundle] = useState(false);
-
-  // New site config states
-  const [siteConfig, setSiteConfig] = useState<any>(null);
-  const [siteDesign, setSiteDesign] = useState<DesignConfig | null>(null);
-  const [siteCurrency, setSiteCurrency] = useState('Kč');
-  const [siteThankYouUrl, setSiteThankYouUrl] = useState(thankYouUrl || '');
-
-  // New states for Step 4
-  const [services, setServices] = useState<any[]>([]);
-  const [loadingServices, setLoadingServices] = useState(false);
-  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
-
-  // Pre-select unit from query param
-  useEffect(() => {
-    setIsMounted(true);
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-
-
-
-      const payStatus = params.get('payment_status');
-      const resId = params.get('res_id');
-      if (payStatus === 'success' && resId) {
-        fetch(`${API_BASE}/api/booking/reservation?id=${resId}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.reservation) {
-              setReservation({
-                ...data.reservation,
-                reservationId: data.reservation.id,
-                unitName: data.reservation.unit_name,
-                totalPrice: data.reservation.total_price,
-              });
-              // Set selected services from fetched data if they exist
-              if (data.services) {
-                const sIds = new Set<string>();
-                data.services.forEach((s: any) => sIds.add(s.service_id));
-                setSelectedServiceIds(sIds);
-              }
-              setStep(6);
-            }
-          })
-          .catch(err => console.error('Fetch res error:', err));
-      }
-
-      const uId = params.get('unitId');
-      if (uId) setSelectedUnitId(uId);
-
-      const getBrowserLang = () => {
-        if (typeof navigator !== 'undefined' && navigator.language) {
-          const browserLang = navigator.language.slice(0, 2).toLowerCase();
-          if (['uk', 'en', 'cs', 'de'].includes(browserLang)) return browserLang;
-        }
-        return null;
-      };
-
-      let l = params.get('lang')
-        || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
-        || initialLang
-        || getBrowserLang()
-        || null;
-      if (l) {
-        const shortLang = l.slice(0, 2).toLowerCase();
-        if (['uk', 'en', 'cs', 'de'].includes(shortLang)) {
-          setLang(shortLang as BookingLang);
-        }
-      }
-
-      // Auto-fill dates from URL
-      const urlIn = params.get('checkin') || params.get('check_in');
-      const urlOut = params.get('checkout') || params.get('check_out');
-      const urlAdults = params.get('adults');
-      const urlKids = params.get('kids');
-      const urlOffer = params.get('offer') || params.get('couponCode') || params.get('couponcode');
-
-      if (urlIn) setCheckIn(urlIn);
-      if (urlOut) setCheckOut(urlOut);
-      if (urlAdults) setAdults(parseInt(urlAdults, 10) || 2);
-      if (urlKids) setKids(parseInt(urlKids, 10) || 0);
-
-      if (urlOffer) {
-        setCouponCode(urlOffer);
-        setShowOffer(true);
-      }
-
-      // Bundle param — auto-apply as a package offer
-      const urlBundle = params.get('bundle') || params.get('bundleId');
-      if (urlBundle) {
-        setCouponCode(urlBundle);
-        setIsHiddenBundle(true);
-        setShowOffer(true);
-      }
-
-      // Pre-fill from localStorage
-      const savedGuest = localStorage.getItem('alisio_guest_data');
-      if (savedGuest) {
-        try {
-          const g = JSON.parse(savedGuest);
-          setFirstName(g.firstName || '');
-          setLastName(g.lastName || '');
-          setEmail(g.email || '');
-          setPhone(g.phone || '');
-        } catch (e) { /* ignore */ }
-      }
-
-      // Simulation: Social Proof
-      const v = Math.floor(Math.random() * 6) + 3;
-      const hours = Math.floor(Math.random() * 12) + 1;
-      setSocialProof({
-        viewers: v,
-        lastBooking: hours < 5 ? `${hours} ${hours === 1 ? v3t.agoHour : v3t.agoHours}` : `45 ${v3t.agoMinutes}`
-      });
-    }
-  }, []);
-
-  // Fetch site config (skip in preview — design comes from props directly)
-  useEffect(() => {
-    if (!isMounted || !siteSlug || isPreview) return;
-    const fetchConfig = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/booking/site-config?slug=${siteSlug}`);
-        const data = await res.json();
-        if (data.id) {
-          setSiteConfig(data);
-          if (data.design) setSiteDesign(data.design);
-          if (data.currency) setSiteCurrency(data.currency);
-          if (data.hasPayment !== undefined) setSiteConfig(data);
-          if (data.config?.thank_you_url) setSiteThankYouUrl(data.config.thank_you_url);
-        }
-      } catch (e) { console.error('Fetch site config error:', e); }
-    };
-    fetchConfig();
-  }, [isMounted, siteSlug, isPreview]);
-
-  // Thank you redirect logic
-  useEffect(() => {
-    if (step === 6 && siteThankYouUrl && !isPreview) {
-      const timer = setTimeout(() => {
-        // Append query params so partner site can read booking info
-        const sep = siteThankYouUrl.includes('?') ? '&' : '?';
-        const resId = reservation?.reservationId || '';
-        const url = `${siteThankYouUrl}${sep}payment_status=success${resId ? `&reservation_id=${encodeURIComponent(resId)}` : ''}`;
-        // Redirect parent window if in iframe, otherwise current window
-        if (window.parent !== window) {
-          window.parent.location.href = url;
-        } else {
-          window.location.href = url;
-        }
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [step, siteThankYouUrl, isPreview, reservation]);
-
-  // Fetch services when site is available
-  useEffect(() => {
-    if (!isMounted) return;
-    const fetchServices = async () => {
-      if (!siteId && !siteSlug) return;
-      // Wait until siteConfig is loaded to get the resolved siteId
-      const resolvedSiteId = siteId || siteConfig?.id;
-      if (!resolvedSiteId) return; // siteConfig not yet loaded — will re-run when it loads
-      setLoadingServices(true);
-      try {
-        const url = new URL(`${API_BASE}/api/booking/services`, window.location.origin);
-        url.searchParams.set('siteId', resolvedSiteId);
-        const res = await fetch(url.toString());
-        const data = await res.json();
-        if (data.services) {
-          setServices(data.services);
-        }
-      } catch (e) { console.error('Fetch services error:', e); }
-      setLoadingServices(false);
-    };
-    fetchServices();
-  }, [isMounted, siteId, siteSlug, siteConfig]);
-
-  // Fetch basic unit info on mount (without dates) to show unit card and limits immediately
-  useEffect(() => {
-    if (!isMounted || !selectedUnitId || unitInfo) return;
-    const fetchUnitInfo = async () => {
-      try {
-        const d = new Date();
-        const ci = fmtDate(d);
-        const co = fmtDate(new Date(d.getTime() + 86400000));
-        const params = new URLSearchParams({ checkIn: ci, checkOut: co });
-        if (siteId) params.set('siteId', siteId);
-        if (siteSlug) params.set('siteSlug', siteSlug);
-        const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          const unit = data.units?.find((u: UnitResult) => u.id === selectedUnitId);
-          if (unit) setUnitInfo(unit);
-        }
-      } catch (e) { console.error('Fetch unit info error:', e); }
-    };
-    fetchUnitInfo();
-  }, [isMounted, selectedUnitId, siteId, unitInfo]);
-
-  // Only fetch when both dates are present to avoid stuck loader
-  useEffect(() => {
-    if (!isMounted) return;
-    if (selectedUnitId && checkIn && checkOut && !availability && !loadingAvail) {
-      fetchAvailability(checkIn, checkOut);
-    }
-  }, [isMounted, selectedUnitId, availability, loadingAvail, checkIn, checkOut]);
-
-  // Resize reporter — sends widget content height to parent iframe host
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const sendResize = () => {
-      const el = document.getElementById('alisio-widget-v3');
-      if (!el) return;
-
-      // Use getBoundingClientRect().height — this is the actual RENDERED height
-      // of the widget element, unaffected by the iframe document/body size.
-      // Using document.body.scrollHeight causes infinite growth because:
-      //   iframe grows → body.scrollHeight grows → widget reports bigger height → loop
-      const height = Math.ceil(el.getBoundingClientRect().height);
-      if (height <= 0) return;
-
-      const msg = { type: 'resize', height, val: height, h: height, source: 'alisio-widget' };
-      window.parent.postMessage(msg, '*');
-      if (window.parent !== window.top) {
-        window.top?.postMessage(msg, '*');
-      }
-    };
-
-    const interval = setInterval(sendResize, 500);
-    sendResize();
-    return () => clearTimeout(interval);
-  }, [isMounted]);
-
-  // Explicit trigger for state changes
-  const triggerResize = useCallback(() => {
-    const el = document.getElementById('alisio-widget-v3');
-    if (el) {
-      window.parent.postMessage({ type: 'resize', height: el.scrollHeight }, '*');
-    }
-  }, []);
-
-  // Fetch busy dates when month changes
-  useEffect(() => {
-    if (!isMounted) return;
-    const fetchBusyDates = async () => {
-      try {
-        const fetchMonth = async (offset: number) => {
-          const date = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-          const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          const params = new URLSearchParams({ month: monthStr });
-          if (siteId) params.set('siteId', siteId);
-          if (siteSlug) params.set('siteSlug', siteSlug);
-          if (selectedUnitId) params.set('unitId', selectedUnitId);
-
-          const urlParams = new URLSearchParams(window.location.search);
-          const rp = urlParams.get('ratePlanId') || urlParams.get('ratePlan');
-          if (rp) params.set('ratePlanId', rp);
-
-          const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
-          return res.json();
-        };
-
-        const [data1, data2] = await Promise.all([
-          fetchMonth(calMonthOffset),
-          fetchMonth(calMonthOffset + 1)
-        ]);
-
-        const busy = new Set<string>();
-        const partial = new Set<string>();
-        
-        [data1, data2].forEach(data => {
-          if (data?.days) {
-            data.days.forEach((d: any) => {
-              if (d.status === 'booked') busy.add(d.date);
-              if (d.status === 'partial') partial.add(d.date);
-            });
-          }
-        });
-        
-        setBusyDates(busy);
-        setPartialDates(partial);
-      } catch (e) { console.error('Fetch busy dates error:', e); }
-    };
-    fetchBusyDates();
-  }, [calMonthOffset, isMounted, siteId, siteSlug, selectedUnitId]);
-
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
-
-  const nights = useMemo(() => {
-    if (!checkIn || !checkOut) return 0;
-    return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000);
-  }, [checkIn, checkOut]);
-
-  const displayUnits = useMemo(() => {
-    if (!availability?.units) return [];
-    if (offerApplied?.bundle?.applied_listings && offerApplied.bundle.applied_listings.length > 0) {
-      return availability.units.filter(u => offerApplied.bundle.applied_listings.includes(u.id));
-    }
-    return availability.units;
-  }, [availability, offerApplied]);
-
-  const selectedUnit = useMemo(() => {
-    if (!selectedUnitId) return null;
-    // Prefer real availability data (with price for selected dates),
-    // fall back to unitInfo (pre-loaded base data without dates)
-    if (availability) return displayUnits.find(u => u.id === selectedUnitId) || unitInfo;
-    return unitInfo;
-  }, [availability, selectedUnitId, unitInfo, displayUnits]);
-
-  const totalWithDiscount = useMemo(() => {
-    if (!selectedUnit) return 0;
-    // Simple logic for now, similar to page.tsx
-    const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
-    const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
-
-    let base = selectedUnit.totalPrice + extraCharge;
-
-    let servicesTotal = 0;
-    const guestsCount = adults + kids || 1;
-
-    if (offerApplied && offerApplied.offerType === 'package' && offerApplied.bundle) {
-      // 1. Base price is overridden by bundle price
-      base = offerApplied.bundle.price;
-
-      // 2. Extra nights? (Simple implementation: just use the bundle price as the base)
-      // Extra nights logic could be added here if needed, but bundle covers the stay.
-      
-      // 3. Services total. Included services are free up to their qty.
-      const included = offerApplied.bundle.included_services || [];
-      const includedGuestsCount = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2;
-      const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
-
-      services.forEach(s => {
-        if (selectedServiceIds.has(s.id)) {
-          const bundleSvc = included.find((inc: any) => inc.service_id === s.id);
-          if (bundleSvc && bundleSvc.isIncluded) {
-            servicesTotal += (s.price || 0) * extraGuestsCount;
-          } else {
-            servicesTotal += (s.price || 0) * guestsCount;
-          }
-        }
-      });
-    } else {
-      if (offerApplied) {
-        if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') {
-          base -= offerApplied.offerAmount;
-        } else if (offerApplied.offerType === 'percentage') {
-          base = Math.round(base * (1 - offerApplied.offerAmount / 100));
-        }
-      }
-      if (base < 0) base = 0;
-
-      services.forEach(s => {
-        if (selectedServiceIds.has(s.id)) {
-          servicesTotal += (s.price || 0) * guestsCount;
-        }
-      });
-    }
-
-    return base + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied]);
-
-  // ─── Actions ───
-  const fetchAvailability = useCallback(async (ci: string, co: string) => {
-    if (isPreview) {
-      setLoadingAvail(true);
-      await new Promise(r => setTimeout(r, 800));
-      const mockData: AvailabilityResponse = {
-        checkIn: ci,
-        checkOut: co,
-        nights: Math.round((parseDate(co).getTime() - parseDate(ci).getTime()) / 86400000),
-        units: [
-          {
-            id: 'mock-1', name: 'Premium Glamping Tent', code: 'P1', beds: 2, unitTypeId: 't1', typeName: 'Tent', typeCode: 'T',
-            description: 'Beautiful tent with view', maxAdults: 2, maxChildren: 1, maxOccupancy: 3, baseOccupancy: 2,
-            avgPricePerNight: 2500, totalPrice: 2500 * 2, currency: 'Kč', extraPersonCharge: 500, petAllowed: true, petCharge: 200,
-            photos: [],
-            amenities: [{ icon: 'wifi', name: 'Wi-Fi' }, { icon: 'coffee', name: 'Coffee' }]
-          },
-          {
-            id: 'mock-2', name: 'Eco Wood Cabin', code: 'C1', beds: 4, unitTypeId: 't2', typeName: 'Cabin', typeCode: 'C',
-            description: 'Cozy cabin in woods', maxAdults: 4, maxChildren: 2, maxOccupancy: 6, baseOccupancy: 2,
-            avgPricePerNight: 3200, totalPrice: 3200 * 2, currency: 'Kč', extraPersonCharge: 600, petAllowed: false, petCharge: 0,
-            photos: [],
-            amenities: [{ icon: 'fireplace', name: 'Fireplace' }]
-          }
-        ]
-      };
-      setAvailability(mockData);
-      setLoadingAvail(false);
-      return mockData;
-    }
-
-    setLoadingAvail(true);
-    try {
-      const params = new URLSearchParams({ checkIn: ci, checkOut: co });
-      if (siteId) params.set('siteId', siteId);
-      if (siteSlug) params.set('siteSlug', siteSlug);
-      const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAvailability(data);
-        setLoadingAvail(false);
-        if (data.units?.length === 0) {
-          findNextAvailable(co);
-        }
-        return data;
-      }
-    } catch (e) { console.error(e); }
-    setLoadingAvail(false);
-    return null;
-  }, [siteId, siteSlug]);
-
-  const findNextAvailable = async (co: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/widget/calendar?month=${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}${siteId ? `&siteId=${siteId}` : ''}${siteSlug ? `&siteSlug=${siteSlug}` : ''}`);
-      const data = await res.json();
-      if (data.days) {
-        const next = data.days.find((d: any) => d.status === 'available' && d.date > co);
-        if (next) setNextAvailable(next.date);
-      }
-    } catch (e) { console.error(e); }
-  };
-
-  const joinWaitlist = async () => {
-    if (!email || !checkIn || !checkOut) return;
-    setWaitlistStatus('submitting');
-    try {
-      await fetch(`${API_BASE}/api/booking/waitlist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId, checkIn, checkOut, email, phone, name: `${firstName} ${lastName}` })
-      });
-      setWaitlistStatus('success');
-    } catch (e) { console.error(e); }
-  };
-
-  const handleDayClick = (dateStr: string) => {
-    const clickedDate = parseDate(dateStr);
-    if (clickedDate < today) return;
-
-    // Toggle off if clicking the only selected date
-    if (dateStr === checkIn && !checkOut) {
-      setCheckIn(null);
-      setSelectingCheckOut(false);
-      return;
-    }
-    
-    // Toggle off everything if clicking either end of a selected range
-    if (checkIn && checkOut && (dateStr === checkIn || dateStr === checkOut)) {
-      setCheckIn(null);
-      setCheckOut(null);
-      setSelectingCheckOut(false);
-      return;
-    }
-
-    if (!checkIn || (checkIn && checkOut) || !selectingCheckOut) {
-      setCheckIn(dateStr);
-      setCheckOut(null);
-      setSelectingCheckOut(true);
-    } else {
-      if (clickedDate <= parseDate(checkIn!)) {
-        setCheckIn(dateStr);
-        setCheckOut(null);
-      } else {
-        setCheckOut(dateStr);
-        setSelectingCheckOut(false);
-        fetchAvailability(checkIn!, dateStr);
-      }
-    }
-  };
-
-  const goToStep = (s: number) => {
-    // Skip Step 2 backwards/forwards if only 1 unit exists or unit is locked
-    if (s === 2 && (displayUnits.length === 1 || (selectedUnitId && step === 3))) {
-      if (step === 3) {
-        setStep(1); // Go back from guest info to dates
-      } else {
-        setStep(3); // Go forward from dates to guest info
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
-    // Skip Step 4 if no services
-    if (s === 4 && services.length === 0 && !loadingServices) {
-      if (step === 5) {
-        setStep(3); // Go back from payment to guest info
-      } else {
-        setStep(5); // Go forward from guest info to payment
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      setStep(s);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    // Notify parent of resize if in iframe
-    if (typeof window !== 'undefined' && window.parent !== window) {
-      setTimeout(() => {
-        window.parent.postMessage({ source: 'alisio-widget', event: 'resize', height: document.body.scrollHeight }, '*');
-      }, 100);
-    }
-  };
-
-  const resolvedSiteId = siteId || siteConfig?.id || '';
-
-  const handleApplyOffer = useCallback(async (codeToApply?: string | React.MouseEvent) => {
-    const code = (typeof codeToApply === 'string' ? codeToApply : couponCode).trim().toUpperCase();
-    if (!code) return;
-    // siteId might be undefined if loaded via slug — use siteConfig.id or siteSlug as fallback
-    const sId = siteId || siteConfig?.id || siteSlug || '';
-    setApplyingOffer(true);
-    setOfferError('');
-    try {
-      const uId = selectedUnitId || '';
-      // Use /activate alias — ad-blocker-friendly (avoids "offer" trigger in URL)
-      const res = await fetch(`${API_BASE}/api/booking/activate?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
-      const data = await res.json();
-      if (data.valid) {
-        setOfferApplied({ code: data.code, offerType: data.discount_type, offerAmount: data.offer_amount, description: data.description, bundle: data.bundle ? { ...data.bundle, included_services: data.bundle.included_services?.map((inc: any) => ({ service_id: inc.service_id, isIncluded: inc.free })) } : undefined });
-        setShowOffer(false);
-        // If it's a package, automatically select the included services
-        if (data.discount_type === 'package' && data.bundle?.included_services) {
-          const newServices = new Set(selectedServiceIds);
-          data.bundle.included_services.forEach((inc: any) => {
-            if (inc.free || inc.isIncluded) newServices.add(inc.service_id);
-          });
-          setSelectedServiceIds(newServices);
-        }
-        // If bundle is restricted to exactly 1 unit — auto-select it and skip step 2
-        if (data.discount_type === 'package' && data.bundle?.applied_listings?.length === 1) {
-          setSelectedUnitId(data.bundle.applied_listings[0]);
-        }
-      } else {
-        setOfferApplied(null);
-        setOfferError(data.error || 'Invalid code');
-      }
-    } catch (err) {
-      setOfferError('Server error');
-    } finally {
-      setApplyingOffer(false);
-    }
-  }, [couponCode, siteId, siteSlug, siteConfig, selectedUnitId, selectedServiceIds]);
-
-  // Auto-apply bundle/offer from URL — fires when mounted AND site identity is known
-  useEffect(() => {
-    if (!isMounted) return;
-    // Wait until we have some site identity (either siteSlug from URL path, or siteId from prop)
-    const hasSite = !!(siteId || siteSlug);
-    if (couponCode && !offerApplied && !applyingOffer && !offerError && hasSite) {
-      handleApplyOffer(couponCode);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, couponCode, offerApplied, siteId, siteSlug]);
-
-  const submitBooking = async () => {
-    if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) {
-      setError(v3t.errorReq);
-      return;
-    }
-
-    if (isPreview) {
-      setSubmitting(true);
-      await new Promise(r => setTimeout(r, 1000));
-      setReservation({
-        success: true,
-        reservationId: 'MOCK-123',
-        unitName: selectedUnit?.name || 'Mock House',
-        checkIn, checkOut, nights,
-        totalPrice: totalWithDiscount,
-        currency: 'Kč'
-      });
-      setSubmitting(false);
-      goToStep(4);
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/booking/reserve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unitId: selectedUnitId,
-          checkIn,
-          checkOut,
-          adults,
-          children: kids,
-          firstName,
-          lastName,
-          email,
-          phone,
-          siteId: siteId || undefined,
-          couponCode: offerApplied?.code || undefined,
-          currency: availability?.units.find(u => u.id === selectedUnitId)?.currency || siteCurrency || 'CZK',
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setReservation(data);
-        goToStep(4);
-      } else {
-        const err = await res.json();
-        if (res.status === 409) {
-          setError(null);
-          alert('Вибачте, ці дати для цього будиночка вже заброньовані. Оберіть інший будиночок або дати.');
-          setCheckIn(null);
-          setCheckOut(null);
-          setSelectedUnitId(null);
-          setAvailability(null);
-          goToStep(1);
-        } else {
-          setError(err.error || 'Failed to book');
-        }
-      }
-    } catch (e) { setError('Connection error'); }
-    setSubmitting(false);
-
-    // Save to localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('alisio_guest_data', JSON.stringify({ firstName, lastName, email, phone }));
-    }
-  };
-
-  const toggleService = async (id: string) => {
-    // Optimistic update
-    setSelectedServiceIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-    if (reservation?.reservationId && !isPreview) {
-      try {
-        await fetch(`${API_BASE}/api/booking/services`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'book-toggle',
-            serviceId: id,
-            reservationId: reservation.reservationId,
-            siteSlug,
-            quantity: adults + kids || 1
-          })
-        });
-      } catch (e) { console.error('Toggle service error:', e); }
-    }
-  };
-
-  const startPayment = async () => {
-    if (!reservation) return;
-    if (isPreview) {
-      setSubmitting(true);
-      await new Promise(r => setTimeout(r, 1000));
-      setSubmitting(false);
-      goToStep(6);
-      return;
-    }
-    if (!siteSlug) { goToStep(6); return; }
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/booking/checkout-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reservation_id: reservation.reservationId,
-          site_slug: siteSlug,
-          return_path: window.location.href.split('?')[0] + `?res_id=${reservation.reservationId}&payment_status=success`
-        }),
-      });
-      if (res.status === 403) {
-        // Payment not configured — treat as manual invoice flow
-        goToStep(6);
-        setSubmitting(false);
-        return;
-      }
-      const data = await res.json();
-      if (data.session_url) {
-        try {
-          if (window.top) {
-            window.top.location.href = data.session_url;
-          } else {
-            window.location.href = data.session_url;
-          }
-        } catch (e) {
-          // Fallback if cross-origin restricts window.top
-          window.location.href = data.session_url;
-        }
-      } else {
-        setError(data.error || 'Payment failed to start');
-      }
-    } catch (e) {
-      console.error(e);
-      setError('Payment gateway error');
-    }
-    setSubmitting(false);
-  };
-
-  // In preview, always use the live design prop (it changes when user picks a theme).
-  // In production, prefer siteDesign fetched from API, fall back to design prop.
-  const activeDesign = isPreview ? (design || siteDesign) : (siteDesign || design);
-
-  // Dynamic styles based on design config
-  const dynamicStyles = useMemo(() => {
-    const d = activeDesign;
-    if (!d) return {};
-    const styles: any = {};
-    if (d.primary_color) {
-      styles['--moss'] = d.primary_color;
-      styles['--moss-dark'] = d.primary_color;
-      styles['--accent-primary'] = d.primary_color;
-    }
-    if (d.button_style) {
-      const isSharp = d.button_style.includes('sharp');
-      const isPill = d.button_style.includes('pill');
-      styles['--radius'] = isSharp ? '2px' : isPill ? '24px' : '12px';
-      styles['--radius-lg'] = isSharp ? '4px' : isPill ? '32px' : '16px';
-    }
-    if (d.show_shadow !== undefined) {
-      styles['--shadow'] = d.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
-    }
-    return styles;
-  }, [activeDesign]);
-
-  // Sync html/body background to match the widget theme
-  // (prevents white gaps from globals.css on /w/ pages)
-  useEffect(() => {
-    if (isPreview) return;
-    const theme = activeDesign?.theme?.toLowerCase() || '';
-    const BG_MAP: Record<string, string> = {
-      dark:      '#0f172a',
-      luxury:    '#0d0d1a',
-      nature:    '#f0fdf4',
-      ocean:     '#ecfeff',
-      sunset:    '#fff7ed',
-      nordic:    '#f8fafc',
-      minimal:   '#fafafa',
-      modern:    '#f1f5f9',
-      classical: '#fdf8f0',
-    };
-    const bg = BG_MAP[theme] || '#FAFAF7';
-    document.documentElement.style.background = bg;
-    document.body.style.background = bg;
-    return () => {
-      document.documentElement.style.background = '';
-      document.body.style.background = '';
-    };
-  }, [activeDesign]);
-
-  const invalidNightsMsg = offerApplied?.offerType === 'package' && offerApplied.bundle?.nights_included && nights > 0 && nights !== offerApplied.bundle.nights_included
-    ? t.packageNightsError(offerApplied.bundle.nights_included)
-    : null;
 
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
@@ -874,18 +72,18 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-house-lock-label">{t.accommodation}</div>
                 <div className="v3-house-lock-name">{tName(selectedUnit, 'name', lang)}</div>
                 <div className="v3-house-lock-feat">
-                  {getOccupancyString(selectedUnit)} · {selectedUnit.typeName}
+                  {getOccupancyString(selectedUnit)} В· {selectedUnit.typeName}
                 </div>
                 <div className="v3-house-times">
-                  <span>{t.checkInShort || 'Заїзд'} {v3t.fromTime} 15:00</span>
-                  <span className="v3-house-times-sep">·</span>
-                  <span>{t.checkOutShort || 'Виїзд'} {v3t.toTime} 11:00</span>
+                  <span>{t.checkInShort || 'Р—Р°С—Р·Рґ'} {v3t.fromTime} 15:00</span>
+                  <span className="v3-house-times-sep">В·</span>
+                  <span>{t.checkOutShort || 'Р’РёС—Р·Рґ'} {v3t.toTime} 11:00</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Change unit button — temporarily hidden
+          {/* Change unit button вЂ” temporarily hidden
           {selectedUnitId && calOpen && (
             <button className="v3-change-unit-btn" onClick={() => {
               setSelectedUnitId(null);
@@ -893,7 +91,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               setUnitInfo(null);
               setCalOpen(false);
             }}>
-              ↺ Не знайшли вільну дату? Оберіть інший варіант
+              в†є РќРµ Р·РЅР°Р№С€Р»Рё РІС–Р»СЊРЅСѓ РґР°С‚Сѓ? РћР±РµСЂС–С‚СЊ С–РЅС€РёР№ РІР°СЂС–Р°РЅС‚
             </button>
           )}
           */}
@@ -901,15 +99,15 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-dates" onClick={() => setCalOpen(true)}>
             <div className={`v3-date-cell ${(checkIn && checkOut) || !selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
-              <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
+              <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : 'вЂ”'}</div>
               <div className="v3-date-cell-sub">{v3t.fromTime} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
             <div className={`v3-date-cell ${(checkIn && checkOut) || selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
-              <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
+              <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : 'вЂ”'}</div>
               <div className="v3-date-cell-sub">
-                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {v3t.toTime} 11:00
+                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} В· {v3t.toTime} 11:00
               </div>
             </div>
             <div className="v3-dates-cal-icon">
@@ -927,10 +125,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div className="v3-cal-nav">
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>вЂ№</button>
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>вЂє</button>
                 </div>
-                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
+                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Р—Р°РєСЂРёС‚Рё">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                     <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
@@ -1021,7 +219,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 disabled={!checkIn || !checkOut}
                 onClick={() => setCalOpen(false)}
               >
-                OK · {nights > 0 ? `${nights} ${t.nightsShort}` : v3t.chooseDatesShort}
+                OK В· {nights > 0 ? `${nights} ${t.nightsShort}` : v3t.chooseDatesShort}
               </button>
             </div>
           </div>
@@ -1032,7 +230,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-guests-sub">18+</div>
             </div>
             <div className="v3-stepper">
-              <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>−</button>
+              <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>в€’</button>
               <span className="v3-stepper-val">{adults}</span>
               <button
                 className="v3-stepper-btn"
@@ -1045,10 +243,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-guests">
             <div>
               <div className="v3-guests-label">{t.children}</div>
-              <div className="v3-guests-sub">0–17</div>
+              <div className="v3-guests-sub">0вЂ“17</div>
             </div>
             <div className="v3-stepper">
-              <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>−</button>
+              <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>в€’</button>
               <span className="v3-stepper-val">{kids}</span>
               <button
                 className="v3-stepper-btn"
@@ -1067,7 +265,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           {/* Occupancy notice */}
           {kids > 0 && (
             <div className="v3-occupancy-notice">
-              <span className="v3-occupancy-notice-icon">🛏️</span>
+              <span className="v3-occupancy-notice-icon">рџ›ЏпёЏ</span>
               <span>{t.kidsOccupancyNotice}</span>
             </div>
           )}
@@ -1075,7 +273,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-offer-section">
             {!offerApplied && (
               <button className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
-                {showOffer ? '−' : '+'} {t.couponCode} / {t.certificateCode}
+                {showOffer ? 'в€’' : '+'} {t.couponCode} / {t.certificateCode}
               </button>
             )}
             {offerApplied && (() => {
@@ -1083,12 +281,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 const offerLabel = offerApplied.offerType === 'percentage'
                   ? `-${offerAmt}%`
                   : offerApplied.offerType === 'package'
-                    ? `${t.packagePrefix} — ${offerApplied.description || offerApplied.code}`
-                    : `-${offerAmt} Kč`;
+                    ? `${t.packagePrefix} вЂ” ${offerApplied.description || offerApplied.code}`
+                    : `-${offerAmt} KДЌ`;
                 return (
                   <div className="v3-offer-success">
-                    {'🏷️'} {offerApplied.code}: {offerLabel}
-                    {invalidNightsMsg && <div style={{ marginTop: 12, padding: '10px 14px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: '8px' }}>⚠️ {invalidNightsMsg}</div>}
+                    {'рџЏ·пёЏ'} {offerApplied.code}: {offerLabel}
+                    {invalidNightsMsg && <div style={{ marginTop: 12, padding: '10px 14px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: '8px' }}>вљ пёЏ {invalidNightsMsg}</div>}
                   </div>
                 );
               })()}
@@ -1098,7 +296,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   className="v3-field-input"
                   placeholder={t.couponCode}
                   value={couponCode}
-                  onChange={e => { setCouponCode(e.target.value); setOfferError(''); }}
+                  onChange={e => { setCouponCode(e.target.value); }}
                   onKeyDown={e => e.key === 'Enter' && !applyingOffer && handleApplyOffer()}
                 />
                 <button
@@ -1116,10 +314,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
         {/* STEP 2: HOUSE LIST / DETAILS */}
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
-          <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
+          <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Р’Р°С€ РІРёР±С–СЂ') : t.selectAccommodation}</h1>
           <p className="v3-step-sub">{selectedUnitId ? v3t.checkDetails : t.availableForDates}</p>
 
-          {/* Loading skeleton — only when no unit info available yet */}
+          {/* Loading skeleton вЂ” only when no unit info available yet */}
           {loadingAvail && !selectedUnit && (
             <div className="v3-house-list">
               {[1, 2, 3].map(i => (
@@ -1135,12 +333,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           )}
 
-          {/* Unit selection list — only when no unit is pre-selected */}
+          {/* Unit selection list вЂ” only when no unit is pre-selected */}
           {!loadingAvail && !selectedUnitId && (
             <div className="v3-house-list">
               {displayUnits.length === 0 ? (
                 <div className="v3-no-avail">
-                  <div className="v3-no-avail-icon">💭</div>
+                  <div className="v3-no-avail-icon">рџ’­</div>
                   <h3>{t.noUnitsFound}</h3>
                   <p>{t.noAvailabilityDesc}</p>
 
@@ -1196,7 +394,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           <div className="v3-house-lock-label">{tName(u, 'typeName', lang)}</div>
                           <div className="v3-house-lock-name">{tName(u, 'name', lang)}</div>
                           <div className="v3-house-lock-feat">
-                            {getOccupancyString(u)} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
+                            {getOccupancyString(u)} В· <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
                           </div>
                         </div>
                         {isSelected && (
@@ -1217,7 +415,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                     {socialProof.viewers} {v3t.viewersNow}
                   </div>
                   <div className="v3-badge last-book">
-                    ⏱ {v3t.lastBooking}: {socialProof.lastBooking}
+                    вЏ± {v3t.lastBooking}: {socialProof.lastBooking}
                   </div>
                 </div>
               )}
@@ -1262,8 +460,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   )}
                   {selectedUnit.photos?.length > 1 && (
                     <div className="v3-gallery-nav">
-                      <button className="v3-gallery-arrow left" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev - 1 + selectedUnit.photos.length) % selectedUnit.photos.length); }}>‹</button>
-                      <button className="v3-gallery-arrow right" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length); }}>›</button>
+                      <button className="v3-gallery-arrow left" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev - 1 + selectedUnit.photos.length) % selectedUnit.photos.length); }}>вЂ№</button>
+                      <button className="v3-gallery-arrow right" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length); }}>вЂє</button>
                     </div>
                   )}
                 </div>
@@ -1279,19 +477,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 )}
               </div>
               <h1 className="v3-house-detail-name">{tName(selectedUnit, 'name', lang)}</h1>
-              <div className="v3-house-detail-meta">{tName(selectedUnit, 'typeName', lang)} · {getOccupancyString(selectedUnit)}</div>
+              <div className="v3-house-detail-meta">{tName(selectedUnit, 'typeName', lang)} В· {getOccupancyString(selectedUnit)}</div>
               <div className="v3-amenities">
                 {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a: any, i: number) => (
                   <div key={i} className="v3-amenity">
-                    <span className="v3-amenity-icon">{a.icon || '✓'}</span>
+                    <span className="v3-amenity-icon">{a.icon || 'вњ“'}</span>
                     {tName(a, 'name', lang)}
                   </div>
                 )) : (
                   <>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">🛁</span>Джакузі на терасі</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">🔥</span>Камін дров'яний</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">☕</span>Кухня повна</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">📶</span>Wi-Fi 100 Mbps</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ›Ѓ</span>Р”Р¶Р°РєСѓР·С– РЅР° С‚РµСЂР°СЃС–</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ”Ґ</span>РљР°РјС–РЅ РґСЂРѕРІ'СЏРЅРёР№</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">в•</span>РљСѓС…РЅСЏ РїРѕРІРЅР°</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ“¶</span>Wi-Fi 100 Mbps</div>
                   </>
                 )}
               </div>
@@ -1326,8 +524,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
         {/* STEP 4: SERVICES */}
         <div className={`v3-step ${step === 4 ? 'visible' : ''}`}>
-          <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
-          <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
+          <h1 className="v3-step-title">{t.addToStayTitle || 'Р”РѕРґР°С‚Рё РґРѕ РІС–РґРїРѕС‡РёРЅРєСѓ?'}</h1>
+          <p className="v3-step-sub">{t.everythingOptional || 'Р’СЃРµ РѕРїС†С–Р№РЅРµ. РњРѕР¶РЅР° РїСЂРѕРїСѓСЃС‚РёС‚Рё С– РґРѕРґР°С‚Рё РїС–Р·РЅС–С€Рµ.'}</p>
 
           {offerApplied?.offerType === 'package' && offerApplied.bundle?.included_services?.some((inc: any) => services.some(s => s.id === inc.service_id)) && (() => {
              const guestsCount = adults + kids || 1;
@@ -1335,17 +533,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
              const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
              
              const extraGuestsText = {
-               uk: `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей. Для додаткових ${extraGuestsCount} гостей послуги розраховуються за стандартним прайсом.`,
+               uk: `* Р’Р°С€ РїР°РєРµС‚ РїРѕРєСЂРёРІР°С” РїРѕСЃР»СѓРіРё РґР»СЏ ${includedGuestsCount} РіРѕСЃС‚РµР№. Р”Р»СЏ РґРѕРґР°С‚РєРѕРІРёС… ${extraGuestsCount} РіРѕСЃС‚РµР№ РїРѕСЃР»СѓРіРё СЂРѕР·СЂР°С…РѕРІСѓСЋС‚СЊСЃСЏ Р·Р° СЃС‚Р°РЅРґР°СЂС‚РЅРёРј РїСЂР°Р№СЃРѕРј.`,
                en: `* Your package covers services for ${includedGuestsCount} guests. Services for ${extraGuestsCount} extra guest${extraGuestsCount === 1 ? '' : 's'} will be charged at the standard rate.`,
-               de: `* Ihr Paket umfasst Dienstleistungen für ${includedGuestsCount} Gäste. Dienstleistungen für ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' Gäste'} werden zum Standardpreis berechnet.`,
-               cs: `* Váš balíček zahrnuje služby pro ${includedGuestsCount} hosty. Služby pro ${extraGuestsCount} další hosty budou účtovány za standardní cenu.`
-             }[lang] || `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей...`;
+               de: `* Ihr Paket umfasst Dienstleistungen fГјr ${includedGuestsCount} GГ¤ste. Dienstleistungen fГјr ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' GГ¤ste'} werden zum Standardpreis berechnet.`,
+               cs: `* VГЎЕЎ balГ­ДЌek zahrnuje sluЕѕby pro ${includedGuestsCount} hosty. SluЕѕby pro ${extraGuestsCount} dalЕЎГ­ hosty budou ГєДЌtovГЎny za standardnГ­ cenu.`
+             }[lang] || `* Р’Р°С€ РїР°РєРµС‚ РїРѕРєСЂРёРІР°С” РїРѕСЃР»СѓРіРё РґР»СЏ ${includedGuestsCount} РіРѕСЃС‚РµР№...`;
 
              return (
                <div className="v3-occupancy-notice" style={{ background: 'rgba(47, 79, 43, 0.05)', borderColor: 'rgba(47, 79, 43, 0.2)', color: 'var(--moss)' }}>
-                 <span className="v3-occupancy-notice-icon">🎁</span>
+                 <span className="v3-occupancy-notice-icon">рџЋЃ</span>
                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                   <span>{t.packageServicesNotice || 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.'}</span>
+                   <span>{t.packageServicesNotice || 'Р”РµСЏРєС– РїРѕСЃР»СѓРіРё РІР¶Рµ РІРєР»СЋС‡РµРЅС– Сѓ РІР°С€ РїР°РєРµС‚. Р’Рё РјРѕР¶РµС‚Рµ РѕР±СЂР°С‚Рё РґРѕРґР°С‚РєРѕРІС– Р·Р° Р±Р°Р¶Р°РЅРЅСЏРј.'}</span>
                    {extraGuestsCount > 0 && (
                      <span style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.4 }}>
                        {extraGuestsText}
@@ -1385,7 +583,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         {s.photoUrl ? (
                           <img src={s.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          s.icon || '📦'
+                          s.icon || 'рџ“¦'
                         )}
                       </div>
                       <div className="v3-service-info">
@@ -1401,17 +599,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                             const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
                             const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
                             const includedForBaseText = {
-                              uk: `Включено для ${includedGuestsCount} + `,
+                              uk: `Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ ${includedGuestsCount} + `,
                               en: `Included for ${includedGuestsCount} + `,
-                              de: `Für ${includedGuestsCount} inkl. + `,
+                              de: `FГјr ${includedGuestsCount} inkl. + `,
                               cs: `Zahrnuto pro ${includedGuestsCount} + `
-                            }[lang] || `Включено для ${includedGuestsCount} + `;
+                            }[lang] || `Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ ${includedGuestsCount} + `;
 
                             if (isFree) {
                               if (extraGuestsCount > 0) {
                                 return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{includedForBaseText}{formatPrice(s.price * extraGuestsCount, siteCurrency)}</span>;
                               }
-                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>;
+                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>;
                             }
                             return <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>;
                           })()}
@@ -1448,7 +646,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                        }
                        return sum + (s.price || 0) * guestsCount;
                     }, 0);
-                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` · +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
+                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` В· +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
                 })() : t.next}
               </span>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -1456,7 +654,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </svg>
             </button>
             <button className="v3-skip-link" onClick={() => { setSelectedServiceIds(new Set()); goToStep(5); }}>
-              {t.skipLink || 'Пропустити — не треба нічого'}
+              {t.skipLink || 'РџСЂРѕРїСѓСЃС‚РёС‚Рё вЂ” РЅРµ С‚СЂРµР±Р° РЅС–С‡РѕРіРѕ'}
             </button>
           </div>
         </div>
@@ -1469,30 +667,30 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-breakdown">
             <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
+                <span>{selectedUnit?.name} В· {nights} {t.nightsShort}</span>
                 <span className="v3-breakdown-val">
                   {offerApplied?.offerType === 'package' 
-                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>
+                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>
                     : formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)
                   }
                 </span>
               </div>
               {checkIn && checkOut && (
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
-                  {formatDisplayDate(checkIn, lang)} з 15:00 – {formatDisplayDate(checkOut, lang)} до 11:00
+                  {formatDisplayDate(checkIn, lang)} Р· 15:00 вЂ“ {formatDisplayDate(checkOut, lang)} РґРѕ 11:00
                 </div>
               )}
             </div>
 
             {offerApplied?.offerType === 'package' && offerApplied.bundle && (
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
-                <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
+                <span>рџЏ·пёЏ {offerApplied.description || t.packagePrefix || 'РџР°РєРµС‚'} "{offerApplied.code}"</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
               </div>
             )}
             {offerApplied && offerApplied.offerType !== 'package' && (
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
-                <span>🏷️ {t.couponCode || 'Промокод'} ({offerApplied.code})</span>
+                <span>рџЏ·пёЏ {t.couponCode || 'РџСЂРѕРјРѕРєРѕРґ'} ({offerApplied.code})</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>
                   -{offerApplied.offerType === 'percentage' ? `${offerApplied.offerAmount}%` : formatPrice(offerApplied.offerAmount, siteCurrency)}
                 </span>
@@ -1505,19 +703,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               const isFree = incSvc && incSvc.isIncluded;
               const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
               const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
-              const extraTxt = { uk: 'додаткові', en: 'extra', de: 'weitere', cs: 'další' }[lang] || 'додаткові';
+              const extraTxt = { uk: 'РґРѕРґР°С‚РєРѕРІС–', en: 'extra', de: 'weitere', cs: 'dalЕЎГ­' }[lang] || 'РґРѕРґР°С‚РєРѕРІС–';
 
-              const includedForText = { uk: 'Включено для', en: 'Included for', de: 'Inklusive für', cs: 'Zahrnuto pro' }[lang] || 'Включено для';
+              const includedForText = { uk: 'Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ', en: 'Included for', de: 'Inklusive fГјr', cs: 'Zahrnuto pro' }[lang] || 'Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ';
               return (
                 <div key={s.id} className="v3-breakdown-row">
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `× ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
+                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `Г— ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
                   </div>
                   <span className="v3-breakdown-val">
                     {isFree 
                       ? (extraGuestsCount > 0 
                           ? formatPrice(s.price * extraGuestsCount, siteCurrency)
-                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Включено в пакет'}</span>)
+                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>)
                       : formatPrice(s.price * guestsCount, siteCurrency)
                     }
                   </span>
@@ -1536,7 +734,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-pay-method-radio"></div>
                 <div className="v3-pay-method-info">
                   <div className="v3-pay-method-name">Teya Payment Gateway</div>
-                  <div className="v3-pay-method-sub">Visa · Mastercard · Apple Pay</div>
+                  <div className="v3-pay-method-sub">Visa В· Mastercard В· Apple Pay</div>
                 </div>
               </div>
               <div className="v3-trust-block">
@@ -1545,7 +743,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </>
           ) : (
             <div className="v3-invoice-notice">
-              <div className="v3-invoice-notice-icon">📬</div>
+              <div className="v3-invoice-notice-icon">рџ“¬</div>
               <div className="v3-invoice-notice-text">
                 <strong>{v3t.bankTransfer}</strong>
                 <p>{v3t.bankTransferDesc}</p>
@@ -1577,7 +775,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-cta-summary">
                 <div className="v3-cta-summary-line1">
                   {checkIn && checkOut && nights > 0
-                    ? `${nights} ${t.nightsShort.toUpperCase()} · ${adults + kids} ${t.guestsShort.toUpperCase()}`
+                    ? `${nights} ${t.nightsShort.toUpperCase()} В· ${adults + kids} ${t.guestsShort.toUpperCase()}`
                     : `${adults + kids} ${t.guestsShort.toUpperCase()}`
                   }
                 </div>
@@ -1619,7 +817,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               >
                 <span>
                   {step === 5
-                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Завершити'))
+                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Р—Р°РІРµСЂС€РёС‚Рё'))
                     : (step === 1 ? t.selectDates
                       : (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
                 </span>
