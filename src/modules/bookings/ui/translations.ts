@@ -170,6 +170,8 @@ export interface BookingTranslations {
   includedInPackage: string;
   packageServicesNotice: string;
   kidsOccupancyNotice: string;
+  upTo?: string;
+  datesConflict?: string;
 }
 
 const translations: Record<BookingLang, any> = {
@@ -314,6 +316,8 @@ const translations: Record<BookingLang, any> = {
     includedInPackage: 'Включено в пакет',
     packageServicesNotice: 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.',
     kidsOccupancyNotice: 'У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊',
+    upTo: 'до',
+    datesConflict: 'На жаль, ці дати вже заброньовано. Оберіть інші дати.',
   },
   en: {
     brandName: 'QA Glamping',
@@ -456,6 +460,8 @@ const translations: Record<BookingLang, any> = {
     includedInPackage: 'Included in package',
     packageServicesNotice: 'Some services are already included in your package. You can choose additional ones if you wish.',
     kidsOccupancyNotice: 'The house has one large bed — ideal for two adults. If you have a child, we are happy to make an exception: young guests do not require a separate bed 😊',
+    upTo: 'up to',
+    datesConflict: 'Sorry, these dates are already booked. Please choose different dates.',
   },
   cs: {
     brandName: 'QA Glamping',
@@ -598,6 +604,8 @@ const translations: Record<BookingLang, any> = {
     includedInPackage: 'Zahrnuto v balíčku',
     packageServicesNotice: 'Některé služby jsou již zahrnuty ve vašem balíčku. Pokud si přejete, můžete si vybrat další.',
     kidsOccupancyNotice: 'Dům má jednu velkou postel — ideální pro dva dospělé. Pokud máte dítě, rádi uděláme výjimku: malí hosté nepotřebují samostatnou postel 😊',
+    upTo: 'až',
+    datesConflict: 'Bohužel, tyto termíny jsou již obsazené. Zkuste prosím jiné termíny.',
   },
   de: {
     brandName: 'QA Glamping',
@@ -740,6 +748,8 @@ const translations: Record<BookingLang, any> = {
     includedInPackage: 'Im Paket enthalten',
     packageServicesNotice: 'Einige Dienstleistungen sind bereits in Ihrem Paket enthalten. Sie können auf Wunsch weitere hinzufügen.',
     kidsOccupancyNotice: 'Das Haus verfügt über ein großes Bett — ideal für zwei Erwachsene. Wenn Sie ein Kind haben, machen wir gerne eine Ausnahme: Kleine Gäste benötigen kein separates Bett 😊',
+    upTo: 'bis zu',
+    datesConflict: 'Leider sind diese Termine bereits gebucht. Bitte wählen Sie andere Termine.',
   },
 };
 

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
@@ -61,7 +61,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
-  const getOccupancyString = (u: any) => { if (u.maxChildren > 0) return `до ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`; return `до ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`; };
+  const getOccupancyString = (u: any) => { const upTo = t.upTo || '\u0434\u043e'; if (u.maxChildren > 0) return `${upTo} ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`; return `${upTo} ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`; };
 
   useEffect(() => {
     setIsMounted(true);
@@ -161,7 +161,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r => setTimeout(r,1000)); setReservation({ success:true, reservationId:'MOCK-123', unitName:selectedUnit?.name||'Mock', checkIn, checkOut, nights, totalPrice:totalWithDiscount, currency:'Kc' }); setSubmitting(false); goToStep(4); return; }
     setSubmitting(true);
     try { const res = await fetch(`${API_BASE}/api/booking/reserve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ unitId:selectedUnitId, checkIn, checkOut, adults, children:kids, firstName, lastName, email, phone, siteId:siteId||undefined, couponCode:offerApplied?.code||undefined, currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK' }) });
-      if (res.ok) { const data = await res.json(); setReservation(data); goToStep(4); } else { const err = await res.json(); if (res.status===409) { setError(null); alert('Вибачте, ці дати вже заброньовані. Оберіть інші дати.'); setCheckIn(null); setCheckOut(null); setSelectedUnitId(null); setAvailability(null); goToStep(1); } else setError(err.error||'Failed to book'); }
+      if (res.ok) { const data = await res.json(); setReservation(data); goToStep(4); } else { const err = await res.json(); if (res.status===409) { setError(null); alert(t.datesConflict || 'Die gew\u00e4hlten Termine sind leider nicht mehr verf\u00fcgbar.'); setCheckIn(null); setCheckOut(null); setSelectedUnitId(null); setAvailability(null); goToStep(1); } else setError(err.error||'Failed to book'); }
     } catch { setError('Connection error'); }
     setSubmitting(false); if (typeof window!=='undefined') localStorage.setItem('alisio_guest_data', JSON.stringify({firstName,lastName,email,phone}));
   };
