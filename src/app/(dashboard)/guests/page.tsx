@@ -127,7 +127,7 @@ function emptyForm() {
 /* ================================================================
    Main
    ================================================================ */
-export default function GuestsPage() {
+function DesktopGuests() {
   /* ── data state ──────────────────────────────────── */
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,8 +146,6 @@ export default function GuestsPage() {
   const [toast, setToast] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const onMenuClick = useMobileMenu();
-  const { isMobile } = useDevice();
-  if (isMobile) return <MobileGuests />;
 
   /* ── fetch guests list ───────────────────────────── */
   const fetchGuests = useCallback(async () => {
@@ -825,4 +823,14 @@ export default function GuestsPage() {
       </div>
     </>
   );
+}
+
+export default function GuestsPage() {
+  const { isMobile } = useDevice();
+  
+  if (isMobile) {
+    return <MobileGuests />;
+  }
+  
+  return <DesktopGuests />;
 }
