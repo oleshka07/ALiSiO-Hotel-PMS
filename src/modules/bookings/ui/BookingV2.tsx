@@ -10,8 +10,6 @@ import { useBookingWidget } from './hooks/useBookingWidget';
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
   const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
-
-
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,18 +70,18 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-house-lock-label">{t.accommodation}</div>
                 <div className="v3-house-lock-name">{tName(selectedUnit, 'name', lang)}</div>
                 <div className="v3-house-lock-feat">
-                  {getOccupancyString(selectedUnit)} В· {selectedUnit.typeName}
+                  {getOccupancyString(selectedUnit)} · {selectedUnit.typeName}
                 </div>
                 <div className="v3-house-times">
-                  <span>{t.checkInShort || 'Р—Р°С—Р·Рґ'} {v3t.fromTime} 15:00</span>
-                  <span className="v3-house-times-sep">В·</span>
-                  <span>{t.checkOutShort || 'Р’РёС—Р·Рґ'} {v3t.toTime} 11:00</span>
+                  <span>{t.checkInShort || 'Заїзд'} {v3t.fromTime} 15:00</span>
+                  <span className="v3-house-times-sep">·</span>
+                  <span>{t.checkOutShort || 'Виїзд'} {v3t.toTime} 11:00</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Change unit button вЂ” temporarily hidden
+          {/* Change unit button — temporarily hidden
           {selectedUnitId && calOpen && (
             <button className="v3-change-unit-btn" onClick={() => {
               setSelectedUnitId(null);
@@ -91,7 +89,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               setUnitInfo(null);
               setCalOpen(false);
             }}>
-              в†є РќРµ Р·РЅР°Р№С€Р»Рё РІС–Р»СЊРЅСѓ РґР°С‚Сѓ? РћР±РµСЂС–С‚СЊ С–РЅС€РёР№ РІР°СЂС–Р°РЅС‚
+              ↺ Не знайшли вільну дату? Оберіть інший варіант
             </button>
           )}
           */}
@@ -99,15 +97,15 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-dates" onClick={() => setCalOpen(true)}>
             <div className={`v3-date-cell ${(checkIn && checkOut) || !selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
-              <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : 'вЂ”'}</div>
+              <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
               <div className="v3-date-cell-sub">{v3t.fromTime} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
             <div className={`v3-date-cell ${(checkIn && checkOut) || selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
-              <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : 'вЂ”'}</div>
+              <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
               <div className="v3-date-cell-sub">
-                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} В· {v3t.toTime} 11:00
+                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {v3t.toTime} 11:00
               </div>
             </div>
             <div className="v3-dates-cal-icon">
@@ -125,10 +123,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div className="v3-cal-nav">
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>вЂ№</button>
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>вЂє</button>
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
                 </div>
-                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Р—Р°РєСЂРёС‚Рё">
+                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                     <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
@@ -219,7 +217,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 disabled={!checkIn || !checkOut}
                 onClick={() => setCalOpen(false)}
               >
-                OK В· {nights > 0 ? `${nights} ${t.nightsShort}` : v3t.chooseDatesShort}
+                OK · {nights > 0 ? `${nights} ${t.nightsShort}` : v3t.chooseDatesShort}
               </button>
             </div>
           </div>
@@ -230,7 +228,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-guests-sub">18+</div>
             </div>
             <div className="v3-stepper">
-              <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>в€’</button>
+              <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>−</button>
               <span className="v3-stepper-val">{adults}</span>
               <button
                 className="v3-stepper-btn"
@@ -243,10 +241,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-guests">
             <div>
               <div className="v3-guests-label">{t.children}</div>
-              <div className="v3-guests-sub">0вЂ“17</div>
+              <div className="v3-guests-sub">0–17</div>
             </div>
             <div className="v3-stepper">
-              <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>в€’</button>
+              <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>−</button>
               <span className="v3-stepper-val">{kids}</span>
               <button
                 className="v3-stepper-btn"
@@ -265,7 +263,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           {/* Occupancy notice */}
           {kids > 0 && (
             <div className="v3-occupancy-notice">
-              <span className="v3-occupancy-notice-icon">рџ›ЏпёЏ</span>
+              <span className="v3-occupancy-notice-icon">🛏️</span>
               <span>{t.kidsOccupancyNotice}</span>
             </div>
           )}
@@ -273,7 +271,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-offer-section">
             {!offerApplied && (
               <button className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
-                {showOffer ? 'в€’' : '+'} {t.couponCode} / {t.certificateCode}
+                {showOffer ? '−' : '+'} {t.couponCode} / {t.certificateCode}
               </button>
             )}
             {offerApplied && (() => {
@@ -281,12 +279,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 const offerLabel = offerApplied.offerType === 'percentage'
                   ? `-${offerAmt}%`
                   : offerApplied.offerType === 'package'
-                    ? `${t.packagePrefix} вЂ” ${offerApplied.description || offerApplied.code}`
-                    : `-${offerAmt} KДЌ`;
+                    ? `${t.packagePrefix} — ${offerApplied.description || offerApplied.code}`
+                    : `-${offerAmt} Kč`;
                 return (
                   <div className="v3-offer-success">
-                    {'рџЏ·пёЏ'} {offerApplied.code}: {offerLabel}
-                    {invalidNightsMsg && <div style={{ marginTop: 12, padding: '10px 14px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: '8px' }}>вљ пёЏ {invalidNightsMsg}</div>}
+                    {'🏷️'} {offerApplied.code}: {offerLabel}
+                    {invalidNightsMsg && <div style={{ marginTop: 12, padding: '10px 14px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: '8px' }}>⚠️ {invalidNightsMsg}</div>}
                   </div>
                 );
               })()}
@@ -314,10 +312,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
         {/* STEP 2: HOUSE LIST / DETAILS */}
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
-          <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Р’Р°С€ РІРёР±С–СЂ') : t.selectAccommodation}</h1>
+          <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
           <p className="v3-step-sub">{selectedUnitId ? v3t.checkDetails : t.availableForDates}</p>
 
-          {/* Loading skeleton вЂ” only when no unit info available yet */}
+          {/* Loading skeleton — only when no unit info available yet */}
           {loadingAvail && !selectedUnit && (
             <div className="v3-house-list">
               {[1, 2, 3].map(i => (
@@ -333,12 +331,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           )}
 
-          {/* Unit selection list вЂ” only when no unit is pre-selected */}
+          {/* Unit selection list — only when no unit is pre-selected */}
           {!loadingAvail && !selectedUnitId && (
             <div className="v3-house-list">
               {displayUnits.length === 0 ? (
                 <div className="v3-no-avail">
-                  <div className="v3-no-avail-icon">рџ’­</div>
+                  <div className="v3-no-avail-icon">💭</div>
                   <h3>{t.noUnitsFound}</h3>
                   <p>{t.noAvailabilityDesc}</p>
 
@@ -394,7 +392,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           <div className="v3-house-lock-label">{tName(u, 'typeName', lang)}</div>
                           <div className="v3-house-lock-name">{tName(u, 'name', lang)}</div>
                           <div className="v3-house-lock-feat">
-                            {getOccupancyString(u)} В· <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
+                            {getOccupancyString(u)} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
                           </div>
                         </div>
                         {isSelected && (
@@ -415,7 +413,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                     {socialProof.viewers} {v3t.viewersNow}
                   </div>
                   <div className="v3-badge last-book">
-                    вЏ± {v3t.lastBooking}: {socialProof.lastBooking}
+                    ⏱ {v3t.lastBooking}: {socialProof.lastBooking}
                   </div>
                 </div>
               )}
@@ -460,8 +458,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   )}
                   {selectedUnit.photos?.length > 1 && (
                     <div className="v3-gallery-nav">
-                      <button className="v3-gallery-arrow left" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev - 1 + selectedUnit.photos.length) % selectedUnit.photos.length); }}>вЂ№</button>
-                      <button className="v3-gallery-arrow right" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length); }}>вЂє</button>
+                      <button className="v3-gallery-arrow left" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev - 1 + selectedUnit.photos.length) % selectedUnit.photos.length); }}>‹</button>
+                      <button className="v3-gallery-arrow right" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length); }}>›</button>
                     </div>
                   )}
                 </div>
@@ -477,19 +475,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 )}
               </div>
               <h1 className="v3-house-detail-name">{tName(selectedUnit, 'name', lang)}</h1>
-              <div className="v3-house-detail-meta">{tName(selectedUnit, 'typeName', lang)} В· {getOccupancyString(selectedUnit)}</div>
+              <div className="v3-house-detail-meta">{tName(selectedUnit, 'typeName', lang)} · {getOccupancyString(selectedUnit)}</div>
               <div className="v3-amenities">
                 {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a: any, i: number) => (
                   <div key={i} className="v3-amenity">
-                    <span className="v3-amenity-icon">{a.icon || 'вњ“'}</span>
+                    <span className="v3-amenity-icon">{a.icon || '✓'}</span>
                     {tName(a, 'name', lang)}
                   </div>
                 )) : (
                   <>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ›Ѓ</span>Р”Р¶Р°РєСѓР·С– РЅР° С‚РµСЂР°СЃС–</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ”Ґ</span>РљР°РјС–РЅ РґСЂРѕРІ'СЏРЅРёР№</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">в•</span>РљСѓС…РЅСЏ РїРѕРІРЅР°</div>
-                    <div className="v3-amenity"><span className="v3-amenity-icon">рџ“¶</span>Wi-Fi 100 Mbps</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">🛁</span>Джакузі на терасі</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">🔥</span>Камін дров'яний</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">☕</span>Кухня повна</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">📶</span>Wi-Fi 100 Mbps</div>
                   </>
                 )}
               </div>
@@ -524,8 +522,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
         {/* STEP 4: SERVICES */}
         <div className={`v3-step ${step === 4 ? 'visible' : ''}`}>
-          <h1 className="v3-step-title">{t.addToStayTitle || 'Р”РѕРґР°С‚Рё РґРѕ РІС–РґРїРѕС‡РёРЅРєСѓ?'}</h1>
-          <p className="v3-step-sub">{t.everythingOptional || 'Р’СЃРµ РѕРїС†С–Р№РЅРµ. РњРѕР¶РЅР° РїСЂРѕРїСѓСЃС‚РёС‚Рё С– РґРѕРґР°С‚Рё РїС–Р·РЅС–С€Рµ.'}</p>
+          <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
+          <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
 
           {offerApplied?.offerType === 'package' && offerApplied.bundle?.included_services?.some((inc: any) => services.some(s => s.id === inc.service_id)) && (() => {
              const guestsCount = adults + kids || 1;
@@ -533,17 +531,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
              const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
              
              const extraGuestsText = {
-               uk: `* Р’Р°С€ РїР°РєРµС‚ РїРѕРєСЂРёРІР°С” РїРѕСЃР»СѓРіРё РґР»СЏ ${includedGuestsCount} РіРѕСЃС‚РµР№. Р”Р»СЏ РґРѕРґР°С‚РєРѕРІРёС… ${extraGuestsCount} РіРѕСЃС‚РµР№ РїРѕСЃР»СѓРіРё СЂРѕР·СЂР°С…РѕРІСѓСЋС‚СЊСЃСЏ Р·Р° СЃС‚Р°РЅРґР°СЂС‚РЅРёРј РїСЂР°Р№СЃРѕРј.`,
+               uk: `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей. Для додаткових ${extraGuestsCount} гостей послуги розраховуються за стандартним прайсом.`,
                en: `* Your package covers services for ${includedGuestsCount} guests. Services for ${extraGuestsCount} extra guest${extraGuestsCount === 1 ? '' : 's'} will be charged at the standard rate.`,
-               de: `* Ihr Paket umfasst Dienstleistungen fГјr ${includedGuestsCount} GГ¤ste. Dienstleistungen fГјr ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' GГ¤ste'} werden zum Standardpreis berechnet.`,
-               cs: `* VГЎЕЎ balГ­ДЌek zahrnuje sluЕѕby pro ${includedGuestsCount} hosty. SluЕѕby pro ${extraGuestsCount} dalЕЎГ­ hosty budou ГєДЌtovГЎny za standardnГ­ cenu.`
-             }[lang] || `* Р’Р°С€ РїР°РєРµС‚ РїРѕРєСЂРёРІР°С” РїРѕСЃР»СѓРіРё РґР»СЏ ${includedGuestsCount} РіРѕСЃС‚РµР№...`;
+               de: `* Ihr Paket umfasst Dienstleistungen für ${includedGuestsCount} Gäste. Dienstleistungen für ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' Gäste'} werden zum Standardpreis berechnet.`,
+               cs: `* Váš balíček zahrnuje služby pro ${includedGuestsCount} hosty. Služby pro ${extraGuestsCount} další hosty budou účtovány za standardní cenu.`
+             }[lang] || `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей...`;
 
              return (
                <div className="v3-occupancy-notice" style={{ background: 'rgba(47, 79, 43, 0.05)', borderColor: 'rgba(47, 79, 43, 0.2)', color: 'var(--moss)' }}>
-                 <span className="v3-occupancy-notice-icon">рџЋЃ</span>
+                 <span className="v3-occupancy-notice-icon">🎁</span>
                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                   <span>{t.packageServicesNotice || 'Р”РµСЏРєС– РїРѕСЃР»СѓРіРё РІР¶Рµ РІРєР»СЋС‡РµРЅС– Сѓ РІР°С€ РїР°РєРµС‚. Р’Рё РјРѕР¶РµС‚Рµ РѕР±СЂР°С‚Рё РґРѕРґР°С‚РєРѕРІС– Р·Р° Р±Р°Р¶Р°РЅРЅСЏРј.'}</span>
+                   <span>{t.packageServicesNotice || 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.'}</span>
                    {extraGuestsCount > 0 && (
                      <span style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.4 }}>
                        {extraGuestsText}
@@ -583,7 +581,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         {s.photoUrl ? (
                           <img src={s.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          s.icon || 'рџ“¦'
+                          s.icon || '📦'
                         )}
                       </div>
                       <div className="v3-service-info">
@@ -599,17 +597,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                             const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
                             const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
                             const includedForBaseText = {
-                              uk: `Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ ${includedGuestsCount} + `,
+                              uk: `Включено для ${includedGuestsCount} + `,
                               en: `Included for ${includedGuestsCount} + `,
-                              de: `FГјr ${includedGuestsCount} inkl. + `,
+                              de: `Für ${includedGuestsCount} inkl. + `,
                               cs: `Zahrnuto pro ${includedGuestsCount} + `
-                            }[lang] || `Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ ${includedGuestsCount} + `;
+                            }[lang] || `Включено для ${includedGuestsCount} + `;
 
                             if (isFree) {
                               if (extraGuestsCount > 0) {
                                 return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{includedForBaseText}{formatPrice(s.price * extraGuestsCount, siteCurrency)}</span>;
                               }
-                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>;
+                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>;
                             }
                             return <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>;
                           })()}
@@ -646,7 +644,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                        }
                        return sum + (s.price || 0) * guestsCount;
                     }, 0);
-                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` В· +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
+                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` · +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
                 })() : t.next}
               </span>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -654,7 +652,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </svg>
             </button>
             <button className="v3-skip-link" onClick={() => { setSelectedServiceIds(new Set()); goToStep(5); }}>
-              {t.skipLink || 'РџСЂРѕРїСѓСЃС‚РёС‚Рё вЂ” РЅРµ С‚СЂРµР±Р° РЅС–С‡РѕРіРѕ'}
+              {t.skipLink || 'Пропустити — не треба нічого'}
             </button>
           </div>
         </div>
@@ -667,30 +665,30 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-breakdown">
             <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                <span>{selectedUnit?.name} В· {nights} {t.nightsShort}</span>
+                <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
                 <span className="v3-breakdown-val">
                   {offerApplied?.offerType === 'package' 
-                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>
+                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>
                     : formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)
                   }
                 </span>
               </div>
               {checkIn && checkOut && (
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
-                  {formatDisplayDate(checkIn, lang)} Р· 15:00 вЂ“ {formatDisplayDate(checkOut, lang)} РґРѕ 11:00
+                  {formatDisplayDate(checkIn, lang)} з 15:00 – {formatDisplayDate(checkOut, lang)} до 11:00
                 </div>
               )}
             </div>
 
             {offerApplied?.offerType === 'package' && offerApplied.bundle && (
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
-                <span>рџЏ·пёЏ {offerApplied.description || t.packagePrefix || 'РџР°РєРµС‚'} "{offerApplied.code}"</span>
+                <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
               </div>
             )}
             {offerApplied && offerApplied.offerType !== 'package' && (
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
-                <span>рџЏ·пёЏ {t.couponCode || 'РџСЂРѕРјРѕРєРѕРґ'} ({offerApplied.code})</span>
+                <span>🏷️ {t.couponCode || 'Промокод'} ({offerApplied.code})</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>
                   -{offerApplied.offerType === 'percentage' ? `${offerApplied.offerAmount}%` : formatPrice(offerApplied.offerAmount, siteCurrency)}
                 </span>
@@ -703,19 +701,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               const isFree = incSvc && incSvc.isIncluded;
               const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
               const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
-              const extraTxt = { uk: 'РґРѕРґР°С‚РєРѕРІС–', en: 'extra', de: 'weitere', cs: 'dalЕЎГ­' }[lang] || 'РґРѕРґР°С‚РєРѕРІС–';
+              const extraTxt = { uk: 'додаткові', en: 'extra', de: 'weitere', cs: 'další' }[lang] || 'додаткові';
 
-              const includedForText = { uk: 'Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ', en: 'Included for', de: 'Inklusive fГјr', cs: 'Zahrnuto pro' }[lang] || 'Р’РєР»СЋС‡РµРЅРѕ РґР»СЏ';
+              const includedForText = { uk: 'Включено для', en: 'Included for', de: 'Inklusive für', cs: 'Zahrnuto pro' }[lang] || 'Включено для';
               return (
                 <div key={s.id} className="v3-breakdown-row">
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `Г— ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
+                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `× ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
                   </div>
                   <span className="v3-breakdown-val">
                     {isFree 
                       ? (extraGuestsCount > 0 
                           ? formatPrice(s.price * extraGuestsCount, siteCurrency)
-                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Р’РєР»СЋС‡РµРЅРѕ РІ РїР°РєРµС‚'}</span>)
+                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Включено в пакет'}</span>)
                       : formatPrice(s.price * guestsCount, siteCurrency)
                     }
                   </span>
@@ -734,7 +732,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-pay-method-radio"></div>
                 <div className="v3-pay-method-info">
                   <div className="v3-pay-method-name">Teya Payment Gateway</div>
-                  <div className="v3-pay-method-sub">Visa В· Mastercard В· Apple Pay</div>
+                  <div className="v3-pay-method-sub">Visa · Mastercard · Apple Pay</div>
                 </div>
               </div>
               <div className="v3-trust-block">
@@ -743,7 +741,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </>
           ) : (
             <div className="v3-invoice-notice">
-              <div className="v3-invoice-notice-icon">рџ“¬</div>
+              <div className="v3-invoice-notice-icon">📬</div>
               <div className="v3-invoice-notice-text">
                 <strong>{v3t.bankTransfer}</strong>
                 <p>{v3t.bankTransferDesc}</p>
@@ -775,7 +773,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-cta-summary">
                 <div className="v3-cta-summary-line1">
                   {checkIn && checkOut && nights > 0
-                    ? `${nights} ${t.nightsShort.toUpperCase()} В· ${adults + kids} ${t.guestsShort.toUpperCase()}`
+                    ? `${nights} ${t.nightsShort.toUpperCase()} · ${adults + kids} ${t.guestsShort.toUpperCase()}`
                     : `${adults + kids} ${t.guestsShort.toUpperCase()}`
                   }
                 </div>
@@ -817,7 +815,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               >
                 <span>
                   {step === 5
-                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Р—Р°РІРµСЂС€РёС‚Рё'))
+                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Завершити'))
                     : (step === 1 ? t.selectDates
                       : (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
                 </span>
