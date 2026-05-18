@@ -23,11 +23,13 @@ export async function PATCH(
       db.prepare('UPDATE site_rate_plans SET is_default = 0 WHERE site_id = ?').run(id);
     }
 
-    const jsonFields = ['payment_schedule', 'meals_included', 'applied_listings'];
+    const jsonFields = ['payment_schedule', 'meals_included', 'applied_listings', 'valid_weekdays'];
     const allowed = [
       'name', 'is_default', 'cancellation_policy', 'payment_schedule',
       'meals_included', 'min_days_before_checkin', 'same_day_cutoff_hour',
       'min_stay', 'max_stay', 'pricing_mode', 'applied_listings', 'is_active',
+      'pricing_modifier_percent', 'pricing_modifier_type', 'derived_from_plan_id',
+      'valid_weekdays'
     ];
 
     const setClauses: string[] = ["updated_at = datetime('now')"];
@@ -54,6 +56,7 @@ export async function PATCH(
     try { updated.payment_schedule = JSON.parse(updated.payment_schedule); } catch { /* */ }
     try { updated.meals_included = JSON.parse(updated.meals_included); } catch { /* */ }
     try { updated.applied_listings = JSON.parse(updated.applied_listings); } catch { /* */ }
+    try { updated.valid_weekdays = updated.valid_weekdays ? JSON.parse(updated.valid_weekdays) : null; } catch { /* */ }
 
     return NextResponse.json({ plan: updated });
   } catch (error: any) {
@@ -84,3 +87,5 @@ export async function DELETE(
     return NextResponse.json({ error: 'Failed to delete rate plan' }, { status: 500 });
   }
 }
+
+export { PATCH as PUT };

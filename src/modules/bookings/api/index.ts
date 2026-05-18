@@ -12,7 +12,7 @@ export { listSubBookings, createSubBooking, updateSubBooking, deleteSubBooking }
 export { listBookingSources, createBookingSource } from './booking-sources.handlers';
 export { updateBookingSource, deleteBookingSource } from './booking-source.handlers';
 export { getAvailability, getAvailabilityOptions } from './widget-availability.handlers';
-export { validatePromo, validatePromoOptions } from './widget-promo.handlers';
+export { validatePromo, validatePromoOptions } from './widget-activate.handlers';
 export { getWidgetReservation, getWidgetReservationOptions } from './widget-reservation.handlers';
 export { createWidgetReservation, createWidgetReservationOptions } from './widget-reserve.handlers';
 export { createWidgetCheckoutSession, createCheckoutSessionOptions } from './widget-checkout.handlers';

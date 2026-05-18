@@ -46,8 +46,14 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
+  // Ignore non-HTTP(S) schemes (like chrome-extension://)
+  if (!url.protocol.startsWith('http')) return;
+
   // API calls — network only (never cache)
   if (url.pathname.startsWith('/api/')) return;
+
+  // Next.js App Router RSC payloads — network only (prevents hydration/parsing errors)
+  if (request.headers.get('RSC') === '1' || request.url.includes('_rsc=')) return;
 
   // Static assets (CSS, JS, images) — cache-first
   if (

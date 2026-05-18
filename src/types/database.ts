@@ -27,7 +27,7 @@ export type CleaningStatus = 'clean' | 'dirty' | 'in_progress';
 export type RoomStatus = 'available' | 'occupied' | 'maintenance' | 'blocked';
 export type PricingModel = 'standard' | 'derived' | 'obp' | 'los';
 export type UserRole = 'owner' | 'director' | 'manager' | 'receptionist' | 'housekeeper' | 'maintenance' | 'accountant';
-export type PromotionType = 'mobile' | 'early_bird' | 'last_minute' | 'long_stay' | 'promo_code';
+export type PromotionType = 'mobile' | 'early_bird' | 'last_minute' | 'long_stay' | 'coupon_code';
 
 // ─── Organization ──────────────────────────────
 export interface Organization {
@@ -223,12 +223,12 @@ export interface Promotion {
   name: string;
   type: PromotionType;
   discount_type: 'percentage' | 'fixed';
-  discount_value: number;
+  offer_amount: number;
   date_from?: string;
   date_to?: string;
   min_nights?: number;
   max_nights?: number;
-  promo_code?: string;
+  coupon_code?: string;
   usage_limit?: number;
   usage_count: number;
   is_stackable: boolean;

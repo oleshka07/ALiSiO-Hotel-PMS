@@ -196,7 +196,7 @@ const v3Locales: Record<string, any> = {
     chooseDatesPrice: "Оберіть дати щоб дізнатись ціну",
     tryTheseDates: "💡 Спробуйте ці дати:",
     availFrom: "Вільні місця з",
-    promoError: "Недійсний промокод",
+    offerError: "Недійсний промокод",
     serverError: "Помилка підключення",
     errorReq: "Будь ласка, заповніть всі необхідні поля",
     clear: "Стерти",
@@ -225,7 +225,7 @@ const v3Locales: Record<string, any> = {
     chooseDatesPrice: "Select dates to see price",
     tryTheseDates: "💡 Try these dates:",
     availFrom: "Available from",
-    promoError: "Invalid promo code",
+    offerError: "Invalid Coupon code",
     serverError: "Connection error",
     errorReq: "Please fill in all required fields",
     clear: "Clear",
@@ -254,7 +254,7 @@ const v3Locales: Record<string, any> = {
     chooseDatesPrice: "Vyberte termíny pro zobrazení ceny",
     tryTheseDates: "💡 Zkuste tyto termíny:",
     availFrom: "Volné od",
-    promoError: "Neplatný promo kód",
+    offerError: "Neplatný offer kód",
     serverError: "Chyba připojení",
     errorReq: "Vyplňte prosím všechna povinná pole",
     clear: "Smazat",
@@ -283,7 +283,7 @@ const v3Locales: Record<string, any> = {
     chooseDatesPrice: "Wählen Sie Daten aus, um den Preis zu sehen",
     tryTheseDates: "💡 Versuchen Sie diese Daten:",
     availFrom: "Verfügbar ab",
-    promoError: "Ungültiger Promo-Code",
+    offerError: "Ungültiger Promo-Code",
     serverError: "Verbindungsfehler",
     errorReq: "Bitte füllen Sie alle erforderlichen Felder aus",
     clear: "Löschen",
@@ -341,11 +341,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
-  const [promoCode, setPromoCode] = useState('');
-  const [showPromo, setShowPromo] = useState(false);
-  const [promoApplied, setPromoApplied] = useState<{ code: string; discount_type: string; discount_value: number; description?: string } | null>(null);
-  const [promoError, setPromoError] = useState('');
-  const [applyingPromo, setApplyingPromo] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [showOffer, setShowOffer] = useState(false);
+  const [offerApplied, setOfferApplied] = useState<{ code: string; offerType: string; offerAmount: number; description?: string; bundle?: any } | null>(null);
+  const [offerError, setOfferError] = useState('');
+  const [applyingOffer, setApplyingOffer] = useState(false);
+  const [isHiddenBundle, setIsHiddenBundle] = useState(false);
 
   // New site config states
   const [siteConfig, setSiteConfig] = useState<any>(null);
@@ -402,13 +403,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         return null;
       };
 
-      const l = params.get('lang')
+      let l = params.get('lang')
         || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
         || initialLang
         || getBrowserLang()
         || null;
-      if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
-        setLang(l as BookingLang);
+      if (l) {
+        const shortLang = l.slice(0, 2).toLowerCase();
+        if (['uk', 'en', 'cs', 'de'].includes(shortLang)) {
+          setLang(shortLang as BookingLang);
+        }
       }
 
       // Auto-fill dates from URL
@@ -416,15 +420,24 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const urlOut = params.get('checkout') || params.get('check_out');
       const urlAdults = params.get('adults');
       const urlKids = params.get('kids');
-      const urlPromo = params.get('promo') || params.get('promoCode') || params.get('promocode');
+      const urlOffer = params.get('offer') || params.get('couponCode') || params.get('couponcode');
 
       if (urlIn) setCheckIn(urlIn);
       if (urlOut) setCheckOut(urlOut);
       if (urlAdults) setAdults(parseInt(urlAdults, 10) || 2);
       if (urlKids) setKids(parseInt(urlKids, 10) || 0);
 
-      if (urlPromo) {
-        setPromoCode(urlPromo);
+      if (urlOffer) {
+        setCouponCode(urlOffer);
+        setShowOffer(true);
+      }
+
+      // Bundle param — auto-apply as a package offer
+      const urlBundle = params.get('bundle') || params.get('bundleId');
+      if (urlBundle) {
+        setCouponCode(urlBundle);
+        setIsHiddenBundle(true);
+        setShowOffer(true);
       }
 
       // Pre-fill from localStorage
@@ -584,6 +597,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           if (siteSlug) params.set('siteSlug', siteSlug);
           if (selectedUnitId) params.set('unitId', selectedUnitId);
 
+          const urlParams = new URLSearchParams(window.location.search);
+          const rp = urlParams.get('ratePlanId') || urlParams.get('ratePlan');
+          if (rp) params.set('ratePlanId', rp);
+
           const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
           return res.json();
         };
@@ -623,13 +640,21 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000);
   }, [checkIn, checkOut]);
 
+  const displayUnits = useMemo(() => {
+    if (!availability?.units) return [];
+    if (offerApplied?.bundle?.applied_listings && offerApplied.bundle.applied_listings.length > 0) {
+      return availability.units.filter(u => offerApplied.bundle.applied_listings.includes(u.id));
+    }
+    return availability.units;
+  }, [availability, offerApplied]);
+
   const selectedUnit = useMemo(() => {
     if (!selectedUnitId) return null;
     // Prefer real availability data (with price for selected dates),
     // fall back to unitInfo (pre-loaded base data without dates)
-    if (availability) return availability.units.find(u => u.id === selectedUnitId) || unitInfo;
+    if (availability) return displayUnits.find(u => u.id === selectedUnitId) || unitInfo;
     return unitInfo;
-  }, [availability, selectedUnitId, unitInfo]);
+  }, [availability, selectedUnitId, unitInfo, displayUnits]);
 
   const totalWithDiscount = useMemo(() => {
     if (!selectedUnit) return 0;
@@ -639,26 +664,50 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
     let base = selectedUnit.totalPrice + extraCharge;
 
-    if (promoApplied) {
-      if (promoApplied.discount_type === 'fixed_price') {
-        base -= promoApplied.discount_value;
-      } else if (promoApplied.discount_type === 'percentage') {
-        base = Math.round(base * (1 - promoApplied.discount_value / 100));
-      }
-    }
-    if (base < 0) base = 0;
-
-    // Add selected services
     let servicesTotal = 0;
     const guestsCount = adults + kids || 1;
-    services.forEach(s => {
-      if (selectedServiceIds.has(s.id)) {
-        servicesTotal += (s.price || 0) * guestsCount;
+
+    if (offerApplied && offerApplied.offerType === 'package' && offerApplied.bundle) {
+      // 1. Base price is overridden by bundle price
+      base = offerApplied.bundle.price;
+
+      // 2. Extra nights? (Simple implementation: just use the bundle price as the base)
+      // Extra nights logic could be added here if needed, but bundle covers the stay.
+      
+      // 3. Services total. Included services are free up to their qty.
+      const included = offerApplied.bundle.included_services || [];
+      const includedGuestsCount = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2;
+      const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+
+      services.forEach(s => {
+        if (selectedServiceIds.has(s.id)) {
+          const bundleSvc = included.find((inc: any) => inc.service_id === s.id);
+          if (bundleSvc && bundleSvc.isIncluded) {
+            servicesTotal += (s.price || 0) * extraGuestsCount;
+          } else {
+            servicesTotal += (s.price || 0) * guestsCount;
+          }
+        }
+      });
+    } else {
+      if (offerApplied) {
+        if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') {
+          base -= offerApplied.offerAmount;
+        } else if (offerApplied.offerType === 'percentage') {
+          base = Math.round(base * (1 - offerApplied.offerAmount / 100));
+        }
       }
-    });
+      if (base < 0) base = 0;
+
+      services.forEach(s => {
+        if (selectedServiceIds.has(s.id)) {
+          servicesTotal += (s.price || 0) * guestsCount;
+        }
+      });
+    }
 
     return base + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds, promoApplied]);
+  }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied]);
 
   // ─── Actions ───
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
@@ -771,6 +820,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   };
 
   const goToStep = (s: number) => {
+    // Skip Step 2 backwards/forwards if only 1 unit exists or unit is locked
+    if (s === 2 && (displayUnits.length === 1 || (selectedUnitId && step === 3))) {
+      if (step === 3) {
+        setStep(1); // Go back from guest info to dates
+      } else {
+        setStep(3); // Go forward from dates to guest info
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     // Skip Step 4 if no services
     if (s === 4 && services.length === 0 && !loadingServices) {
       if (step === 5) {
@@ -791,36 +851,56 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   };
 
-  const handleApplyPromo = async (codeToApply?: string | React.MouseEvent) => {
-    const code = (typeof codeToApply === 'string' ? codeToApply : promoCode).trim().toUpperCase();
+  const resolvedSiteId = siteId || siteConfig?.id || '';
+
+  const handleApplyOffer = useCallback(async (codeToApply?: string | React.MouseEvent) => {
+    const code = (typeof codeToApply === 'string' ? codeToApply : couponCode).trim().toUpperCase();
     if (!code) return;
-    setApplyingPromo(true);
-    setPromoError('');
+    // siteId might be undefined if loaded via slug — use siteConfig.id or siteSlug as fallback
+    const sId = siteId || siteConfig?.id || siteSlug || '';
+    setApplyingOffer(true);
+    setOfferError('');
     try {
       const uId = selectedUnitId || '';
-      const sId = resolvedSiteId || '';
-      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
+      // Use /activate alias — ad-blocker-friendly (avoids "offer" trigger in URL)
+      const res = await fetch(`${API_BASE}/api/booking/activate?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
       const data = await res.json();
       if (data.valid) {
-        setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
-        setShowPromo(false);
+        setOfferApplied({ code: data.code, offerType: data.discount_type, offerAmount: data.offer_amount, description: data.description, bundle: data.bundle ? { ...data.bundle, included_services: data.bundle.included_services?.map((inc: any) => ({ service_id: inc.service_id, isIncluded: inc.free })) } : undefined });
+        setShowOffer(false);
+        // If it's a package, automatically select the included services
+        if (data.discount_type === 'package' && data.bundle?.included_services) {
+          const newServices = new Set(selectedServiceIds);
+          data.bundle.included_services.forEach((inc: any) => {
+            if (inc.free || inc.isIncluded) newServices.add(inc.service_id);
+          });
+          setSelectedServiceIds(newServices);
+        }
+        // If bundle is restricted to exactly 1 unit — auto-select it and skip step 2
+        if (data.discount_type === 'package' && data.bundle?.applied_listings?.length === 1) {
+          setSelectedUnitId(data.bundle.applied_listings[0]);
+        }
       } else {
-        setPromoApplied(null);
-        setPromoError(data.error || 'Invalid code');
+        setOfferApplied(null);
+        setOfferError(data.error || 'Invalid code');
       }
     } catch (err) {
-      setPromoError('Server error');
+      setOfferError('Server error');
     } finally {
-      setApplyingPromo(false);
+      setApplyingOffer(false);
     }
-  };
+  }, [couponCode, siteId, siteSlug, siteConfig, selectedUnitId, selectedServiceIds]);
 
-  // Auto-apply promo from URL if it exists and hasn't been applied yet
+  // Auto-apply bundle/offer from URL — fires when mounted AND site identity is known
   useEffect(() => {
-    if (promoCode && !promoApplied && selectedUnitId && resolvedSiteId && !applyingPromo && !promoError) {
-      handleApplyPromo(promoCode);
+    if (!isMounted) return;
+    // Wait until we have some site identity (either siteSlug from URL path, or siteId from prop)
+    const hasSite = !!(siteId || siteSlug);
+    if (couponCode && !offerApplied && !applyingOffer && !offerError && hasSite) {
+      handleApplyOffer(couponCode);
     }
-  }, [promoCode, promoApplied, selectedUnitId, resolvedSiteId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted, couponCode, offerApplied, siteId, siteSlug]);
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) {
@@ -860,7 +940,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           email,
           phone,
           siteId: siteId || undefined,
-          promoCode: promoApplied?.code || undefined,
+          couponCode: offerApplied?.code || undefined,
         }),
       });
       if (res.ok) {
@@ -994,6 +1074,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   // Sync html/body background to match the widget theme
   // (prevents white gaps from globals.css on /w/ pages)
   useEffect(() => {
+    if (isPreview) return;
     const theme = activeDesign?.theme?.toLowerCase() || '';
     const BG_MAP: Record<string, string> = {
       dark:      '#0f172a',
@@ -1014,6 +1095,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       document.body.style.background = '';
     };
   }, [activeDesign]);
+
+  const invalidNightsMsg = offerApplied?.offerType === 'package' && offerApplied.bundle?.nights_included && nights > 0 && nights !== offerApplied.bundle.nights_included
+    ? t.packageNightsError(offerApplied.bundle.nights_included)
+    : null;
 
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
@@ -1124,7 +1209,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className={`v3-cal-wrap ${calOpen ? 'open' : ''}`}>
             <div className="v3-cal-head">
               <div className="v3-cal-month">
-                {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-GB', { month: 'long', year: 'numeric' })}
+                {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString({ uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' }[lang] || 'uk-UA', { month: 'long', year: 'numeric' })}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div className="v3-cal-nav">
@@ -1140,59 +1225,68 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
 
             <div className="v3-cal-months-grid">
-            {[0, 1].map(offset => {
-              const year = today.getFullYear();
-              const month = today.getMonth() + calMonthOffset + offset;
-              const monthName = new Date(year, month, 1).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-GB', { month: 'long', year: 'numeric' });
-              const daysInM = getDaysInMonth(year, month);
-              const first = getFirstDayOfMonth(year, month);
+            {(() => {
+              const sortedBusy = Array.from(busyDates).sort();
+              const firstBusyAfterCheckin = checkIn
+                ? sortedBusy.find(d => d > checkIn) || null
+                : null;
 
-              return (
-                <div key={offset} className="v3-month-section">
-                  <div className="v3-month-divider">{monthName}</div>
-                  <div className="v3-cal-weekdays">
-                    {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
+              return [0, 1].map(offset => {
+                const year = today.getFullYear();
+                const month = today.getMonth() + calMonthOffset + offset;
+                const monthName = new Date(year, month, 1).toLocaleDateString({ uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' }[lang] || 'uk-UA', { month: 'long', year: 'numeric' });
+                const daysInM = getDaysInMonth(year, month);
+                const first = getFirstDayOfMonth(year, month);
+
+                return (
+                  <div key={offset} className="v3-month-section">
+                    <div className="v3-month-divider">{monthName}</div>
+                    <div className="v3-cal-weekdays">
+                      {[...t.dayNamesShort.slice(1), t.dayNamesShort[0]].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
+                    </div>
+                    <div className="v3-cal-days">
+                      {(() => {
+                        const cells = [];
+                        for (let i = 0; i < first; i++) cells.push(<div key={`e-${i}`} className="v3-cal-day muted" />);
+                        for (let d = 1; d <= daysInM; d++) {
+                          const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                          const isPast = parseDate(ds) < today;
+                          const isBusy = busyDates.has(ds);
+                          const isPartial = !isBusy && partialDates.has(ds);
+                          const isCheckoutOnly = checkIn && ds === firstBusyAfterCheckin;
+                          const unitInAvail = availability?.units.find(u => u.id === selectedUnitId);
+                          const dayPrice = unitInAvail?.prices?.find(p => p.date === ds)?.price || (ds >= (checkIn || '') && ds < (checkOut || '') ? unitInAvail?.avgPricePerNight : null);
+
+                          let cls = 'v3-cal-day';
+                          if (isPast || (isBusy && !isCheckoutOnly)) cls += ' muted';
+                          if (isBusy && !isCheckoutOnly) cls += ' busy';
+                          if (isCheckoutOnly && ds !== checkOut) cls += ' checkout-only';
+                          if (isPartial) cls += ' partial';
+                          if (ds === checkIn) cls += ' start';
+                          if (ds === checkOut) cls += ' end';
+                          if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
+
+                          cells.push(
+                            <div key={d} className={cls} onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isPast && (!isBusy || isCheckoutOnly)) handleDayClick(ds);
+                            }}>
+                              <span className="v3-cal-day-num">{d}</span>
+                              {dayPrice && !isBusy && !isPast && (
+                                <span className="v3-cal-day-price">
+                                  {Math.round(dayPrice)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        return cells;
+                      })()}
+                    </div>
                   </div>
-                  <div className="v3-cal-days">
-                    {(() => {
-                      const cells = [];
-                      for (let i = 0; i < first; i++) cells.push(<div key={`e-${i}`} className="v3-cal-day muted" />);
-                      for (let d = 1; d <= daysInM; d++) {
-                        const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                        const isPast = parseDate(ds) < today;
-                        const isBusy = busyDates.has(ds);
-                        const isPartial = !isBusy && partialDates.has(ds);
-                        const unitInAvail = availability?.units.find(u => u.id === selectedUnitId);
-                        const dayPrice = unitInAvail?.prices?.find(p => p.date === ds)?.price || (ds >= (checkIn || '') && ds < (checkOut || '') ? unitInAvail?.avgPricePerNight : null);
-
-                        let cls = 'v3-cal-day';
-                        if (isPast || isBusy) cls += ' muted';
-                        if (isBusy) cls += ' busy';
-                        if (isPartial) cls += ' partial';
-                        if (ds === checkIn) cls += ' start';
-                        if (ds === checkOut) cls += ' end';
-                        if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
-
-                        cells.push(
-                          <div key={d} className={cls} onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isPast && !isBusy) handleDayClick(ds);
-                          }}>
-                            <span className="v3-cal-day-num">{d}</span>
-                            {dayPrice && !isBusy && !isPast && (
-                              <span className="v3-cal-day-price">
-                                {Math.round(dayPrice)}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      }
-                      return cells;
-                    })()}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
             </div>
 
             {/* Calendar footer actions */}
@@ -1228,8 +1322,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <span className="v3-stepper-val">{adults}</span>
               <button
                 className="v3-stepper-btn"
-                disabled={selectedUnit ? adults >= selectedUnit.maxAdults : false}
-                onClick={() => setAdults(prev => Math.min(prev + 1, selectedUnit?.maxAdults ?? prev + 1))}
+                disabled={selectedUnit ? adults >= selectedUnit.maxAdults : adults >= (siteConfig?.maxAdults || 2)}
+                onClick={() => setAdults(prev => Math.min(prev + 1, selectedUnit?.maxAdults ?? (siteConfig?.maxAdults || 2)))}
               >+</button>
             </div>
           </div>
@@ -1244,10 +1338,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <span className="v3-stepper-val">{kids}</span>
               <button
                 className="v3-stepper-btn"
-                disabled={kids >= 2 || (selectedUnit ? (adults + kids) >= (selectedUnit.maxOccupancy + 1) : false)}
+                disabled={selectedUnit ? kids >= selectedUnit.maxChildren || (adults + kids) >= (selectedUnit.maxOccupancy + 1) : kids >= (siteConfig?.maxChildren || 2)}
                 onClick={() => setKids(prev => {
-                  if (prev >= 2) return prev;
-                  if (selectedUnit && (adults + prev) >= (selectedUnit.maxOccupancy + 1)) return prev;
+                  if (selectedUnit) {
+                    if (prev >= selectedUnit.maxChildren) return prev;
+                    if ((adults + prev) >= (selectedUnit.maxOccupancy + 1)) return prev;
+                  } else if (prev >= (siteConfig?.maxChildren || 2)) return prev;
                   return prev + 1;
                 })}
               >+</button>
@@ -1255,41 +1351,52 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           </div>
 
           {/* Occupancy notice */}
-          {selectedUnit && kids > 0 && (
+          {kids > 0 && (
             <div className="v3-occupancy-notice">
               <span className="v3-occupancy-notice-icon">🛏️</span>
-              <span>У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊</span>
+              <span>{t.kidsOccupancyNotice}</span>
             </div>
           )}
 
-          <div className="v3-promo-section">
-            <button className="v3-promo-toggle" onClick={() => setShowPromo(!showPromo)}>
-              {showPromo ? '−' : '+'} {t.promoCode} / {t.certificateCode}
-            </button>
-            {promoApplied && (
-              <div className="v3-promo-success">
-                🏷️ {promoApplied.code}: {promoApplied.discount_type === 'percentage' ? `-${promoApplied.discount_value}%` : `-${promoApplied.discount_value} Kč`}
-              </div>
+          <div className="v3-offer-section">
+            {!offerApplied && (
+              <button className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
+                {showOffer ? '−' : '+'} {t.couponCode} / {t.certificateCode}
+              </button>
             )}
-            {showPromo && (
-              <div className="v3-promo-field">
+            {offerApplied && (() => {
+                const offerAmt = offerApplied.offerAmount;
+                const offerLabel = offerApplied.offerType === 'percentage'
+                  ? `-${offerAmt}%`
+                  : offerApplied.offerType === 'package'
+                    ? `${t.packagePrefix} — ${offerApplied.description || offerApplied.code}`
+                    : `-${offerAmt} Kč`;
+                return (
+                  <div className="v3-offer-success">
+                    {'🏷️'} {offerApplied.code}: {offerLabel}
+                    {invalidNightsMsg && <div style={{ marginTop: 12, padding: '10px 14px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: '8px' }}>⚠️ {invalidNightsMsg}</div>}
+                  </div>
+                );
+              })()}
+            {!offerApplied && showOffer && (
+              <div className="v3-offer-field">
                 <input
                   className="v3-field-input"
-                  placeholder={t.promoCode}
-                  value={promoCode}
-                  onChange={e => { setPromoCode(e.target.value); setPromoError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && !applyingPromo && handleApplyPromo()}
+                  placeholder={t.couponCode}
+                  value={couponCode}
+                  onChange={e => { setCouponCode(e.target.value); setOfferError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && !applyingOffer && handleApplyOffer()}
                 />
                 <button
-                  className="v3-promo-apply"
-                  onClick={handleApplyPromo}
-                  disabled={applyingPromo || !promoCode.trim()}
+                  className="v3-offer-apply"
+                  onClick={handleApplyOffer}
+                  disabled={applyingOffer || !couponCode.trim()}
                 >
-                  {applyingPromo ? '...' : t.apply}
+                  {applyingOffer ? '...' : t.apply}
                 </button>
               </div>
             )}
-            {promoError && <div className="v3-promo-error">{promoError}</div>}
+              {offerError && <div className="v3-offer-error">{offerError}</div>}
           </div>
         </div>
 
@@ -1317,7 +1424,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           {/* Unit selection list — only when no unit is pre-selected */}
           {!loadingAvail && !selectedUnitId && (
             <div className="v3-house-list">
-              {availability?.units?.length === 0 ? (
+              {displayUnits.length === 0 ? (
                 <div className="v3-no-avail">
                   <div className="v3-no-avail-icon">💭</div>
                   <h3>{t.noUnitsFound}</h3>
@@ -1355,7 +1462,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               ) : (
                 // Deduplicate units by id to prevent duplicate key warnings
-                availability?.units
+                displayUnits
                   .filter((u, idx, arr) => arr.findIndex(x => x.id === u.id) === idx)
                   .map(u => {
                     const isSelected = selectedUnitId === u.id;
@@ -1389,7 +1496,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                     );
                   })
               )}
-              {availability && availability.units?.length > 0 && socialProof && (
+              {displayUnits.length > 0 && socialProof && (
                 <div className="v3-social-badges">
                   <div className="v3-badge viewers">
                     <span className="v3-badge-dot pulse"></span>
@@ -1508,6 +1615,33 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
           <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
 
+          {offerApplied?.offerType === 'package' && offerApplied.bundle?.included_services?.some((inc: any) => services.some(s => s.id === inc.service_id)) && (() => {
+             const guestsCount = adults + kids || 1;
+             const includedGuestsCount = offerApplied.bundle.base_guests || selectedUnit?.baseOccupancy || 2;
+             const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+             
+             const extraGuestsText = {
+               uk: `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей. Для додаткових ${extraGuestsCount} гостей послуги розраховуються за стандартним прайсом.`,
+               en: `* Your package covers services for ${includedGuestsCount} guests. Services for ${extraGuestsCount} extra guest${extraGuestsCount === 1 ? '' : 's'} will be charged at the standard rate.`,
+               de: `* Ihr Paket umfasst Dienstleistungen für ${includedGuestsCount} Gäste. Dienstleistungen für ${extraGuestsCount} weitere${extraGuestsCount === 1 ? 'n Gast' : ' Gäste'} werden zum Standardpreis berechnet.`,
+               cs: `* Váš balíček zahrnuje služby pro ${includedGuestsCount} hosty. Služby pro ${extraGuestsCount} další hosty budou účtovány za standardní cenu.`
+             }[lang] || `* Ваш пакет покриває послуги для ${includedGuestsCount} гостей...`;
+
+             return (
+               <div className="v3-occupancy-notice" style={{ background: 'rgba(47, 79, 43, 0.05)', borderColor: 'rgba(47, 79, 43, 0.2)', color: 'var(--moss)' }}>
+                 <span className="v3-occupancy-notice-icon">🎁</span>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                   <span>{t.packageServicesNotice || 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.'}</span>
+                   {extraGuestsCount > 0 && (
+                     <span style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.4 }}>
+                       {extraGuestsText}
+                     </span>
+                   )}
+                 </div>
+               </div>
+             );
+          })()}
+
           {loadingServices ? (
             <div className="v3-house-list">
               {[1, 2].map(i => (
@@ -1544,7 +1678,29 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         <div className="v3-service-name">{tName(s, 'name', lang)}</div>
                         <div className="v3-service-reason">{tName(s, 'description', lang)}</div>
                         <div className="v3-service-price-row">
-                          <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>
+                          {(() => {
+                            const guestsCount = adults + kids || 1;
+                            const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
+                            const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
+                            const isFree = incSvc && incSvc.isIncluded;
+                            
+                            const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+                            const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+                            const includedForBaseText = {
+                              uk: `Включено для ${includedGuestsCount} + `,
+                              en: `Included for ${includedGuestsCount} + `,
+                              de: `Für ${includedGuestsCount} inkl. + `,
+                              cs: `Zahrnuto pro ${includedGuestsCount} + `
+                            }[lang] || `Включено для ${includedGuestsCount} + `;
+
+                            if (isFree) {
+                              if (extraGuestsCount > 0) {
+                                return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{includedForBaseText}{formatPrice(s.price * extraGuestsCount, siteCurrency)}</span>;
+                              }
+                              return <span className="v3-service-price" style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>;
+                            }
+                            return <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>;
+                          })()}
                           <div className="v3-service-toggle"></div>
                         </div>
                       </div>
@@ -1563,13 +1719,23 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               onClick={() => goToStep(5)}
             >
               <span>
-                {selectedServiceIds.size > 0 ? (() => {
-                  const guestsCount = adults + kids || 1;
-                  const servicesTotal = services
-                    .filter(s => selectedServiceIds.has(s.id))
-                    .reduce((sum, s) => sum + (s.price || 0) * guestsCount, 0);
-                  return `${t.confirmSelection || 'Підтвердити вибір'} (${selectedServiceIds.size}) · +${formatPrice(servicesTotal, siteCurrency)}`;
-                })() : 'Перейти до оплати'}
+                {services.filter(s => selectedServiceIds.has(s.id)).length > 0 ? (() => {
+                  const validSelectedServices = services.filter(s => selectedServiceIds.has(s.id));
+                  const servicesTotal = validSelectedServices
+                    .reduce((sum, s) => {
+                       const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
+                       const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
+                       const guestsCount = adults + kids || 1;
+                       const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+                       const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+                       
+                       if (incSvc && incSvc.isIncluded) {
+                         return sum + (s.price || 0) * extraGuestsCount;
+                       }
+                       return sum + (s.price || 0) * guestsCount;
+                    }, 0);
+                  return `${t.confirmServices} (${validSelectedServices.length})${servicesTotal > 0 ? ` · +${formatPrice(servicesTotal, siteCurrency)}` : ''}`;
+                })() : t.next}
               </span>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1590,7 +1756,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                 <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
-                <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
+                <span className="v3-breakdown-val">
+                  {offerApplied?.offerType === 'package' 
+                    ? <span style={{ color: 'var(--moss)', fontWeight: 600 }}>{t.includedInPackage || 'Включено в пакет'}</span>
+                    : formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)
+                  }
+                </span>
               </div>
               {checkIn && checkOut && (
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
@@ -1598,12 +1769,44 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               )}
             </div>
+
+            {offerApplied?.offerType === 'package' && offerApplied.bundle && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
+              </div>
+            )}
+            {offerApplied && offerApplied.offerType !== 'package' && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>🏷️ {t.couponCode || 'Промокод'} ({offerApplied.code})</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>
+                  -{offerApplied.offerType === 'percentage' ? `${offerApplied.offerAmount}%` : formatPrice(offerApplied.offerAmount, siteCurrency)}
+                </span>
+              </div>
+            )}
             {services.filter(s => selectedServiceIds.has(s.id)).map(s => {
               const guestsCount = adults + kids || 1;
+              const isPkg = offerApplied?.offerType === 'package' && offerApplied.bundle;
+              const incSvc = isPkg ? offerApplied.bundle.included_services?.find((inc: any) => inc.service_id === s.id) : null;
+              const isFree = incSvc && incSvc.isIncluded;
+              const includedGuestsCount = offerApplied?.bundle?.base_guests || selectedUnit?.baseOccupancy || 2;
+              const extraGuestsCount = Math.max(0, guestsCount - includedGuestsCount);
+              const extraTxt = { uk: 'додаткові', en: 'extra', de: 'weitere', cs: 'další' }[lang] || 'додаткові';
+
+              const includedForText = { uk: 'Включено для', en: 'Included for', de: 'Inklusive für', cs: 'Zahrnuto pro' }[lang] || 'Включено для';
               return (
                 <div key={s.id} className="v3-breakdown-row">
-                  <span>{tName(s, 'name', lang)} × {guestsCount}</span>
-                  <span className="v3-breakdown-val">{formatPrice(s.price * guestsCount, siteCurrency)}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span>{tName(s, 'name', lang)} {isFree && extraGuestsCount === 0 ? '' : `× ${isFree ? extraGuestsCount : guestsCount}`} {isFree && extraGuestsCount > 0 ? `(${includedForText} ${includedGuestsCount})` : ''}</span>
+                  </div>
+                  <span className="v3-breakdown-val">
+                    {isFree 
+                      ? (extraGuestsCount > 0 
+                          ? formatPrice(s.price * extraGuestsCount, siteCurrency)
+                          : <span style={{ color: 'var(--moss)' }}>{t.includedInPackage || 'Включено в пакет'}</span>)
+                      : formatPrice(s.price * guestsCount, siteCurrency)
+                    }
+                  </span>
                 </div>
               );
             })}
@@ -1677,11 +1880,22 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               </div>
               <button
-                className={`v3-cta-btn ${((step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))) ? 'disabled' : ''}`}
-                disabled={(step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))}
+                className={`v3-cta-btn ${((step === 1 && (!checkIn || !checkOut || !!invalidNightsMsg)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))) ? 'disabled' : ''}`}
+                disabled={(step === 1 && (!checkIn || !checkOut || !!invalidNightsMsg)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))}
                 onClick={() => {
                   if (step === 1) {
-                    if (checkIn && checkOut) goToStep(2);
+                    if (checkIn && checkOut && !invalidNightsMsg) {
+                      // Skip step 2 if unit is already selected (from bundle auto-select or URL param)
+                      // or if there's only 1 available unit
+                      if (selectedUnitId || displayUnits.length === 1) {
+                        if (!selectedUnitId && displayUnits.length === 1) {
+                          setSelectedUnitId(displayUnits[0].id);
+                        }
+                        goToStep(3);
+                      } else {
+                        goToStep(2);
+                      }
+                    }
                   }
                   else if (step === 2) goToStep(3);
                   else if (step === 3) submitBooking();

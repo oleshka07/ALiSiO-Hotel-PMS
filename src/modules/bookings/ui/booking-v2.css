@@ -845,6 +845,28 @@
   display: none;
 }
 
+.v3-cal-day.checkout-only {
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 8px;
+  opacity: 1; /* override muted if any */
+}
+
+.v3-cal-day.checkout-only:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.v3-cal-day.checkout-only::after {
+  content: "→";
+  position: absolute;
+  font-size: 10px;
+  bottom: 2px;
+  right: 6px;
+  color: var(--moss);
+  font-weight: bold;
+}
+
 /* Partial — деякі юніти ще вільні */
 .v3-cal-day.partial {
   position: relative;
@@ -1890,14 +1912,14 @@
   padding: 8px 0;
 }
 
-/* ── PROMO SECTION ── */
-.v3-promo-section {
+/* ── OFFER SECTION ── */
+.v3-offer-section {
   margin-top: 24px;
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
 
-.v3-promo-toggle {
+.v3-offer-toggle {
   background: none;
   border: none;
   padding: 0;
@@ -1911,18 +1933,18 @@
   transition: color .2s;
 }
 
-.v3-promo-toggle:hover {
+.v3-offer-toggle:hover {
   color: var(--ink);
 }
 
-.v3-promo-field {
+.v3-offer-field {
   display: flex;
   gap: 8px;
   margin-top: 12px;
   animation: v3-slideDown .2s ease-out;
 }
 
-.v3-promo-apply {
+.v3-offer-apply {
   background: var(--ink);
   color: var(--bg);
   border: none;
@@ -1945,7 +1967,7 @@
   }
 }
 
-.v3-promo-success {
+.v3-offer-success {
   font-size: 12px;
   font-weight: 600;
   color: #2d6a2d;
@@ -1956,7 +1978,7 @@
   margin-top: 6px;
 }
 
-.v3-promo-error {
+.v3-offer-error {
   font-size: 12px;
   color: #c0392b;
   margin-top: 4px;

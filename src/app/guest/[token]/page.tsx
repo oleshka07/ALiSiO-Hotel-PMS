@@ -112,27 +112,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const widgetContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Cart ─────────────────────────────────────────────────
-  // Schema notes:
-  //   - Simple services (BBQ, late checkout, etc): just serviceId + qty
-  //   - Slot services (sauna, tub): set `hours`, optional `addonBrooms`,
-  //     `startHour`, `slotDate`. lineTotal overrides price×quantity.
-  //   - Breakfast bundle: set `breakfastMenuItems` + `serviceDates`,
-  //     lineTotal = sum(items × dates).
-  // Each widget item is treated as one "booking" (qty stays 1) — we can't
-  // sensibly increment a sauna booking from the cart stepper, so we only
-  // allow adjusting qty for simple services.
-  interface CartBreakfastItem { menuItemId: string; quantity: number; price: number; name: string }
   interface CartItem {
     serviceId: string; serviceName: string; price: number;
     currency: string; quantity: number; icon: string;
-    serviceDates?: string[];
-    // Slot service extras
-    hours?: number; startHour?: number; slotDate?: string;
-    addonBrooms?: number; addonBroomPrice?: number;
-    // Breakfast bundle
-    breakfastMenuItems?: CartBreakfastItem[];
-    // Pre-computed line total (overrides price * quantity when set)
-    lineTotal?: number;
+    serviceDates?: string[]; // for breakfast-type: dates breakfast is needed
   }
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoading, setCartLoading] = useState(false);
@@ -149,8 +132,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     documentType: '', documentNumber: '', nationality: '', address: '',
   });
   const [regLoading, setRegLoading] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const ocrInputRef = useRef<HTMLInputElement>(null);
 
   // WhatsApp number
   const WHATSAPP_NUMBER = '420723565616';
@@ -253,8 +234,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     if (!token) return;
     const handleUnload = () => {
       if (cartItems.length === 0) return;
-      const cartTotal = cartItems.reduce((s, i) =>
-        s + (typeof i.lineTotal === 'number' ? i.lineTotal : i.price * i.quantity), 0);
+      const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
       try {
         // Blob with explicit Content-Type is required so Next.js request.json() can parse the body
         const payload = JSON.stringify({
@@ -413,75 +393,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     logCartEvent('add', svc.id, qty);
   };
 
-  // ─── Widget → Cart bridge ─────────────────────────────────
-  // The shadow-DOM service widget (sauna/tub/breakfast) calls
-  // window.alisioAddToCart with a typed payload; we map it to a CartItem
-  // and add it to the existing cart. Same shadow root, so postMessage
-  // is not needed — direct function invocation works.
-  interface BridgePayload {
-    type: 'slot' | 'breakfast';
-    serviceId: string;
-    serviceName: string;
-    icon?: string;
-    currency?: string;
-    lineTotal: number;
-    // slot
-    hours?: number; startHour?: number; date?: string; pricePerHour?: number;
-    addonBrooms?: number; addonBroomPrice?: number;
-    // breakfast
-    breakfastMenuItems?: CartBreakfastItem[];
-    serviceDates?: string[];
-  }
-  useEffect(() => {
-    if (!r) return;
-    const bridge = (payload: BridgePayload) => {
-      try {
-        if (cartItems.length > 0 && payload.currency && payload.currency !== cartItems[0].currency) {
-          showToast(`Cannot mix ${payload.currency} and ${cartItems[0].currency} in one cart`, 'error');
-          return false;
-        }
-        setCartItems(prev => {
-          // Replace existing line for the same serviceId — guests re-open
-          // the widget to «edit» (re-pick hours/brooms/dates) and we want
-          // the latest selection, not a duplicate.
-          const filtered = prev.filter(i => i.serviceId !== payload.serviceId);
-          const item: CartItem = {
-            serviceId: payload.serviceId,
-            serviceName: payload.serviceName,
-            icon: payload.icon || '✨',
-            currency: payload.currency || 'Kč',
-            price: payload.pricePerHour || 0,
-            quantity: 1,
-            lineTotal: payload.lineTotal,
-            serviceDates: payload.serviceDates,
-            hours: payload.hours,
-            startHour: payload.startHour,
-            slotDate: payload.date,
-            addonBrooms: payload.addonBrooms,
-            addonBroomPrice: payload.addonBroomPrice,
-            breakfastMenuItems: payload.breakfastMenuItems,
-          };
-          return [...filtered, item];
-        });
-        showToast(t.addedToCart);
-        logCartEvent('add', payload.serviceId, 1, payload.lineTotal);
-        // Dismiss the widget popup so the guest returns to the services
-        // grid with the cart FAB visible.
-        setWidgetService(null);
-        return true;
-      } catch (e) {
-        console.error('[alisioAddToCart] error:', e);
-        return false;
-      }
-    };
-    (window as any).alisioAddToCart = bridge;
-    return () => {
-      if ((window as any).alisioAddToCart === bridge) {
-        delete (window as any).alisioAddToCart;
-      }
-    };
-  }, [r, cartItems.length, t.addedToCart]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const removeFromCart = (serviceId: string) => {
     setCartItems(prev => {
       const item = prev.find(i => i.serviceId === serviceId);
@@ -501,10 +412,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     }, []));
   };
 
-  // Per-line total falls back to price × quantity for legacy simple items.
-  const cartLineTotal = (i: CartItem) =>
-    typeof i.lineTotal === 'number' ? i.lineTotal : i.price * i.quantity;
-  const cartTotal = cartItems.reduce((s, i) => s + cartLineTotal(i), 0);
+  const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
   // cartCount = number of distinct service lines (not total qty), for FAB badge readability
   const cartCount = cartItems.length;
 
@@ -521,17 +429,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             serviceId: i.serviceId,
             quantity: i.quantity,
             serviceDates: i.serviceDates,
-            // Slot service extras (sauna/tub) — backend uses these to
-            // recompute the line total and persist hours/brooms.
-            hours: i.hours,
-            startHour: i.startHour,
-            slotDate: i.slotDate,
-            addonBrooms: i.addonBrooms,
-            addonBroomPrice: i.addonBroomPrice,
-            // Breakfast bundle — backend creates one BSO per (item, date).
-            breakfastMenuItems: i.breakfastMenuItems,
-            // Pre-computed total to keep server in sync with client display.
-            lineTotal: i.lineTotal,
           }))
         }),
       });
@@ -615,11 +512,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     script.setAttribute('data-container', widgetId);
     script.setAttribute('data-nonce', nonce);
     if (r?.id) script.setAttribute('data-reservation', r.id);
-    // Pass stay window so the breakfast widget can render a per-morning
-    // picker (defaults to all mornings between check-in+1 and check-out).
-    if (r?.check_in)  script.setAttribute('data-checkin',  r.check_in);
-    if (r?.check_out) script.setAttribute('data-checkout', r.check_out);
-    if (widgetService === 'sauna') script.setAttribute('data-promo', 'GLAMPING');
+    if (widgetService === 'sauna') script.setAttribute('data-offer', 'GLAMPING');
     container.appendChild(script);
 
     return () => { container.innerHTML = ''; };
@@ -686,6 +579,159 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     );
   }
 
+  // ─── FAR BEFORE ───────────────────────────────
+  if (phase === 'far_before') {
+    return (
+      <div className="gp-root">
+        <FarBeforeScreen
+          data={data} t={t} lang={lang} dLeft={dLeft}
+          isRegistered={isRegistered}
+          onRegisterClick={() => setShowReg(true)}
+          checkInTime={r?.check_in_time}
+          checkOutTime={r?.check_out_time}
+        />
+
+        {/* Registration overlay — must be rendered here because far_before does an early return */}
+        {showReg && (
+          <div className="gp-reg-overlay">
+            <div className="gp-reg-header">
+              <button className="gp-reg-back" onClick={() => {
+                if (regStep === 1) setShowReg(false);
+                else setRegStep(s => s - 1);
+              }}>{regStep === 1 ? '✕' : t.back}</button>
+              <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, 3)}</span>
+              <div style={{ width: 48 }} />
+            </div>
+            <div className="gp-reg-progress">
+              <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
+            </div>
+
+            <div className="gp-reg-body">
+              {/* Step 1: Guest Details */}
+              {regStep === 1 && (
+                <>
+                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.fullName} *</div>
+                    <input className="gp-field-input" value={regData.fullName} autoComplete="name"
+                      onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.email} *</div>
+                    <input className="gp-field-input" type="email" value={regData.email} autoComplete="email"
+                      onChange={e => setRegData(d => ({ ...d, email: e.target.value }))} />
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.phone}</div>
+                    <input className="gp-field-input" type="tel" value={regData.phone} autoComplete="tel"
+                      onChange={e => setRegData(d => ({ ...d, phone: e.target.value }))} />
+                    <div className="gp-field-hint">{t.phoneHint}</div>
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.dateOfBirth} *</div>
+                    <input className="gp-field-input" type="date" value={regData.dateOfBirth} autoComplete="bday"
+                      onChange={e => setRegData(d => ({ ...d, dateOfBirth: e.target.value }))} />
+                  </div>
+                </>
+              )}
+
+              {/* Step 2: ID Document */}
+              {regStep === 2 && (
+                <>
+                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
+                  <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
+                  <div className="gp-security-notice">{t.securityNotice}</div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.documentType} *</div>
+                    <select className="gp-field-input" value={regData.documentType}
+                      onChange={e => setRegData(d => ({ ...d, documentType: e.target.value }))}>
+                      <option value="">{t.selectDoc}</option>
+                      <option value="passport">{t.passportDoc}</option>
+                      <option value="id_card">{t.idCardDoc}</option>
+                      <option value="driving_license">{t.drivingLicenseDoc}</option>
+                    </select>
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.documentNumber} *</div>
+                    <input className="gp-field-input" value={regData.documentNumber}
+                      onChange={e => setRegData(d => ({ ...d, documentNumber: e.target.value }))} />
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.nationality} *</div>
+                    <input className="gp-field-input" value={regData.nationality} autoComplete="country-name"
+                      placeholder="DEU, CZE, UKR..."
+                      onChange={e => setRegData(d => ({ ...d, nationality: e.target.value }))} />
+                  </div>
+                  <div className="gp-field">
+                    <div className="gp-field-label">{t.permanentAddress} *</div>
+                    <input className="gp-field-input" value={regData.address} autoComplete="street-address"
+                      placeholder="München, Germany"
+                      onChange={e => setRegData(d => ({ ...d, address: e.target.value }))} />
+                  </div>
+                </>
+              )}
+
+              {/* Step 3: Confirm */}
+              {regStep === 3 && (
+                <>
+                  <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>{t.step3Title}</h2>
+                  <div className="gp-confirm-table">
+                    {[
+                      [t.fullName, regData.fullName],
+                      [t.email, regData.email],
+                      [t.phone, regData.phone || '—'],
+                      [t.dateOfBirth, regData.dateOfBirth],
+                      [t.documentType, regData.documentType],
+                      [t.documentNumber, regData.documentNumber],
+                      [t.nationality, regData.nationality],
+                      [t.permanentAddress, regData.address],
+                    ].map(([label, value], i) => (
+                      <div key={i} className="gp-confirm-row">
+                        <span className="gp-confirm-label">{label}</span>
+                        <span className="gp-confirm-value">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="gp-confirm-success">{t.confirmNotice}</div>
+                </>
+              )}
+            </div>
+
+            <div className="gp-reg-footer">
+              {regStep < 3 ? (
+                <button className="gp-btn gp-btn-primary" onClick={() => {
+                  if (regStep === 1) {
+                    if (!regData.fullName.trim() || !regData.email.trim() || !regData.dateOfBirth) {
+                      showToast(t.regError, 'error'); return;
+                    }
+                  }
+                  if (regStep === 2) {
+                    if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
+                      showToast(t.regError, 'error'); return;
+                    }
+                  }
+                  setRegStep(s => s + 1);
+                }}>
+                  {t.continue_}
+                </button>
+              ) : (
+                <button className="gp-btn gp-btn-primary" onClick={handleRegSubmit} disabled={regLoading}>
+                  {regLoading ? '...' : t.confirmReg}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div className={`gp-toast ${toast.type === 'error' ? 'gp-toast-error' : ''}`}>{toast.msg}</div>
+        )}
+      </div>
+    );
+  }
+
+
   // ─── Data derivatives ─────────────────────────
   const amenities = parseJSON<any[]>(cfg?.amenities, []);
   const rules = parseJSON<any[]>(cfg?.rules, []);
@@ -708,19 +754,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     <div className="gp-root">
 
       {/* ════ HOME TAB ════ */}
-      {tab === 'home' && phase === 'far_before' && (
-        <div className="gp-tab-content">
-          <FarBeforeScreen
-            data={data} t={t} lang={lang} dLeft={dLeft}
-            isRegistered={isRegistered}
-            onRegisterClick={() => setShowReg(true)}
-            checkInTime={r?.check_in_time}
-            checkOutTime={r?.check_out_time}
-          />
-        </div>
-      )}
-
-      {tab === 'home' && phase !== 'far_before' && (
+      {tab === 'home' && (
         <div className="gp-tab-content">
 
           {/* ── WALLET CARD ── */}
@@ -1344,26 +1378,21 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         </div>
       </BottomSheet>
 
-      {showReg && (() => {
-        const isFirstGuest = regCurrentGuest === 0;
-        const totalSteps = isFirstGuest ? 3 : 2;
-        const isContactStep = isFirstGuest && regStep === 1;
-        const isDataStep = isFirstGuest ? regStep === 2 : regStep === 1;
-        const isConfirmStep = regStep === totalSteps;
-
-        return (
+      {/* ════ REGISTRATION OVERLAY ════ */}
+      {showReg && (
         <div className="gp-reg-overlay">
           <div className="gp-reg-header">
             <button className="gp-reg-back" onClick={() => {
               if (regStep === 1) setShowReg(false);
               else setRegStep(s => s - 1);
             }}>{regStep === 1 ? '✕' : t.back}</button>
-            <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, totalSteps)}</span>
+            <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, 3)}</span>
             <div style={{ width: 48 }} />
           </div>
           <div className="gp-reg-progress">
-            <div className="gp-reg-progress-fill" style={{ width: `${(regStep / totalSteps) * 100}%` }} />
+            <div className="gp-reg-progress-fill" style={{ width: `${(regStep / 3) * 100}%` }} />
           </div>
+
 
           {/* Hidden file input for OCR photo */}
           <input
@@ -1416,11 +1445,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             }}
           />
 
+
           <div className="gp-reg-body">
-            {/* Contact step — only 1st guest */}
-            {isContactStep && (
+            {/* Step 1: Guest Details */}
+            {regStep === 1 && (
               <>
                 <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
+                <div className="gp-field">
+                  <div className="gp-field-label">{t.fullName} *</div>
+                  <input className="gp-field-input" value={regData.fullName} autoComplete="name"
+                    onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
+                </div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.email} *</div>
                   <input className="gp-field-input" type="email" value={regData.email} autoComplete="email"
@@ -1432,40 +1467,20 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                     onChange={e => setRegData(d => ({ ...d, phone: e.target.value }))} />
                   <div className="gp-field-hint">{t.phoneHint}</div>
                 </div>
-              </>
-            )}
-
-            {/* Data step — OCR, name, DOB, document */}
-            {isDataStep && (
-              <>
-                <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
-                <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
-
-                <button
-                  className="gp-btn gp-btn-outline"
-                  style={{ width: '100%', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                  onClick={() => ocrInputRef.current?.click()}
-                  disabled={ocrLoading}
-                >
-                  {ocrLoading ? (
-                    <><span className="gp-spinner" style={{ width: 18, height: 18 }} /> Scanning...</>
-                  ) : (
-                    <>📷 Register via document photo</>
-                  )}
-                </button>
-
-                <div className="gp-security-notice">{t.securityNotice}</div>
-
-                <div className="gp-field">
-                  <div className="gp-field-label">{t.fullName} *</div>
-                  <input className="gp-field-input" value={regData.fullName} autoComplete="name"
-                    onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
-                </div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.dateOfBirth} *</div>
                   <input className="gp-field-input" type="date" value={regData.dateOfBirth} autoComplete="bday"
                     onChange={e => setRegData(d => ({ ...d, dateOfBirth: e.target.value }))} />
                 </div>
+              </>
+            )}
+
+            {/* Step 2: ID Document */}
+            {regStep === 2 && (
+              <>
+                <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{t.step2Title}</h2>
+                <p style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 16 }}>{t.step2Why}</p>
+                <div className="gp-security-notice">{t.securityNotice}</div>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.documentType} *</div>
                   <select className="gp-field-input" value={regData.documentType}
@@ -1496,17 +1511,15 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               </>
             )}
 
-            {/* Confirm step */}
-            {isConfirmStep && (
+            {/* Step 3: Confirm */}
+            {regStep === 3 && (
               <>
                 <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>{t.step3Title}</h2>
                 <div className="gp-confirm-table">
                   {[
                     [t.fullName, regData.fullName],
-                    ...(isFirstGuest ? [
-                      [t.email, regData.email],
-                      [t.phone, regData.phone || '—'],
-                    ] : []),
+                    [t.email, regData.email],
+                    [t.phone, regData.phone || '—'],
                     [t.dateOfBirth, regData.dateOfBirth],
                     [t.documentType, regData.documentType],
                     [t.documentNumber, regData.documentNumber],
@@ -1525,15 +1538,16 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </div>
 
           <div className="gp-reg-footer">
-            {!isConfirmStep ? (
+            {regStep < 3 ? (
               <button className="gp-btn gp-btn-primary" onClick={() => {
-                if (isContactStep) {
-                  if (!regData.email.trim()) {
+                // Validation
+                if (regStep === 1) {
+                  if (!regData.fullName.trim() || !regData.email.trim() || !regData.dateOfBirth) {
                     showToast(t.regError, 'error'); return;
                   }
                 }
-                if (isDataStep) {
-                  if (!regData.fullName.trim() || !regData.dateOfBirth || !regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
+                if (regStep === 2) {
+                  if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
                     showToast(t.regError, 'error'); return;
                   }
                 }
@@ -1548,8 +1562,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             )}
           </div>
         </div>
-        );
-      })()}
+      )}
 
       {/* ════ BOTTOM TAB BAR ════ */}
       <div className="gp-tab-bar">
@@ -1589,75 +1602,34 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </div>
         ) : (
           <div style={{ padding: '0 4px' }}>
-            {cartItems.map(item => {
-              const isSlot = typeof item.hours === 'number';
-              const isBreakfastBundle = !!(item.breakfastMenuItems && item.breakfastMenuItems.length > 0);
-              const isWidgetLine = isSlot || isBreakfastBundle;
-              const lineTotal = cartLineTotal(item);
-              // Slot subtitle: «4 год · 14:00 · 1 вінік»
-              const slotMeta: string[] = [];
-              if (isSlot) {
-                slotMeta.push(`${item.hours} ${(item.hours === 1 ? t.hour : t.hours) || 'h'}`);
-                if (typeof item.startHour === 'number') {
-                  slotMeta.push(`${String(item.startHour).padStart(2, '0')}:00`);
-                }
-                if (item.addonBrooms && item.addonBrooms > 0) {
-                  slotMeta.push(`🌿 ×${item.addonBrooms}`);
-                }
-              }
-              // Breakfast bundle subtitle: «3 страви × 2 дні»
-              const breakfastMeta: string[] = [];
-              if (isBreakfastBundle) {
-                const totalQty = item.breakfastMenuItems!.reduce((s, m) => s + m.quantity, 0);
-                breakfastMeta.push(`${totalQty} ${t.dishes || 'items'}`);
-                const days = item.serviceDates?.length || 1;
-                if (days > 1) breakfastMeta.push(`× ${days} ${t.daysShort || 'd'}`);
-              }
-              return (
-                <div key={item.serviceId} className="gp-cart-item">
-                  <div className="gp-cart-item-icon">{item.icon}</div>
-                  <div className="gp-cart-item-info">
-                    <div className="gp-cart-item-name">{item.serviceName}</div>
-                    <div className="gp-cart-item-price">{lineTotal.toFixed(0)} {item.currency}</div>
-                    {slotMeta.length > 0 && (
-                      <div className="gp-cart-item-dates">{slotMeta.join(' · ')}</div>
-                    )}
-                    {breakfastMeta.length > 0 && (
-                      <div className="gp-cart-item-dates">{breakfastMeta.join(' ')}</div>
-                    )}
-                    {item.serviceDates && item.serviceDates.length > 0 && (
-                      <div className="gp-cart-item-dates">
-                        {item.serviceDates.map(d => formatDateLocalized(d, lang)).join(', ')}
-                      </div>
-                    )}
-                  </div>
-                  {isWidgetLine ? (
-                    // Widget items are atomic bookings — only allow removal,
-                    // not increment (changing hours/brooms means re-opening
-                    // the widget and adding a fresh line).
-                    <div className="gp-cart-stepper">
-                      <button
-                        className="gp-cart-stepper-btn remove"
-                        onClick={() => removeFromCart(item.serviceId)}
-                        aria-label="Remove">×</button>
-                    </div>
-                  ) : (
-                    <div className="gp-cart-stepper">
-                      <button
-                        className={`gp-cart-stepper-btn${item.quantity === 1 ? ' remove' : ''}`}
-                        onClick={() => updateCartQty(item.serviceId, -1)}>
-                        {item.quantity === 1 ? '×' : '−'}
-                      </button>
-                      <span className="gp-cart-stepper-qty">{item.quantity}</span>
-                      <button
-                        className="gp-cart-stepper-btn"
-                        disabled={!!(item.serviceDates?.length && item.quantity >= item.serviceDates.length)}
-                        onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
+            {cartItems.map(item => (
+              <div key={item.serviceId} className="gp-cart-item">
+                <div className="gp-cart-item-icon">{item.icon}</div>
+                <div className="gp-cart-item-info">
+                  <div className="gp-cart-item-name">{item.serviceName}</div>
+                  <div className="gp-cart-item-price">{(item.price * item.quantity).toFixed(0)} {item.currency}</div>
+                  {/* #8 FIX: Show selected dates for breakfast-type items */}
+                  {item.serviceDates && item.serviceDates.length > 0 && (
+                    <div className="gp-cart-item-dates">
+                      {item.serviceDates.map(d => formatDateLocalized(d, lang)).join(', ')}
                     </div>
                   )}
                 </div>
-              );
-            })}
+                <div className="gp-cart-stepper">
+                  <button
+                    className={`gp-cart-stepper-btn${item.quantity === 1 ? ' remove' : ''}`}
+                    onClick={() => updateCartQty(item.serviceId, -1)}>
+                    {item.quantity === 1 ? '×' : '−'}
+                  </button>
+                  <span className="gp-cart-stepper-qty">{item.quantity}</span>
+                  {/* #7 FIX: Disable + when qty is already at max serviceDates count */}
+                  <button
+                    className="gp-cart-stepper-btn"
+                    disabled={!!(item.serviceDates?.length && item.quantity >= item.serviceDates.length)}
+                    onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
+                </div>
+              </div>
+            ))}
             <div className="gp-cart-total">
               <span className="gp-cart-total-label">Total</span>
               <span className="gp-cart-total-value">{cartTotal.toFixed(0)} {cartItems[0]?.currency || 'Kč'}</span>
@@ -1737,12 +1709,12 @@ function PostStayPage({ data, lang, setLang }: {
         <p className="gp-ps-hero-comeback">{t.comeBack}</p>
       </div>
 
-      {/* Early booking promo */}
-      <div className="gp-ps-promo">
-        <div className="gp-ps-promo-badge">🎁 -30%</div>
-        <h2 className="gp-ps-promo-title">{t.earlyBooking}</h2>
-        <p className="gp-ps-promo-desc">{t.earlyBookingDesc}</p>
-        <div className="gp-ps-promo-conditions">
+      {/* Early booking offer */}
+      <div className="gp-ps-offer">
+        <div className="gp-ps-offer-badge">🎁 -30%</div>
+        <h2 className="gp-ps-offer-title">{t.earlyBooking}</h2>
+        <p className="gp-ps-offer-desc">{t.earlyBookingDesc}</p>
+        <div className="gp-ps-offer-conditions">
           <span>✓ 30% {t.discount}</span>
           <span>✓ Min. 2 {t.nights.toLowerCase()}</span>
         </div>

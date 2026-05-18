@@ -41,7 +41,7 @@ export interface BookingTranslations {
   dates: string;
   selectCheckIn: string;
   selectCheckOut: string;
-  promoCode: string;
+  couponCode: string;
   apply: string;
   certificateCode: string;
   // Step 2
@@ -138,7 +138,7 @@ export interface BookingTranslations {
   guestsShort: string;
   // Error / messages
   errorOccurred: string;
-  promoApplied: string;
+  offerApplied: string;
   // Step 2 extras
   yourChoice: string;
   yourHouse: string;
@@ -165,6 +165,11 @@ export interface BookingTranslations {
   to?: string;
   duration?: string;
   nightsWord: (n: number) => string;
+  packagePrefix: string;
+  packageNightsError: (n: number) => string;
+  includedInPackage: string;
+  packageServicesNotice: string;
+  kidsOccupancyNotice: string;
 }
 
 const translations: Record<BookingLang, any> = {
@@ -190,7 +195,7 @@ const translations: Record<BookingLang, any> = {
     dates: 'Дати',
     selectCheckIn: 'Оберіть дату заїзду',
     selectCheckOut: 'Оберіть дату виїзду',
-    promoCode: 'Промокод',
+    couponCode: 'Промокод',
     apply: 'Застосувати',
     certificateCode: 'Код сертифіката',
     selectAccommodation: 'Обери будинок',
@@ -279,7 +284,7 @@ const translations: Record<BookingLang, any> = {
     poweredBy: 'Powered by ALiSiO',
     guestsShort: 'гостей',
     errorOccurred: 'Сталась помилка. Спробуйте ще раз.',
-    promoApplied: 'Промокод застосовано!',
+    offerApplied: 'Промокод застосовано!',
     yourChoice: 'Ваш вибір',
     yourHouse: 'Ваш будинок',
     bookingDetails: 'Деталі бронювання',
@@ -304,6 +309,11 @@ const translations: Record<BookingLang, any> = {
     to: 'до',
     duration: 'Тривалість',
     nightsWord: (n: number) => n === 1 ? 'ніч' : n < 5 ? 'ночі' : 'ночей',
+    packagePrefix: 'Пакет',
+    packageNightsError: (n: number) => `Оберіть рівно ${n} ${n === 1 ? 'ніч' : n < 5 ? 'ночі' : 'ночей'}, щоб застосувати пакет`,
+    includedInPackage: 'Включено в пакет',
+    packageServicesNotice: 'Деякі послуги вже включені у ваш пакет. Ви можете обрати додаткові за бажанням.',
+    kidsOccupancyNotice: 'У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊',
   },
   en: {
     brandName: 'QA Glamping',
@@ -327,7 +337,7 @@ const translations: Record<BookingLang, any> = {
     dates: 'Dates',
     selectCheckIn: 'Select check-in date',
     selectCheckOut: 'Select check-out date',
-    promoCode: 'Promo code',
+    couponCode: 'Coupon code',
     apply: 'Apply',
     certificateCode: 'Certificate code',
     selectAccommodation: 'Choose house',
@@ -416,7 +426,7 @@ const translations: Record<BookingLang, any> = {
     poweredBy: 'Powered by ALiSiO',
     guestsShort: 'guests',
     errorOccurred: 'An error occurred. Please try again.',
-    promoApplied: 'Promo code applied!',
+    offerApplied: 'Coupon code applied!',
     yourChoice: 'Your choice',
     yourHouse: 'Your house',
     bookingDetails: 'Booking details',
@@ -441,6 +451,11 @@ const translations: Record<BookingLang, any> = {
     to: 'to',
     duration: 'Duration',
     nightsWord: (n: number) => n === 1 ? 'night' : 'nights',
+    packagePrefix: 'Package',
+    packageNightsError: (n: number) => `Select exactly ${n} night${n === 1 ? '' : 's'} to apply the package`,
+    includedInPackage: 'Included in package',
+    packageServicesNotice: 'Some services are already included in your package. You can choose additional ones if you wish.',
+    kidsOccupancyNotice: 'The house has one large bed — ideal for two adults. If you have a child, we are happy to make an exception: young guests do not require a separate bed 😊',
   },
   cs: {
     brandName: 'QA Glamping',
@@ -464,7 +479,7 @@ const translations: Record<BookingLang, any> = {
     dates: 'Termín',
     selectCheckIn: 'Vyberte datum příjezdu',
     selectCheckOut: 'Vyberte datum odjezdu',
-    promoCode: 'Slevový kód',
+    couponCode: 'Slevový kód',
     apply: 'Použít',
     certificateCode: 'Kód certifikátu',
     selectAccommodation: 'Vyberte dům',
@@ -553,7 +568,7 @@ const translations: Record<BookingLang, any> = {
     poweredBy: 'Powered by ALiSiO',
     guestsShort: 'hostů',
     errorOccurred: 'Nastala chyba. Zkuste to prosím znovu.',
-    promoApplied: 'Slevový kód byl použit!',
+    offerApplied: 'Slevový kód byl použit!',
     yourChoice: 'Váš výběr',
     yourHouse: 'Váš dům',
     bookingDetails: 'Detaily rezervace',
@@ -578,6 +593,11 @@ const translations: Record<BookingLang, any> = {
     to: 'do',
     duration: 'Délka',
     nightsWord: (n: number) => n === 1 ? 'noc' : n < 5 ? 'noci' : 'nocí',
+    packagePrefix: 'Balíček',
+    packageNightsError: (n: number) => `Vyberte přesně ${n} noc${n === 1 ? '' : (n < 5 ? 'i' : 'í')} pro použití balíčku`,
+    includedInPackage: 'Zahrnuto v balíčku',
+    packageServicesNotice: 'Některé služby jsou již zahrnuty ve vašem balíčku. Pokud si přejete, můžete si vybrat další.',
+    kidsOccupancyNotice: 'Dům má jednu velkou postel — ideální pro dva dospělé. Pokud máte dítě, rádi uděláme výjimku: malí hosté nepotřebují samostatnou postel 😊',
   },
   de: {
     brandName: 'QA Glamping',
@@ -601,7 +621,7 @@ const translations: Record<BookingLang, any> = {
     dates: 'Termine',
     selectCheckIn: 'Anreisedatum auswählen',
     selectCheckOut: 'Abreisedatum auswählen',
-    promoCode: 'Gutscheincode',
+    couponCode: 'Gutscheincode',
     apply: 'Anwenden',
     certificateCode: 'Zertifikatscode',
     selectAccommodation: 'Haus wählen',
@@ -690,7 +710,7 @@ const translations: Record<BookingLang, any> = {
     poweredBy: 'Powered by ALiSiO',
     guestsShort: 'Gäste',
     errorOccurred: 'Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.',
-    promoApplied: 'Gutscheincode angewendet!',
+    offerApplied: 'Gutscheincode angewendet!',
     yourChoice: 'Ihre Wahl',
     yourHouse: 'Ihr Haus',
     bookingDetails: 'Buchungsdetails',
@@ -715,6 +735,11 @@ const translations: Record<BookingLang, any> = {
     to: 'bis',
     duration: 'Dauer',
     nightsWord: (n: number) => n === 1 ? 'Nacht' : 'Nächte',
+    packagePrefix: 'Paket',
+    packageNightsError: (n: number) => `Wählen Sie genau ${n} ${n === 1 ? 'Nacht' : 'Nächte'}, um das Paket anzuwenden`,
+    includedInPackage: 'Im Paket enthalten',
+    packageServicesNotice: 'Einige Dienstleistungen sind bereits in Ihrem Paket enthalten. Sie können auf Wunsch weitere hinzufügen.',
+    kidsOccupancyNotice: 'Das Haus verfügt über ein großes Bett — ideal für zwei Erwachsene. Wenn Sie ein Kind haben, machen wir gerne eine Ausnahme: Kleine Gäste benötigen kein separates Bett 😊',
   },
 };
 
