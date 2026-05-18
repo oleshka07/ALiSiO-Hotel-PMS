@@ -25,6 +25,7 @@ export async function createWidgetReservation(request: NextRequest) {
       firstName, lastName, email, phone,
       couponCode, certificateCode,
       siteId,
+      currency: clientCurrency,
     } = body;
 
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
@@ -104,6 +105,7 @@ export async function createWidgetReservation(request: NextRequest) {
     for (const p of prices) priceMap.set(p.date, p);
 
     let totalPrice = 0;
+    let resCurrency = clientCurrency || 'CZK';
     const current = new Date(ciDate);
     for (let i = 0; i < nights; i++) {
       const dateStr = current.toISOString().split('T')[0];
@@ -163,6 +165,8 @@ export async function createWidgetReservation(request: NextRequest) {
           if (isBundle) {
             // Package overrides the totalPrice completely
             offerDiscount = Math.max(0, totalPrice - offer.price);
+            // Bundle sets its own price and currency
+            resCurrency = offer.currency || resCurrency;
             db.prepare('UPDATE gift_card_bundles SET current_uses = current_uses + 1 WHERE id = ?').run(offer.id);
           } else {
             if (offer.discount_type === 'percentage') {
@@ -215,13 +219,43 @@ export async function createWidgetReservation(request: NextRequest) {
 
     const resId = `r_${Date.now()}`;
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, payment_id, promotions_applied)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice, null, couponCode ? JSON.stringify([couponCode]) : null
+      'tentative', 'unpaid', 'direct', finalPrice, resCurrency, null, couponCode ? JSON.stringify([couponCode]) : null
     );
+
+    // ── Bundle: pre-create service_orders for included services ──────────
+    // Guests schedule the time via their guest portal; staff sees them once scheduled.
+    if (isBundle && offer?.included_services) {
+      try {
+        const bundleServices: Array<{ service_id: string; free?: boolean; isIncluded?: boolean }> =
+          typeof offer.included_services === 'string'
+            ? JSON.parse(offer.included_services)
+            : offer.included_services;
+
+        const bundleNotes = JSON.stringify({ bundle: offer.name || couponCode, included: true });
+
+        for (let i = 0; i < bundleServices.length; i++) {
+          const inc = bundleServices[i];
+          // Only insert services that are included/free in the bundle
+          if (!inc.service_id || (!inc.free && !inc.isIncluded)) continue;
+          // Verify the service exists
+          const svcExists = db.prepare('SELECT id FROM additional_services WHERE id = ?').get(inc.service_id);
+          if (!svcExists) continue;
+
+          db.prepare(`
+            INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
+            VALUES (?, ?, ?, 1, 0, 'confirmed', 'paid', NULL, ?)
+          `).run(`so_bundle_${Date.now()}_${i}`, resId, inc.service_id, bundleNotes);
+        }
+      } catch (bundleErr: any) {
+        console.error('[Reserve] Failed to create bundle service_orders:', bundleErr.message);
+        // Non-fatal — reservation is already created
+      }
+    }
 
     notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
 
@@ -236,7 +270,7 @@ export async function createWidgetReservation(request: NextRequest) {
       originalPrice: totalPrice,
       offerDiscount,
       certificateDiscount,
-      currency: 'CZK',
+      currency: resCurrency,
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
     const msg = error?.message || String(error);

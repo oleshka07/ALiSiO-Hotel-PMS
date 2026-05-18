@@ -14,6 +14,7 @@ import { RatePlansTab }  from './_components/RatePlansTab';
 import { PaymentsTab }   from './_components/PaymentsTab';
 import { CouponsTab } from './_components/CouponsTab';
 import { PackageOffersTab } from './_components/PackageOffersTab';
+import { ThankYouTab } from './_components/ThankYouTab';
 import type { Site } from './_types';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -151,6 +152,7 @@ export default function SiteDetailPage() {
         {activeTab === 'services'    && <ServicesTab siteId={siteId} siteCurrency={site.currency} />}
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, design_config: cfg } : s)} />}
         {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: cfg } : s)} />}
+        {activeTab === 'thank-you'   && <ThankYouTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: { ...s.widget_config, ...cfg } } : s)} />}
         {activeTab === 'payments'    && <PaymentsTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, payment_config: cfg } : s)} />}
         {activeTab === 'rate-plans'  && <RatePlansTab siteId={siteId} onCountChange={ratePlanCountCb} />}
         {activeTab === 'coupons' && <CouponsTab siteId={siteId} siteCurrency={site.currency} onCountChange={couponCountCb} />}

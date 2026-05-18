@@ -55,6 +55,7 @@ interface BookingFormProps {
   mode: 'create' | 'edit';
   bookingId?: string;
   initial?: Partial<BookingFormValues>;
+  currency?: string;
   unitTypes: UnitTypeRow[];
   allUnits: UnitRow[];
   bookingSources: BookingSourceRow[];
@@ -126,6 +127,7 @@ export default function BookingForm({
   mode,
   bookingId,
   initial,
+  currency: propCurrency,
   unitTypes,
   allUnits,
   bookingSources,
@@ -139,6 +141,7 @@ export default function BookingForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const currency = propCurrency || 'CZK';
 
   const getCommissionPct = useCallback((sourceCode: string) => {
     const src = bookingSources.find(s => s.code === sourceCode);
@@ -474,7 +477,7 @@ export default function BookingForm({
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💰 Фінанси</h4>
         <div className="form-row">
           <div className="form-group">
-            <label className="form-label">Вартість (CZK)</label>
+            <label className="form-label">Вартість ({currency})</label>
             <input
               className="form-input"
               type="number"
@@ -486,7 +489,7 @@ export default function BookingForm({
           </div>
           <div className="form-group">
             <label className="form-label">
-              Комісія (CZK)
+              Комісія ({currency})
               {commissionPct > 0 && (
                 <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>авто: {commissionPct}%</span>
               )}
@@ -503,7 +506,7 @@ export default function BookingForm({
         </div>
         {netRate > 0 && (
           <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8 }}>
-            Чиста ставка: {netRate.toLocaleString()} CZK
+            Чиста ставка: {netRate.toLocaleString()} {currency}
           </div>
         )}
         <div className="form-row">
@@ -527,7 +530,7 @@ export default function BookingForm({
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">
-              Сума збору (CZK)
+              Сума збору ({currency})
               {form.checkIn && form.checkOut && form.adults > 0 && (
                 <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
                   авто: {form.adults}×{nights}×{CITY_TAX_PER_ADULT_PER_NIGHT}
