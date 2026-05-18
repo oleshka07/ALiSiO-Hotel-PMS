@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
@@ -61,7 +61,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
-  const getOccupancyString = (u: any) => { if (u.maxChildren > 0) return `до ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`; return `до ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`; };
+  const getOccupancyString = (u: any) => { const upTo = t.upTo || '\u0434\u043e'; if (u.maxChildren > 0) return `${upTo} ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`; return `${upTo} ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`; };
 
   useEffect(() => {
     setIsMounted(true);
