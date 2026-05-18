@@ -139,18 +139,19 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     let offerDiscount = 0;
+    let offer: any = null;
+    let isBundle = false;
+
     if (couponCode) {
       try {
         const code = String(couponCode).toUpperCase().trim();
-        let offer = db.prepare(`
+        offer = db.prepare(`
           SELECT * FROM coupons
           WHERE code = ? AND is_active = 1
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until >= ?)
             AND (max_uses IS NULL OR current_uses < max_uses)
         `).get(code, checkOut, checkIn) as any;
-        
-        let isBundle = false;
 
         if (!offer) {
           offer = db.prepare(`
