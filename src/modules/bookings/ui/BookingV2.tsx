@@ -4,303 +4,12 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import './booking-v2.css';
 import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
+import type { UnitResult, AvailabilityResponse, ReserveResponse, DesignConfig } from './types';
+import { fmtDate, parseDate, formatDisplayDate, formatFullDate, formatPrice, getDaysInMonth, getFirstDayOfMonth } from './utils';
+import { v3Locales, commonTranslations, tName } from './locales';
 
 // API base URL
 const API_BASE = process.env.NEXT_PUBLIC_PMS_API_URL || '';
-
-// ─── Types ───
-interface UnitResult {
-  id: string;
-  name: string;
-  code: string;
-  beds: number;
-  unitTypeId: string;
-  typeName: string;
-  typeCode: string;
-  description: string;
-  photos: string[];
-  maxAdults: number;
-  maxChildren: number;
-  maxOccupancy: number;
-  baseOccupancy: number;
-  avgPricePerNight: number;
-  totalPrice: number;
-  currency: string;
-  extraPersonCharge: number;
-  petAllowed: boolean;
-  petCharge: number;
-  amenities: { icon: string; name: string }[];
-  prices?: { date: string, price: number }[];
-}
-
-interface AvailabilityResponse {
-  checkIn: string;
-  checkOut: string;
-  nights: number;
-  units: UnitResult[];
-}
-
-interface ReserveResponse {
-  success: boolean;
-  reservationId: string;
-  unitName: string;
-  checkIn: string;
-  checkOut: string;
-  nights: number;
-  totalPrice: number;
-  currency: string;
-}
-
-// ─── Helpers ───
-function fmtDate(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function parseDate(s: string): Date {
-  return new Date(s + 'T00:00:00');
-}
-
-function formatDisplayDate(s: string, lang: BookingLang): string {
-  const d = parseDate(s);
-  const locales: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' };
-  return d.toLocaleDateString(locales[lang] || 'uk-UA', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function formatFullDate(s: string, lang: BookingLang): string {
-  const d = parseDate(s);
-  const locales: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' };
-  return d.toLocaleDateString(locales[lang] || 'uk-UA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function formatPrice(n: number, currency: string = 'Kč'): string {
-  const formatted = new Intl.NumberFormat('cs-CZ').format(n).replace(',', ' ');
-  return `${formatted} ${currency}`;
-}
-
-function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-function getFirstDayOfMonth(year: number, month: number): number {
-  const d = new Date(year, month, 1).getDay();
-  return d === 0 ? 6 : d - 1;
-}
-
-interface DesignConfig {
-  theme?: string;
-  primary_color?: string;
-  button_style?: string;
-  show_shadow?: boolean;
-}
-
-const commonTranslations: Record<string, Record<string, string>> = {
-  en: {
-    "Комфортне ліжко": "Comfortable bed",
-    "Душ": "Shower",
-    "Туалет": "Toilet",
-    "Опалення": "Heating",
-    "Чайник": "Kettle",
-    "Міні-холодильник": "Mini-fridge",
-    "Wi-Fi": "Wi-Fi",
-    "Тераса": "Terrace",
-    "Замок": "Lock",
-    "Рушники": "Towels",
-    "Освітлення": "Lighting",
-    "Сніданок": "Breakfast",
-    "Повноцінний сніданок у ресторані": "Full breakfast in the restaurant",
-    "Сауна": "Sauna",
-    "Фінська сауна (2 години)": "Finnish sauna (2 hours)",
-    "Чан карпатський": "Carpathian vat",
-    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Stainless open-air vat. Minimum booking — 2 hours.",
-    "Мангал": "BBQ Grill",
-    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "BBQ and fire pit set with charcoal, fire starter and wood",
-    "Пізнє виселення": "Late Check-out",
-    "Виселення до 14:00 замість 11:00": "Check-out until 14:00 instead of 11:00",
-    "Раннє заселення": "Early Check-in",
-    "Заселення з 11:00 замість 15:00": "Check-in from 11:00 instead of 15:00"
-  },
-  cs: {
-    "Комфортне ліжко": "Pohodlná postel",
-    "Душ": "Sprcha",
-    "Туалет": "Toaleta",
-    "Опалення": "Topení",
-    "Чайник": "Rychlovarná konvice",
-    "Міні-холодильник": "Mini-lednice",
-    "Wi-Fi": "Wi-Fi",
-    "Тераса": "Terasa",
-    "Замок": "Zámek",
-    "Рушники": "Ručníky",
-    "Освітлення": "Osvětlení",
-    "Сніданок": "Snídaně",
-    "Повноцінний сніданок у ресторані": "Plná snídaně v restauraci",
-    "Сауна": "Sauna",
-    "Фінська сауна (2 години)": "Finská sauna (2 hodiny)",
-    "Чан карпатський": "Karpatská káď",
-    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Nerezová venkovní káď. Minimální rezervace — 2 hodiny.",
-    "Мангал": "BBQ Gril",
-    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "Sada pro BBQ a ohniště s uhlím, podpalovačem a dřevem",
-    "Пізнє виселення": "Pozdní odhlášení",
-    "Виселення do 14:00 замість 11:00": "Odhlášení do 14:00 místo 11:00",
-    "Раннє заселення": "Dřívější přihlášení",
-    "Заселення з 11:00 замість 15:00": "Přihlášení od 11:00 místo 15:00"
-  },
-  de: {
-    "Комфортне ліжко": "Bequemes Bett",
-    "Душ": "Dusche",
-    "Туалет": "Toilette",
-    "Опалення": "Heizung",
-    "Чайник": "Wasserkocher",
-    "Міні-холодильник": "Minikühlschrank",
-    "Wi-Fi": "WLAN",
-    "Тераса": "Terrasse",
-    "Замок": "Schloss",
-    "Рушники": "Handtücher",
-    "Освітлення": "Beleuchtung",
-    "Сніданок": "Frühstück",
-    "Повноцінний сніданок у ресторані": "Ausgiebiges Frühstück im Restaurant",
-    "Сауна": "Sauna",
-    "Фінська сауна (2 години)": "Finnische Sauna (2 Stunden)",
-    "Чан карпатський": "Karpaten-Badefass",
-    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Rostfreies Freiluft-Badefass. Mindestbuchung — 2 Stunden.",
-    "Мангал": "BBQ-Grill",
-    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "BBQ- und Feuerstellen-Set mit Holzkohle, Anzünder und Holz",
-    "Пізнє виселення": "Später Check-out",
-    "Виселення до 14:00 замість 11:00": "Check-out bis 14:00 statt 11:00",
-    "Раннє заселення": "Früher Check-in",
-    "Заселення з 11:00 замість 15:00": "Check-in ab 11:00 statt 15:00"
-  }
-};
-
-const tName = (obj: any, key: string, l: string) => {
-  if (!obj) return '';
-  if (l === 'en' && obj[`${key}En`]) return obj[`${key}En`];
-  if (l === 'cs' && obj[`${key}Cs`]) return obj[`${key}Cs`];
-  if (l === 'de' && obj[`${key}De`]) return obj[`${key}De`];
-  const baseVal = obj[key];
-  if (baseVal && commonTranslations[l] && commonTranslations[l][baseVal]) {
-    return commonTranslations[l][baseVal];
-  }
-  return baseVal;
-};
-
-const v3Locales: Record<string, any> = {
-  uk: {
-    waitlistTitle: "Список очікування",
-    waitlistSub: "Ми повідомимо вас, якщо ці дати звільняться.",
-    subscribed: "✅ Ви підписалися!",
-    yourEmail: "Ваш email",
-    subscribe: "Підписатися",
-    viewersNow: "людей дивляться зараз",
-    lastBooking: "Остання бронь",
-    occupancyNotice: "У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊",
-    chooseDatesPrice: "Оберіть дати щоб дізнатись ціну",
-    tryTheseDates: "💡 Спробуйте ці дати:",
-    availFrom: "Вільні місця з",
-    offerError: "Недійсний промокод",
-    serverError: "Помилка підключення",
-    errorReq: "Будь ласка, заповніть всі необхідні поля",
-    clear: "Стерти",
-    fromTime: "з",
-    toTime: "до",
-    chooseDatesShort: "обрати дати",
-    bankTransfer: "Оплата за реквізитами",
-    bankTransferDesc: "Ми надішлемо вам реквізити для оплати на email одразу після підтвердження бронювання.",
-    checkDetails: "Перевірте деталі та продовжуйте бронювання",
-    fromTimeBase: "від",
-    nightBase: "ніч",
-    agoHours: "годин тому",
-    agoHour: "годину тому",
-    agoMinutes: "хвилин тому",
-    connectionError: "Помилка підключення"
-  },
-  en: {
-    waitlistTitle: "Waitlist",
-    waitlistSub: "We will notify you if these dates become available.",
-    subscribed: "✅ Subscribed!",
-    yourEmail: "Your email",
-    subscribe: "Subscribe",
-    viewersNow: "people looking right now",
-    lastBooking: "Last booking",
-    occupancyNotice: "The house has one large bed — ideal for two adults. If you have a child with you, we are happy to make an exception: young guests do not occupy a separate bed 😊",
-    chooseDatesPrice: "Select dates to see price",
-    tryTheseDates: "💡 Try these dates:",
-    availFrom: "Available from",
-    offerError: "Invalid Coupon code",
-    serverError: "Connection error",
-    errorReq: "Please fill in all required fields",
-    clear: "Clear",
-    fromTime: "from",
-    toTime: "until",
-    chooseDatesShort: "select dates",
-    bankTransfer: "Bank Transfer",
-    bankTransferDesc: "We will email you the payment details immediately after confirming the booking.",
-    checkDetails: "Check details and continue booking",
-    fromTimeBase: "from",
-    nightBase: "night",
-    agoHours: "hours ago",
-    agoHour: "hour ago",
-    agoMinutes: "minutes ago",
-    connectionError: "Connection error"
-  },
-  cs: {
-    waitlistTitle: "Čekací listina",
-    waitlistSub: "Dáme vám vědět, pokud se tyto termíny uvolní.",
-    subscribed: "✅ Přihlášeno!",
-    yourEmail: "Váš email",
-    subscribe: "Odebírat",
-    viewersNow: "lidé si právě prohlížejí",
-    lastBooking: "Poslední rezervace",
-    occupancyNotice: "Dům má jednu velkou postel — ideální pro dva dospělé. Pokud s sebou máte dítě, rádi uděláme výjimku: malí hosté nezabírají samostatné lůžko 😊",
-    chooseDatesPrice: "Vyberte termíny pro zobrazení ceny",
-    tryTheseDates: "💡 Zkuste tyto termíny:",
-    availFrom: "Volné od",
-    offerError: "Neplatný offer kód",
-    serverError: "Chyba připojení",
-    errorReq: "Vyplňte prosím všechna povinná pole",
-    clear: "Smazat",
-    fromTime: "od",
-    toTime: "do",
-    chooseDatesShort: "vybrat termíny",
-    bankTransfer: "Bankovní převod",
-    bankTransferDesc: "Platební údaje vám zašleme e-mailem ihned po potvrzení rezervace.",
-    checkDetails: "Zkontrolujte detaily a pokračujte v rezervaci",
-    fromTimeBase: "od",
-    nightBase: "noc",
-    agoHours: "před hodinami",
-    agoHour: "před hodinou",
-    agoMinutes: "před minutami",
-    connectionError: "Chyba připojení"
-  },
-  de: {
-    waitlistTitle: "Warteliste",
-    waitlistSub: "Wir benachrichtigen Sie, falls diese Daten verfügbar werden.",
-    subscribed: "✅ Abonniert!",
-    yourEmail: "Ihre E-Mail",
-    subscribe: "Abonnieren",
-    viewersNow: "Personen sehen sich das gerade an",
-    lastBooking: "Letzte Buchung",
-    occupancyNotice: "Das Haus hat ein großes Bett — ideal für zwei Erwachsene. Wenn Sie ein Kind dabei haben, machen wir gerne eine Ausnahme: kleine Gäste belegen kein separates Bett 😊",
-    chooseDatesPrice: "Wählen Sie Daten aus, um den Preis zu sehen",
-    tryTheseDates: "💡 Versuchen Sie diese Daten:",
-    availFrom: "Verfügbar ab",
-    offerError: "Ungültiger Promo-Code",
-    serverError: "Verbindungsfehler",
-    errorReq: "Bitte füllen Sie alle erforderlichen Felder aus",
-    clear: "Löschen",
-    fromTime: "ab",
-    toTime: "bis",
-    chooseDatesShort: "Daten auswählen",
-    bankTransfer: "Banküberweisung",
-    bankTransferDesc: "Wir senden Ihnen die Zahlungsdetails sofort nach Bestätigung der Buchung per E-Mail.",
-    checkDetails: "Überprüfen Sie die Details und setzen Sie die Buchung fort",
-    fromTimeBase: "ab",
-    nightBase: "Nacht",
-    agoHours: "Stunden her",
-    agoHour: "Stunde her",
-    agoMinutes: "Minuten her",
-    connectionError: "Verbindungsfehler"
-  }
-};
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean, lang?: BookingLang }) {
   // ─── State ───
@@ -485,16 +194,20 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   useEffect(() => {
     if (step === 6 && siteThankYouUrl && !isPreview) {
       const timer = setTimeout(() => {
-        // Redirect parent window if in iframe
+        // Append query params so partner site can read booking info
+        const sep = siteThankYouUrl.includes('?') ? '&' : '?';
+        const resId = reservation?.reservationId || '';
+        const url = `${siteThankYouUrl}${sep}payment_status=success${resId ? `&reservation_id=${encodeURIComponent(resId)}` : ''}`;
+        // Redirect parent window if in iframe, otherwise current window
         if (window.parent !== window) {
-          window.parent.location.href = siteThankYouUrl;
+          window.parent.location.href = url;
         } else {
-          window.location.href = siteThankYouUrl;
+          window.location.href = url;
         }
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [step, siteThankYouUrl, isPreview]);
+  }, [step, siteThankYouUrl, isPreview, reservation]);
 
   // Fetch services when site is available
   useEffect(() => {
@@ -941,6 +654,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           phone,
           siteId: siteId || undefined,
           couponCode: offerApplied?.code || undefined,
+          currency: availability?.units.find(u => u.id === selectedUnitId)?.currency || siteCurrency || 'CZK',
         }),
       });
       if (res.ok) {

@@ -36,6 +36,7 @@ export interface WidgetConfig {
   default_lang?: string;
   supportContact?: string;
   site_url?: string;
+  thank_you_url?: string;
 }
 
 export interface Listing {

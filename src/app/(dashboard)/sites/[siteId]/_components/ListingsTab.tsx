@@ -61,7 +61,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
   onRefresh: () => void;
 }) {
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ external_url: '', thank_you_url: '', default_lang: '' });
+  const [form, setForm] = useState({ external_url: '', default_lang: '' });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [embedLang, setEmbedLang] = useState('uk');
@@ -72,7 +72,6 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
     if (listing) {
       setForm({
         external_url: listing.external_url || '',
-        thank_you_url: listing.thank_you_url || '',
         default_lang: listing.default_lang || '',
       });
       const photoStr = listing.photos || listing.unit_type_photos || '';
@@ -90,7 +89,6 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         external_url: form.external_url.trim() || null,
-        thank_you_url: form.thank_you_url.trim() || null,
         default_lang: form.default_lang || null,
         photos: photoUrls.length > 0 ? photoUrls.join(',') : null,
       }),
@@ -149,11 +147,6 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
         <label className="form-label">URL сторінки об&apos;єкта</label>
         <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
           value={form.external_url} onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))} />
-      </div>
-      <div className="form-group">
-        <label className="form-label">URL сторінки подяки</label>
-        <input className="form-input" placeholder="https://yoursite.com/thank-you"
-          value={form.thank_you_url} onChange={e => setForm(f => ({ ...f, thank_you_url: e.target.value }))} />
       </div>
 
       <div className="form-group" style={{ marginTop: 24 }}>

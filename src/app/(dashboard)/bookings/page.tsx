@@ -75,6 +75,7 @@ interface BookingRow {
   nationality: string | null;
   hostex_channel_type?: string;
   hostex_reservation_code?: string;
+  currency?: string;
 }
 
 interface GroupRow {
@@ -390,6 +391,7 @@ function BookingsDesktop() {
       cityTaxIncluded: !!editBooking.city_tax_included,
       cityTaxPaid: editBooking.city_tax_paid || 'pending',
       internalNotes: editBooking.internal_notes || '',
+      currency: editBooking.currency || 'CZK',
     };
   }, [editBooking]);
 
@@ -915,6 +917,7 @@ function BookingsDesktop() {
               mode="edit"
               bookingId={editBooking.id}
               initial={editInitial}
+              currency={editBooking.currency || 'CZK'}
               unitTypes={unitTypes}
               allUnits={allUnits}
               bookingSources={bookingSources}
