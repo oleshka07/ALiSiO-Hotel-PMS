@@ -64,6 +64,7 @@ export async function validatePromo(request: NextRequest) {
           included_services: offer.included_services ? JSON.parse(offer.included_services) : [],
           allowed_days: offer.allowed_days ? JSON.parse(offer.allowed_days) : null,
           applied_listings: offer.applied_listings ? JSON.parse(offer.applied_listings) : [],
+          allowed_promo_codes: offer.allowed_promo_codes ? JSON.parse(offer.allowed_promo_codes) : [],
         }
       }, { headers: CORS_HEADERS });
     }

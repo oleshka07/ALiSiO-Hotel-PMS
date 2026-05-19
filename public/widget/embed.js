@@ -284,14 +284,19 @@
   async function submitReservation() {
     state.loading = true; state.error = null; render();
     try {
+      var bodyData = {
+        unitTypeId: state.selectedUnitTypeId, checkIn: state.checkIn, checkOut: state.checkOut,
+        adults: state.adults, children: state.children,
+        firstName: state.firstName.trim(), lastName: state.lastName.trim(),
+        email: state.email.trim() || undefined, phone: state.phone.trim()
+      };
+      if (UNIT_ID) bodyData.unitId = UNIT_ID;
+      if (SITE_ID) bodyData.siteId = SITE_ID;
+      if (state.promo.applied && state.promo.code) bodyData.couponCode = state.promo.code;
+
       var res = await fetch(API_BASE + '/api/booking/reserve', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          unitTypeId: state.selectedUnitTypeId, checkIn: state.checkIn, checkOut: state.checkOut,
-          adults: state.adults, children: state.children,
-          firstName: state.firstName.trim(), lastName: state.lastName.trim(),
-          email: state.email.trim() || undefined, phone: state.phone.trim()
-        })
+        body: JSON.stringify(bodyData)
       });
       if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
       var data = await res.json();
@@ -306,18 +311,19 @@
     if (!code) return;
     try {
       var params = 'code=' + encodeURIComponent(code);
-      if (SITE_ID) params += '&site_id=' + SITE_ID;
-      var res = await fetch(API_BASE + '/api/booking/promo?' + params);
+      if (SITE_ID) params += '&siteId=' + SITE_ID;
+      if (UNIT_ID) params += '&unitId=' + UNIT_ID;
+      var res = await fetch(API_BASE + '/api/booking/activate?' + params);
       var data = await res.json();
-      if (res.ok && data.discount_type) {
+      if (res.ok && data.valid && data.discount_type) {
         state.promo.applied = true;
         state.promo.discountType = data.discount_type;
-        state.promo.discountValue = data.discount_value;
+        state.promo.discountValue = data.offer_amount;
         state.promo.error = null;
         calcFinalPrice();
         trackEvent('PromoApplied', { promo_code: state.promo.code, value: state.finalPrice });
       } else {
-        state.promo.error = t.promoInvalid;
+        state.promo.error = data.error || t.promoInvalid;
         state.promo.applied = false;
       }
     } catch(e) { state.promo.error = t.errorOccurred; }

@@ -38,7 +38,7 @@ export async function createWidgetReservation(request: NextRequest) {
       adults = 2, children = 0,
       hasPet = false,
       firstName, lastName, email, phone,
-      couponCode, certificateCode,
+      couponCode, certificateCode, extraCouponCode,
       siteId,
       currency: clientCurrency,
     } = body;
@@ -80,6 +80,16 @@ export async function createWidgetReservation(request: NextRequest) {
 
     if (!unit) {
       return NextResponse.json({ error: 'Unit not found or not available' }, { status: 404, headers: CORS_HEADERS });
+    }
+
+    let priceOverride: number | null = null;
+    let thankYouUrl: string | null = null;
+    if (siteId && existingTables.has('site_listings')) {
+      const listing = db.prepare('SELECT price_override, thank_you_url FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId) as any;
+      if (listing) {
+        if (listing.price_override != null) priceOverride = listing.price_override;
+        if (listing.thank_you_url) thankYouUrl = listing.thank_you_url;
+      }
     }
 
     const isBooked = db.prepare(`
@@ -128,7 +138,9 @@ export async function createWidgetReservation(request: NextRequest) {
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
       const priceEntry = priceMap.get(dateStr);
       let dayPrice = STUB_PRICE;
-      if (priceEntry) {
+      if (priceOverride != null) {
+        dayPrice = priceOverride;
+      } else if (priceEntry) {
         dayPrice = isWeekend && priceEntry.weekend_price != null
           ? priceEntry.weekend_price : priceEntry.base_price;
       }
@@ -205,7 +217,36 @@ export async function createWidgetReservation(request: NextRequest) {
       certificateDiscount = 0;
     }
 
-    const finalPrice = Math.max(0, totalPrice - offerDiscount - certificateDiscount);
+    let extraDiscount = 0;
+    if (extraCouponCode) {
+      try {
+        const extraCode = String(extraCouponCode).toUpperCase().trim();
+        const extraOffer = db.prepare(`
+          SELECT * FROM coupons
+          WHERE code = ? AND is_active = 1
+            AND (valid_from IS NULL OR valid_from <= ?)
+            AND (valid_until IS NULL OR valid_until >= ?)
+            AND (max_uses IS NULL OR current_uses < max_uses)
+        `).get(extraCode, checkOut, checkIn) as any;
+
+        if (extraOffer) {
+          // Calculate discount based on the price AFTER package/first offer
+          const currentPrice = Math.max(0, totalPrice - offerDiscount);
+          if (extraOffer.discount_type === 'percentage') {
+            extraDiscount = Math.round(currentPrice * extraOffer.offer_amount / 100);
+          } else if (extraOffer.discount_type === 'fixed_price' || extraOffer.discount_type === 'fixed_amount') {
+            extraDiscount = Math.max(0, currentPrice - extraOffer.offer_amount);
+          } else {
+            extraDiscount = extraOffer.offer_amount;
+          }
+          db.prepare('UPDATE coupons SET current_uses = current_uses + 1 WHERE id = ?').run(extraOffer.id);
+        }
+      } catch (err: any) {
+        console.error('[Extra Coupon validation error]', err);
+      }
+    }
+
+    const finalPrice = Math.max(0, totalPrice - offerDiscount - certificateDiscount - extraDiscount);
 
     const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string };
 
@@ -240,7 +281,7 @@ export async function createWidgetReservation(request: NextRequest) {
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice, resCurrency, null, couponCode ? JSON.stringify([couponCode]) : null
+      'tentative', 'unpaid', 'direct', finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
     );
 
     // --- Emit event for CRM and other modules ---
@@ -293,9 +334,10 @@ export async function createWidgetReservation(request: NextRequest) {
       nights,
       totalPrice: finalPrice,
       originalPrice: totalPrice,
-      offerDiscount,
+      offerDiscount: offerDiscount + extraDiscount,
       certificateDiscount,
       currency: resCurrency,
+      thankYouUrl,
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
     const msg = error?.message || String(error);

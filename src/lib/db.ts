@@ -4378,6 +4378,19 @@ function runMigrations(database: any) {
     database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN allowed_days TEXT`);
   } catch { /* already exists */ }
 
+  // --- Migration: add allowed_promo_codes to gift_card_bundles ---
+  try {
+    database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN allowed_promo_codes TEXT`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add price_override and thank_you_url to site_listings ---
+  try {
+    database.exec(`ALTER TABLE site_listings ADD COLUMN price_override REAL`);
+  } catch { /* already exists */ }
+  try {
+    database.exec(`ALTER TABLE site_listings ADD COLUMN thank_you_url TEXT`);
+  } catch { /* already exists */ }
+
   // --- Migration: add coupon_code, redemption_limit, current_uses to gift_card_bundles ---
   try { database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN coupon_code TEXT`); } catch { /* already exists */ }
   try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_coupon_code ON gift_card_bundles(coupon_code) WHERE coupon_code IS NOT NULL`); } catch { }

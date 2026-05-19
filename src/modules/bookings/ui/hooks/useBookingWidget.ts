@@ -46,6 +46,11 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [error, setError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
   const [couponCode, setCouponCode] = useState('');
+  const [extraCouponCode, setExtraCouponCode] = useState('');
+  const [extraCouponApplied, setExtraCouponApplied] = useState<{ code: string; offerType: string; offerAmount: number; description?: string } | null>(null);
+  const [extraCouponError, setExtraCouponError] = useState('');
+  const [applyingExtraCoupon, setApplyingExtraCoupon] = useState(false);
+  const [showExtraOffer, setShowExtraOffer] = useState(false);
   const [showOffer, setShowOffer] = useState(false);
   const [offerApplied, setOfferApplied] = useState<{ code: string; offerType: string; offerAmount: number; description?: string; bundle?: any } | null>(null);
   const [offerError, setOfferError] = useState('');
@@ -118,13 +123,31 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       base = offerApplied.bundle.price;
       const included = offerApplied.bundle.included_services || []; const inclGuests = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2; const extraG = Math.max(0, guestsCount - inclGuests);
       services.forEach(s => { if (selectedServiceIds.has(s.id)) { const bSvc = included.find((inc: any) => inc.service_id === s.id); servicesTotal += bSvc?.isIncluded ? (s.price||0)*extraG : (s.price||0)*guestsCount; } });
+      if (extraCouponApplied) {
+        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
+      }
+      if (base < 0) base = 0;
     } else {
       if (offerApplied) { if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') base -= offerApplied.offerAmount; else if (offerApplied.offerType === 'percentage') base = Math.round(base*(1-offerApplied.offerAmount/100)); }
+      if (base < 0) base = 0;
+      if (extraCouponApplied) {
+        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
+      }
       if (base < 0) base = 0;
       services.forEach(s => { if (selectedServiceIds.has(s.id)) servicesTotal += (s.price||0)*guestsCount; });
     }
     return base + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied]);
+  }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied, extraCouponApplied]);
+
+  const totalWithoutDiscount = useMemo(() => {
+    if (!selectedUnit) return 0;
+    const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
+    const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
+    const base = selectedUnit.totalPrice + extraCharge;
+    let servicesTotal = 0; const guestsCount = adults + kids || 1;
+    services.forEach(s => { if (selectedServiceIds.has(s.id)) servicesTotal += (s.price||0)*guestsCount; });
+    return base + servicesTotal;
+  }, [selectedUnit, adults, nights, services, selectedServiceIds]);
 
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
     if (isPreview) { setLoadingAvail(true); await new Promise(r => setTimeout(r,800)); const mock: AvailabilityResponse = { checkIn: ci, checkOut: co, nights: Math.round((parseDate(co).getTime()-parseDate(ci).getTime())/86400000), units: [{ id:'mock-1', name:'Premium Glamping Tent', code:'P1', beds:2, unitTypeId:'t1', typeName:'Tent', typeCode:'T', description:'Beautiful tent', maxAdults:2, maxChildren:1, maxOccupancy:3, baseOccupancy:2, avgPricePerNight:2500, totalPrice:5000, currency:'Kc', extraPersonCharge:500, petAllowed:true, petCharge:200, photos:[], amenities:[] }] }; setAvailability(mock); setLoadingAvail(false); return mock; }
@@ -154,14 +177,51 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     } catch { setOfferError('Server error'); } finally { setApplyingOffer(false); }
   }, [couponCode, siteId, siteSlug, siteConfig, selectedUnitId, selectedServiceIds]);
 
+  const handleApplyExtraOffer = useCallback(async (codeToApply?: string | React.MouseEvent) => {
+    const code = (typeof codeToApply === 'string' ? codeToApply : extraCouponCode).trim().toUpperCase(); if (!code) return;
+    const sId = siteId || siteConfig?.id || siteSlug || ''; setApplyingExtraCoupon(true); setExtraCouponError('');
+    try { const uId = selectedUnitId || ''; const res = await fetch(`${API_BASE}/api/booking/activate?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`); const data = await res.json();
+      if (data.valid && data.discount_type !== 'package') {
+        if (offerApplied?.offerType === 'package' && offerApplied.bundle?.allowed_promo_codes?.includes(data.code)) {
+            setExtraCouponApplied({ code: data.code, offerType: data.discount_type, offerAmount: data.offer_amount, description: data.description }); setShowExtraOffer(false);
+        } else {
+            setExtraCouponError('Цей промокод не діє разом з обраним пакетом');
+        }
+      } else { setExtraCouponApplied(null); setExtraCouponError(data.error || 'Invalid code'); }
+    } catch { setExtraCouponError('Server error'); } finally { setApplyingExtraCoupon(false); }
+  }, [extraCouponCode, siteId, siteSlug, siteConfig, selectedUnitId, offerApplied]);
+
   useEffect(() => { if (!isMounted) return; if (couponCode && !offerApplied && !applyingOffer && !offerError && !!(siteId||siteSlug)) handleApplyOffer(couponCode); }, [isMounted, couponCode, offerApplied, siteId, siteSlug]);
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) { setError(v3t.errorReq); return; }
     if (isPreview) { setSubmitting(true); await new Promise(r => setTimeout(r,1000)); setReservation({ success:true, reservationId:'MOCK-123', unitName:selectedUnit?.name||'Mock', checkIn, checkOut, nights, totalPrice:totalWithDiscount, currency:'Kc' }); setSubmitting(false); goToStep(4); return; }
     setSubmitting(true);
-    try { const res = await fetch(`${API_BASE}/api/booking/reserve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ unitId:selectedUnitId, checkIn, checkOut, adults, children:kids, firstName, lastName, email, phone, siteId:siteId||undefined, couponCode:offerApplied?.code||undefined, currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK' }) });
-      if (res.ok) { const data = await res.json(); setReservation(data); goToStep(4); } else { const err = await res.json(); if (res.status===409) { setError(null); alert(t.datesConflict || 'Die gew\u00e4hlten Termine sind leider nicht mehr verf\u00fcgbar.'); setCheckIn(null); setCheckOut(null); setSelectedUnitId(null); setAvailability(null); goToStep(1); } else setError(err.error||'Failed to book'); }
+    try { const res = await fetch(`${API_BASE}/api/booking/reserve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ unitId:selectedUnitId, checkIn, checkOut, adults, children:kids, firstName, lastName, email, phone, siteId:siteId||undefined, couponCode:offerApplied?.code||undefined, extraCouponCode:extraCouponApplied?.code||undefined, currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK' }) });
+      if (res.ok) { 
+        const data = await res.json(); 
+        setReservation(data); 
+        
+        if (data.totalPrice === 0 && data.thankYouUrl) {
+          try {
+            if (window.top) window.top.location.href = data.thankYouUrl;
+            else window.location.href = data.thankYouUrl;
+          } catch {
+            window.location.href = data.thankYouUrl;
+          }
+          return;
+        }
+
+        // If reservation is fully paid / free package, and a thankYouUrl is provided, we can redirect directly or go to step 4
+        // However, we just go to step 4 (Success page). If there's a thankYouUrl, step 4 will handle the redirect, 
+        // OR we let startPayment handle the redirect. Since it's unpaid at this moment, they must go to step 4 or startPayment.
+        goToStep(4); 
+      } else { 
+        const err = await res.json(); 
+        if (res.status===409) { 
+          setError(null); alert(t.datesConflict || 'Die gew\u00e4hlten Termine sind leider nicht mehr verf\u00fcgbar.'); setCheckIn(null); setCheckOut(null); setSelectedUnitId(null); setAvailability(null); goToStep(1); 
+        } else setError(err.error||'Failed to book'); 
+      }
     } catch { setError('Connection error'); }
     setSubmitting(false); if (typeof window!=='undefined') localStorage.setItem('alisio_guest_data', JSON.stringify({firstName,lastName,email,phone}));
   };
@@ -176,7 +236,12 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r=>setTimeout(r,1000)); setSubmitting(false); goToStep(6); return; }
     if (!siteSlug) { goToStep(6); return; }
     setSubmitting(true);
-    try { const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:window.location.href.split('?')[0]+`?res_id=${reservation.reservationId}&payment_status=success` }) });
+    try { 
+      let retPath = (reservation as any).thankYouUrl || window.location.href.split('?')[0];
+      if (retPath.indexOf('?') === -1) retPath += `?res_id=${reservation.reservationId}&payment_status=success`;
+      else retPath += `&res_id=${reservation.reservationId}&payment_status=success`;
+      
+      const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }
       const data = await res.json();
       if (data.session_url) { try { if (window.top) window.top.location.href = data.session_url; else window.location.href = data.session_url; } catch { window.location.href = data.session_url; } } else setError(data.error||'Payment failed');
@@ -191,7 +256,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const invalidNightsMsg = offerApplied?.offerType==='package' && offerApplied.bundle?.nights_included && nights>0 && nights!==offerApplied.bundle.nights_included ? t.packageNightsError(offerApplied.bundle.nights_included) : null;
 
-  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId };
+  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, setExtraCouponApplied, extraCouponError, setExtraCouponError, applyingExtraCoupon, handleApplyExtraOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId };
 }
 
 
