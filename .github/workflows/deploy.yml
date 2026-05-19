@@ -101,60 +101,33 @@ jobs:
             touch /var/log/pms-cron-bank.log
             chmod 644 /var/log/pms-cron-bank.log
 
-            # Install crontab entry if not already present. We match
-            # the URL path rather than the full command so future
-            # tweaks (e.g. log rotation) don't double-install.
-            if ! crontab -l 2>/dev/null | grep -q 'poll-bank-inboxes'; then
-              ( crontab -l 2>/dev/null || true
-                echo '*/15 * * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1'
-              ) | crontab -
-              echo "[setup] installed crontab entry for poll-bank-inboxes"
-            else
-              echo "[setup] crontab entry for poll-bank-inboxes already present"
-            fi
+            # Crontab entries — Node listens on port 3001 in production
+            # (see ical-sync cron already on :3001). Use replace-not-
+            # append: strip any old entry pointing at the wrong port,
+            # then reinstall with the right one. Fully idempotent.
+            POLL_CRON='*/15 * * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3001/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1'
+            ( crontab -l 2>/dev/null | grep -v 'poll-bank-inboxes' || true
+              echo "$POLL_CRON"
+            ) | crontab -
+            echo "[setup] crontab poll-bank-inboxes refreshed (port 3001)"
 
             # Daily PriceLabs → price_calendar sync. 04:00 lets ČNB publish
             # the day's EUR/CZK rate first; PriceLabs refreshes overnight.
             touch /var/log/pms-cron-pricelabs.log
             chmod 644 /var/log/pms-cron-pricelabs.log
-            if ! crontab -l 2>/dev/null | grep -q 'sync-pricelabs'; then
-              ( crontab -l 2>/dev/null || true
-                echo '0 4 * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3000/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1'
-              ) | crontab -
-              echo "[setup] installed crontab entry for sync-pricelabs"
-            else
-              echo "[setup] crontab entry for sync-pricelabs already present"
-            fi
+            PRICELABS_CRON='0 4 * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3001/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1'
+            ( crontab -l 2>/dev/null | grep -v 'sync-pricelabs' || true
+              echo "$PRICELABS_CRON"
+            ) | crontab -
+            echo "[setup] crontab sync-pricelabs refreshed (port 3001)"
 
-            # ─────────────────────────────────────────────────────────
-            # TEMP DIAGNOSTIC — figure out why cron didn't auto-poll.
-            # Remove after we know the answer.
-            # ─────────────────────────────────────────────────────────
-            echo '==== DIAG: date / TZ ===='
-            date; date -u
-            echo '==== DIAG: cron daemon status ===='
-            systemctl status cron --no-pager 2>&1 | head -8 || systemctl status cronie --no-pager 2>&1 | head -8 || echo "(no cron service found)"
-            echo '==== DIAG: crontab -l ===='
-            crontab -l 2>&1 || echo "(no crontab)"
-            echo '==== DIAG: /var/log/pms-cron-bank.log (last 50 lines) ===='
-            if [ -f /var/log/pms-cron-bank.log ]; then
-              wc -l /var/log/pms-cron-bank.log
-              tail -50 /var/log/pms-cron-bank.log || true
-            else
-              echo "(file does not exist)"
+            # Truncate the cron log if it grew because of port-3000
+            # connection-refused noise (PR #94 diagnostic showed 395
+            # lines of "curl: (7) Failed to connect"). One-off cleanup.
+            if [ -f /var/log/pms-cron-bank.log ] && grep -q 'port 3000' /var/log/pms-cron-bank.log; then
+              : > /var/log/pms-cron-bank.log
+              echo "[setup] truncated /var/log/pms-cron-bank.log (was full of port-3000 noise)"
             fi
-            echo '==== DIAG: syslog for cron (last 40 lines) ===='
-            journalctl -u cron --since "2 hours ago" --no-pager 2>&1 | tail -40 || grep CRON /var/log/syslog 2>/dev/null | tail -40 || echo "(no cron logs)"
-            echo '==== DIAG: manual curl test (real run) ===='
-            SECRET_VAL=$(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)
-            if [ -z "$SECRET_VAL" ]; then
-              echo "CRON_SECRET is empty in .env!"
-            else
-              echo "CRON_SECRET length: ${#SECRET_VAL}"
-              curl -fsS -X POST -H "X-Cron-Secret: $SECRET_VAL" http://localhost:3000/api/cron/poll-bank-inboxes || echo "(curl failed with exit $?)"
-              echo ""
-            fi
-            echo '==== DIAG end ===='
 
             # Restart service only after a successful build.
             systemctl restart alisio-pms
