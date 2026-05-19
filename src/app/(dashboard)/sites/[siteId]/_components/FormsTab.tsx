@@ -96,7 +96,8 @@ const handleSubmit = async (e) => {
 }
 
 function ScriptSnippet({ scriptId, siteId }: { scriptId: string; siteId: string }) {
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    || (typeof window !== 'undefined' ? window.location.origin : 'https://alisio.swipescape.eu');
   const snippet = `<script\n  src="${baseUrl}/widget/collector.js"\n  data-site-id="${siteId}"\n  async defer\n></script>`;
   const manualSnippet = `<!-- React/SPA: виклич вручну в handleSubmit -->\nwindow.Alisio?.sendForm({\n  name:    formData.name,\n  email:   formData.email,\n  phone:   formData.phone,\n  message: formData.message,\n});`;
   void scriptId;
