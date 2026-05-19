@@ -289,6 +289,11 @@ export async function createWidgetReservation(request: NextRequest) {
       bookingId: resId,
       guestId,
       unitId,
+      unitName: unit.name,
+      checkIn,
+      checkOut,
+      adults,
+      children,
       total: finalPrice,
       currency: resCurrency
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));

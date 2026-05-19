@@ -11,8 +11,8 @@ export function registerCrmSubscribers() {
       const guest = db.prepare('SELECT first_name, last_name, email, phone FROM guests WHERE id = ?').get(payload.guestId) as any;
       
       db.prepare(`
-        INSERT INTO crm_leads (id, organization_id, guest_id, reservation_id, first_name, last_name, email, phone, stage, source, estimated_value, currency, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, datetime('now'), datetime('now'))
+        INSERT INTO crm_leads (id, organization_id, guest_id, reservation_id, first_name, last_name, email, phone, stage, source, estimated_value, currency, check_in_date, check_out_date, adults, children, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `).run(
         leadId, 
         org?.id || null, 
@@ -24,7 +24,11 @@ export function registerCrmSubscribers() {
         guest?.phone || null,
         payload.source || 'widget',
         payload.total || 0,
-        payload.currency || 'CZK'
+        payload.currency || 'CZK',
+        payload.checkIn || null,
+        payload.checkOut || null,
+        payload.adults || 2,
+        payload.children || 0,
       );
       
       console.log(`[CRM Subscriber] Lead ${leadId} created from booking ${payload.bookingId}`);
