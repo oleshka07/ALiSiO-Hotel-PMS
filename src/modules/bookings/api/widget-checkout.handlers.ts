@@ -243,8 +243,10 @@ export async function createWidgetCheckoutSession(req: Request) {
           store_id: payCfg.teya.store_id
         } : undefined,
         ...(isProduction ? {
-          successUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
-          cancelUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
+          // NOTE: Teya does NOT support {CHECKOUT_SESSION_ID} placeholder (Stripe only).
+          // We use reservation_id in the return URL so payment-return can identify the booking.
+          successUrl: `${origin}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
+          cancelUrl: `${origin}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
         } : {}),
       });
 
