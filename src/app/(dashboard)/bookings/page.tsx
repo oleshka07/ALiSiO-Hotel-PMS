@@ -92,6 +92,7 @@ interface GroupRow {
   last_name: string;
   building_name: string | null;
   room_count: number;
+  currency?: string;
 }
 
 interface UnitTypeRow {
@@ -675,7 +676,7 @@ function BookingsDesktop() {
                             {STATUS_MAP[g.status]?.label || g.status}
                           </span>
                           <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
-                            {(g.total_price || 0).toLocaleString()} CZK
+                            {(g.total_price || 0).toLocaleString()} {g.currency || 'CZK'}
                           </span>
                           <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути групу"
                             onClick={(e) => { e.stopPropagation(); setViewGroupId(g.id); }}>
@@ -702,7 +703,7 @@ function BookingsDesktop() {
                         <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086' }}>{sourceMap[b.source]?.label || b.source}</span>
                         {b.hostex_channel_type && <span style={{ marginLeft: 4 }} title={`Hostex: ${b.hostex_channel_type}`}>🌐</span>}
                       </td>
-                      <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} CZK</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
+                      <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
                       <td><div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => openViewBooking(b)}><Eye size={14} /></button>
                       </div></td>
@@ -774,7 +775,7 @@ function BookingsDesktop() {
                       <div style={{ flex: 1, minWidth: 0 }} onClick={() => setViewGroupId(g.id)}>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{g.first_name} {g.last_name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                          {g.check_in} → {g.check_out} · {g.nights} н. · {(g.total_price || 0).toLocaleString()} CZK
+                          {g.check_in} → {g.check_out} · {g.nights} н. · {(g.total_price || 0).toLocaleString()} {g.currency || 'CZK'}
                         </div>
                       </div>
                       <span className={`badge ${STATUS_MAP[g.status]?.badge || 'badge-info'}`} style={{ fontSize: 10, flexShrink: 0 }}>
@@ -806,7 +807,7 @@ function BookingsDesktop() {
                     <div className="booking-card-body">
                       <div>
                         <div className="booking-card-unit">{b.unit_name}</div>
-                        <div className="booking-card-price">{(b.total_price || 0).toLocaleString()} CZK</div>
+                        <div className="booking-card-price">{(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}</div>
                       </div>
                       <span className={`badge ${STATUS_MAP[b.status]?.badge || 'badge-info'}`}>{STATUS_MAP[b.status]?.label || b.status}</span>
                     </div>
@@ -839,7 +840,7 @@ function BookingsDesktop() {
                       <div className="booking-card-unit">{b.unit_name}</div>
                       <div className="booking-card-unit-sub">{b.category_name || b.category_type || ''}</div>
                       <div className="booking-card-price">
-                        {(b.total_price || 0).toLocaleString()} CZK
+                        {(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}
                         <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888', background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>
                           {PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}
                         </span>

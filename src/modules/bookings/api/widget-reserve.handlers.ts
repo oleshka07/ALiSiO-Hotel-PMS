@@ -248,7 +248,8 @@ export async function createWidgetReservation(request: NextRequest) {
       bookingId: resId,
       guestId,
       unitId,
-      total: finalPrice
+      total: finalPrice,
+      currency: resCurrency
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
     // ── Bundle: pre-create service_orders for included services ──────────
