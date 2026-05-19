@@ -11,5 +11,12 @@ export async function register() {
 
     const { startHostexCron } = await import('./lib/channels/hostex-cron');
     startHostexCron();
+
+    // Register event subscribers
+    const { registerCrmSubscribers } = await import('@crm');
+    registerCrmSubscribers();
+
+    const { registerBookingsSubscribers } = await import('@bookings');
+    registerBookingsSubscribers();
   }
 }

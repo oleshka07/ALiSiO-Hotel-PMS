@@ -31,5 +31,13 @@ class EventBus {
   }
 }
 
-// Singleton — shared across the entire server process
-export const eventBus = new EventBus();
+// Singleton — shared across the entire server process (survives Next.js dev hot-reloads)
+const globalForEventBus = globalThis as unknown as {
+  __eventBus: EventBus | undefined;
+};
+
+export const eventBus = globalForEventBus.__eventBus ?? new EventBus();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForEventBus.__eventBus = eventBus;
+}
