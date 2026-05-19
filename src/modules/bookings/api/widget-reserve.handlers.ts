@@ -4,6 +4,19 @@ import { getDb } from '@core/db';
 import { eventBus } from '@core/event-bus';
 import { notifyReservationCreated } from '../domain/reservation-tg-notify';
 
+// Fallback to guarantee event subscribers are registered in Serverless (Vercel) isolated functions
+const ensureSubscribers = async () => {
+  if (!(globalThis as any).__prodSubscribersRegistered) {
+    try {
+      const { registerCrmSubscribers } = await import('@crm');
+      const { registerBookingsSubscribers } = await import('@bookings');
+      registerCrmSubscribers();
+      registerBookingsSubscribers();
+      (globalThis as any).__prodSubscribersRegistered = true;
+    } catch (e) { console.error('[EventBus] Bootstrap failed', e); }
+  }
+};
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -16,6 +29,7 @@ export async function createWidgetReservationOptions() {
 
 export async function createWidgetReservation(request: NextRequest) {
   try {
+    await ensureSubscribers();
     const db = getDb();
     const body = await request.json();
 
