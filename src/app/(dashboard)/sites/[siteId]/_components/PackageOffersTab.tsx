@@ -445,7 +445,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                       <input type="checkbox" checked={!!inc} readOnly style={{ cursor: 'pointer', flexShrink: 0 }} />
                       <span style={{ fontSize: 18, flexShrink: 0 }}>{svc.icon}</span>
                       <span style={{ flex: 1, fontSize: 13, fontWeight: inc ? 600 : 400 }}>{svc.name}</span>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{svc.price_override ?? svc.price} {svc.currency}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{svc.price_override ?? svc.price} {form.currency}</span>
                       {inc && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
                           <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
