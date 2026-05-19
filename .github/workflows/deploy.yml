@@ -126,6 +126,36 @@ jobs:
               echo "[setup] crontab entry for sync-pricelabs already present"
             fi
 
+            # ─────────────────────────────────────────────────────────
+            # TEMP DIAGNOSTIC — figure out why cron didn't auto-poll.
+            # Remove after we know the answer.
+            # ─────────────────────────────────────────────────────────
+            echo '==== DIAG: date / TZ ===='
+            date; date -u
+            echo '==== DIAG: cron daemon status ===='
+            systemctl status cron --no-pager 2>&1 | head -8 || systemctl status cronie --no-pager 2>&1 | head -8 || echo "(no cron service found)"
+            echo '==== DIAG: crontab -l ===='
+            crontab -l 2>&1 || echo "(no crontab)"
+            echo '==== DIAG: /var/log/pms-cron-bank.log (last 50 lines) ===='
+            if [ -f /var/log/pms-cron-bank.log ]; then
+              wc -l /var/log/pms-cron-bank.log
+              tail -50 /var/log/pms-cron-bank.log || true
+            else
+              echo "(file does not exist)"
+            fi
+            echo '==== DIAG: syslog for cron (last 40 lines) ===='
+            journalctl -u cron --since "2 hours ago" --no-pager 2>&1 | tail -40 || grep CRON /var/log/syslog 2>/dev/null | tail -40 || echo "(no cron logs)"
+            echo '==== DIAG: manual curl test (real run) ===='
+            SECRET_VAL=$(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)
+            if [ -z "$SECRET_VAL" ]; then
+              echo "CRON_SECRET is empty in .env!"
+            else
+              echo "CRON_SECRET length: ${#SECRET_VAL}"
+              curl -fsS -X POST -H "X-Cron-Secret: $SECRET_VAL" http://localhost:3000/api/cron/poll-bank-inboxes || echo "(curl failed with exit $?)"
+              echo ""
+            fi
+            echo '==== DIAG end ===='
+
             # Restart service only after a successful build.
             systemctl restart alisio-pms
             sleep 3
