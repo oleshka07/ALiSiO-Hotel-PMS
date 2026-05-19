@@ -29,3 +29,4 @@ export { previewBookingComImport, confirmBookingComImport } from './import-booki
 export type { PreviewRow, PreviewResponse, ConfirmRequest, ConfirmResponse, PlannedUnit } from './import-bookingcom.handlers';
 export type { BookingComRow } from '../domain/booking-com-excel';
 export { notifyReservationCreated, notifyGroupBookingCreated } from '../domain/reservation-tg-notify';
+export { registerBookingsSubscribers } from '../events/subscribers';

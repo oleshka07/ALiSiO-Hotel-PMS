@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { eventBus } from '@core/event-bus';
 import { notifyReservationCreated } from '../domain/reservation-tg-notify';
 
 const CORS_HEADERS = {
@@ -227,6 +228,14 @@ export async function createWidgetReservation(request: NextRequest) {
       checkIn, checkOut, nights, adults, children,
       'tentative', 'unpaid', 'direct', finalPrice, resCurrency, null, couponCode ? JSON.stringify([couponCode]) : null
     );
+
+    // --- Emit event for CRM and other modules ---
+    eventBus.emit('booking.created', {
+      bookingId: resId,
+      guestId,
+      unitId,
+      total: finalPrice
+    }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
     // ── Bundle: pre-create service_orders for included services ──────────
     // Guests schedule the time via their guest portal; staff sees them once scheduled.

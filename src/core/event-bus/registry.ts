@@ -6,7 +6,7 @@
  */
 export type AppEvents = {
   // Bookings
-  'booking.created': { bookingId: string; guestId: string; unitId: string; total: number };
+  'booking.created': { bookingId: string; guestId: string; unitId: string; total: number; source?: string; email?: string };
   'booking.cancelled': { bookingId: string; reason: string };
   'booking.checked_in': { bookingId: string; guestId: string };
   'booking.checked_out': { bookingId: string; guestId: string };
