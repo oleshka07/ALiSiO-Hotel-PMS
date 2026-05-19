@@ -249,15 +249,31 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r=>setTimeout(r,1000)); setSubmitting(false); goToStep(6); return; }
     if (!siteSlug) { goToStep(6); return; }
     setSubmitting(true);
-    try { 
-      let retPath = (reservation as any).thankYouUrl || window.location.href.split('?')[0];
-      if (retPath.indexOf('?') === -1) retPath += `?res_id=${reservation.reservationId}&payment_status=success`;
-      else retPath += `&res_id=${reservation.reservationId}&payment_status=success`;
-      
+    try {
+      // ── Prefer configured thank-you URL → parent page URL → widget URL ──
+      let retPath = siteThankYouUrl || (reservation as any).thankYouUrl || '';
+      if (!retPath) {
+        try { retPath = (window.top as any).location.href.split('?')[0]; } catch { retPath = window.location.href.split('?')[0]; }
+      }
+      const sep = retPath.includes('?') ? '&' : '?';
+      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success`;
+
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }
       const data = await res.json();
-      if (data.session_url) { try { if (window.top) window.top.location.href = data.session_url; else window.location.href = data.session_url; } catch { window.location.href = data.session_url; } } else setError(data.error||'Payment failed');
+      if (data.session_url) {
+        try {
+          if (window.top && window.top !== window) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
+        } catch {
+          // cross-origin iframe: postMessage to parent + fallback navigate iframe
+          window.parent.postMessage({ type: 'alisio:redirect', url: data.session_url }, '*');
+          window.location.href = data.session_url;
+        }
+      } else setError(data.error||'Payment failed');
     } catch { setError('Payment gateway error'); }
     setSubmitting(false);
   };
