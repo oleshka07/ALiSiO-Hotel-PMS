@@ -115,29 +115,42 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const displayUnits = useMemo(() => { if (!availability?.units) return []; if (offerApplied?.bundle?.applied_listings?.length > 0) return availability.units.filter(u => offerApplied!.bundle.applied_listings.includes(u.id)); return availability.units; }, [availability, offerApplied]);
   const selectedUnit = useMemo(() => { if (!selectedUnitId) return null; if (availability) return displayUnits.find(u => u.id === selectedUnitId) || unitInfo; return unitInfo; }, [availability, selectedUnitId, unitInfo, displayUnits]);
   const totalWithDiscount = useMemo(() => {
+    // ── Package with fixed price: no need to wait for selectedUnit ──
+    if (offerApplied?.offerType === 'package' && offerApplied.bundle) {
+      const bundleBase = offerApplied.bundle.price ?? 0;
+      let servicesTotal = 0;
+      const guestsCount = adults + kids || 1;
+      const inclGuests = offerApplied.bundle.base_guests || selectedUnit?.baseOccupancy || 2;
+      const extraG = Math.max(0, guestsCount - inclGuests);
+      const included = offerApplied.bundle.included_services || [];
+      services.forEach(s => {
+        if (selectedServiceIds.has(s.id)) {
+          const bSvc = included.find((inc: any) => inc.service_id === s.id);
+          servicesTotal += bSvc?.isIncluded ? (s.price || 0) * extraG : (s.price || 0) * guestsCount;
+        }
+      });
+      if (extraCouponApplied) {
+        let base = bundleBase;
+        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount;
+        else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base * (1 - extraCouponApplied.offerAmount / 100));
+        return Math.max(0, base) + servicesTotal;
+      }
+      return Math.max(0, bundleBase) + servicesTotal;
+    }
+
     if (!selectedUnit) return 0;
     const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
     const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
     let base = selectedUnit.totalPrice + extraCharge; let servicesTotal = 0; const guestsCount = adults + kids || 1;
-    if (offerApplied?.offerType === 'package' && offerApplied.bundle) {
-      base = offerApplied.bundle.price;
-      const included = offerApplied.bundle.included_services || []; const inclGuests = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2; const extraG = Math.max(0, guestsCount - inclGuests);
-      services.forEach(s => { if (selectedServiceIds.has(s.id)) { const bSvc = included.find((inc: any) => inc.service_id === s.id); servicesTotal += bSvc?.isIncluded ? (s.price||0)*extraG : (s.price||0)*guestsCount; } });
-      if (extraCouponApplied) {
-        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
-      }
-      if (base < 0) base = 0;
-    } else {
-      if (offerApplied) { if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') base -= offerApplied.offerAmount; else if (offerApplied.offerType === 'percentage') base = Math.round(base*(1-offerApplied.offerAmount/100)); }
-      if (base < 0) base = 0;
-      if (extraCouponApplied) {
-        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
-      }
-      if (base < 0) base = 0;
-      services.forEach(s => { if (selectedServiceIds.has(s.id)) servicesTotal += (s.price||0)*guestsCount; });
+    if (offerApplied) { if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') base -= offerApplied.offerAmount; else if (offerApplied.offerType === 'percentage') base = Math.round(base*(1-offerApplied.offerAmount/100)); }
+    if (base < 0) base = 0;
+    if (extraCouponApplied) {
+      if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
     }
+    if (base < 0) base = 0;
+    services.forEach(s => { if (selectedServiceIds.has(s.id)) servicesTotal += (s.price||0)*guestsCount; });
     return base + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied, extraCouponApplied]);
+  }, [selectedUnit, adults, kids, nights, services, selectedServiceIds, offerApplied, extraCouponApplied]);
 
   const totalWithoutDiscount = useMemo(() => {
     if (!selectedUnit) return 0;
@@ -236,15 +249,31 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r=>setTimeout(r,1000)); setSubmitting(false); goToStep(6); return; }
     if (!siteSlug) { goToStep(6); return; }
     setSubmitting(true);
-    try { 
-      let retPath = (reservation as any).thankYouUrl || window.location.href.split('?')[0];
-      if (retPath.indexOf('?') === -1) retPath += `?res_id=${reservation.reservationId}&payment_status=success`;
-      else retPath += `&res_id=${reservation.reservationId}&payment_status=success`;
-      
+    try {
+      // ── Prefer configured thank-you URL → parent page URL → widget URL ──
+      let retPath = siteThankYouUrl || (reservation as any).thankYouUrl || '';
+      if (!retPath) {
+        try { retPath = (window.top as any).location.href.split('?')[0]; } catch { retPath = window.location.href.split('?')[0]; }
+      }
+      const sep = retPath.includes('?') ? '&' : '?';
+      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success`;
+
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }
       const data = await res.json();
-      if (data.session_url) { try { if (window.top) window.top.location.href = data.session_url; else window.location.href = data.session_url; } catch { window.location.href = data.session_url; } } else setError(data.error||'Payment failed');
+      if (data.session_url) {
+        try {
+          if (window.top && window.top !== window) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
+        } catch {
+          // cross-origin iframe: postMessage to parent + fallback navigate iframe
+          window.parent.postMessage({ type: 'alisio:redirect', url: data.session_url }, '*');
+          window.location.href = data.session_url;
+        }
+      } else setError(data.error||'Payment failed');
     } catch { setError('Payment gateway error'); }
     setSubmitting(false);
   };
