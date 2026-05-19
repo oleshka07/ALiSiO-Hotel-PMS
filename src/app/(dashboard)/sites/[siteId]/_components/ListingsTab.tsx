@@ -5,7 +5,7 @@ import { Loader2, Plus, Trash2, X, Check, Code2, Image as ImageIcon, Upload } fr
 import { Modal, CopyBtn, Chk } from './SiteHelpers';
 import type { Listing } from '../_types';
 
-function ListingRow({ listing, siteId, siteSlug, onDelete, onEdit }: {
+function ListingRow({ listing, siteId, siteSlug, onDelete, onEdit, siteCurrency }: {
   listing: Listing;
   siteId: string;
   siteSlug: string;
@@ -293,7 +293,7 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
           </tr></thead>
           <tbody>
             {listings.map(l => (
-              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} siteCurrency={siteCurrency} onDelete={handleDelete} onRefresh={fetchListings} onEdit={setEditingListing} />
+              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} siteCurrency={siteCurrency} onDelete={handleDelete} onEdit={setEditingListing} />
             ))}
           </tbody>
         </table>
