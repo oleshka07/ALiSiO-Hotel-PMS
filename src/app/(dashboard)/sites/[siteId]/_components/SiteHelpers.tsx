@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
 import {
-  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, PartyPopper,
+  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, PartyPopper, Inbox,
 } from 'lucide-react';
 
 export const TABS = [
@@ -16,6 +16,7 @@ export const TABS = [
   { id: 'rate-plans', label: 'Тарифні плани',     icon: <Tag size={16} /> },
   { id: 'coupons',    label: 'Промокоди',          icon: <Percent size={16} /> },
   { id: 'packages',   label: 'Пакети',             icon: <Package size={16} /> },
+  { id: 'forms',      label: 'Форми',              icon: <Inbox size={16} /> },
 ] as const;
 
 export type TabId = typeof TABS[number]['id'];

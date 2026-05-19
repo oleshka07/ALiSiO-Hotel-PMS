@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     ).get(id) as any;
     if (!site) return NextResponse.json({ error: 'Site not found' }, { status: 404 });
 
-    const allowed = ['name', 'slug', 'site_url', 'type', 'currency', 'status', 'design_config', 'widget_config'];
+    const allowed = ['name', 'slug', 'site_url', 'type', 'currency', 'status', 'design_config', 'widget_config', 'allowed_domains'];
     const setClauses: string[] = ["updated_at = datetime('now')"];
     const values: any[] = [];
 
