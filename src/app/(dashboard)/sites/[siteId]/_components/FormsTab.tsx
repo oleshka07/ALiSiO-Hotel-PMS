@@ -302,8 +302,6 @@ export function FormsTab({ siteId, onCountChange }: {
               з джерелом <strong>🌍 Сайт</strong> (web_form). Переглядайте та обробляйте їх там.
             </div>
           </div>
-        </div>
-      )}
 
       {/* Create script modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Новий скрипт-колектор"
@@ -324,8 +322,6 @@ export function FormsTab({ siteId, onCountChange }: {
         </div>
       </Modal>
 
-      {/* Copy util needed */}
-      <div style={{ display: 'none' }}><Copy size={1} /></div>
     </div>
   );
 }
