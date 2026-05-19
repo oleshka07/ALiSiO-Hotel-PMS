@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, Plus, Trash2, Code2, Inbox, Check, Copy, Eye, Archive, RotateCcw, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Plus, Trash2, Code2, Inbox, Check, Copy, Eye, Archive, RotateCcw, AlertCircle, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
 import { Modal, CopyBtn } from './SiteHelpers';
 
 interface CaptureScript {
@@ -34,10 +34,86 @@ const STATUS_STYLES: Record<string, { label: string; color: string; bg: string }
   archived: { label: 'Архів',     color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)' },
 };
 
+function DevGuide() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: 12, border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--surface-secondary)', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        <BookOpen size={14} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', flex: 1 }}>📖 Інструкція для розробника сайту</span>
+        {open ? <ChevronDown size={14} style={{ color: 'var(--text-tertiary)' }} /> : <ChevronRight size={14} style={{ color: 'var(--text-tertiary)' }} />}
+      </button>
+      {open && (
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14, fontSize: 12 }}>
+
+          <div style={{ padding: '8px 12px', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: 8, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            <strong>⚠️ Важливо:</strong> ALiSiO розпізнає поля форми автоматично за атрибутом <code>name</code>. Переконайтесь, що ваші поля мають правильні <code>name</code> атрибути.
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>✅ Варіант 1 — Звичайна HTML-форма (auto-capture)</div>
+            <div style={{ color: 'var(--text-tertiary)', marginBottom: 8, lineHeight: 1.5 }}>Скрипт автоматично перехоплює submit події. Просто додайте <code>name</code> атрибути:</div>
+            <pre style={{ background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8, padding: '10px 12px', margin: 0, overflowX: 'auto', fontFamily: 'monospace', lineHeight: 1.6, color: 'var(--text-primary)' }}>{`<form action="#" method="post">
+  <input type="text"  name="name"    placeholder="Ваше ім'я" required />
+  <input type="email" name="email"   placeholder="Email" />
+  <input type="tel"   name="phone"   placeholder="Телефон" required />
+  <textarea           name="message" placeholder="Повідомлення"></textarea>
+  <button type="submit">Відправити</button>
+</form>`}</pre>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>✅ Варіант 2 — React / SPA (ручний виклик)</div>
+            <div style={{ color: 'var(--text-tertiary)', marginBottom: 8, lineHeight: 1.5 }}>Якщо форма контрольована React-компонентом (controlled inputs) — виклич <code>Alisio.sendForm()</code> вручну в обробнику submit:</div>
+            <pre style={{ background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8, padding: '10px 12px', margin: 0, overflowX: 'auto', fontFamily: 'monospace', lineHeight: 1.6, color: 'var(--text-primary)' }}>{`// У вашому handleSubmit:
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  // Надіслати в ALiSiO CRM
+  window.Alisio?.sendForm({
+    name:    formData.name,
+    email:   formData.email,
+    phone:   formData.phone,
+    message: formData.message,   // ← не забудьте!
+  });
+
+  // Далі — ваша логіка (Firebase, API тощо)
+  await CRMService.addLead({ ... });
+};`}</pre>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>📋 Підтримувані назви полів (автовизначення)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { label: 'Email', keys: 'email, mail, e_mail, user_email' },
+                { label: 'Телефон', keys: 'phone, tel, telephone, mobile, mobil' },
+                { label: "Ім'я", keys: 'name, full_name, fullname, jmeno, surname, firstname' },
+                { label: 'Повідомлення', keys: 'message, msg, comment, note, text, zprava' },
+              ].map(g => (
+                <div key={g.label} style={{ padding: '8px 10px', background: 'var(--surface-secondary)', borderRadius: 8 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{g.label}</div>
+                  <div style={{ color: 'var(--text-tertiary)', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6 }}>{g.keys}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ padding: '8px 12px', background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: 8, lineHeight: 1.6, color: 'var(--text-tertiary)' }}>
+            <strong>💡 Для kemp-carlsbad.cz:</strong> Форми використовують React controlled inputs без <code>name</code> атрибутів. Додайте виклик <code>window.Alisio?.sendForm(&#123; name, email, phone, message &#125;)</code>
+            {' '}на початку кожного <code>handleSubmit</code> у файлах: <code>ContactPopup.tsx</code>, <code>Contact.tsx</code>, <code>Footer.tsx</code>, <code>ExitIntentPopup.tsx</code>, <code>CallbackWidget.tsx</code>, <code>ModelPopups.tsx</code>.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScriptSnippet({ scriptId, siteId }: { scriptId: string; siteId: string }) {
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const snippet = `<script\n  src="${baseUrl}/widget/collector.js"\n  data-site-id="${siteId}"\n  async defer\n></script>`;
-  const manualSnippet = `<!-- Manual usage (without auto-capture) -->\n<script>\n  Alisio.sendForm({\n    name: 'Jan Novák',\n    email: 'jan@example.cz',\n    phone: '+420600000000',\n    message: 'Dotaz'\n  });\n</script>`;
+  const manualSnippet = `<!-- React/SPA: виклич вручну в handleSubmit -->\nwindow.Alisio?.sendForm({\n  name:    formData.name,\n  email:   formData.email,\n  phone:   formData.phone,\n  message: formData.message,\n});`;
   void scriptId;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -49,12 +125,13 @@ function ScriptSnippet({ scriptId, siteId }: { scriptId: string; siteId: string 
         <pre style={{ background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 10, padding: '12px 14px', fontSize: 12, overflowX: 'auto', fontFamily: 'monospace', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>{snippet}</pre>
       </div>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>💡 Ручна відправка (альтернатива)</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>💡 Ручна відправка (React / SPA)</div>
         <pre style={{ background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 10, padding: '12px 14px', fontSize: 12, overflowX: 'auto', fontFamily: 'monospace', color: 'var(--text-tertiary)', lineHeight: 1.6, margin: 0 }}>{manualSnippet}</pre>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '10px 14px', background: 'rgba(37,99,235,0.05)', borderRadius: 8, border: '1px solid rgba(37,99,235,0.15)', lineHeight: 1.6 }}>
-        <strong>Як це працює:</strong> Скрипт автоматично перехоплює відправку будь-яких форм на сайті та надсилає дані до ALiSiO. Email і телефон визначаються автоматично. Допустимі домени задаються нижче у вкладці «Безпека».
+        <strong>Як це працює:</strong> Скрипт автоматично перехоплює submit будь-яких HTML-форм. Для React-сайтів — додайте ручний виклик. Поля email, phone, name, message розпізнаються автоматично.
       </div>
+      <DevGuide />
     </div>
   );
 }

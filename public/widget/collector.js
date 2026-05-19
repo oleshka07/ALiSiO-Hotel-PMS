@@ -1,15 +1,20 @@
 /**
- * ALiSiO Form Collector — v1.0
+ * ALiSiO Form Collector — v1.1
  * Paste this snippet inside <head> of your website.
  * It automatically listens to all <form> submissions and forwards
  * the data to ALiSiO CRM. No server-side changes needed.
  *
- * Usage:
+ * Usage (auto-capture — all forms on page):
  *   <script src="https://YOUR_ALISIO_DOMAIN/widget/collector.js"
  *           data-site-id="YOUR_SITE_ID" async defer></script>
  *
- * Manual usage (alternative):
- *   Alisio.sendForm({ name: 'Jan', email: 'jan@example.com', phone: '+420...' });
+ * Manual usage (React / SPA — call directly on form submit):
+ *   Alisio.sendForm({
+ *     name:    'Jan Novák',
+ *     email:   'jan@example.com',
+ *     phone:   '+420 723 000 000',
+ *     message: 'Dobrý den, mám dotaz...'
+ *   });
  */
 (function () {
   'use strict';
