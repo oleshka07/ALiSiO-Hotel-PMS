@@ -230,7 +230,7 @@ export async function createWidgetReservation(request: NextRequest) {
     );
 
     // --- Emit event for CRM and other modules ---
-    eventBus.emit('booking.created', {
+    await eventBus.emit('booking.created', {
       bookingId: resId,
       guestId,
       unitId,
