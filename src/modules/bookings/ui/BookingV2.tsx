@@ -9,7 +9,7 @@ import type { BookingLang } from './translations';
 import { useBookingWidget } from './hooks/useBookingWidget';
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
-  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
+  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -177,14 +177,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
 
                           cells.push(
-                            <div key={d} className={cls} onClick={(e) => {
+                            <div key={d} className={cls} style={{ userSelect: 'none' }} onClick={(e) => {
                               e.stopPropagation();
                               if (!isPast && (!isBusy || isCheckoutOnly)) handleDayClick(ds);
                             }}>
                               <span className="v3-cal-day-num">{d}</span>
                               {dayPrice && !isBusy && !isPast && (
                                 <span className="v3-cal-day-price">
-                                  {Math.round(dayPrice)}
+                                  {Math.round(dayPrice)} {siteCurrency === 'EUR' ? '€' : siteCurrency === 'CZK' ? 'Kč' : siteCurrency === 'UAH' ? '₴' : siteCurrency}
                                 </span>
                               )}
                             </div>
@@ -816,7 +816,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   {checkIn && checkOut && loadingAvail ? (
                     <span className="v3-cta-loader"></span>
                   ) : nights > 0 && totalWithDiscount > 0 ? (
-                    formatPrice(totalWithDiscount, siteCurrency)
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {totalWithoutDiscount > totalWithDiscount && (
+                        <span style={{ textDecoration: 'line-through', opacity: 0.6, fontSize: '0.85em', fontWeight: 500 }}>
+                          {formatPrice(totalWithoutDiscount, siteCurrency)}
+                        </span>
+                      )}
+                      <span>{formatPrice(totalWithDiscount, siteCurrency)}</span>
+                    </span>
                   ) : nights > 0 && selectedUnit ? (
                     `${v3t.fromTimeBase} ${formatPrice(selectedUnit.avgPricePerNight, siteCurrency)} / ${v3t.nightBase}`
                   ) : (

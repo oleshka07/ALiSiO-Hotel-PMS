@@ -52,7 +52,7 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onEdit, siteCurrency 
   );
 }
 
-function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh }: {
+function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh, siteCurrency }: {
   listing: Listing | null;
   siteId: string;
   siteSlug: string;

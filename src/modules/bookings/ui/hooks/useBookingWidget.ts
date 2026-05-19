@@ -123,6 +123,10 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       base = offerApplied.bundle.price;
       const included = offerApplied.bundle.included_services || []; const inclGuests = offerApplied.bundle.base_guests || selectedUnit.baseOccupancy || 2; const extraG = Math.max(0, guestsCount - inclGuests);
       services.forEach(s => { if (selectedServiceIds.has(s.id)) { const bSvc = included.find((inc: any) => inc.service_id === s.id); servicesTotal += bSvc?.isIncluded ? (s.price||0)*extraG : (s.price||0)*guestsCount; } });
+      if (extraCouponApplied) {
+        if (extraCouponApplied.offerType === 'fixed_price' || extraCouponApplied.offerType === 'fixed_amount') base -= extraCouponApplied.offerAmount; else if (extraCouponApplied.offerType === 'percentage') base = Math.round(base*(1-extraCouponApplied.offerAmount/100));
+      }
+      if (base < 0) base = 0;
     } else {
       if (offerApplied) { if (offerApplied.offerType === 'fixed_price' || offerApplied.offerType === 'fixed_amount') base -= offerApplied.offerAmount; else if (offerApplied.offerType === 'percentage') base = Math.round(base*(1-offerApplied.offerAmount/100)); }
       if (base < 0) base = 0;
@@ -134,6 +138,16 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     }
     return base + servicesTotal;
   }, [selectedUnit, adults, nights, services, selectedServiceIds, offerApplied, extraCouponApplied]);
+
+  const totalWithoutDiscount = useMemo(() => {
+    if (!selectedUnit) return 0;
+    const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
+    const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
+    const base = selectedUnit.totalPrice + extraCharge;
+    let servicesTotal = 0; const guestsCount = adults + kids || 1;
+    services.forEach(s => { if (selectedServiceIds.has(s.id)) servicesTotal += (s.price||0)*guestsCount; });
+    return base + servicesTotal;
+  }, [selectedUnit, adults, nights, services, selectedServiceIds]);
 
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
     if (isPreview) { setLoadingAvail(true); await new Promise(r => setTimeout(r,800)); const mock: AvailabilityResponse = { checkIn: ci, checkOut: co, nights: Math.round((parseDate(co).getTime()-parseDate(ci).getTime())/86400000), units: [{ id:'mock-1', name:'Premium Glamping Tent', code:'P1', beds:2, unitTypeId:'t1', typeName:'Tent', typeCode:'T', description:'Beautiful tent', maxAdults:2, maxChildren:1, maxOccupancy:3, baseOccupancy:2, avgPricePerNight:2500, totalPrice:5000, currency:'Kc', extraPersonCharge:500, petAllowed:true, petCharge:200, photos:[], amenities:[] }] }; setAvailability(mock); setLoadingAvail(false); return mock; }
@@ -242,7 +256,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const invalidNightsMsg = offerApplied?.offerType==='package' && offerApplied.bundle?.nights_included && nights>0 && nights!==offerApplied.bundle.nights_included ? t.packageNightsError(offerApplied.bundle.nights_included) : null;
 
-  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, setExtraCouponApplied, extraCouponError, setExtraCouponError, applyingExtraCoupon, handleApplyExtraOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId };
+  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, setExtraCouponApplied, extraCouponError, setExtraCouponError, applyingExtraCoupon, handleApplyExtraOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId };
 }
 
 
