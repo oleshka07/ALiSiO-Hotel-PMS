@@ -8,11 +8,22 @@ export function registerCrmSubscribers() {
       const db = getDb();
       const leadId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
+      const guest = db.prepare('SELECT first_name, last_name, email, phone FROM guests WHERE id = ?').get(payload.guestId) as any;
       
       db.prepare(`
-        INSERT INTO crm_leads (id, organization_id, guest_id, reservation_id, stage, source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'new', ?, datetime('now'), datetime('now'))
-      `).run(leadId, org?.id || null, payload.guestId, payload.bookingId, payload.source || 'widget');
+        INSERT INTO crm_leads (id, organization_id, guest_id, reservation_id, first_name, last_name, email, phone, stage, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, datetime('now'), datetime('now'))
+      `).run(
+        leadId, 
+        org?.id || null, 
+        payload.guestId, 
+        payload.bookingId, 
+        guest?.first_name || 'Guest',
+        guest?.last_name || '',
+        guest?.email || null,
+        guest?.phone || null,
+        payload.source || 'widget'
+      );
       
       console.log(`[CRM Subscriber] Lead ${leadId} created from booking ${payload.bookingId}`);
     } catch (e: any) {
