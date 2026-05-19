@@ -75,12 +75,10 @@ export default function SiteDetailPage() {
       fetch(`/api/coupons?site_id=${siteId}`).then(r => r.json()).catch(() => null),
       fetch(`/api/package-offers?site_id=${siteId}`).then(r => r.json()).catch(() => null),
       fetch(`/api/booking-sites/${siteId}/rate-plans`).then(r => r.json()).catch(() => null),
-      fetch(`/api/incoming-leads?site_id=${siteId}`).then(r => r.json()).catch(() => null),
-    ]).then(([couponData, bundleData, ratePlanData, leadsData]) => {
+    ]).then(([couponData, bundleData, ratePlanData]) => {
       if (couponData && Array.isArray(couponData)) couponCountCb(couponData.length);
       if (bundleData?.bundles) packageCountCb(bundleData.bundles.length);
       if (ratePlanData?.ratePlans) ratePlanCountCb(ratePlanData.ratePlans.length);
-      if (leadsData?.leads) formsCountCb(leadsData.leads.filter((l: { status: string }) => l.status === 'new').length);
     });
   }, [fetchSite, siteId, couponCountCb, packageCountCb, ratePlanCountCb, formsCountCb]);
   /* eslint-enable react-hooks/set-state-in-effect */

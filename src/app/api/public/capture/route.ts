@@ -126,6 +126,47 @@ export async function POST(req: NextRequest) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(siteId, scriptId, fullName, email, phone, message, sourceUrl, rawData);
 
+  // ── Also create a CRM lead so the submission appears in CRM → Leads ──
+  try {
+    const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as any;
+    if (org) {
+      const crypto = await import('crypto');
+      const leadId = crypto.randomBytes(8).toString('hex');
+      const convId = crypto.randomBytes(8).toString('hex');
+      const histId = crypto.randomBytes(8).toString('hex');
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+      // Parse name into first/last
+      const nameParts = (fullName ?? '').trim().split(/\s+/);
+      const firstName = nameParts[0] || email?.split('@')[0] || phone || 'Гість';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
+
+      // Site name for context
+      const siteName = (db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any)?.name ?? '';
+      const notesText = message ? `Повідомлення: ${message}${siteName ? `\n\nДжерело: ${siteName}` : ''}` : (siteName ? `Джерело: ${siteName}` : null);
+
+      db.prepare(`
+        INSERT INTO crm_leads (
+          id, organization_id, first_name, last_name, email, phone,
+          source, stage, priority, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'web_form', 'new', 'normal', ?, ?, ?)
+      `).run(leadId, org.id, firstName, lastName, email ?? null, phone ?? null, notesText, now, now);
+
+      db.prepare(`
+        INSERT INTO crm_stage_history (id, lead_id, from_stage, to_stage, trigger, notes, created_at)
+        VALUES (?, ?, NULL, 'new', 'auto', 'Заявка з сайту', ?)
+      `).run(histId, leadId, now);
+
+      db.prepare(`
+        INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'active', ?, ?)
+      `).run(convId, leadId, `${firstName}${lastName ? ' ' + lastName : ''} — web form`, now, now);
+    }
+  } catch (crmErr: any) {
+    console.error('[capture] CRM lead creation failed:', crmErr?.message);
+    // Don't fail the request — raw log already saved
+  }
+
   const headers = new Headers({ 'Access-Control-Allow-Origin': origin || '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
   return NextResponse.json({ ok: true }, { headers });
 }
