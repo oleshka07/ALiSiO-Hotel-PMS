@@ -161,6 +161,22 @@ export async function POST(req: NextRequest) {
         INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at)
         VALUES (?, ?, ?, 'active', ?, ?)
       `).run(convId, leadId, `${firstName}${lastName ? ' ' + lastName : ''} — web form`, now, now);
+
+      // ── Add first message so the dialog is not empty ──
+      const msgId = crypto.randomBytes(8).toString('hex');
+      const lines: string[] = [];
+      if (fullName) lines.push(`👤 Ім'я: ${fullName}`);
+      if (email) lines.push(`✉️ Email: ${email}`);
+      if (phone) lines.push(`📞 Телефон: ${phone}`);
+      if (message) lines.push(`💬 Повідомлення: ${message}`);
+      if (sourceUrl) lines.push(`🔗 Сторінка: ${sourceUrl}`);
+      if (siteName) lines.push(`🌍 Сайт: ${siteName}`);
+      const msgContent = lines.join('\n') || 'Заявка з сайту (без деталей)';
+
+      db.prepare(`
+        INSERT INTO crm_messages (id, conversation_id, channel_type, direction, sender_type, sender_name, content, content_type, status, created_at)
+        VALUES (?, ?, 'web_form', 'inbound', 'guest', ?, ?, 'text', 'delivered', ?)
+      `).run(msgId, convId, firstName, msgContent, now);
     }
   } catch (crmErr: any) {
     console.error('[capture] CRM lead creation failed:', crmErr?.message);
