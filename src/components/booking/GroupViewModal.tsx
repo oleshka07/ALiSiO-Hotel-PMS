@@ -262,7 +262,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                 <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплата</div>
                   <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', marginTop: 2 }}>
-                    {(group.total_price || 0).toLocaleString()} CZK
+                    {(group.total_price || 0).toLocaleString()} {group.currency || 'CZK'}
                   </div>
                   <div style={{ fontSize: 12, display: 'flex', gap: 8 }}>
                     <span style={{ color: '#22c55e' }}>✓ {totalPaid.toLocaleString()}</span>
@@ -339,7 +339,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                         onChange={e => setEditForm(p => ({ ...p, checkOut: e.target.value }))} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Загальна вартість (CZK)</label>
+                      <label className="form-label">Загальна вартість ({group.currency || 'CZK'})</label>
                       <input className="form-input" type="number" value={editForm.totalPrice}
                         onChange={e => setEditForm(p => ({ ...p, totalPrice: e.target.value }))} />
                     </div>
@@ -410,7 +410,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
 
                     <div className="form-row">
                       <div className="form-group">
-                        <label className="form-label" style={{ fontSize: 12 }}>Сума (CZK) *</label>
+                        <label className="form-label" style={{ fontSize: 12 }}>Сума ({group.currency || 'CZK'}) *</label>
                         <input className="form-input" type="number" placeholder={remaining > 0 ? String(remaining) : '0'}
                           value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
                       </div>
@@ -461,7 +461,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                         background: 'var(--bg-secondary)', fontSize: 13,
                       }}>
                         <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>
-                          {p.type === 'refund' ? '-' : '+'}{p.amount?.toLocaleString()} CZK
+                          {p.type === 'refund' ? '-' : '+'}{p.amount?.toLocaleString()} {p.currency || group.currency || 'CZK'}
                         </span>
                         <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{METHOD_LABELS[p.method] || p.method}</span>
                         <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{TYPE_LABELS[p.type] || p.type}</span>
@@ -474,7 +474,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', fontWeight: 700, fontSize: 13, borderTop: '1px solid var(--border-primary)', marginTop: 4 }}>
                       <span>Разом оплачено</span>
-                      <span style={{ color: 'var(--accent-primary)' }}>{totalPaid.toLocaleString()} / {(group.total_price || 0).toLocaleString()} CZK</span>
+                      <span style={{ color: 'var(--accent-primary)' }}>{totalPaid.toLocaleString()} / {(group.total_price || 0).toLocaleString()} {group.currency || 'CZK'}</span>
                     </div>
                   </div>
                 )}

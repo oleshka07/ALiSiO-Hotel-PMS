@@ -236,7 +236,7 @@ export default function GroupBookingModal({ open, onClose, onCreated, bookingSou
           {/* Price + source */}
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Загальна ціна (CZK)</label>
+              <label className="form-label">Загальна ціна</label>
               <input className="form-input" type="number" value={form.totalPrice}
                 onChange={e => setForm(p => ({ ...p, totalPrice: Number(e.target.value) }))} />
             </div>

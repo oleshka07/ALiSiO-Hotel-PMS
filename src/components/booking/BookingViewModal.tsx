@@ -241,7 +241,7 @@ export default function BookingViewModal({
             fontSize: 12, lineHeight: 1.4,
           }}>
             <strong>⚠️ Multi-room booking</strong> — Hostex колапсує групове бронювання Booking.com в один запис.
-            Сума {total.toLocaleString()} CZK може покривати <strong>кілька будинків</strong>.
+            Сума {total.toLocaleString()} {b.currency || 'CZK'} може покривати <strong>кілька будинків</strong>.
             Перевір у Hostex (марker <code>{(b as any).multi_room_marker || '?'}</code>) скільки фактично кімнат
             і за потреби створи окремі рядки — інакше календар не заблокує інші будинки.
           </div>
@@ -264,9 +264,9 @@ export default function BookingViewModal({
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
             {(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>
+            {b.currency !== 'EUR' && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>}
           </div>
         </div>
 
@@ -351,9 +351,9 @@ export default function BookingViewModal({
           {viewTab === 'payment' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div></div>
-                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} CZK</div></div>
-                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div><div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} CZK</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} {b.currency || 'CZK'}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div><div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} {b.currency || 'CZK'}</div></div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 8, overflow: 'hidden' }}>
@@ -367,7 +367,7 @@ export default function BookingViewModal({
                   {payments.map((p: any) => (
                     <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-primary)', fontSize: 12 }}>
                       <span style={{ color: 'var(--text-tertiary)', minWidth: 70 }}>{p.paid_at || '—'}</span>
-                      <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>{p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()} CZK</span>
+                      <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>{p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()} {p.currency || b.currency || 'CZK'}</span>
                       <span style={{ color: 'var(--text-secondary)' }}>{METHOD_LABELS[p.method] || p.method}</span>
                       <span style={{ color: 'var(--text-tertiary)' }}>{TYPE_LABELS[p.type] || p.type}</span>
                       {p.notes && <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes}</span>}
@@ -387,7 +387,7 @@ export default function BookingViewModal({
                     Безоплатне бронювання
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Ціна = 0 CZK. Це може бути промокод, бартер або помилка. Підтвердіть свідомо або встановіть реальну ціну.
+                    Ціна = 0 {b.currency || 'CZK'}. Це може бути промокод, бартер або помилка. Підтвердіть свідомо або встановіть реальну ціну.
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-sm btn-primary"
@@ -414,7 +414,7 @@ export default function BookingViewModal({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="form-input" type="number" placeholder="Сума CZK" style={{ flex: 1, fontSize: 13 }} value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
+                    <input className="form-input" type="number" placeholder={`Сума ${b.currency || 'CZK'}`} style={{ flex: 1, fontSize: 13 }} value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
                     <select className="form-select" style={{ width: 140, fontSize: 13 }} value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}>
                       <option value="cash">💵 Готівка</option><option value="card">💳 Картою</option><option value="bank_transfer">🏦 Рахунок</option><option value="invoice">📄 Фактура</option><option value="booking_platform">🏨 Платформа бронювання</option>
                     </select>
@@ -454,7 +454,7 @@ export default function BookingViewModal({
                   {remaining > 0 && (
                     <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, alignSelf: 'flex-start' }}
                       onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}>
-                      Залишок: {remaining.toLocaleString()} CZK
+                      Залишок: {remaining.toLocaleString()} {b.currency || 'CZK'}
                     </button>
                   )}
                 </div>
@@ -764,7 +764,7 @@ export default function BookingViewModal({
                         </div>
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
-                        {Number(sb.subtotal).toLocaleString()} CZK
+                        {Number(sb.subtotal).toLocaleString()} {b.currency || 'CZK'}
                       </div>
                       {/* Payment status badge for child */}
                       {sb.child_payment_status && (
@@ -922,13 +922,13 @@ export default function BookingViewModal({
                   <div>
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Σ Sub-bookings</div>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
-                      {subBookings.reduce((s: number, sb: any) => s + Number(sb.subtotal || 0), 0).toLocaleString()} CZK
+                      {subBookings.reduce((s: number, sb: any) => s + Number(sb.subtotal || 0), 0).toLocaleString()} {b.currency || 'CZK'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Total бронювання</div>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
-                      {Number(b.total_price || 0).toLocaleString()} CZK
+                      {Number(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}
                     </div>
                   </div>
                   {(() => {
@@ -978,7 +978,7 @@ export default function BookingViewModal({
                         style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>💰 Вартість цієї групи (CZK)</label>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>💰 Вартість цієї групи ({b.currency || 'CZK'})</label>
                       <input type="number" min={0} value={groupForm.subtotal} onChange={e => setGroupForm(p => ({ ...p, subtotal: Number(e.target.value) }))}
                         style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }} />
                     </div>

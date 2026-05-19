@@ -284,7 +284,7 @@ export default function MobileBookingDetail({
                 {b.first_name} {b.last_name}
               </div>
               <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                {total.toLocaleString()} CZK
+                {total.toLocaleString()} {b.currency || 'CZK'}
               </div>
             </div>
 
@@ -301,9 +301,11 @@ export default function MobileBookingDetail({
                 <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
                 <span>{b.adults} {adultsLabel(b.adults)}{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
-                ≈ {toEur(total)} €
-              </div>
+              {b.currency !== 'EUR' && (
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
+                  ≈ {toEur(total)} €
+                </div>
+              )}
             </div>
 
             {/* Dates */}
@@ -474,7 +476,7 @@ export default function MobileBookingDetail({
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>
                 <span>{pct}% оплачено</span>
-                <span>в CZK</span>
+                <span>в {b.currency || 'CZK'}</span>
               </div>
 
               {/* Action buttons */}
@@ -500,7 +502,7 @@ export default function MobileBookingDetail({
               {showPayForm && (
                 <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <input className="form-input" type="number" placeholder="Сума CZK" value={payForm.amount}
+                    <input className="form-input" type="number" placeholder={`Сума ${b.currency || 'CZK'}`} value={payForm.amount}
                       onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))}
                       style={{ fontSize: 13 }} />
                     <select className="form-select" value={payForm.method}
@@ -529,7 +531,7 @@ export default function MobileBookingDetail({
                   {remaining > 0 && (
                     <button onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}
                       style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-                      Залишок: {remaining.toLocaleString()} CZK
+                      Залишок: {remaining.toLocaleString()} {b.currency || 'CZK'}
                     </button>
                   )}
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -682,7 +684,7 @@ export default function MobileBookingDetail({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{sb.label || 'Без назви'}</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                        {(sb.subtotal || 0).toLocaleString()} CZK
+                        {(sb.subtotal || 0).toLocaleString()} {b.currency || 'CZK'}
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
