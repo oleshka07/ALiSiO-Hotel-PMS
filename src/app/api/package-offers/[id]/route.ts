@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const db = getDb();
     const body = await req.json();
-    const allowed = ['name','description','price','currency','nights_included','listing_type','included_services','validity_months','is_active', 'allowed_days', 'coupon_code', 'redemption_limit', 'applied_listings'];
+    const allowed = ['name','description','price','currency','nights_included','listing_type','included_services','validity_months','is_active', 'allowed_days', 'coupon_code', 'redemption_limit', 'applied_listings', 'allowed_promo_codes'];
     const sets: string[] = [];
     const vals: unknown[] = [];
     for (const k of allowed) {
@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         sets.push(`${k} = ?`);
         let val = body[k];
         if (k === 'included_services' || k === 'allowed_days') val = val ? JSON.stringify(val) : null;
-        if (k === 'applied_listings') val = val && val.length > 0 ? JSON.stringify(val) : null;
+        if (k === 'applied_listings' || k === 'allowed_promo_codes') val = val && val.length > 0 ? JSON.stringify(val) : null;
         if (k === 'coupon_code') val = val ? String(val).trim().toUpperCase() : null;
         vals.push(val);
       }

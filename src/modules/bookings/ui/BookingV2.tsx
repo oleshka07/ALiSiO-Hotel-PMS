@@ -9,7 +9,7 @@ import type { BookingLang } from './translations';
 import { useBookingWidget } from './hooks/useBookingWidget';
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
-  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
+  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -307,6 +307,41 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </div>
             )}
               {offerError && <div className="v3-offer-error">{offerError}</div>}
+            
+            {/* EXTRA COUPON (IF PACKAGE) */}
+            {offerApplied?.offerType === 'package' && offerApplied.bundle?.allowed_promo_codes?.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border-primary)' }}>
+                {!extraCouponApplied && (
+                  <button className="v3-offer-toggle" onClick={() => setShowExtraOffer(!showExtraOffer)}>
+                    {showExtraOffer ? '−' : '+'} {t.couponCode}
+                  </button>
+                )}
+                {extraCouponApplied && (
+                  <div className="v3-offer-success" style={{ background: 'transparent', border: '1px solid var(--accent-primary)', padding: '6px 12px' }}>
+                    {'🏷️'} {extraCouponApplied.code}: -{extraCouponApplied.offerType === 'percentage' ? `${extraCouponApplied.offerAmount}%` : `${extraCouponApplied.offerAmount} Kč`}
+                  </div>
+                )}
+                {!extraCouponApplied && showExtraOffer && (
+                  <div className="v3-offer-field">
+                    <input
+                      className="v3-field-input"
+                      placeholder={t.couponCode}
+                      value={extraCouponCode}
+                      onChange={e => { setExtraCouponCode(e.target.value); }}
+                      onKeyDown={e => e.key === 'Enter' && !applyingExtraCoupon && handleApplyExtraOffer()}
+                    />
+                    <button
+                      className="v3-offer-apply"
+                      onClick={handleApplyExtraOffer}
+                      disabled={applyingExtraCoupon || !extraCouponCode.trim()}
+                    >
+                      {applyingExtraCoupon ? '...' : t.apply}
+                    </button>
+                  </div>
+                )}
+                {extraCouponError && <div className="v3-offer-error">{extraCouponError}</div>}
+              </div>
+            )}
           </div>
         </div>
 
