@@ -78,6 +78,11 @@ export default function BookingViewModal({
   const [waPopupOpen, setWaPopupOpen] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
+  const [unitPopupOpen, setUnitPopupOpen] = useState(false);
+  const [datesEditOpen, setDatesEditOpen] = useState(false);
+  const [datesEditCI, setDatesEditCI] = useState('');
+  const [datesEditCO, setDatesEditCO] = useState('');
+  const [savingInline, setSavingInline] = useState(false);
 
   // Sub-bookings state
   const [subBookings, setSubBookings] = useState<any[]>([]);
@@ -260,10 +265,100 @@ export default function BookingViewModal({
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{b.first_name} {b.last_name}</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
-              <span style={{ padding: '2px 7px', background: 'var(--bg-tertiary)', borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: 'ui-monospace, monospace' }}>{b.unit_code || b.unit_name}</span>
+              {/* Unit badge — inline edit */}
+              <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <span onClick={(e) => { e.stopPropagation(); setUnitPopupOpen(!unitPopupOpen); }}
+                  style={{ padding: '2px 7px', background: 'var(--bg-tertiary)', borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: 'ui-monospace, monospace', cursor: 'pointer', transition: 'background .15s', position: 'relative' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                  title="Натисни щоб змінити будинок">{b.unit_code || b.unit_name}</span>
+                {unitPopupOpen && (
+                  <>
+                    <div onClick={() => setUnitPopupOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
+                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 10, padding: 6, width: 280, maxHeight: 300, overflowY: 'auto', boxShadow: '0 12px 32px -8px rgba(0,0,0,.5)', zIndex: 30 }}>
+                      <div style={{ padding: '6px 10px 4px', fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>Змінити будинок</div>
+                      {availableUnits.map(u => {
+                        const isCurrent = u.id === (b as any).unit_id;
+                        return (
+                          <div key={u.id} onClick={async () => {
+                            if (isCurrent || savingInline) return;
+                            setSavingInline(true);
+                            try {
+                              const res = await fetch(`/api/bookings/${b.id}`, {
+                                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ unit_id: u.id }),
+                              });
+                              if (res.ok) {
+                                setBooking({ ...b, unit_id: u.id, unit_code: u.code, unit_name: u.name });
+                                onFetchBookings();
+                                showToast(`\u2705 Будинок змінено на ${u.code}`);
+                              } else { showToast('Помилка зміни будинку'); }
+                            } finally { setSavingInline(false); setUnitPopupOpen(false); }
+                          }}
+                          style={{ padding: '8px 10px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, cursor: isCurrent ? 'default' : 'pointer', transition: 'background .15s', opacity: savingInline ? 0.5 : 1 }}
+                          onMouseEnter={(e) => !isCurrent && (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isCurrent ? 'var(--accent-primary)' : 'var(--text-primary)', fontFamily: 'ui-monospace, monospace', minWidth: 32 }}>{u.code}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{u.category_name}</div>
+                            </div>
+                            {isCurrent && <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontWeight: 600, padding: '2px 6px', background: 'rgba(79,142,255,.12)', borderRadius: 4 }}>Поточний</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
               <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || '#6c7086') + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceMap[b.source]?.color || '#6c7086', fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || b.source}</span>
               <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.check_in} → {b.check_out}</span>
+              {/* Dates — inline edit */}
+              {!datesEditOpen ? (
+                <span onClick={() => { setDatesEditCI(b.check_in); setDatesEditCO(b.check_out); setDatesEditOpen(true); }}
+                  style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px 5px', margin: '-2px -5px', borderRadius: 5, transition: 'background .15s', position: 'relative' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title="Натисни щоб змінити дати">{b.check_in} → {b.check_out}</span>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                  <input type="date" value={datesEditCI} onChange={(e) => setDatesEditCI(e.target.value)}
+                    style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--border-primary)', borderRadius: 5, background: 'var(--bg-secondary)', color: 'var(--text-primary)', width: 120 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>→</span>
+                  <input type="date" value={datesEditCO} onChange={(e) => setDatesEditCO(e.target.value)}
+                    min={datesEditCI}
+                    style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--border-primary)', borderRadius: 5, background: 'var(--bg-secondary)', color: 'var(--text-primary)', width: 120 }} />
+                  <button disabled={savingInline || !datesEditCI || !datesEditCO || datesEditCI >= datesEditCO}
+                    onClick={async () => {
+                      if (datesEditCI === b.check_in && datesEditCO === b.check_out) { setDatesEditOpen(false); return; }
+                      const newNights = Math.ceil((new Date(datesEditCO + 'T00:00:00').getTime() - new Date(datesEditCI + 'T00:00:00').getTime()) / 86400000);
+                      const oldNights = b.nights || 1;
+                      const pricePerNight = total / oldNights;
+                      const newTotal = Math.round(pricePerNight * newNights);
+                      const msg = newTotal !== total
+                        ? `Змінити дати?\n${b.check_in} → ${datesEditCI}\n${b.check_out} → ${datesEditCO}\n${oldNights} → ${newNights} ночей\n\nЦіна: ${total.toLocaleString()} → ${newTotal.toLocaleString()} ${b.currency || 'CZK'}`
+                        : `Змінити дати?\n${b.check_in} → ${datesEditCI}\n${b.check_out} → ${datesEditCO}`;
+                      if (!confirm(msg)) return;
+                      setSavingInline(true);
+                      try {
+                        const payload: any = { check_in: datesEditCI, check_out: datesEditCO, nights: newNights };
+                        if (newTotal !== total) payload.total_price = newTotal;
+                        const res = await fetch(`/api/bookings/${b.id}`, {
+                          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(payload),
+                        });
+                        if (res.ok) {
+                          setBooking({ ...b, check_in: datesEditCI, check_out: datesEditCO, nights: newNights, ...(newTotal !== total ? { total_price: newTotal } : {}) });
+                          onFetchBookings();
+                          showToast(`\u2705 Дати змінено: ${datesEditCI} → ${datesEditCO}`);
+                        } else { showToast('Помилка зміни дат'); }
+                      } finally { setSavingInline(false); setDatesEditOpen(false); }
+                    }}
+                    style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 5, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✓</button>
+                  <button onClick={() => setDatesEditOpen(false)}
+                    style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 5, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
+                </div>
+              )}
               <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
               <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.nights} н. · {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
               {b.hostex_channel_type && (
