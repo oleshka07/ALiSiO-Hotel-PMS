@@ -56,6 +56,15 @@ export async function createWidgetCheckoutSession(req: Request) {
     // Check if payment is possible: either site-specific Teya config or global ENV
     const hasSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
     if (!hasSiteTeya && !process.env.TEYA_CLIENT_ID) {
+      if (reservation_id) {
+        // Fire email explicitly for offline/bank-transfer partner bookings
+        try {
+          const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+          sendBookingConfirmationEmail(reservation_id).catch(() => {});
+        } catch (err: any) {
+          console.error('[Checkout Session] Failed to trigger email:', err.message);
+        }
+      }
       return NextResponse.json({ error: 'Online payments not configured' }, { status: 403, headers: CORS_HEADERS });
     }
 
