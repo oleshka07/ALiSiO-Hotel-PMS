@@ -310,13 +310,12 @@ export async function createWidgetReservation(request: NextRequest) {
       source: siteName
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
-    if (finalPrice === 0) {
-      try {
-        const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-        sendBookingConfirmationEmail(resId).catch(() => {});
-      } catch (err: any) {
-        console.error('[Widget Reserve] Failed to trigger email for 0-price booking:', err.message);
-      }
+    try {
+      const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
+      const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+      sendBookingConfirmationEmail(resId, origin).catch(() => {});
+    } catch (err: any) {
+      console.error('[Widget Reserve] Failed to trigger confirmation email:', err.message);
     }
 
     // ── Bundle: pre-create service_orders for included services ──────────
