@@ -13,6 +13,9 @@ function getTransporter() {
     host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
     port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '465', 10),
     secure: true,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 5000,
     auth: {
       user: process.env.EMAIL_CZ_USER || 'kemp-carlsbad@email.cz',
       pass: process.env.EMAIL_CZ_PASSWORD,
