@@ -602,7 +602,7 @@ export default function CrmInboxPage() {
                   <div className="inbox-lead-stage">
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: `${stage?.color || '#6b7280'}15`, color: stage?.color || '#6b7280' }}>{stage?.icon} {stage?.label}</span>
                     {lead.source && <span className="inbox-lead-channel">{CHANNEL_ICONS[lead.source] || '📨'}</span>}
-                    {lead.estimated_value > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-success)', marginLeft: 'auto' }}>{lead.estimated_value.toLocaleString()} CZK</span>}
+                    {lead.estimated_value > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-success)', marginLeft: 'auto' }}>{lead.estimated_value.toLocaleString()} {lead.currency || 'CZK'}</span>}
                     {lead.unread_count > 0 && <span className="crm-unread" style={{ marginLeft: lead.estimated_value > 0 ? 6 : 'auto' }}>{lead.unread_count}</span>}
                   </div>
                   {lead.check_in_date && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={9} /> {lead.check_in_date} → {lead.check_out_date}</div>}
@@ -640,7 +640,7 @@ export default function CrmInboxPage() {
                     {conversation.phone && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Phone size={10} /> {conversation.phone}</span>}
                     {conversation.email && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Mail size={10} /> {conversation.email}</span>}
                     {conversation.check_in_date && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={10} /> {conversation.check_in_date} → {conversation.check_out_date}</span>}
-                    {conversation.estimated_value > 0 && <span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>{conversation.estimated_value.toLocaleString()} CZK</span>}
+                    {conversation.estimated_value > 0 && <span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>{conversation.estimated_value.toLocaleString()} {conversation.currency || 'CZK'}</span>}
                   </div>
                 </div>
                 <button className={`btn btn-sm ${showDetailPanel ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowDetailPanel(p => !p)} title="Деталі ліда">
