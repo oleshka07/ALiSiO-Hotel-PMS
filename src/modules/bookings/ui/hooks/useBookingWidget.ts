@@ -263,14 +263,9 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       const data = await res.json();
       if (data.session_url) {
         try {
-          if (window.top && window.top !== window) {
-            window.top.location.href = data.session_url;
-          } else {
-            window.location.href = data.session_url;
-          }
+          window.open(data.session_url, '_blank');
+          goToStep(6);
         } catch {
-          // cross-origin iframe: postMessage to parent + fallback navigate iframe
-          window.parent.postMessage({ type: 'alisio:redirect', url: data.session_url }, '*');
           window.location.href = data.session_url;
         }
       } else setError(data.error||'Payment failed');

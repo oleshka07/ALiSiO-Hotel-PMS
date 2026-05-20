@@ -8,14 +8,13 @@ export async function GET(request: Request) {
   try {
     const db = getDb();
     
-    // Find tentative unpaid reservations created between 30 and 120 minutes ago
-    // that haven't received an abandoned cart email yet.
+    // TEST MODE: Check for carts created more than 0 minutes ago instead of 30
     const abandonedReservations = db.prepare(`
       SELECT id 
       FROM reservations 
       WHERE status = 'tentative' 
         AND payment_status = 'unpaid' 
-        AND created_at < datetime('now', '-30 minute') 
+        AND created_at < datetime('now', '-0 minute') 
         AND created_at > datetime('now', '-120 minute')
         AND ifnull(internal_notes, '') NOT LIKE '%[ABANDONED_CART_SENT]%'
     `).all() as { id: string }[];
