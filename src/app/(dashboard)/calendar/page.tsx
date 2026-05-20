@@ -6,6 +6,7 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { useDevice } from '@/lib/useDevice';
 import MobileCalendar from '@/components/mobile/pages/MobileCalendar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
+import RoomAllocationModal from '@/components/booking/RoomAllocationModal';
 import BookingViewModal from '@/components/booking/BookingViewModal';
 import BookingForm from '@/components/booking/BookingForm';
 import {
@@ -175,6 +176,7 @@ function CalendarDesktop() {
   // Modals
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showRoomAllocation, setShowRoomAllocation] = useState(false);
 
   // Zoom & Navigation
   const [zoom, setZoom] = useState<ZoomLevel>('month');
@@ -615,6 +617,7 @@ function CalendarDesktop() {
                 {syncing ? ' Синх...' : ' Hostex'}
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Users size={14} /> Групове</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowRoomAllocation(true)} title="Розселення по кімнатах (Building View)" style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Building2 size={14} /> Будова</button>
               <button className="btn btn-primary btn-sm" onClick={() => { setNewBookingPrefill(null); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
           </div>
@@ -1079,6 +1082,13 @@ function CalendarDesktop() {
         onClose={() => setShowGroupModal(false)}
         onCreated={() => { fetchData(); showToast('Групове бронювання створено!'); }}
         bookingSources={bookingSources}
+      />
+
+      {/* ─── Room Allocation Modal (Building View) ───────── */}
+      <RoomAllocationModal
+        open={showRoomAllocation}
+        onClose={() => setShowRoomAllocation(false)}
+        onChanged={() => fetchData()}
       />
 
       {/* Floating "Today" button – mobile only */}

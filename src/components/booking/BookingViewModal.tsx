@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Edit3, X, Save, Plus, Check, ArrowRight, Copy, ExternalLink,
-  Loader2, Trash2, Phone, Receipt, RefreshCw,
+  Loader2, Trash2, Phone, Receipt, RefreshCw, Clock, Lock, Mail, MessageCircle,
 } from 'lucide-react';
 
 function Modal({ open, onClose, title, children, footer, size }: {
@@ -250,11 +250,13 @@ export default function BookingViewModal({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{b.first_name} {b.last_name}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-              <span className="badge badge-primary">{b.unit_name}</span>
-              <span>{b.check_in} → {b.check_out}</span>
-              <span>{b.nights} н. · {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
-              <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color }}>{sourceMap[b.source]?.label || b.source}</span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+              <span style={{ padding: '2px 7px', background: 'var(--bg-tertiary)', borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: 'ui-monospace, monospace' }}>{b.unit_code || b.unit_name}</span>
+              <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || '#6c7086') + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceMap[b.source]?.color || '#6c7086', fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || b.source}</span>
+              <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.check_in} → {b.check_out}</span>
+              <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.nights} н. · {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
               {b.hostex_channel_type && (
                 <span className="badge" style={{ background: '#ff6b3522', color: '#ff6b35' }}>Hostex: {b.hostex_channel_type}</span>
               )}
@@ -262,6 +264,34 @@ export default function BookingViewModal({
                 <span className="badge" style={{ background: '#f59e0b22', color: '#92400e' }}>⚠️ Multi-room</span>
               ) : null}
             </div>
+            {/* ── Contact Buttons ── */}
+            {(b.guest_phone || b.guest_email) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                {b.guest_phone && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Phone size={13} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{b.guest_phone}</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <a href={`tel:${(b.guest_phone || '').replace(/[^\d+]/g, '')}`} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #4ADE8040', background: '#4ADE801A', color: '#4ADE80', textDecoration: 'none' }} aria-label="Подзвонити">
+                        <Phone size={14} />
+                      </a>
+                      <a href={`https://wa.me/${(b.guest_phone || '').replace(/[^\d+]/g, '').replace(/^\+/, '')}`} target="_blank" rel="noopener" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #4ADE8040', background: '#4ADE801A', color: '#4ADE80', textDecoration: 'none' }} aria-label="WhatsApp">
+                        <MessageCircle size={14} />
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {b.guest_email && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Mail size={13} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.guest_email}</span>
+                    <a href={`mailto:${b.guest_email}`} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #5B7CFF40', background: '#5B7CFF1A', color: '#5B7CFF', textDecoration: 'none' }} aria-label="Email">
+                      <Mail size={14} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
@@ -270,26 +300,46 @@ export default function BookingViewModal({
           </div>
         </div>
 
-        {/* ── Pipeline Stepper ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '16px 0', borderBottom: '1px solid var(--border-primary)', overflow: 'auto' }}>
-          {[
-            { label: 'Підтверджено', done: ['confirmed','checked_in','checked_out'].includes(b.status), icon: '✅' },
-            { label: 'Оплата', done: isPaid, icon: isPaid ? '✅' : '⏳' },
-            { label: 'Реєстрація', done: isRegistered, icon: isRegistered ? '✅' : '❌', count: `${registrations.length}/${regNeeded}` },
-            { label: 'Заселено', done: b.status === 'checked_in' || b.status === 'checked_out', icon: canCheckIn ? (b.status === 'checked_in' || b.status === 'checked_out' ? '✅' : '🔓') : '🔒' },
-            { label: 'Виселено', done: b.status === 'checked_out', icon: b.status === 'checked_out' ? '✅' : '⬜' },
-          ].map((step, i, arr) => (
-            <div key={step.label} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: step.done ? 1 : 0.5, minWidth: 70 }}>
-                <span style={{ fontSize: 20 }}>{step.icon}</span>
-                <span style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>{step.label}</span>
-                {step.count && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>{step.count}</span>}
+        {/* ── Status Pipeline ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', padding: '14px 0', borderBottom: '1px solid var(--border-primary)' }}>
+          {([
+            {
+              kind: (['confirmed','checked_in','checked_out'].includes(b.status) ? 'ok' : 'default') as 'ok' | 'wait' | 'fail' | 'default',
+              label: 'Підтверджено',
+            },
+            {
+              kind: (isPaid ? 'ok' : (b.payment_status === 'payment_requested' ? 'wait' : 'fail')) as 'ok' | 'wait' | 'fail' | 'default',
+              label: 'Оплата',
+              sub: isPaid ? undefined : `${pct}%`,
+            },
+            {
+              kind: (isRegistered ? 'ok' : 'fail') as 'ok' | 'wait' | 'fail' | 'default',
+              label: 'Реєстрація',
+              sub: `${registrations.length}/${regNeeded}`,
+            },
+            {
+              kind: (['checked_in','checked_out'].includes(b.status) ? 'ok' : 'default') as 'ok' | 'wait' | 'fail' | 'default',
+              label: 'Заселено',
+            },
+          ] as { kind: 'ok' | 'wait' | 'fail' | 'default'; label: string; sub?: string }[]).map((step) => {
+            const colors: Record<string, { bg: string; fg: string }> = {
+              ok:      { bg: 'rgba(74,222,128,0.14)',  fg: '#4ADE80' },
+              wait:    { bg: 'rgba(245,184,71,0.14)',  fg: '#F5B847' },
+              fail:    { bg: 'rgba(242,107,107,0.14)', fg: '#F26B6B' },
+              default: { bg: 'var(--bg-tertiary)',     fg: 'var(--text-tertiary)' },
+            };
+            const c = colors[step.kind];
+            const StepIcon = step.kind === 'ok' ? Check : step.kind === 'wait' ? Clock : step.kind === 'fail' ? X : Lock;
+            return (
+              <div key={step.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center' }}>
+                <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: c.bg, color: c.fg }}>
+                  <StepIcon size={16} strokeWidth={2.2} />
+                </div>
+                <div style={{ fontSize: 11, color: step.kind === 'default' ? 'var(--text-secondary)' : c.fg, fontWeight: 500 }}>{step.label}</div>
+                {step.sub && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>{step.sub}</div>}
               </div>
-              {i < arr.length - 1 && (
-                <div style={{ flex: 1, height: 2, background: step.done ? '#22c55e' : 'var(--border-primary)', minWidth: 20 }} />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* ── Action Buttons ── */}
@@ -360,6 +410,10 @@ export default function BookingViewModal({
                   <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
                 </div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: barColor, minWidth: 36 }}>{pct}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>
+                <span>{pct}% оплачено</span>
+                <span>в {b.currency || 'CZK'}</span>
               </div>
               {payments.length > 0 && (
                 <div>
