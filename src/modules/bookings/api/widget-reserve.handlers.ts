@@ -275,13 +275,16 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     const resId = `r_${Date.now()}`;
+    const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
+    const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
+
     db.prepare(`
       INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
+      resStatus, payStatus, 'direct', finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
     );
 
     // --- Emit event for CRM and other modules ---
@@ -297,6 +300,15 @@ export async function createWidgetReservation(request: NextRequest) {
       total: finalPrice,
       currency: resCurrency
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
+
+    if (finalPrice === 0) {
+      try {
+        const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+        sendBookingConfirmationEmail(resId).catch(() => {});
+      } catch (err: any) {
+        console.error('[Widget Reserve] Failed to trigger email for 0-price booking:', err.message);
+      }
+    }
 
     // ── Bundle: pre-create service_orders for included services ──────────
     // Guests schedule the time via their guest portal; staff sees them once scheduled.
