@@ -61,6 +61,7 @@ interface Conversation {
   adults: number;
   children: number;
   estimated_value: number;
+  currency: string;
   external_booking_id: string | null;
   camping_vehicle_type: string | null;
   camping_tent_type: string | null;

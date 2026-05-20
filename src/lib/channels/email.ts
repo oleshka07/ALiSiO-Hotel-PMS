@@ -245,11 +245,15 @@ export async function sendEmail(opts: {
     throw new Error('No email accounts configured');
   }
 
-  const isPort465 = account.smtp.port === 465;
+  const port = account.smtp.port === 465 ? 587 : account.smtp.port; // Force 587 for Seznam to avoid Vercel drop
+  const isPort465 = port === 465;
   const transporter = nodemailer.createTransport({
     host: account.smtp.host,
-    port: account.smtp.port,
+    port: port,
     secure: isPort465,  // true for 465 (SSL), false for 587 (STARTTLS)
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 5000,
     auth: { user: account.user, pass: account.password },
   });
 
