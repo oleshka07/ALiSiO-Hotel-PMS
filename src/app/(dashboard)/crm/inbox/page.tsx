@@ -445,7 +445,7 @@ export default function CrmInboxPage() {
             email: ld.email, phone: ld.phone, whatsapp: ld.whatsapp, stage: ld.stage,
             source: ld.source, priority: ld.priority, check_in_date: ld.check_in_date,
             check_out_date: ld.check_out_date, adults: ld.adults, children: ld.children,
-            estimated_value: ld.estimated_value, external_booking_id: ld.external_booking_id,
+            estimated_value: ld.estimated_value, currency: ld.currency || 'CZK', external_booking_id: ld.external_booking_id,
             camping_vehicle_type: ld.camping_vehicle_type, camping_tent_type: ld.camping_tent_type,
             reservation_status: null, payment_status: null, total_price: null,
             external_uid: null, bcom_reservation_id: null, messages: [],
