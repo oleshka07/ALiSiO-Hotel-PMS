@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       site_id, name, description, price, currency = 'CZK',
       nights_included = 0, listing_type,
       included_services = [], validity_months = 12,
-      allowed_days, coupon_code, redemption_limit, applied_listings,
+      allowed_days, coupon_code, redemption_limit, applied_listings, allowed_promo_codes,
     } = body;
 
     if (!site_id || !name || price === undefined) {
@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
       INSERT INTO gift_card_bundles
         (site_id, name, description, price, currency, nights_included,
          listing_type, included_services, validity_months, allowed_days,
-         coupon_code, redemption_limit, applied_listings)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+         coupon_code, redemption_limit, applied_listings, allowed_promo_codes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       RETURNING id
     `).get(
       site_id, name, description || null, Number(price), currency,
@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
       allowed_days ? JSON.stringify(allowed_days) : null,
       coupon_code ? String(coupon_code).trim().toUpperCase() : null,
       redemption_limit !== undefined ? Number(redemption_limit) : 1,
-      applied_listings && applied_listings.length > 0 ? JSON.stringify(applied_listings) : null
+      applied_listings && applied_listings.length > 0 ? JSON.stringify(applied_listings) : null,
+      allowed_promo_codes && allowed_promo_codes.length > 0 ? JSON.stringify(allowed_promo_codes) : null
     ) as { id: string };
 
     const bundle = db.prepare('SELECT * FROM gift_card_bundles WHERE id = ?').get(id.id);

@@ -56,6 +56,15 @@ export async function createWidgetCheckoutSession(req: Request) {
     // Check if payment is possible: either site-specific Teya config or global ENV
     const hasSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
     if (!hasSiteTeya && !process.env.TEYA_CLIENT_ID) {
+      if (reservation_id) {
+        // Fire email explicitly for offline/bank-transfer partner bookings
+        try {
+          const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+          sendBookingConfirmationEmail(reservation_id).catch(() => {});
+        } catch (err: any) {
+          console.error('[Checkout Session] Failed to trigger email:', err.message);
+        }
+      }
       return NextResponse.json({ error: 'Online payments not configured' }, { status: 403, headers: CORS_HEADERS });
     }
 
@@ -243,8 +252,10 @@ export async function createWidgetCheckoutSession(req: Request) {
           store_id: payCfg.teya.store_id
         } : undefined,
         ...(isProduction ? {
-          successUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
-          cancelUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
+          // NOTE: Teya does NOT support {CHECKOUT_SESSION_ID} placeholder (Stripe only).
+          // We use reservation_id in the return URL so payment-return can identify the booking.
+          successUrl: `${origin}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
+          cancelUrl: `${origin}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
         } : {}),
       });
 

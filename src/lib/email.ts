@@ -9,10 +9,14 @@ let transporter: any = null;
 
 function getTransporter() {
   if (transporter) return transporter;
+  const port = parseInt(process.env.EMAIL_CZ_SMTP_PORT || '587', 10);
   transporter = nodemailer.createTransport({
     host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
-    port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '465', 10),
-    secure: true,
+    port: port,
+    secure: port === 465, // false for 587 (STARTTLS), true for 465 (SMTPS)
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 5000,
     auth: {
       user: process.env.EMAIL_CZ_USER || 'kemp-carlsbad@email.cz',
       pass: process.env.EMAIL_CZ_PASSWORD,

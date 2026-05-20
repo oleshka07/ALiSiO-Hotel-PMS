@@ -220,11 +220,6 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
               </button>
             ))}
           </div>
-          {form.applies_to !== 'services' && (
-            <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6, padding: '6px 10px', background: '#fef3c722', borderRadius: 6, border: '1px solid #f59e0b44' }}>
-              ⚠️ Промокоди для оголошень потребують додаткового налаштування embed.js. Наразі повністю працює лише для Сервісів.
-            </div>
-          )}
         </div>
 
         <div className="form-group">

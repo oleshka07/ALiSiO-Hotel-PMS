@@ -15,6 +15,7 @@ import { PaymentsTab }   from './_components/PaymentsTab';
 import { CouponsTab } from './_components/CouponsTab';
 import { PackageOffersTab } from './_components/PackageOffersTab';
 import { ThankYouTab } from './_components/ThankYouTab';
+import { FormsTab } from './_components/FormsTab';
 import type { Site } from './_types';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -56,6 +57,7 @@ export default function SiteDetailPage() {
   const couponCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, coupons: n })), []);
   const ratePlanCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, 'rate-plans': n })), []);
   const packageCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, packages: n })), []);
+  const formsCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, forms: n })), []);
 
   const fetchSite = useCallback(async () => {
     const res = await fetch(`/api/booking-sites/${siteId}`);
@@ -78,7 +80,7 @@ export default function SiteDetailPage() {
       if (bundleData?.bundles) packageCountCb(bundleData.bundles.length);
       if (ratePlanData?.ratePlans) ratePlanCountCb(ratePlanData.ratePlans.length);
     });
-  }, [fetchSite, siteId, couponCountCb, packageCountCb, ratePlanCountCb]);
+  }, [fetchSite, siteId, couponCountCb, packageCountCb, ratePlanCountCb, formsCountCb]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   if (loading) return (
@@ -157,6 +159,7 @@ export default function SiteDetailPage() {
         {activeTab === 'rate-plans'  && <RatePlansTab siteId={siteId} onCountChange={ratePlanCountCb} />}
         {activeTab === 'coupons' && <CouponsTab siteId={siteId} siteCurrency={site.currency} onCountChange={couponCountCb} />}
         {activeTab === 'packages'    && <PackageOffersTab siteId={siteId} siteCurrency={site.currency} onCountChange={packageCountCb} />}
+        {activeTab === 'forms'       && <FormsTab siteId={siteId} onCountChange={formsCountCb} />}
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ interface Bundle {
   redemption_limit: number;
   current_uses: number;
   applied_listings: string | null;
+  allowed_promo_codes: string | null;
 }
 
 interface IncludedService {
@@ -46,6 +47,7 @@ const emptyBundle = () => ({
   coupon_code: '',
   redemption_limit: 100,
   applied_listings: [] as string[],
+  allowed_promo_codes: [] as string[],
 });
 
 
@@ -54,6 +56,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [services, setServices] = useState<SiteService[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [siteCoupons, setSiteCoupons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ ...emptyBundle(), currency: siteCurrency });
@@ -69,10 +72,11 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bd, sd, ld] = await Promise.all([
+      const [bd, sd, ld, cd] = await Promise.all([
         fetch(`/api/package-offers?site_id=${siteId}`).then(r => r.json()),
         fetch(`/api/booking-sites/${siteId}/services`).then(r => r.json()),
         fetch(`/api/booking-sites/${siteId}/listings`).then(r => r.json()),
+        fetch(`/api/coupons?site_id=${siteId}`).then(r => r.json()),
       ]);
       if (bd.bundles) {
         setBundles(bd.bundles);
@@ -80,6 +84,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
       }
       if (Array.isArray(sd.services)) setServices(sd.services.filter((s: SiteService) => s.is_enabled));
       if (Array.isArray(ld.listings)) setListings(ld.listings);
+      if (Array.isArray(cd)) setSiteCoupons(cd);
     } finally { setLoading(false); }
   }, [siteId, onCountChange]);
 
@@ -113,6 +118,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
         redemption_limit: +form.redemption_limit,
         allowed_days: form.allowed_days.length > 0 ? form.allowed_days : null,
         applied_listings: form.applied_listings.length > 0 ? form.applied_listings : null,
+        allowed_promo_codes: form.allowed_promo_codes.length > 0 ? form.allowed_promo_codes : null,
       };
       const res = await fetch(isEdit ? `/api/package-offers/${editId}` : '/api/package-offers', {
         method: isEdit ? 'PATCH' : 'POST',
@@ -196,6 +202,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                           </span>
                         )}
                         {b.applied_listings && <span>🏡 Обмежено будиночками</span>}
+                        {b.allowed_promo_codes && <span>🎟 Дозволені дод. промокоди</span>}
                         {b.nights_included > 0 && <span>🌙 {b.nights_included} н.</span>}
 
                         <span>⏳ {b.validity_months} міс.</span>
@@ -233,6 +240,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                             included_services: (() => { try { const p = JSON.parse(b.included_services); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             allowed_days: (() => { try { const p = JSON.parse(b.allowed_days || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             applied_listings: (() => { try { const p = JSON.parse(b.applied_listings || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
+                            allowed_promo_codes: (() => { try { const p = JSON.parse(b.allowed_promo_codes || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             coupon_code: b.coupon_code || '',
                             redemption_limit: b.redemption_limit || 100,
                           });
@@ -254,6 +262,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                             included_services: (() => { try { const p = JSON.parse(b.included_services); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             allowed_days: (() => { try { const p = JSON.parse(b.allowed_days || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             applied_listings: (() => { try { const p = JSON.parse(b.applied_listings || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
+                            allowed_promo_codes: (() => { try { const p = JSON.parse(b.allowed_promo_codes || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })(),
                             coupon_code: b.coupon_code ? b.coupon_code + 'COPY' : '',
                             redemption_limit: b.redemption_limit || 100,
                           });
@@ -405,6 +414,23 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
             </div>
           </div>
 
+          <div className="form-group">
+            <label className="form-label">Додаткові промокоди до пакету <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{form.allowed_promo_codes.length === 0 ? '(жодного)' : ''}</span></label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+              {siteCoupons.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Немає промокодів для цього сайту</div>}
+              {siteCoupons.map(c => {
+                const on = form.allowed_promo_codes.includes(c.code);
+                return (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 13, padding: '6px 8px', borderRadius: 8, background: on ? 'rgba(99,102,241,0.06)' : 'transparent', border: `1px solid ${on ? 'var(--accent-primary)' : 'transparent'}` }}>
+                    <input type="checkbox" checked={on} onChange={e => setForm(f => ({ ...f, allowed_promo_codes: e.target.checked ? [...f.allowed_promo_codes, c.code] : f.allowed_promo_codes.filter(x => x !== c.code) }))} />
+                    <span style={{ fontWeight: on ? 600 : 400, fontFamily: 'monospace' }}>{c.code}</span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>{c.offer_amount}{c.discount_type === 'percentage' ? '%' : ''}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Services picker */}
           <div className="form-group">
             <label className="form-label">Включені сервіси</label>
@@ -419,7 +445,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                       <input type="checkbox" checked={!!inc} readOnly style={{ cursor: 'pointer', flexShrink: 0 }} />
                       <span style={{ fontSize: 18, flexShrink: 0 }}>{svc.icon}</span>
                       <span style={{ flex: 1, fontSize: 13, fontWeight: inc ? 600 : 400 }}>{svc.name}</span>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{svc.price_override ?? svc.price} {svc.currency}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{svc.price_override ?? svc.price} {form.currency}</span>
                       {inc && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
                           <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>

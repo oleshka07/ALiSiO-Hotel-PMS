@@ -84,10 +84,16 @@
 
   // 5. Robust Resize Listener
   window.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'resize' && e.data.height) {
+    if (!e.data) return;
+    
+    if (e.data.type === 'resize' && e.data.height) {
       // Massive 100px buffer
       const newHeight = parseInt(e.data.height) + 100;
       iframe.style.height = newHeight + 'px';
+    }
+    
+    if (e.data.type === 'alisio:redirect' && e.data.url) {
+      window.location.href = e.data.url;
     }
   }, false);
 

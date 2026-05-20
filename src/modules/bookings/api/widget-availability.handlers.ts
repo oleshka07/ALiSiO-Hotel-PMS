@@ -125,7 +125,8 @@ export async function getAvailability(request: NextRequest) {
              ut.extra_person_charge, ut.pet_allowed, ut.pet_charge,
              c.name as category_name, c.type as category_type,
              gpc.amenities as gpc_amenities,
-             sl.photos as listing_photos
+             sl.photos as listing_photos,
+             sl.price_override
       FROM units u
       JOIN unit_types ut ON u.unit_type_id = ut.id
       JOIN categories c ON u.category_id = c.id
@@ -219,7 +220,10 @@ export async function getAvailability(request: NextRequest) {
             const priceEntry = priceMap.get(dateStr);
 
             let dayPrice = STUB_PRICE;
-            if (priceEntry) {
+            if (unit.price_override != null) {
+              dayPrice = unit.price_override;
+              hasPricing = true;
+            } else if (priceEntry) {
               dayPrice = isWeekend && priceEntry.weekend_price != null
                 ? priceEntry.weekend_price
                 : priceEntry.base_price;

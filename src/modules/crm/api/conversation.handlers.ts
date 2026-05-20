@@ -13,7 +13,7 @@ export async function getConversation(
     const conversation = db.prepare(`
       SELECT c.*, l.first_name, l.last_name, l.email, l.phone, l.whatsapp,
         l.stage, l.source, l.priority, l.check_in_date, l.check_out_date,
-        l.adults, l.children, l.estimated_value, l.external_booking_id,
+        l.adults, l.children, l.estimated_value, l.currency, l.external_booking_id,
         l.camping_vehicle_type, l.camping_tent_type,
         g.country as guest_country,
         r.status as reservation_status, r.payment_status, r.total_price,

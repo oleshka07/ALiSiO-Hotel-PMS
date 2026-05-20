@@ -52,16 +52,17 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onEdit, siteCurrency 
   );
 }
 
-function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh }: {
+function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh, siteCurrency }: {
   listing: Listing | null;
   siteId: string;
   siteSlug: string;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
+  siteCurrency: string;
 }) {
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ external_url: '', default_lang: '' });
+  const [form, setForm] = useState({ external_url: '', default_lang: '', price_override: '', thank_you_url: '' });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [embedLang, setEmbedLang] = useState('uk');
@@ -73,6 +74,8 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       setForm({
         external_url: listing.external_url || '',
         default_lang: listing.default_lang || '',
+        price_override: listing.price_override ? String(listing.price_override) : '',
+        thank_you_url: listing.thank_you_url || '',
       });
       const photoStr = listing.photos || listing.unit_type_photos || '';
       setPhotoUrls(photoStr ? photoStr.split(',').map(s => s.trim()).filter(Boolean) : []);
@@ -90,6 +93,8 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       body: JSON.stringify({
         external_url: form.external_url.trim() || null,
         default_lang: form.default_lang || null,
+        price_override: form.price_override ? Number(form.price_override) : null,
+        thank_you_url: form.thank_you_url.trim() || null,
         photos: photoUrls.length > 0 ? photoUrls.join(',') : null,
       }),
     });
@@ -147,6 +152,19 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
         <label className="form-label">URL сторінки об&apos;єкта</label>
         <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
           value={form.external_url} onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))} />
+      </div>
+
+      <div className="form-row" style={{ marginTop: 16 }}>
+        <div className="form-group">
+          <label className="form-label">Кастомна ціна ({siteCurrency})</label>
+          <input className="form-input" type="number" min="0" placeholder="Залишити пустим для ціни за прайсом"
+            value={form.price_override} onChange={e => setForm(f => ({ ...f, price_override: e.target.value }))} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">URL сторінки подяки (Thank You)</label>
+          <input className="form-input" placeholder="https://yoursite.com/thanks-b3"
+            value={form.thank_you_url} onChange={e => setForm(f => ({ ...f, thank_you_url: e.target.value }))} />
+        </div>
       </div>
 
       <div className="form-group" style={{ marginTop: 24 }}>
@@ -299,7 +317,12 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
         </table>
       )}
 
-      <ListingEditModal open={!!editingListing} listing={editingListing} siteId={siteId} siteSlug={siteSlug} onClose={() => setEditingListing(null)} onRefresh={fetchListings} />
+      <ListingEditModal
+        listing={editingListing}
+        siteId={siteId} siteSlug={siteSlug}
+        siteCurrency={siteCurrency}
+        open={!!editingListing} onClose={() => setEditingListing(null)} onRefresh={fetchListings}
+      />
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Додати оголошення" size="lg"
         footer={

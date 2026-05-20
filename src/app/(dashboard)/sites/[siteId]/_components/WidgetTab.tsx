@@ -25,7 +25,9 @@ export function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Widg
 
   const lang = cfg.default_lang || 'uk';
   const scriptTag = `<script \n  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" \n  data-site="${site.slug}" \n  data-lang="${lang}">\n</script>`;
-  const iframeEmbed = `<iframe\n  src="${origin || 'https://YOUR_PMS_DOMAIN'}/booking?site=${site.slug}&lang=${lang}"\n  width="100%" height="600"\n  frameborder="0" allowfullscreen>\n</iframe>`;
+  const iframeEmbed = `<iframe\n  src="${origin || 'https://YOUR_PMS_DOMAIN'}/booking?site=${site.slug}&lang=${lang}"\n  width="100%" height="600"\n  frameborder="0" \n  sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation allow-top-navigation-by-user-activation allow-popups"\n  allowfullscreen>\n</iframe>`;
+  
+  const redirectScript = `<script>\nwindow.addEventListener('message', function(e) {\n  if (e.data && e.data.type === 'alisio:redirect' && e.data.url) {\n    window.location.href = e.data.url;\n  }\n});\n</script>`;
 
   const save = async () => {
     setSaving(true);
@@ -87,9 +89,17 @@ export function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Widg
       </Step>
 
       <Step n={4} title="Або використайте iframe (альтернатива)">
-        <div style={{ position: 'relative' }}>
+        <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--text-secondary)' }}>Вставте цей iframe у ваш HTML код:</div>
+        <div style={{ position: 'relative', marginBottom: 16 }}>
           <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 16, fontSize: 12, overflowX: 'auto', margin: 0 }}>{iframeEmbed}</pre>
           <div style={{ position: 'absolute', top: 8, right: 8 }}><CopyBtn text={iframeEmbed} /></div>
+        </div>
+        <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <strong>Увага (важливо для оплат):</strong> Щоб уникнути проблем із блокуванням платіжних систем (темний екран Teya) всередині iframe, обов'язково додайте цей скрипт-перехоплювач на ту ж сторінку, де стоїть iframe:
+        </div>
+        <div style={{ position: 'relative' }}>
+          <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 16, fontSize: 12, overflowX: 'auto', margin: 0 }}>{redirectScript}</pre>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}><CopyBtn text={redirectScript} /></div>
         </div>
       </Step>
 

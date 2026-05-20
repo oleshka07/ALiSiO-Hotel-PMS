@@ -2937,6 +2937,48 @@ function runMigrations(database: any) {
   try { database.exec('ALTER TABLE site_services ADD COLUMN photo_override TEXT'); } catch { /* */ }
   console.log('[DB] Booking Sites module tables ready');
 
+  // --- Migration: add allowed_domains to booking_sites ---
+  try {
+    const bsSiteCols = database.prepare("PRAGMA table_info(booking_sites)").all().map((c: any) => c.name);
+    if (!bsSiteCols.includes('allowed_domains')) {
+      database.exec("ALTER TABLE booking_sites ADD COLUMN allowed_domains TEXT");
+      console.log('[DB] Added allowed_domains to booking_sites');
+    }
+  } catch (e: any) { console.log('[DB] allowed_domains migration note:', e.message); }
+
+  // --- Migration: create site_capture_scripts table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS site_capture_scripts (
+      id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id     TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL DEFAULT 'Основний скрипт',
+      is_active   INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_capture_scripts_site ON site_capture_scripts(site_id)');
+
+  // --- Migration: create site_incoming_leads table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS site_incoming_leads (
+      id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id     TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+      script_id   TEXT REFERENCES site_capture_scripts(id) ON DELETE SET NULL,
+      full_name   TEXT,
+      email       TEXT,
+      phone       TEXT,
+      message     TEXT,
+      status      TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'read', 'archived')),
+      source_url  TEXT,
+      raw_data    TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_incoming_leads_site ON site_incoming_leads(site_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_incoming_leads_status ON site_incoming_leads(status)');
+  console.log('[DB] Site Form Capture tables ready');
+
 
   // --- Migration: create invoices table ---
   database.exec(`
@@ -4376,6 +4418,19 @@ function runMigrations(database: any) {
   // --- Migration: add allowed_days to gift_card_bundles ---
   try {
     database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN allowed_days TEXT`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add allowed_promo_codes to gift_card_bundles ---
+  try {
+    database.exec(`ALTER TABLE gift_card_bundles ADD COLUMN allowed_promo_codes TEXT`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add price_override and thank_you_url to site_listings ---
+  try {
+    database.exec(`ALTER TABLE site_listings ADD COLUMN price_override REAL`);
+  } catch { /* already exists */ }
+  try {
+    database.exec(`ALTER TABLE site_listings ADD COLUMN thank_you_url TEXT`);
   } catch { /* already exists */ }
 
   // --- Migration: add coupon_code, redemption_limit, current_uses to gift_card_bundles ---
