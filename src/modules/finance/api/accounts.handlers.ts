@@ -17,10 +17,14 @@ function selectAccountsWithBalance(db: any, orgId: string, opts: { includeArchiv
       fa.*,
       (
         fa.initial_balance
-        + COALESCE((SELECT SUM(amount) FROM fin_operations
-                     WHERE account_to_id = fa.id AND status = 'completed'), 0)
-        - COALESCE((SELECT SUM(amount) FROM fin_operations
-                     WHERE account_from_id = fa.id AND status = 'completed'), 0)
+        + COALESCE((SELECT SUM(
+            CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+          ) FROM fin_operations o
+          WHERE o.account_to_id = fa.id AND o.status = 'completed'), 0)
+        - COALESCE((SELECT SUM(
+            CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+          ) FROM fin_operations o
+          WHERE o.account_from_id = fa.id AND o.status = 'completed'), 0)
       ) as balance
     FROM finance_accounts fa
     ${where}

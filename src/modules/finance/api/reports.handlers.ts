@@ -609,8 +609,8 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
       const plh = accountIds.map(() => '?').join(',');
       const prior = db.prepare(`
         SELECT
-          COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_to_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
-          - COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_from_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
+          COALESCE((SELECT SUM(amount_company) FROM fin_operations WHERE account_to_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
+          - COALESCE((SELECT SUM(amount_company) FROM fin_operations WHERE account_from_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
           AS delta
       `).get(...accountIds, fromDate, ...accountIds, fromDate) as { delta: number };
       runningBalance += prior.delta;
@@ -832,10 +832,14 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
       SELECT fa.id, fa.name, fa.type, fa.currency, fa.credit_limit, fa.color, fa.initial_balance,
         (
           fa.initial_balance
-          + COALESCE((SELECT SUM(amount) FROM fin_operations
-                       WHERE account_to_id = fa.id AND status = 'completed' AND paid_at <= ?), 0)
-          - COALESCE((SELECT SUM(amount) FROM fin_operations
-                       WHERE account_from_id = fa.id AND status = 'completed' AND paid_at <= ?), 0)
+          + COALESCE((SELECT SUM(
+              CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+            ) FROM fin_operations o
+            WHERE o.account_to_id = fa.id AND o.status = 'completed' AND o.paid_at <= ?), 0)
+          - COALESCE((SELECT SUM(
+              CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+            ) FROM fin_operations o
+            WHERE o.account_from_id = fa.id AND o.status = 'completed' AND o.paid_at <= ?), 0)
         ) AS balance
       FROM finance_accounts fa
       WHERE fa.organization_id = ? AND fa.is_active = 1
@@ -946,20 +950,24 @@ export async function getAccountStatement(request: NextRequest): Promise<NextRes
     if (!account) return NextResponse.json({ error: 'Account not found' }, { status: 404 });
 
     const openingRow = db.prepare(`
-      SELECT ? + COALESCE((SELECT SUM(amount) FROM fin_operations
-                            WHERE account_to_id = ? AND status = 'completed' AND paid_at < ?), 0)
-               - COALESCE((SELECT SUM(amount) FROM fin_operations
-                            WHERE account_from_id = ? AND status = 'completed' AND paid_at < ?), 0) AS bal
-    `).get(account.initial_balance, accountId, from, accountId, from) as { bal: number };
+      SELECT ? + COALESCE((SELECT SUM(
+              CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END
+            ) FROM fin_operations o
+            WHERE o.account_to_id = ? AND o.status = 'completed' AND o.paid_at < ?), 0)
+               - COALESCE((SELECT SUM(
+              CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END
+            ) FROM fin_operations o
+            WHERE o.account_from_id = ? AND o.status = 'completed' AND o.paid_at < ?), 0) AS bal
+    `).get(account.initial_balance, account.currency, accountId, from, account.currency, accountId, from) as { bal: number };
     const opening = Number(openingRow.bal) || 0;
 
     const ops = db.prepare(`
       SELECT o.*,
              CASE
-               WHEN o.op_type = 'transfer' AND o.account_from_id = ? THEN -o.amount
-               WHEN o.op_type = 'transfer' AND o.account_to_id = ? THEN o.amount
-               WHEN o.op_type = 'income' THEN o.amount
-               WHEN o.op_type = 'expense' THEN -o.amount
+               WHEN o.op_type = 'transfer' AND o.account_from_id = ? THEN -(CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END)
+               WHEN o.op_type = 'transfer' AND o.account_to_id = ? THEN (CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END)
+               WHEN o.op_type = 'income' THEN (CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END)
+               WHEN o.op_type = 'expense' THEN -(CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END)
                ELSE 0
              END AS signed_amount,
              ec.name AS category_name, ec.icon AS category_icon,
@@ -972,7 +980,7 @@ export async function getAccountStatement(request: NextRequest): Promise<NextRes
         AND (o.account_from_id = ? OR o.account_to_id = ?)
         AND o.paid_at BETWEEN ? AND ?
       ORDER BY o.paid_at ASC, o.created_at ASC
-    `).all(accountId, accountId, org, accountId, accountId, from, to) as any[];
+    `).all(accountId, account.currency, accountId, account.currency, account.currency, account.currency, org, accountId, accountId, from, to) as any[];
 
     let running = opening;
     const items = ops.map((o) => {
