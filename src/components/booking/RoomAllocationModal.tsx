@@ -753,6 +753,41 @@ function addDays(iso: string, n: number): string {
 function RoomAllocationStyles() {
   return (
     <style>{`
+      /* ── Desktop override: centered modal instead of bottom sheet ── */
+      @media (min-width: 769px) {
+        .m-sheet-backdrop + .ram-sheet,
+        .ram-sheet.m-sheet {
+          bottom: auto !important;
+          left: 50% !important;
+          top: 50% !important;
+          right: auto !important;
+          transform: translate(-50%, -50%) !important;
+          width: 540px !important;
+          max-width: 94vw !important;
+          max-height: 85vh !important;
+          border-radius: 16px !important;
+          animation: ram-pop-in 0.25s cubic-bezier(0.32, 0.72, 0, 1) !important;
+          box-shadow: 0 24px 80px -12px rgba(0,0,0,0.6), 0 0 0 1px var(--border-primary);
+          padding-bottom: 0 !important;
+        }
+        @keyframes ram-pop-in {
+          from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        /* Compact rooms for desktop — fit more on screen */
+        .ram-room { padding: 5px 7px; }
+        .ram-room-no { font-size: 11.5px; }
+        .ram-room-name { font-size: 11px; }
+        .ram-room-dates { font-size: 9px; }
+        .ram-room-guest { margin-top: 3px; }
+        .ram-chip { width: 140px; padding: 5px 7px; }
+        .ram-chip-name { font-size: 11px; }
+        .ram-floor { padding: 8px; gap: 0; }
+        .ram-wing-list { gap: 4px; }
+        .ram-head { padding: 10px 14px 8px; }
+        .ram-statusbar { padding: 0 14px 7px; }
+        .ram-legend { padding: 5px 14px; }
+      }
       .ram-sheet { display: flex; flex-direction: column; }
       .ram-head {
         display: flex; align-items: center; gap: 9px;
