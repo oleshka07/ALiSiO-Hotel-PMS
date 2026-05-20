@@ -218,19 +218,25 @@ export default function BookingViewModal({
   return (
     <Modal open={true} onClose={onClose} title="Бронювання" size="lg"
       footer={<>
-        <button className="btn btn-secondary" onClick={onClose}>Закрити</button>
-        {b.guest_page_token && (
-          <>
-            <button className="btn btn-secondary" title="Скопіювати" onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`).then(() => showToast('Скопійовано!'));
-            }}><Copy size={14} /> Копіювати</button>
-            <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }}
-              onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}>
-              <ExternalLink size={14} /> Гостьова
-            </button>
-          </>
-        )}
-        <button className="btn btn-primary" onClick={onEdit}><Edit3 size={14} /> Редагувати</button>
+        <button className="btn btn-secondary" style={{ color: '#ef4444' }}
+          onClick={() => { if (confirm('Точно скасувати бронь? Гість буде повідомлений.')) onChangeStatus(b.id, 'cancelled'); }}>
+          <X size={13} /> Скасувати бронь
+        </button>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+          <button className="btn btn-secondary" onClick={onClose}>Закрити</button>
+          {b.guest_page_token && (
+            <>
+              <button className="btn btn-secondary" title="Скопіювати" onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`).then(() => showToast('Скопійовано!'));
+              }}><Copy size={14} /> Копіювати</button>
+              <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }}
+                onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}>
+                <ExternalLink size={14} /> Гостьова
+              </button>
+            </>
+          )}
+          <button className="btn btn-primary" onClick={onEdit}><Edit3 size={14} /> Редагувати</button>
+        </div>
       </>}>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -300,46 +306,76 @@ export default function BookingViewModal({
           </div>
         </div>
 
-        {/* ── Status Pipeline ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', padding: '14px 0', borderBottom: '1px solid var(--border-primary)' }}>
-          {([
-            {
-              kind: (['confirmed','checked_in','checked_out'].includes(b.status) ? 'ok' : 'default') as 'ok' | 'wait' | 'fail' | 'default',
-              label: 'Підтверджено',
-            },
-            {
-              kind: (isPaid ? 'ok' : (b.payment_status === 'payment_requested' ? 'wait' : 'fail')) as 'ok' | 'wait' | 'fail' | 'default',
-              label: 'Оплата',
-              sub: isPaid ? undefined : `${pct}%`,
-            },
-            {
-              kind: (isRegistered ? 'ok' : 'fail') as 'ok' | 'wait' | 'fail' | 'default',
-              label: 'Реєстрація',
-              sub: `${registrations.length}/${regNeeded}`,
-            },
-            {
-              kind: (['checked_in','checked_out'].includes(b.status) ? 'ok' : 'default') as 'ok' | 'wait' | 'fail' | 'default',
-              label: 'Заселено',
-            },
-          ] as { kind: 'ok' | 'wait' | 'fail' | 'default'; label: string; sub?: string }[]).map((step) => {
-            const colors: Record<string, { bg: string; fg: string }> = {
-              ok:      { bg: 'rgba(74,222,128,0.14)',  fg: '#4ADE80' },
-              wait:    { bg: 'rgba(245,184,71,0.14)',  fg: '#F5B847' },
-              fail:    { bg: 'rgba(242,107,107,0.14)', fg: '#F26B6B' },
-              default: { bg: 'var(--bg-tertiary)',     fg: 'var(--text-tertiary)' },
-            };
-            const c = colors[step.kind];
-            const StepIcon = step.kind === 'ok' ? Check : step.kind === 'wait' ? Clock : step.kind === 'fail' ? X : Lock;
+        {/* ── Status Strip (chip cards like mockup) ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, padding: '14px 0', borderBottom: '1px solid var(--border-primary)' }}>
+          {/* Бронь */}
+          {(() => {
+            const isConfirmed = ['confirmed','checked_in','checked_out'].includes(b.status);
+            const isCancelled = b.status === 'cancelled';
+            const chipStyle = isConfirmed ? { bg: 'rgba(34,197,94,0.05)', border: 'rgba(34,197,94,0.2)', dot: '#22c55e' }
+              : isCancelled ? { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.2)', dot: '#ef4444' }
+              : { bg: 'var(--bg-secondary)', border: 'var(--border-primary)', dot: '#f59e0b' };
             return (
-              <div key={step.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center' }}>
-                <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: c.bg, color: c.fg }}>
-                  <StepIcon size={16} strokeWidth={2.2} />
+              <div onClick={() => {}} style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: `0 0 0 3px ${chipStyle.dot}33`, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 600 }}>Бронь</span>
                 </div>
-                <div style={{ fontSize: 11, color: step.kind === 'default' ? 'var(--text-secondary)' : c.fg, fontWeight: 500 }}>{step.label}</div>
-                {step.sub && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>{step.sub}</div>}
+                <div style={{ fontSize: 13, fontWeight: 500, paddingLeft: 15, marginTop: 4, color: isCancelled ? '#ef4444' : 'var(--text-primary)' }}>{STATUS_MAP[b.status]?.label || b.status}</div>
               </div>
             );
-          })}
+          })()}
+          {/* Оплата */}
+          {(() => {
+            const isOk = isPaid;
+            const chipStyle = isOk ? { bg: 'rgba(34,197,94,0.05)', border: 'rgba(34,197,94,0.2)', dot: '#22c55e' }
+              : { bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.25)', dot: '#f59e0b' };
+            return (
+              <div onClick={() => setViewTab('payment')} style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: `0 0 0 3px ${chipStyle.dot}33`, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 600 }}>Оплата</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 500, paddingLeft: 15, marginTop: 4, color: isOk ? 'var(--text-primary)' : '#f59e0b' }}>{paid.toLocaleString()} / {total.toLocaleString()} {b.currency || 'CZK'}</div>
+              </div>
+            );
+          })()}
+          {/* Документи */}
+          {(() => {
+            const chipStyle = isRegistered ? { bg: 'rgba(34,197,94,0.05)', border: 'rgba(34,197,94,0.2)', dot: '#22c55e' }
+              : { bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.25)', dot: '#f59e0b' };
+            return (
+              <div onClick={() => setViewTab('registration')} style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: `0 0 0 3px ${chipStyle.dot}33`, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 600 }}>Документи</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 500, paddingLeft: 15, marginTop: 4, color: isRegistered ? 'var(--text-primary)' : '#f59e0b' }}>{registrations.length} / {regNeeded}</div>
+              </div>
+            );
+          })()}
+          {/* Заселення */}
+          {(() => {
+            const isChecked = ['checked_in','checked_out'].includes(b.status);
+            const chipStyle = isChecked ? { bg: 'rgba(34,197,94,0.05)', border: 'rgba(34,197,94,0.2)', dot: '#22c55e' }
+              : { bg: 'var(--bg-secondary)', border: 'var(--border-primary)', dot: 'var(--text-tertiary)' };
+            const daysUntil = Math.ceil((new Date(b.check_in + 'T00:00:00').getTime() - Date.now()) / 86400000);
+            const checkinText = b.status === 'checked_out' ? 'Виїхав'
+              : b.status === 'checked_in' ? 'Заселено'
+              : daysUntil === 0 ? 'Сьогодні'
+              : daysUntil === 1 ? 'Завтра'
+              : daysUntil > 1 ? `Через ${daysUntil} дн.`
+              : 'Минув';
+            return (
+              <div style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: isChecked ? `0 0 0 3px #22c55e33` : undefined, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 600 }}>Заселення</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 500, paddingLeft: 15, marginTop: 4, color: isChecked ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{checkinText}</div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Action Buttons ── */}
@@ -405,15 +441,16 @@ export default function BookingViewModal({
                 <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} {b.currency || 'CZK'}</div></div>
                 <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div><div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} {b.currency || 'CZK'}</div></div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 8, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 6, overflow: 'hidden' }}>
                   <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: barColor, minWidth: 36 }}>{pct}%</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>
-                <span>{pct}% оплачено</span>
-                <span>в {b.currency || 'CZK'}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', letterSpacing: '.04em' }}>{pct}% · {b.currency || 'CZK'}</span>
+                {!showPayForm && (
+                  <button onClick={() => setShowPayForm(true)} style={{ background: 'var(--accent-primary)', color: '#fff', padding: '7px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer' }}>
+                    <Plus size={11} /> Платіж
+                  </button>
+                )}
               </div>
               {payments.length > 0 && (
                 <div>
@@ -463,9 +500,7 @@ export default function BookingViewModal({
                   </div>
                 </div>
               )}
-              {!showPayForm ? (
-                <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => setShowPayForm(true)}><Plus size={14} /> Додати платіж</button>
-              ) : (
+              {!showPayForm ? null : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input className="form-input" type="number" placeholder={`Сума ${b.currency || 'CZK'}`} style={{ flex: 1, fontSize: 13 }} value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
@@ -513,10 +548,6 @@ export default function BookingViewModal({
                   )}
                 </div>
               )}
-              <button className={`btn btn-sm ${b.payment_status === 'payment_requested' ? 'btn-primary' : 'btn-ghost'}`} style={{ fontSize: 11, alignSelf: 'flex-start' }}
-                onClick={async () => { const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested'; await fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_status: ns }) }); setBooking({ ...b, payment_status: ns }); onFetchBookings(); showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано'); }}>
-                ✉ Запит оплати
-              </button>
 
               {/* ── Invoice-to-company override ── */}
               <div style={{ marginTop: 8, padding: '10px 14px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
