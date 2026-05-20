@@ -75,6 +75,9 @@ export default function BookingViewModal({
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
   const [reissuing, setReissuing] = useState(false);
+  const [waPopupOpen, setWaPopupOpen] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
 
   // Sub-bookings state
   const [subBookings, setSubBookings] = useState<any[]>([]);
@@ -281,9 +284,62 @@ export default function BookingViewModal({
                       <a href={`tel:${(b.guest_phone || '').replace(/[^\d+]/g, '')}`} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #4ADE8040', background: '#4ADE801A', color: '#4ADE80', textDecoration: 'none' }} aria-label="Подзвонити">
                         <Phone size={14} />
                       </a>
-                      <a href={`https://wa.me/${(b.guest_phone || '').replace(/[^\d+]/g, '').replace(/^\+/, '')}`} target="_blank" rel="noopener" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #4ADE8040', background: '#4ADE801A', color: '#4ADE80', textDecoration: 'none' }} aria-label="WhatsApp">
-                        <MessageCircle size={14} />
-                      </a>
+                      <div style={{ position: 'relative' }}>
+                        <button onClick={(e) => { e.stopPropagation(); setWaPopupOpen(!waPopupOpen); }}
+                          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: '1px solid #4ADE8040', background: '#4ADE801A', color: '#4ADE80', cursor: 'pointer' }} aria-label="WhatsApp">
+                          <MessageCircle size={14} />
+                        </button>
+                        {waPopupOpen && (() => {
+                          const phone = (b.guest_phone || '').replace(/[^\d+]/g, '').replace(/^\+/, '');
+                          const lang = phone.startsWith('420') || phone.startsWith('421') ? 'cz' : phone.startsWith('380') ? 'uk' : 'en';
+                          const guestName = b.first_name || 'Guest';
+                          const ciLong = new Date(b.check_in + 'T00:00:00').toLocaleDateString(lang === 'cz' ? 'cs-CZ' : lang === 'uk' ? 'uk-UA' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+                          const coLong = new Date(b.check_out + 'T00:00:00').toLocaleDateString(lang === 'cz' ? 'cs-CZ' : lang === 'uk' ? 'uk-UA' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+                          const houseName = b.unit_name || b.unit_code || '';
+                          const guestUrl = b.guest_page_token ? `${window.location.origin}/guest/${b.guest_page_token}` : '';
+                          const nights = b.nights || 1;
+                          const guestsStr = lang === 'cz' ? `${b.adults} dosp.${b.children > 0 ? ` + ${b.children} dět.` : ''}` : lang === 'uk' ? `${b.adults} дор.${b.children > 0 ? ` + ${b.children} діт.` : ''}` : `${b.adults} adult${b.adults > 1 ? 's' : ''}${b.children > 0 ? ` + ${b.children} child.` : ''}`;
+                          const totalStr = `${total.toLocaleString()} ${b.currency || 'CZK'}`;
+                          const templates: { icon: string; name: string; preview: string; msg: string; hasLink?: boolean }[] = [
+                            { icon: '✍', name: lang === 'cz' ? 'Bez šablony' : lang === 'uk' ? 'Без шаблону' : 'No template', preview: lang === 'cz' ? 'Otevřít WhatsApp s prázdným polem' : lang === 'uk' ? 'Відкрити WhatsApp з пустим полем' : 'Open WhatsApp with empty message', msg: '' },
+                            { icon: '✓', name: lang === 'cz' ? 'Potvrzení rezervace' : lang === 'uk' ? 'Підтвердження броні' : 'Booking confirmation', hasLink: true,
+                              preview: lang === 'cz' ? `Dobrý den, ${guestName}! Rezervace potvrzena...` : lang === 'uk' ? `Доброго дня, ${guestName}! Вашу бронь підтверджено...` : `Hello ${guestName}! Your booking is confirmed...`,
+                              msg: lang === 'cz' ? `Dobrý den, ${guestName}! 👋\n\nPotvrzujeme vaši rezervaci v QA Glamping:\n📅 ${ciLong} — ${coLong} (${nights} nocí)\n🏡 Dům: ${houseName}\n👥 Hostů: ${guestsStr}\n💳 Cena: ${totalStr}\n\nVšechny detaily vaší rezervace, cesta, instrukce k příjezdu:\n${guestUrl}\n\nČekáme na vás! Pokud máte otázky — pište přímo sem.\n\n— Tým QA Glamping` : lang === 'uk' ? `Доброго дня, ${guestName}! 👋\n\nПідтверджуємо ваше бронювання в QA Glamping:\n📅 ${ciLong} — ${coLong} (${nights} ноч.)\n🏡 Будинок: ${houseName}\n👥 Гостей: ${guestsStr}\n💳 Сума: ${totalStr}\n\nУсі деталі вашої броні, дорога, інструкція заїзду — за посиланням:\n${guestUrl}\n\nЧекаємо на вас! Якщо є питання — пишіть прямо сюди.\n\n— Команда QA Glamping` : `Hello ${guestName}! 👋\n\nWe confirm your booking at QA Glamping:\n📅 ${ciLong} — ${coLong} (${nights} nights)\n🏡 House: ${houseName}\n👥 Guests: ${guestsStr}\n💳 Total: ${totalStr}\n\nAll details, directions, check-in instructions:\n${guestUrl}\n\nWe look forward to seeing you! Questions? Write here.\n\n— QA Glamping Team` },
+                            { icon: '📋', name: lang === 'cz' ? 'Žádost o registrační kartu' : lang === 'uk' ? 'Запит реєстраційної картки' : 'Registration card request', hasLink: true,
+                              preview: lang === 'cz' ? 'Pro ubytování je třeba vyplnit registrační kartu...' : lang === 'uk' ? 'Для заселення потрібно заповнити картку...' : 'Please fill in the registration card...',
+                              msg: lang === 'cz' ? `Dobrý den, ${guestName}!\n\nPřipomínáme, že pro ubytování v ${houseName} ${ciLong} je třeba vyplnit krátkou registrační kartu (požadavek českého zákona).\n\nZabere to 2–3 minuty:\n${guestUrl}\n\nDěkujeme! 🙏` : lang === 'uk' ? `Доброго дня, ${guestName}!\n\nНагадуємо, що для заселення в ${houseName} ${ciLong} потрібно заповнити коротку реєстраційну картку (вимога законодавства Чехії).\n\nЦе займе 2–3 хвилини:\n${guestUrl}\n\nДякуємо! 🙏` : `Hello ${guestName}!\n\nA quick reminder: to check in at ${houseName} on ${ciLong}, please fill in a short registration card (Czech law requirement).\n\nIt takes 2–3 minutes:\n${guestUrl}\n\nThank you! 🙏` },
+                            { icon: '🔑', name: lang === 'cz' ? 'Instrukce k příjezdu' : lang === 'uk' ? 'Інструкція заїзду' : 'Check-in instructions', hasLink: true,
+                              preview: lang === 'cz' ? `Zítra vás čekáme v QA Glamping...` : lang === 'uk' ? `Завтра чекаємо на вас в QA Glamping...` : `Tomorrow we expect you at QA Glamping...`,
+                              msg: lang === 'cz' ? `Dobrý den, ${guestName}!\n\nZítra vás čekáme v QA Glamping (${ciLong}, od 15:00).\n\n🏡 Váš dům: ${houseName}\n\nÚplná instrukce s fotkami, kontakty a Wi-Fi heslem:\n${guestUrl}\n\nPokud se zpozdíte nebo se něco stane — pište sem.\nPěknou cestu! 🌲` : lang === 'uk' ? `Доброго дня, ${guestName}!\n\nЗавтра чекаємо на вас в QA Glamping (${ciLong}, з 15:00).\n\n🏡 Ваш будинок: ${houseName}\n\nПовна інструкція з фото, контактами і Wi-Fi паролем:\n${guestUrl}\n\nЯкщо запізнюєтесь або щось трапилось — пишіть сюди.\nГарної дороги! 🌲` : `Hello ${guestName}!\n\nTomorrow we expect you at QA Glamping (${ciLong}, from 15:00).\n\n🏡 Your house: ${houseName}\n\nFull instructions with photos, contacts, and Wi-Fi password:\n${guestUrl}\n\nIf you're running late or anything happens — write here.\nSafe travels! 🌲` },
+                            { icon: '⭐', name: lang === 'cz' ? 'Poděkování za recenzi' : lang === 'uk' ? 'Подяка за відгук' : 'Thank you for review',
+                              preview: lang === 'cz' ? 'Děkujeme za pobyt! Budeme rádi za recenzi...' : lang === 'uk' ? 'Дякуємо за відпочинок! Будемо вдячні за відгук...' : 'Thank you for staying! We\'d love a review...',
+                              msg: lang === 'cz' ? `Dobrý den, ${guestName}!\n\nDěkujeme, že jste si vybrali QA Glamping! 🌲\nBudeme vám vděční, pokud najdete 1 minutu a zanecháte nám recenzi na Googlu.\n\nBudeme rádi, když vás uvidíme znovu! Pokud plánujete výlet — pište, uděláme vám lepší nabídku jako stálému hostovi.\n\n— Tým QA Glamping` : lang === 'uk' ? `Доброго дня, ${guestName}!\n\nДякуємо, що обрали QA Glamping! 🌲\nБудемо щиро вдячні, якщо знайдете 1 хвилину і залишите відгук на Google.\n\nБудемо раді бачити вас знову! Якщо плануєте поїздку — пишіть, зробимо вам кращу пропозицію як постійному гостю.\n\n— Команда QA Glamping` : `Hello ${guestName}!\n\nThank you for choosing QA Glamping! 🌲\nWe'd really appreciate it if you could take 1 minute to leave us a review on Google.\n\nWe'd love to see you again! If you're planning a trip — write us, we'll make you a better offer as a returning guest.\n\n— QA Glamping Team` },
+                          ];
+                          return (
+                            <>
+                              <div onClick={() => setWaPopupOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
+                              <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 11, padding: 6, width: 340, boxShadow: '0 16px 40px -8px rgba(0,0,0,.6)', zIndex: 20 }}>
+                                <div style={{ padding: '8px 10px 4px', fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>Швидкі шаблони <span style={{ fontSize: 9, opacity: 0.6, fontWeight: 400, textTransform: 'none' }}>({lang.toUpperCase()})</span></div>
+                                {templates.map((t, i) => (
+                                  <React.Fragment key={i}>
+                                    {i === 1 && <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 8px' }} />}
+                                    <div onClick={() => { setWaPopupOpen(false); const url = t.msg ? `https://wa.me/${phone}?text=${encodeURIComponent(t.msg)}` : `https://wa.me/${phone}`; window.open(url, '_blank'); }}
+                                      style={{ padding: '9px 10px', borderRadius: 7, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', transition: 'background .15s' }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                                      <div style={{ width: 28, height: 28, borderRadius: 7, background: i === 0 ? 'var(--bg-tertiary)' : 'rgba(34,197,94,.12)', color: i === 0 ? 'var(--text-secondary)' : '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{t.icon}</div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, marginBottom: 2 }}>{t.name}{t.hasLink && <span style={{ display: 'inline-block', fontSize: 9, background: 'rgba(79,142,255,.12)', color: 'var(--accent-primary)', padding: '1px 5px', borderRadius: 3, fontWeight: 600, letterSpacing: '.04em', marginLeft: 5, verticalAlign: 'middle' }}>+ посилання</span>}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.preview}</div>
+                                      </div>
+                                    </div>
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -405,6 +461,55 @@ export default function BookingViewModal({
           )}
           <span className={`badge ${STATUS_MAP[b.status]?.badge}`} style={{ alignSelf: 'center' }}>{STATUS_MAP[b.status]?.label}</span>
         </div>
+        {/* ── Next Action Banner ── */}
+        {(() => {
+          const daysUntil = Math.ceil((new Date(b.check_in + 'T00:00:00').getTime() - Date.now()) / 86400000);
+          const daysSince = Math.ceil((Date.now() - new Date(b.check_out + 'T00:00:00').getTime()) / 86400000);
+          let action: { priority: string; label: string; context: string; cta: string; onClick: () => void } | null = null;
+
+          if (b.status === 'cancelled') { /* no action */ }
+          else if (!isPaid && daysUntil <= 2 && daysUntil >= 0) {
+            action = { priority: 'URGENT', label: `Прийняти оплату ${remaining.toLocaleString()} ${b.currency || 'CZK'}`, context: daysUntil === 0 ? 'гість прибуває сьогодні' : `гість прибуває через ${daysUntil} дн.`, cta: 'Прийняти', onClick: () => { setViewTab('payment'); setShowPayForm(true); } };
+          } else if (!isRegistered && daysUntil <= 1 && daysUntil >= 0) {
+            action = { priority: 'HIGH', label: `Зареєструвати гостей (${registrations.length}/${regNeeded})`, context: 'до заїзду залишилось менше дня', cta: 'Реєстрація', onClick: () => setViewTab('registration') };
+          } else if (b.status === 'confirmed' && daysUntil === 0) {
+            action = { priority: 'HIGH', label: 'Гість прибуває сьогодні — заселити', context: 'після 15:00', cta: 'Заселити', onClick: () => onChangeStatus(b.id, 'checked_in') };
+          } else if (b.status === 'checked_in' && daysSince >= 0) {
+            action = { priority: 'HIGH', label: 'Гість має виїхати — виселити', context: 'після 11:00', cta: 'Виселити', onClick: () => onChangeStatus(b.id, 'checked_out') };
+          } else if (!isPaid && daysUntil > 2) {
+            action = { priority: 'MEDIUM', label: `Оплата не прийнята (${remaining.toLocaleString()} ${b.currency || 'CZK'})`, context: `до заїзду ${daysUntil} дн.`, cta: 'Оплата', onClick: () => { setViewTab('payment'); setShowPayForm(true); } };
+          } else if (!isRegistered && daysUntil > 1) {
+            action = { priority: 'MEDIUM', label: `Документи не заповнені (${registrations.length}/${regNeeded})`, context: `до заїзду ${daysUntil} дн.`, cta: 'Реєстрація', onClick: () => setViewTab('registration') };
+          } else if (b.status === 'checked_out' && daysSince >= 1 && daysSince <= 7) {
+            action = { priority: 'LOW', label: 'Запросити відгук', context: `гість виїхав ${daysSince} дн. тому`, cta: 'Відгук', onClick: () => {} };
+          }
+
+          if (!action) return null;
+          const bannerColors: Record<string, { bg: string; border: string; label: string }> = {
+            URGENT: { bg: 'linear-gradient(135deg,rgba(239,68,68,0.1),rgba(239,68,68,0.04))', border: 'rgba(239,68,68,0.25)', label: '#ef4444' },
+            HIGH: { bg: 'linear-gradient(135deg,rgba(245,158,11,0.1),rgba(245,158,11,0.04))', border: 'rgba(245,158,11,0.25)', label: '#f59e0b' },
+            MEDIUM: { bg: 'linear-gradient(135deg,rgba(79,142,255,0.1),rgba(79,142,255,0.04))', border: 'rgba(79,142,255,0.25)', label: '#4F8EFF' },
+            LOW: { bg: 'var(--bg-secondary)', border: 'var(--border-primary)', label: 'var(--text-tertiary)' },
+          };
+          const bc = bannerColors[action.priority] || bannerColors.MEDIUM;
+          const ctaBg = action.priority === 'URGENT' ? '#ef4444' : action.priority === 'HIGH' ? '#f59e0b' : 'var(--accent-primary)';
+          return (
+            <div style={{ background: bc.bg, border: `1px solid ${bc.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '8px 0' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 14, color: bc.label, flexShrink: 0 }}>⚡</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: bc.label, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 700, lineHeight: 1, marginBottom: 2 }}>Наступна дія</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>{action.label} <small style={{ color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 6 }}>· {action.context}</small></div>
+                </div>
+              </div>
+              <button onClick={action.onClick} style={{ background: ctaBg, color: '#0F1115', padding: '8px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', flexShrink: 0, border: 'none', cursor: 'pointer', transition: 'transform .1s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = '')}>
+                {action.cta} <ArrowRight size={12} />
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ── Tab Bar ── */}
         <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', overflow: 'auto' }}>
@@ -1136,6 +1241,35 @@ export default function BookingViewModal({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Persistent Notes ── */}
+        <div style={{ marginTop: 12, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: editingNotes ? 8 : (b.internal_notes ? 6 : 0) }}>
+            <span style={{ fontSize: 10, color: '#f59e0b', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>📝 Примітка</span>
+            <button onClick={() => { if (editingNotes) { /* save */ fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ internal_notes: notesDraft }) }).then(() => { setBooking({ ...b, internal_notes: notesDraft }); showToast('Примітку збережено'); }); setEditingNotes(false); } else { setNotesDraft(b.internal_notes || ''); setEditingNotes(true); } }}
+              style={{ fontSize: 11, color: editingNotes ? '#22c55e' : 'var(--text-tertiary)', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}>
+              {editingNotes ? '✓ Зберегти' : 'Редагувати'}
+            </button>
+          </div>
+          {editingNotes ? (
+            <textarea value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="Додай контекст (алергії, побажання, пізній заїзд тощо)"
+              style={{ width: '100%', fontSize: 13, lineHeight: 1.45, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', resize: 'vertical', minHeight: 60 }} />
+          ) : b.internal_notes ? (
+            <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{b.internal_notes}</div>
+          ) : (
+            <div onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
+              style={{ fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer', fontStyle: 'italic' }}>
+              Додай контекст для зміни (алергії, побажання, пізній заїзд тощо)
+            </div>
+          )}
+          {b.notes && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(245,158,11,0.15)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4, fontWeight: 600 }}>📥 Від гостя / Hostex</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{b.notes}</div>
             </div>
           )}
         </div>

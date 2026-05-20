@@ -129,6 +129,16 @@ jobs:
               echo "[setup] truncated /var/log/pms-cron-bank.log (was full of port-3000 noise)"
             fi
 
+            # ─────────────────────────────────────────────────────────
+            # One-time migration: fix EUR operations that were saved
+            # with currency='CZK' (amount_company not converted).
+            # The script is idempotent — safe to re-run.
+            # ─────────────────────────────────────────────────────────
+            if [ -f fix-eur-operations.js ]; then
+              echo "[migration] Running EUR operations fix..."
+              node fix-eur-operations.js --apply || echo "[migration] fix-eur-operations.js returned non-zero (non-fatal)"
+            fi
+
             # Restart service only after a successful build.
             systemctl restart alisio-pms
             sleep 3
