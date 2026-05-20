@@ -273,7 +273,7 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
       <div className="inbox-detail-body">
         {/* Avatar + name */}
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div className="inbox-detail-avatar">{lead.first_name[0]}{lead.last_name?.[0] || ''}</div>
+          <div className="inbox-detail-avatar">{lead.first_name?.[0] || '?'}{lead.last_name?.[0] || ''}</div>
           <div style={{ fontWeight: 700, fontSize: 16, marginTop: 8 }}>{lead.first_name} {lead.last_name || ''}</div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: `${stg?.color || '#6b7280'}15`, color: stg?.color || '#6b7280' }}>
@@ -631,7 +631,7 @@ export default function CrmInboxPage() {
               {/* HEADER */}
               <div className="inbox-conv-header">
                 <button className="btn btn-ghost btn-icon inbox-back-btn" onClick={() => setSelectedLeadId(null)}><ArrowLeft size={18} /></button>
-                <div className="inbox-conv-avatar" style={{ background: `${stageConf?.color || '#6b7280'}25`, color: stageConf?.color }}>{conversation.first_name[0]}{conversation.last_name?.[0] || ''}</div>
+                <div className="inbox-conv-avatar" style={{ background: `${stageConf?.color || '#6b7280'}25`, color: stageConf?.color }}>{conversation.first_name?.[0] || '?'}{conversation.last_name?.[0] || ''}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                     {conversation.first_name} {conversation.last_name || ''}
