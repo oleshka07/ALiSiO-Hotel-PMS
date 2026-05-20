@@ -268,6 +268,7 @@ export async function sendEmail(opts: {
       references: opts.references,
     });
 
+    console.log(`[Email:${account.id}] Successfully sent email to ${opts.to} (MessageID: ${info.messageId})`);
     return { messageId: info.messageId, success: true };
   } catch (err) {
     console.error(`[Email:${account.id}] SMTP send error:`, err);
