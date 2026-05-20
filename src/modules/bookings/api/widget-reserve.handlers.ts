@@ -300,11 +300,6 @@ export async function createWidgetReservation(request: NextRequest) {
       bookingId: resId,
       guestId,
       unitId,
-      unitName: unit.name,
-      checkIn,
-      checkOut,
-      adults,
-      children,
       total: finalPrice,
       currency: resCurrency,
       source: siteName
