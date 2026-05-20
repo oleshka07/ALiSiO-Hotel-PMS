@@ -236,23 +236,20 @@ function CalendarDesktop() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [unitsRes, bookingsRes, sourcesRes, utRes, allURes] = await Promise.all([
+      const [unitsRes, bookingsRes, sourcesRes, utRes] = await Promise.all([
         fetch('/api/units'),
         fetch('/api/bookings'),
         fetch('/api/booking-sources'),
         fetch('/api/unit-types'),
-        fetch('/api/units'),
       ]);
       const u = await unitsRes.json();
       const b = await bookingsRes.json();
       const srcs = await sourcesRes.json();
       const uts = await utRes.json();
-      const aus = await allURes.json();
-      if (Array.isArray(u)) setUnits(u);
+      if (Array.isArray(u)) { setUnits(u); setAllUnits(u); }
       if (Array.isArray(b)) setBookings(b);
       if (Array.isArray(srcs)) setBookingSources(srcs);
       if (Array.isArray(uts)) setUnitTypes(uts);
-      if (Array.isArray(aus)) setAllUnits(aus);
       // Fetch availability blocks (host closures)
       try {
         const blkRes = await fetch('/api/availability-blocks');
