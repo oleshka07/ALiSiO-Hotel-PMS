@@ -113,6 +113,8 @@ export default function GuestPage() {
   const [orderingService, setOrderingService] = useState<string | null>(null);
   const [widgetService, setWidgetService] = useState<'sauna' | 'tub' | 'breakfast' | null>(null);
   const widgetContainerRef = useRef<HTMLDivElement>(null);
+  const ocrInputRef = useRef<HTMLInputElement>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
 
   // ─── Cart ─────────────────────────────────────────────────
   interface CartItem {
