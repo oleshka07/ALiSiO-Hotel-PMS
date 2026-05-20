@@ -84,11 +84,19 @@ export async function createWidgetReservation(request: NextRequest) {
 
     let priceOverride: number | null = null;
     let thankYouUrl: string | null = null;
-    if (siteId && existingTables.has('site_listings')) {
-      const listing = db.prepare('SELECT price_override, thank_you_url FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId) as any;
-      if (listing) {
-        if (listing.price_override != null) priceOverride = listing.price_override;
-        if (listing.thank_you_url) thankYouUrl = listing.thank_you_url;
+    let siteName: string = 'widget';
+
+    if (siteId) {
+      if (existingTables.has('booking_sites')) {
+        const site = db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any;
+        if (site) siteName = site.name;
+      }
+      if (existingTables.has('site_listings')) {
+        const listing = db.prepare('SELECT price_override, thank_you_url FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId) as any;
+        if (listing) {
+          if (listing.price_override != null) priceOverride = listing.price_override;
+          if (listing.thank_you_url) thankYouUrl = listing.thank_you_url;
+        }
       }
     }
 
@@ -284,7 +292,7 @@ export async function createWidgetReservation(request: NextRequest) {
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      resStatus, payStatus, 'direct', finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
+      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
     );
 
     // --- Emit event for CRM and other modules ---
@@ -298,7 +306,8 @@ export async function createWidgetReservation(request: NextRequest) {
       adults,
       children,
       total: finalPrice,
-      currency: resCurrency
+      currency: resCurrency,
+      source: siteName
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
     if (finalPrice === 0) {

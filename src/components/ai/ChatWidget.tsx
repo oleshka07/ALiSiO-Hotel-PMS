@@ -218,7 +218,7 @@ export default function ChatWidget() {
         title="AI Асистент (Ctrl+K)"
         style={{
           position: 'fixed',
-          bottom: 24,
+          bottom: 54,
           right: 24,
           zIndex: 1000,
           width: 52,
@@ -245,7 +245,7 @@ export default function ChatWidget() {
       {open && (
         <div className="ai-chat-panel" style={{
           position: 'fixed',
-          bottom: 88,
+          bottom: 118,
           right: 24,
           zIndex: 999,
           width: 420,
@@ -465,11 +465,11 @@ export default function ChatWidget() {
         /* On mobile: move button above bottom nav (~68px) + safe area */
         @media (max-width: 768px) {
           .ai-chat-btn {
-            bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+            bottom: calc(102px + env(safe-area-inset-bottom)) !important;
             right: 16px !important;
           }
           .ai-chat-panel {
-            bottom: calc(136px + env(safe-area-inset-bottom)) !important;
+            bottom: calc(166px + env(safe-area-inset-bottom)) !important;
             right: 16px !important;
             left: 16px !important;
             width: auto !important;
@@ -487,7 +487,7 @@ export default function ChatWidget() {
             height: 100% !important;
           }
           .ai-chat-btn {
-            bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+            bottom: calc(102px + env(safe-area-inset-bottom)) !important;
             right: 16px !important;
           }
         }
