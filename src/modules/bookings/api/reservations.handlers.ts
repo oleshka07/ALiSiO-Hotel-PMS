@@ -12,6 +12,7 @@ export async function listReservations(request: NextRequest) {
     const status = searchParams.get('status') || '';
     const category = searchParams.get('category') || '';
     const search = searchParams.get('search') || '';
+    const excludeChildren = searchParams.get('exclude_children') === '1';
 
     let query = `
       SELECT
@@ -31,10 +32,15 @@ export async function listReservations(request: NextRequest) {
       JOIN units u ON r.unit_id = u.id
       JOIN categories c ON u.category_id = c.id
       JOIN unit_types ut ON u.unit_type_id = ut.id
-      WHERE r.parent_id IS NULL
+      WHERE 1=1
     `;
 
     const params: string[] = [];
+
+    // Hide child reservations on Bookings list page, but show them on Calendar
+    if (excludeChildren) {
+      query += ' AND r.parent_id IS NULL';
+    }
 
     if (status) {
       query += ' AND r.status = ?';

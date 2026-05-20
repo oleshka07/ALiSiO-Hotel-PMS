@@ -54,6 +54,7 @@ interface BookingRow {
   category_name: string; category_type: string;
   unit_type_id?: string; unit_type_name?: string;
   notes?: string | null;
+  parent_id?: string | null;
   hostex_channel_type?: string;
   hostex_reservation_code?: string;
 }
@@ -888,6 +889,9 @@ function CalendarDesktop() {
                                 <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>
                                   {booking.nights}н.
                                 </span>
+                                {(booking as any).parent_id && (
+                                  <span style={{ fontSize: 10 }} title="Дочірнє бронювання (група)">🔗</span>
+                                )}
                                 {(booking as any).hostex_channel_type && (
                                   <span style={{ fontSize: 10 }} title={`Hostex: ${(booking as any).hostex_channel_type}`}>🌐</span>
                                 )}

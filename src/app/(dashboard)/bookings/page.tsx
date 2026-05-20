@@ -328,6 +328,7 @@ function BookingsDesktop() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('exclude_children', '1');
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
       if (categoryFilter) params.set('category', categoryFilter);
