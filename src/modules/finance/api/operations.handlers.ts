@@ -235,6 +235,8 @@ interface CreateOperationInput {
   tag_ids?: string[];
   /** 1 → admin needs to triage (account resolver fell back). See PR #C. */
   needs_review?: number;
+  /** If set, use this rate instead of auto-computing from finance_exchange_rates */
+  fx_rate_override?: number;
 }
 
 export function createOperationInTx(
@@ -266,7 +268,12 @@ export function createOperationInTx(
 
   const currency = input.currency || 'CZK';
   const accruedAt = input.accrued_at || paid_at;
-  const amountCompany = computeAmountCompany(db, amount, currency, paid_at);
+  const amountCompany = (input.fx_rate_override && input.fx_rate_override > 0)
+    ? amount * input.fx_rate_override
+    : computeAmountCompany(db, amount, currency, paid_at);
+  const fxRate = (input.fx_rate_override && input.fx_rate_override > 0)
+    ? input.fx_rate_override
+    : (currency === 'CZK' ? null : (amountCompany / amount) || null);
   const status: Status = input.status && (STATUSES as readonly string[]).includes(input.status) ? input.status : 'completed';
   const source = input.source || 'manual';
   const idPrefix = op_type === 'income' ? 'inc' : op_type === 'expense' ? 'exp' : 'txfr';
@@ -287,7 +294,7 @@ export function createOperationInTx(
     id, orgId, op_type,
     input.account_from_id || null, input.account_to_id || null,
     amount, currency, input.amount_to || null, input.currency_to || null,
-    input.amount_to && amount ? (input.amount_to / amount) : null, amountCompany,
+    fxRate, amountCompany,
     paid_at, accruedAt, input.period_from || null, input.period_to || null,
     op_type === 'transfer' ? null : (input.category_id || null),
     input.project_id || null,
@@ -364,12 +371,22 @@ export async function updateOperation(
         params.push(typeof v === 'boolean' ? (v ? 1 : 0) : (v === '' ? null : v));
       }
     }
-    if (body.amount !== undefined || body.currency !== undefined || body.paid_at !== undefined) {
+    if (body.amount !== undefined || body.currency !== undefined || body.paid_at !== undefined || body.fx_rate_override !== undefined) {
       const newAmount = body.amount ?? existing.amount;
       const newCurrency = body.currency ?? existing.currency;
       const newPaid = body.paid_at ?? existing.paid_at;
+      const amountCompany = (body.fx_rate_override && body.fx_rate_override > 0)
+        ? newAmount * body.fx_rate_override
+        : computeAmountCompany(db, newAmount, newCurrency, newPaid);
       fields.push('amount_company = ?');
-      params.push(computeAmountCompany(db, newAmount, newCurrency, newPaid));
+      params.push(amountCompany);
+      if (body.fx_rate_override && body.fx_rate_override > 0) {
+        fields.push('fx_rate = ?');
+        params.push(body.fx_rate_override);
+      } else if (newCurrency !== 'CZK') {
+        fields.push('fx_rate = ?');
+        params.push(amountCompany / newAmount);
+      }
     }
     const actor = await getOptionalActor();
     if (actor) {

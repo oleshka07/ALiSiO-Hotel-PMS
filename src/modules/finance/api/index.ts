@@ -142,7 +142,7 @@ export const deleteAccount    = withPermission('manage_finance_settings', _delet
 export const reconcileAccount = withPermission('manage_finance_settings', _reconcileAccount);
 
 // ─── Exchange rates (PR #1) ───────────────────────────────────
-export { listExchangeRates } from './exchange-rates.handlers';
+export { listExchangeRates, getCurrentRate } from './exchange-rates.handlers';
 import {
   upsertExchangeRate as _upsertExchangeRate,
   deleteExchangeRate as _deleteExchangeRate,

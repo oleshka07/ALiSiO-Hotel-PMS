@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PMS · Booking Modal — Final v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1118;
+    --panel:#161A22;
+    --panel-2:#1C2029;
+    --panel-3:#242933;
+    --panel-4:#2C313C;
+    --ink:#E8EAED;
+    --ink-2:#9BA1AA;
+    --ink-3:#6A707A;
+    --ink-4:#4A5058;
+    --line:#2A2E37;
+    --line-2:#363B45;
+    --primary:#4F8EFF;
+    --primary-2:#3A75E0;
+    --primary-bg:rgba(79,142,255,.12);
+    --success:#22C55E;
+    --success-bg:rgba(34,197,94,.12);
+    --warn:#F59E0B;
+    --warn-bg:rgba(245,158,11,.12);
+    --warn-bg-2:rgba(245,158,11,.06);
+    --danger:#EF4444;
+    --danger-bg:rgba(239,68,68,.1);
+    --direct:#4F8EFF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;}
+  body{min-height:100vh;padding:40px 20px;display:flex;justify-content:center;align-items:flex-start;}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+
+  .container{display:grid;gap:32px;max-width:760px;width:100%;}
+  .label-tag{font-size:11px;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;padding:0 4px;}
+
+  .modal-wrap{position:relative;}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:visible;box-shadow:0 24px 64px -16px rgba(0,0,0,.5);}
+
+  /* ── TOP ROW ── */
+  .top-row{padding:18px 20px 14px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
+  .guest-info{flex:1;min-width:0;}
+  .guest-name{font-size:20px;font-weight:700;letter-spacing:-.01em;margin-bottom:5px;}
+  .guest-meta{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-2);flex-wrap:wrap;margin-bottom:8px;}
+
+  .editable{cursor:pointer;border-radius:5px;padding:2px 5px;margin:-2px -5px;transition:background .15s;position:relative;}
+  .editable:hover{background:var(--panel-3);}
+  .editable:hover::after{content:"✎";position:absolute;top:-2px;right:-2px;font-size:9px;color:var(--primary);}
+
+  .badge-room{font-size:11px;font-weight:700;background:var(--panel-3);color:var(--ink);padding:3px 7px;border-radius:5px;letter-spacing:.02em;cursor:pointer;transition:background .15s;}
+  .badge-room:hover{background:var(--panel-4);}
+
+  .source-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px 3px 6px;border-radius:5px;background:rgba(79,142,255,.12);color:var(--direct);}
+  .source-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--direct);}
+  .meta-dot{width:3px;height:3px;border-radius:50%;background:var(--ink-3);}
+
+  .guest-contact{display:flex;align-items:center;gap:8px;}
+  .guest-phone{font-size:13px;color:var(--ink);font-weight:500;}
+  .contact-btn{width:30px;height:30px;border-radius:7px;background:var(--panel-2);display:flex;align-items:center;justify-content:center;color:var(--ink-2);transition:all .15s;position:relative;}
+  .contact-btn:hover{background:var(--panel-3);color:var(--ink);}
+  .contact-btn.call{color:#22C55E;}
+  .contact-btn.call:hover{background:rgba(34,197,94,.15);}
+  .contact-btn.wa{color:#22C55E;}
+  .contact-btn.wa:hover{background:rgba(34,197,94,.15);}
+
+  .top-right{display:flex;align-items:flex-start;gap:10px;flex-shrink:0;}
+  .price-block{text-align:right;}
+  .price-value{font-size:22px;font-weight:700;color:var(--primary);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;}
+  .price-currency{font-size:14px;color:var(--ink-2);font-weight:500;margin-left:2px;}
+  .price-eur{font-size:11px;color:var(--ink-3);margin-top:4px;letter-spacing:.02em;}
+  .icon-btn{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-2);transition:all .15s;}
+  .icon-btn:hover{background:var(--panel-3);color:var(--ink);}
+
+  /* ── STATUS STRIP ── */
+  .status-strip{padding:0 20px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .status-chip{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;}
+  .status-chip.ok{border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05);}
+  .status-chip.warn{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.05);}
+  .status-chip.pending{border-color:var(--line);}
+  .status-chip-head{display:flex;align-items:center;gap:7px;}
+  .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .status-dot.ok{background:var(--success);box-shadow:0 0 0 3px rgba(34,197,94,.2);}
+  .status-dot.warn{background:var(--warn);box-shadow:0 0 0 3px rgba(245,158,11,.2);}
+  .status-dot.pending{background:var(--ink-3);}
+  .status-label{font-size:10px;color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase;font-weight:600;}
+  .status-value{font-size:13px;color:var(--ink);font-weight:500;padding-left:15px;}
+  .status-value.warn-text{color:var(--warn);}
+  .status-value.muted{color:var(--ink-3);font-weight:400;}
+
+  /* ── NEXT ACTION ── */
+  .next-action{margin:0 20px 14px;background:linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.04));border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .next-action-info{flex:1;min-width:0;display:flex;align-items:center;gap:12px;}
+  .next-action-icon{font-size:14px;color:var(--warn);flex-shrink:0;}
+  .next-action-text-wrap{flex:1;min-width:0;}
+  .next-action-label{font-size:10px;color:var(--warn);letter-spacing:.1em;text-transform:uppercase;font-weight:700;line-height:1;margin-bottom:2px;}
+  .next-action-text{font-size:13px;color:var(--ink);font-weight:600;line-height:1.3;}
+  .next-action-text small{color:var(--ink-2);font-weight:400;margin-left:6px;}
+  .next-action-btn{background:var(--warn);color:#0F1115;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;transition:all .15s;white-space:nowrap;flex-shrink:0;}
+  .next-action-btn:hover{background:#FBB040;transform:translateY(-1px);}
+
+  /* ── TABS ── */
+  .tabs{padding:0 20px;display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{padding:11px 13px;font-size:13px;color:var(--ink-2);font-weight:500;display:flex;align-items:center;gap:6px;position:relative;transition:color .15s;cursor:pointer;white-space:nowrap;}
+  .tab:hover{color:var(--ink);}
+  .tab.active{color:var(--ink);}
+  .tab.active::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--primary);border-radius:2px 2px 0 0;}
+  .tab-icon{font-size:14px;}
+  .tab-badge{font-size:10px;font-weight:700;background:var(--warn);color:#0F1115;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center;line-height:1.4;}
+  .tab-badge.pct{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(245,158,11,.3);}
+
+  /* ── TAB BODY ── */
+  .tab-body{padding:16px 20px;display:none;}
+  .tab-body.active{display:block;}
+
+  /* Payment */
+  .pay-amounts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;}
+  .pay-amount-label{font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:3px;}
+  .pay-amount-value{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .pay-amount-value.danger{color:var(--warn);}
+  .pay-amount-value.success{color:var(--success);}
+
+  /* NEW: progress bar + inline +Платіж button on the right */
+  .pay-progress-row{display:flex;align-items:center;gap:10px;}
+  .pay-progress{flex:1;height:6px;background:var(--panel-3);border-radius:3px;overflow:hidden;}
+  .pay-progress-fill{height:100%;background:var(--success);transition:width .3s;}
+  .pay-progress-pct{font-size:10px;color:var(--ink-3);font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.04em;white-space:nowrap;}
+  .pay-add-btn{background:var(--primary);color:#fff;padding:7px 12px;border-radius:7px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;transition:all .15s;white-space:nowrap;}
+  .pay-add-btn:hover{background:var(--primary-2);}
+  .pay-add-btn svg{width:11px;height:11px;}
+
+  /* Groups */
+  .groups-empty{padding:20px;text-align:center;color:var(--ink-3);font-size:13px;line-height:1.6;}
+  .groups-empty strong{color:var(--ink-2);display:block;margin-bottom:4px;font-size:14px;}
+  .groups-add-btn{margin-top:12px;background:var(--panel-3);color:var(--ink);padding:8px 14px;border-radius:7px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
+  .groups-add-btn:hover{background:var(--line-2);}
+
+  /* History */
+  .history-list{display:flex;flex-direction:column;gap:0;position:relative;padding-left:18px;}
+  .history-list::before{content:"";position:absolute;left:6px;top:8px;bottom:8px;width:2px;background:var(--line);}
+  .history-item{position:relative;padding:8px 0;display:flex;gap:12px;align-items:flex-start;}
+  .history-item::before{content:"";position:absolute;left:-15px;top:13px;width:8px;height:8px;border-radius:50%;background:var(--ink-3);border:2px solid var(--bg);}
+  .history-item.created::before{background:var(--success);}
+  .history-item.payment::before{background:var(--primary);}
+  .history-item.edit::before{background:var(--warn);}
+  .history-item.alert::before{background:var(--danger);}
+  .history-content{flex:1;min-width:0;}
+  .history-action{font-size:13px;color:var(--ink);font-weight:500;line-height:1.4;}
+  .history-action strong{color:var(--ink);font-weight:600;}
+  .history-action .field-change{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--panel-3);padding:1px 5px;border-radius:3px;margin:0 2px;}
+  .history-meta{font-size:11px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:8px;}
+  .history-author{color:var(--ink-2);font-weight:500;}
+
+  /* Collection (Збір) */
+  .collection-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .collection-item{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s;}
+  .collection-item:hover{border-color:var(--line-2);background:var(--panel-3);}
+  .collection-label{font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}
+  .collection-edit-icon{font-size:11px;color:var(--ink-4);opacity:0;transition:opacity .15s;}
+  .collection-item:hover .collection-edit-icon{opacity:1;}
+  .collection-value{font-size:14px;color:var(--ink);font-weight:500;}
+  .collection-value.empty{color:var(--ink-3);font-weight:400;font-style:italic;}
+
+  /* Registration */
+  .reg-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel-2);border-radius:8px;border:1px solid var(--line);}
+  .reg-icon{width:24px;height:24px;border-radius:6px;background:var(--warn-bg);color:var(--warn);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+  .reg-name{flex:1;font-size:13px;}
+  .reg-action-btn{padding:6px 12px;font-size:12px;background:var(--panel-3);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-weight:600;}
+  .reg-action-btn:hover{background:var(--line-2);}
+
+  /* Notes */
+  .notes-block{margin:0 20px 16px;background:var(--warn-bg-2);border:1px solid rgba(245,158,11,.15);border-radius:10px;padding:12px 14px;}
+  .notes-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .notes-label{font-size:10px;color:var(--warn);letter-spacing:.08em;text-transform:uppercase;font-weight:700;display:flex;align-items:center;gap:5px;}
+  .notes-edit{font-size:11px;color:var(--ink-3);font-weight:500;}
+  .notes-edit:hover{color:var(--ink);}
+  .notes-text{font-size:13px;color:var(--ink);line-height:1.45;}
+
+  /* Footer */
+  .footer{padding:12px 20px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel-2);border-radius:0 0 14px 14px;}
+  .footer-btn{padding:9px 14px;border-radius:8px;font-size:13px;font-weight:500;color:var(--ink-2);transition:all .15s;display:flex;align-items:center;gap:6px;}
+  .footer-btn:hover{background:var(--panel-3);color:var(--ink);}
+  .footer-btn.primary{background:var(--primary);color:#fff;font-weight:600;padding:10px 16px;}
+  .footer-btn.primary:hover{background:var(--primary-2);}
+  .footer-btn.danger{color:var(--danger);}
+  .footer-btn.danger:hover{background:var(--danger-bg);color:#FF6B6B;}
+  .footer-right{display:flex;gap:6px;align-items:center;}
+
+  /* WhatsApp popup */
+  .wa-popup{position:absolute;top:calc(100% + 6px);left:0;background:var(--panel-2);border:1px solid var(--line-2);border-radius:11px;padding:6px;width:340px;box-shadow:0 16px 40px -8px rgba(0,0,0,.6);display:none;z-index:20;}
+  .wa-popup.open{display:block;}
+  .wa-popup::before{content:"";position:absolute;top:-6px;left:12px;width:10px;height:10px;background:var(--panel-2);border-top:1px solid var(--line-2);border-left:1px solid var(--line-2);transform:rotate(45deg);}
+  .wa-header{padding:8px 10px 4px;font-size:10px;color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase;font-weight:700;}
+  .wa-item{padding:9px 10px;border-radius:7px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;transition:background .15s;}
+  .wa-item:hover{background:var(--panel-3);}
+  .wa-item-icon{width:28px;height:28px;border-radius:7px;background:rgba(34,197,94,.12);color:#22C55E;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+  .wa-item.blank .wa-item-icon{background:var(--panel-3);color:var(--ink-2);}
+  .wa-item-info{flex:1;min-width:0;}
+  .wa-item-name{font-size:13px;color:var(--ink);font-weight:600;line-height:1.2;margin-bottom:2px;}
+  .wa-item-preview{font-size:11px;color:var(--ink-3);line-height:1.35;}
+  .wa-item-link-badge{display:inline-block;font-size:9px;background:var(--primary-bg);color:var(--primary);padding:1px 5px;border-radius:3px;font-weight:600;letter-spacing:.04em;margin-left:5px;vertical-align:middle;}
+  .wa-divider{height:1px;background:var(--line);margin:4px 8px;}
+
+  @media(max-width:580px){
+    .status-strip{grid-template-columns:repeat(2,1fr);}
+    .collection-grid{grid-template-columns:1fr;}
+    .top-row{flex-wrap:wrap;}
+    .next-action{flex-direction:column;align-items:stretch;}
+    .next-action-btn{width:100%;justify-content:center;}
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="modal-wrap">
+    <div class="modal">
+
+      <!-- TOP ROW -->
+      <div class="top-row">
+        <div class="guest-info">
+          <div class="guest-name">Ludmila Zemanová</div>
+          <div class="guest-meta">
+            <span class="badge-room" title="Натисни щоб змінити будинок">F11</span>
+            <span class="source-pill" title="Direct booking — без channel manager">
+              <span class="source-dot"></span>Direct
+            </span>
+            <span class="meta-dot"></span>
+            <span class="editable" id="datesEdit" title="Натисни щоб змінити дати">2026-05-22 → 2026-05-24</span>
+            <span class="meta-dot"></span>
+            <span>2 н. · 1 дор.</span>
+          </div>
+          <div class="guest-contact">
+            <span class="guest-phone">+420 732 142 259</span>
+            <button class="contact-btn call" title="Подзвонити">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 9.5V11.5C12 11.7761 11.7761 12 11.5 12C6.25 12 2 7.75 2 2.5C2 2.22386 2.22386 2 2.5 2H4.5C4.77614 2 5 2.22386 5 2.5C5 3.39 5.15 4.25 5.42 5.05C5.5 5.27 5.44 5.52 5.27 5.69L4.06 6.9C5.05 8.62 6.38 9.95 8.1 10.94L9.31 9.73C9.48 9.56 9.73 9.5 9.95 9.58C10.75 9.85 11.61 10 12.5 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div style="position:relative;">
+              <button class="contact-btn wa" id="waBtn" title="WhatsApp">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M11.5 2.5C10.3 1.3 8.7 0.6 7 0.6C3.5 0.6 0.6 3.5 0.6 7C0.6 8.1 0.9 9.2 1.4 10.2L0.5 13.5L3.9 12.6C4.85 13.1 5.92 13.4 7 13.4C10.5 13.4 13.4 10.5 13.4 7C13.4 5.3 12.7 3.7 11.5 2.5Z"/></svg>
+              </button>
+              <div class="wa-popup" id="waPopup">
+                <div class="wa-header">Швидкі шаблони</div>
+                <div class="wa-item blank">
+                  <div class="wa-item-icon">✍</div>
+                  <div class="wa-item-info">
+                    <div class="wa-item-name">Без шаблону</div>
+                    <div class="wa-item-preview">Відкрити WhatsApp з пустим повідомленням</div>
+                  </div>
+                </div>
+                <div class="wa-divider"></div>
+                <div class="wa-item">
+                  <div class="wa-item-icon">✓</div>
+                  <div class="wa-item-info">
+                    <div class="wa-item-name">Підтвердження броні<span class="wa-item-link-badge">+ посилання</span></div>
+                    <div class="wa-item-preview">Доброго дня, Ludmilo! Ваша бронь на 22–24 травня підтверджена. Гостьова сторінка: …</div>
+                  </div>
+                </div>
+                <div class="wa-item">
+                  <div class="wa-item-icon">📋</div>
+                  <div class="wa-item-info">
+                    <div class="wa-item-name">Запит реєстраційної картки<span class="wa-item-link-badge">+ посилання</span></div>
+                    <div class="wa-item-preview">Для заселення потрібно заповнити реєстраційну картку: …</div>
+                  </div>
+                </div>
+                <div class="wa-item">
+                  <div class="wa-item-icon">🔑</div>
+                  <div class="wa-item-info">
+                    <div class="wa-item-name">Інструкція заїзду<span class="wa-item-link-badge">+ посилання</span></div>
+                    <div class="wa-item-preview">Чекаємо вас 22 травня з 15:00. Адреса, код від хвіртки, інструкції: …</div>
+                  </div>
+                </div>
+                <div class="wa-item">
+                  <div class="wa-item-icon">⭐</div>
+                  <div class="wa-item-info">
+                    <div class="wa-item-name">Подяка за відгук</div>
+                    <div class="wa-item-preview">Дякуємо за відпочинок! Будемо вдячні якщо залишите відгук: …</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="top-right">
+          <div class="price-block">
+            <div class="price-value">864<span class="price-currency"> CZK</span></div>
+            <div class="price-eur">≈ 34 EUR</div>
+          </div>
+          <button class="icon-btn" title="Закрити">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M3 11L11 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- STATUS STRIP -->
+      <div class="status-strip">
+        <div class="status-chip ok">
+          <div class="status-chip-head">
+            <div class="status-dot ok"></div>
+            <div class="status-label">Бронь</div>
+          </div>
+          <div class="status-value">Підтверджено</div>
+        </div>
+        <div class="status-chip warn">
+          <div class="status-chip-head">
+            <div class="status-dot warn"></div>
+            <div class="status-label">Оплата</div>
+          </div>
+          <div class="status-value warn-text">0 / 864 Kč</div>
+        </div>
+        <div class="status-chip warn">
+          <div class="status-chip-head">
+            <div class="status-dot warn"></div>
+            <div class="status-label">Документи</div>
+          </div>
+          <div class="status-value warn-text">0 / 1</div>
+        </div>
+        <div class="status-chip pending">
+          <div class="status-chip-head">
+            <div class="status-dot pending"></div>
+            <div class="status-label">Заселення</div>
+          </div>
+          <div class="status-value muted">Через 2 дні</div>
+        </div>
+      </div>
+
+      <!-- NEXT ACTION -->
+      <div class="next-action">
+        <div class="next-action-info">
+          <span class="next-action-icon">⚡</span>
+          <div class="next-action-text-wrap">
+            <div class="next-action-label">Наступна дія</div>
+            <div class="next-action-text">Прийняти оплату 864 Kč <small>· гість прибуває через 2 дні</small></div>
+          </div>
+        </div>
+        <button class="next-action-btn">
+          Прийняти
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 3L9 7L4 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <!-- TABS: Оплата / Реєстрація / Групи / Збір / Історія -->
+      <div class="tabs">
+        <div class="tab active" data-tab="pay">
+          <span class="tab-icon">💳</span>
+          <span>Оплата</span>
+          <span class="tab-badge pct">0%</span>
+        </div>
+        <div class="tab" data-tab="reg">
+          <span class="tab-icon">📋</span>
+          <span>Реєстрація</span>
+          <span class="tab-badge">1</span>
+        </div>
+        <div class="tab" data-tab="groups">
+          <span class="tab-icon">👥</span>
+          <span>Групи</span>
+        </div>
+        <div class="tab" data-tab="collection">
+          <span class="tab-icon">🏛</span>
+          <span>Збір</span>
+        </div>
+        <div class="tab" data-tab="history">
+          <span class="tab-icon">🕓</span>
+          <span>Історія</span>
+        </div>
+      </div>
+
+      <!-- TAB BODY: Оплата -->
+      <div class="tab-body active" data-tab-body="pay">
+        <div class="pay-amounts">
+          <div>
+            <div class="pay-amount-label">Всього</div>
+            <div class="pay-amount-value">864 CZK</div>
+          </div>
+          <div>
+            <div class="pay-amount-label">Оплачено</div>
+            <div class="pay-amount-value success">0 CZK</div>
+          </div>
+          <div>
+            <div class="pay-amount-label">Залишок</div>
+            <div class="pay-amount-value danger">864 CZK</div>
+          </div>
+        </div>
+
+        <!-- NEW: single row with progress + inline +Платіж button -->
+        <div class="pay-progress-row">
+          <div class="pay-progress"><div class="pay-progress-fill" style="width:0%;"></div></div>
+          <span class="pay-progress-pct">0% · CZK</span>
+          <button class="pay-add-btn">
+            <svg viewBox="0 0 14 14" fill="none"><path d="M7 3V11M3 7H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Платіж
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB BODY: Реєстрація -->
+      <div class="tab-body" data-tab-body="reg">
+        <div class="reg-item">
+          <div class="reg-icon">!</div>
+          <div class="reg-name">Реєстраційна картка</div>
+          <button class="reg-action-btn">Запросити</button>
+        </div>
+      </div>
+
+      <!-- TAB BODY: Групи (restored) -->
+      <div class="tab-body" data-tab-body="groups">
+        <div class="groups-empty">
+          <strong>Гість їде сам</strong>
+          Якщо їде кілька гостей — додай їх тут, щоб вони отримали окремі реєстраційні картки і посилання на гостьову сторінку.
+          <br>
+          <button class="groups-add-btn">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 3V11M3 7H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Додати гостя в групу
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB BODY: Збір -->
+      <div class="tab-body" data-tab-body="collection">
+        <div class="collection-grid">
+          <div class="collection-item">
+            <div class="collection-label">Міський податок <span class="collection-edit-icon">✎</span></div>
+            <div class="collection-value">80 Kč</div>
+          </div>
+          <div class="collection-item">
+            <div class="collection-label">Туристичний збір <span class="collection-edit-icon">✎</span></div>
+            <div class="collection-value">21 Kč · 1 дор × 2 ночі</div>
+          </div>
+          <div class="collection-item">
+            <div class="collection-label">Депозит <span class="collection-edit-icon">✎</span></div>
+            <div class="collection-value empty">Не вказано</div>
+          </div>
+          <div class="collection-item">
+            <div class="collection-label">Чайові <span class="collection-edit-icon">✎</span></div>
+            <div class="collection-value empty">Не вказано</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB BODY: Історія / Audit Log -->
+      <div class="tab-body" data-tab-body="history">
+        <div class="history-list">
+          <div class="history-item alert">
+            <div class="history-content">
+              <div class="history-action">⏰ <strong>Нагадування:</strong> оплата не прийнята, до заїзду 2 дні</div>
+              <div class="history-meta"><span class="history-author">Система</span> · сьогодні, 09:00</div>
+            </div>
+          </div>
+          <div class="history-item edit">
+            <div class="history-content">
+              <div class="history-action"><strong>Олена</strong> змінила будинок <span class="field-change">F08</span> → <span class="field-change">F11</span></div>
+              <div class="history-meta">вчора, 14:32 · IP 192.168.1.5</div>
+            </div>
+          </div>
+          <div class="history-item">
+            <div class="history-content">
+              <div class="history-action"><strong>WhatsApp:</strong> надіслано шаблон "Підтвердження броні"</div>
+              <div class="history-meta"><span class="history-author">Антон</span> · 23 квіт, 16:08</div>
+            </div>
+          </div>
+          <div class="history-item edit">
+            <div class="history-content">
+              <div class="history-action"><strong>Антон</strong> підтвердив бронь</div>
+              <div class="history-meta">23 квіт, 16:05</div>
+            </div>
+          </div>
+          <div class="history-item created">
+            <div class="history-content">
+              <div class="history-action">📩 Бронь створена через <strong>Direct сайт</strong></div>
+              <div class="history-meta"><span class="history-author">Ludmila Zemanová</span> · 23 квіт, 15:47</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PERSISTENT NOTES -->
+      <div class="notes-block">
+        <div class="notes-head">
+          <div class="notes-label">📝 Примітка</div>
+          <button class="notes-edit">Редагувати</button>
+        </div>
+        <div class="notes-text">Пізній заїзд після 20:00 — гостя зустрічає Антон. Алергія на горіхи (вказано при бронюванні).</div>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="footer">
+        <button class="footer-btn danger">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M3 11L11 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Скасувати бронь
+        </button>
+        <div class="footer-right">
+          <button class="footer-btn">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M4 4V2.5C4 2.22386 4.22386 2 4.5 2H11.5C11.7761 2 12 2.22386 12 2.5V9.5C12 9.77614 11.7761 10 11.5 10H10M2.5 4H9.5C9.77614 4 10 4.22386 10 4.5V11.5C10 11.7761 9.77614 12 9.5 12H2.5C2.22386 12 2 11.7761 2 11.5V4.5C2 4.22386 2.22386 4 2.5 4Z" stroke="currentColor" stroke-width="1.3"/></svg>
+            Копіювати
+          </button>
+          <button class="footer-btn">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M11 6V4.5C11 3.11929 9.88071 2 8.5 2H5.5C4.11929 2 3 3.11929 3 4.5V6M2 6H12C12.2761 6 12.5 6.22386 12.5 6.5V11.5C12.5 11.7761 12.2761 12 12 12H2C1.72386 12 1.5 11.7761 1.5 11.5V6.5C1.5 6.22386 1.72386 6 2 6Z" stroke="currentColor" stroke-width="1.3"/></svg>
+            Гостьова
+          </button>
+          <button class="footer-btn primary">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9 3L11 5L5 11H3V9L9 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            Редагувати
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const waBtn = document.getElementById('waBtn');
+  const waPopup = document.getElementById('waPopup');
+  waBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    waPopup.classList.toggle('open');
+  });
+  document.addEventListener('click', () => {
+    waPopup.classList.remove('open');
+  });
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-body').forEach(b => b.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      document.querySelector(`[data-tab-body="${target}"]`).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>

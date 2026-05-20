@@ -127,3 +127,49 @@ export async function deleteExchangeRate(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+/**
+ * GET /api/finance/exchange-rates/current?from=EUR&to=CZK&date=2026-05-20
+ * Returns the effective rate for a currency pair on a specific date.
+ * Used by OperationModal to preview the conversion before saving.
+ */
+export async function getCurrentRate(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const { searchParams } = new URL(request.url);
+    const fromCur = (searchParams.get('from') || '').toUpperCase();
+    const toCur = (searchParams.get('to') || 'CZK').toUpperCase();
+    const date = searchParams.get('date') || new Date().toISOString().substring(0, 10);
+
+    if (!fromCur || fromCur === toCur) {
+      return NextResponse.json({ rate: 1, effective_from: date, is_fallback: false });
+    }
+
+    // 1. Exact or earlier rate for the requested date
+    let row = db.prepare(`
+      SELECT rate, effective_from FROM finance_exchange_rates
+      WHERE organization_id = ? AND from_currency = ? AND to_currency = ? AND effective_from <= ?
+      ORDER BY effective_from DESC LIMIT 1
+    `).get(orgId, fromCur, toCur, date) as { rate: number; effective_from: string } | undefined;
+
+    if (row) {
+      return NextResponse.json({ rate: row.rate, effective_from: row.effective_from, is_fallback: false });
+    }
+
+    // 2. Fallback: latest rate of any date
+    row = db.prepare(`
+      SELECT rate, effective_from FROM finance_exchange_rates
+      WHERE organization_id = ? AND from_currency = ? AND to_currency = ?
+      ORDER BY effective_from DESC LIMIT 1
+    `).get(orgId, fromCur, toCur) as { rate: number; effective_from: string } | undefined;
+
+    if (row) {
+      return NextResponse.json({ rate: row.rate, effective_from: row.effective_from, is_fallback: true });
+    }
+
+    return NextResponse.json({ rate: null, effective_from: null, is_fallback: false, error: `No ${fromCur}→${toCur} rate configured` });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

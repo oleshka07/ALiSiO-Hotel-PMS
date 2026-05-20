@@ -82,9 +82,9 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
 
     const buBreakdown = db.prepare(`
       SELECT bu.id, bu.name,
-             COALESCE(SUM(CASE WHEN o.op_type = 'income' THEN o.amount ELSE 0 END), 0) as revenue,
-             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND (ec.std_group IN ('COGS','OPEX','Taxes')) THEN o.amount ELSE 0 END), 0) as expenses,
-             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND ec.is_capex = 1 THEN o.amount ELSE 0 END), 0) as capex
+             COALESCE(SUM(CASE WHEN o.op_type = 'income' THEN o.amount_company ELSE 0 END), 0) as revenue,
+             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND (ec.std_group IN ('COGS','OPEX','Taxes')) THEN o.amount_company ELSE 0 END), 0) as expenses,
+             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND ec.is_capex = 1 THEN o.amount_company ELSE 0 END), 0) as capex
       FROM business_units bu
       LEFT JOIN fin_operations o ON o.project_id = bu.id AND strftime('%Y-%m', o.paid_at) = ? AND o.status = 'completed'
       LEFT JOIN expense_categories ec ON ec.id = o.category_id
@@ -208,8 +208,8 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
     const revByBUunit = db.prepare(`
       SELECT c.type as category_type,
              COALESCE(SUM(
-               CASE WHEN o.op_type = 'income' THEN o.amount
-                    WHEN o.op_type = 'expense' AND o.payment_subtype = 'refund' THEN -o.amount
+               CASE WHEN o.op_type = 'income' THEN o.amount_company
+                    WHEN o.op_type = 'expense' AND o.payment_subtype = 'refund' THEN -o.amount_company
                     ELSE 0 END
              ), 0) as total
       FROM fin_operations o
@@ -229,7 +229,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
 
     // Service revenue (payment_subtype = 'service')
     const servicePayments = db.prepare(`
-      SELECT o.amount, o.comment FROM fin_operations o
+      SELECT o.amount, o.amount_company, o.comment FROM fin_operations o
       WHERE o.status = 'completed' AND o.payment_subtype = 'service' AND strftime('%Y-%m', o.paid_at) = ?
     `).all(month) as any[];
 
@@ -240,7 +240,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
       if (notes.includes('sauna') || notes.includes('svc_sauna') || notes.includes('сауна')) pnlLine = 'Сауна';
       else if (notes.includes('breakfast') || notes.includes('svc_breakfast') || notes.includes('сніданок')) pnlLine = 'Сніданки';
       else if (notes.includes('restaurant') || notes.includes('ресторан') || notes.includes('menu')) pnlLine = 'Ресторан';
-      serviceRevenue[pnlLine] = (serviceRevenue[pnlLine] || 0) + sp.amount;
+      serviceRevenue[pnlLine] = (serviceRevenue[pnlLine] || 0) + sp.amount_company;
     }
 
     // Expenses grouped by pnl_line × project_id (using fin_operations)
@@ -411,8 +411,8 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     const inflows = months.map(m => {
       const row = db.prepare(`
         SELECT COALESCE(SUM(
-          CASE WHEN op_type = 'income' THEN amount
-               WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount
+          CASE WHEN op_type = 'income' THEN amount_company
+               WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
                ELSE 0 END
         ), 0) as total
         FROM fin_operations
@@ -434,8 +434,8 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
 
     const inflowsBySource = db.prepare(`
       SELECT o.method, COUNT(*) as count,
-             SUM(CASE WHEN op_type = 'income' THEN amount
-                      WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount
+             SUM(CASE WHEN op_type = 'income' THEN amount_company
+                      WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
                       ELSE 0 END) as total
       FROM fin_operations o
       WHERE o.reservation_id IS NOT NULL AND o.status = 'completed'

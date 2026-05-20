@@ -45,6 +45,13 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- FX conversion state ---
+  const [fxRate, setFxRate] = useState<number | null>(initial?.fx_rate || null);
+  const [fxRateEdited, setFxRateEdited] = useState(false);
+  const [fxEffectiveFrom, setFxEffectiveFrom] = useState<string | null>(null);
+  const [fxIsFallback, setFxIsFallback] = useState(false);
+  const [fxLoading, setFxLoading] = useState(false);
+
   useEffect(() => {
     Promise.all([
       fetch(`/api/finance/categories?op_type=${currentOpType}`).then((r) => r.json()).catch(() => []),
@@ -56,6 +63,32 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
       setCounterparties(Array.isArray(cps) ? cps : []);
     });
   }, [currentOpType]);
+
+  // Fetch current FX rate when currency or date changes
+  useEffect(() => {
+    if (currency === 'CZK') {
+      setFxRate(null); setFxEffectiveFrom(null); setFxIsFallback(false);
+      return;
+    }
+    // Don't auto-fetch if user manually edited the rate
+    if (fxRateEdited) return;
+    setFxLoading(true);
+    fetch(`/api/finance/exchange-rates/current?from=${currency}&to=CZK&date=${paidAt}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.rate) {
+          setFxRate(data.rate);
+          setFxEffectiveFrom(data.effective_from);
+          setFxIsFallback(!!data.is_fallback);
+        } else {
+          setFxRate(null);
+          setFxEffectiveFrom(null);
+        }
+      })
+      .catch(() => setFxRate(null))
+      .finally(() => setFxLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, paidAt]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,6 +106,11 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
       source: initial?.source || 'manual',
       status: 'completed',
     };
+    // Pass FX rate override for non-CZK currencies so the backend uses
+    // the user-visible rate instead of recomputing from the table.
+    if (currency !== 'CZK' && fxRate && fxRate > 0) {
+      body.fx_rate_override = fxRate;
+    }
     if (currentOpType === 'income') {
       body.account_to_id = accountToId;
       body.account_from_id = null;
@@ -158,11 +196,54 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
             <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} style={input} autoFocus />
           </Field>
           <Field label="Валюта">
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={input}>
+            <select value={currency} onChange={(e) => { setCurrency(e.target.value); setFxRateEdited(false); }} style={input}>
               <option value="CZK">CZK</option><option value="EUR">EUR</option><option value="USD">USD</option>
             </select>
           </Field>
         </div>
+
+        {currency !== 'CZK' && (
+          <div style={{
+            padding: 12, marginBottom: 10, borderRadius: 8,
+            background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#6366f1' }}>
+              💱 Конвертація {currency} → CZK
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Курс">
+                <input
+                  type="number" step="0.01" min="0"
+                  value={fxRate ?? ''}
+                  onChange={(e) => { setFxRate(parseFloat(e.target.value) || null); setFxRateEdited(true); }}
+                  style={{ ...input, fontWeight: 600 }}
+                  placeholder={fxLoading ? 'Завантаження...' : 'Немає курсу'}
+                />
+              </Field>
+              <Field label="Сума в CZK">
+                <div style={{
+                  padding: '8px 12px', border: '1px solid var(--border-primary)',
+                  borderRadius: 8, fontSize: 14, fontWeight: 700,
+                  background: 'rgba(34,197,94,0.06)', color: '#16a34a',
+                  minHeight: 36, display: 'flex', alignItems: 'center',
+                }}>
+                  {fxRate && amount ? `${(parseFloat(amount) * fxRate).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} CZK` : '—'}
+                </div>
+              </Field>
+            </div>
+            {fxEffectiveFrom && (
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+                {fxIsFallback ? '⚠️ Використано останній відомий курс' : 'Курс'} від {fxEffectiveFrom}.
+                Можна змінити вручну для цієї операції.
+              </div>
+            )}
+            {!fxRate && !fxLoading && (
+              <div style={{ fontSize: 12, color: '#dc2626', marginTop: 6 }}>
+                ⚠️ Курс {currency}→CZK не знайдено. Додайте в Налаштування → Курси валют або вкажіть курс вручну.
+              </div>
+            )}
+          </div>
+        )}
 
         {currentOpType !== 'transfer' && (
           <Field label="Категорія">
