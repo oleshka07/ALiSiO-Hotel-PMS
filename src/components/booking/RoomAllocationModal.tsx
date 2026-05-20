@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { X, Building2, GripVertical, Check } from 'lucide-react';
+import { X, Building2, GripVertical, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface UnitRow {
   id: string;
@@ -91,11 +91,27 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null);
 
   const todayISO = useMemo(() => toISO(new Date()), []);
+  const [viewDate, setViewDate] = useState(todayISO);
   const horizonISO = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 14);
+    d.setDate(d.getDate() + 30);
     return toISO(d);
   }, []);
+
+  // Reset viewDate when modal opens
+  useEffect(() => { if (open) setViewDate(toISO(new Date())); }, [open]);
+
+  const viewDateLabel = useMemo(() => {
+    if (viewDate === todayISO) return 'Сьогодні';
+    if (viewDate === addDays(todayISO, 1)) return 'Завтра';
+    if (viewDate === addDays(todayISO, -1)) return 'Вчора';
+    return formatShort(viewDate);
+  }, [viewDate, todayISO]);
+
+  const viewDateWeekday = useMemo(() => {
+    const DAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    return DAYS[new Date(viewDate + 'T00:00:00').getDay()];
+  }, [viewDate]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -156,30 +172,45 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   // strip and should never appear in the floor plan grid.
   const roomUnits = useMemo(() => units.filter(u => u.id !== poolUnitId), [units, poolUnitId]);
 
-  // ── Index: which booking lives in a given REAL room "today onwards"
-  // Pool bookings aren't tracked here — they have no specific room.
+  // ── Index: which booking lives in a given REAL room on viewDate
+  // Only shows bookings where check_in <= viewDate < check_out
   const bookingByUnit = useMemo(() => {
     const m = new Map<string, BookingRow>();
     for (const b of bookings) {
       if (b.unit_id === poolUnitId) continue;
-      if (b.check_in <= todayISO && b.check_out > todayISO) {
+      if (b.check_in <= viewDate && b.check_out > viewDate) {
         m.set(b.unit_id, b);
-        continue;
       }
-      const existing = m.get(b.unit_id);
-      if (!existing || b.check_in < existing.check_in) m.set(b.unit_id, b);
     }
     return m;
-  }, [bookings, todayISO, poolUnitId]);
+  }, [bookings, viewDate, poolUnitId]);
+
+  // ── Upcoming arrivals: bookings arriving in the next 1-2 days after viewDate
+  // Shown as small tags on free rooms
+  const upcomingByUnit = useMemo(() => {
+    const m = new Map<string, BookingRow>();
+    const d1 = addDays(viewDate, 1);
+    const d2 = addDays(viewDate, 2);
+    for (const b of bookings) {
+      if (b.unit_id === poolUnitId) continue;
+      // Skip if this booking is already the current occupant
+      if (b.check_in <= viewDate && b.check_out > viewDate) continue;
+      if (b.check_in === viewDate || b.check_in === d1 || b.check_in === d2) {
+        const existing = m.get(b.unit_id);
+        if (!existing || b.check_in < existing.check_in) m.set(b.unit_id, b);
+      }
+    }
+    return m;
+  }, [bookings, viewDate, poolUnitId]);
 
   const stateOf = useCallback((b: BookingRow): RoomState => {
-    if (b.check_in === todayISO) return 'arrive-today';
-    if (b.check_in === addDays(todayISO, 1)) return 'arrive-tomorrow';
-    if (b.check_in === addDays(todayISO, 2)) return 'arrive-2days';
-    if (b.check_out === todayISO) return 'leave-today';
-    if (b.check_out === addDays(todayISO, 1)) return 'leave-tomorrow';
+    if (b.check_in === viewDate) return 'arrive-today';
+    if (b.check_in === addDays(viewDate, 1)) return 'arrive-tomorrow';
+    if (b.check_in === addDays(viewDate, 2)) return 'arrive-2days';
+    if (b.check_out === viewDate) return 'leave-today';
+    if (b.check_out === addDays(viewDate, 1)) return 'leave-tomorrow';
     return 'stay';
-  }, [todayISO]);
+  }, [viewDate]);
 
   // Wings — derived from real rooms only.
   const leftWing = useMemo(() => {
@@ -196,10 +227,10 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       .sort((a, b) => roomNumOf(a.code) - roomNumOf(b.code));
   }, [roomUnits]);
 
-  // Status bar
+  // Status bar — relative to viewDate
   const occupied = bookingByUnit.size;
-  const arrivalsToday = bookings.filter(b => b.check_in === todayISO && b.unit_id !== poolUnitId).length;
-  const departuresToday = bookings.filter(b => b.check_out === todayISO && b.unit_id !== poolUnitId).length;
+  const arrivalsOnDate = bookings.filter(b => b.check_in === viewDate && b.unit_id !== poolUnitId).length;
+  const departuresOnDate = bookings.filter(b => b.check_out === viewDate && b.unit_id !== poolUnitId).length;
 
   // Чорновик: bookings parked on the pool unit. Admin moved them here
   // from a real room (or they came in via a future "pending assignment"
@@ -229,7 +260,9 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         b.unit_id === destUnitId &&
         rangesOverlap(guest.check_in, guest.check_out, b.check_in, b.check_out),
       );
-      if (conflict) return { ok: false, reason: `${room.code}: зайнято на ці дати` };
+      if (conflict) {
+        return { ok: false, reason: `${room.code}: зайнято ${formatShort(conflict.check_in)}–${formatShort(conflict.check_out)} (${conflict.first_name} ${conflict.last_name})` };
+      }
       return { ok: true, type: 'move' };
     }
     if (occupant.id === guest.id) return { ok: false };
@@ -557,18 +590,36 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="ram-title">Будова {buildingCode} · Розселення</div>
-            <div className="ram-subtitle">{todayISO} · {roomUnits.length} кімнат</div>
+            <div className="ram-subtitle">{roomUnits.length} кімнат</div>
           </div>
           <button className="ram-close" onClick={onClose} aria-label="Закрити">
             <X size={17} strokeWidth={2} />
           </button>
         </div>
 
+        {/* ── Date picker ── */}
+        <div className="ram-datepicker">
+          <button className="ram-dp-btn" onClick={() => setViewDate(d => addDays(d, -1))}>
+            <ChevronLeft size={14} strokeWidth={2.5} />
+          </button>
+          <button
+            className={`ram-dp-date ${viewDate === todayISO ? 'ram-dp-today' : ''}`}
+            onClick={() => setViewDate(todayISO)}
+            title="Повернутись на сьогодні"
+          >
+            <span className="ram-dp-label">{viewDateLabel}</span>
+            <span className="ram-dp-weekday">{viewDateWeekday}</span>
+          </button>
+          <button className="ram-dp-btn" onClick={() => setViewDate(d => addDays(d, 1))}>
+            <ChevronRight size={14} strokeWidth={2.5} />
+          </button>
+        </div>
+
         <div className="ram-statusbar">
           <div className="ram-sb-item"><span className="ram-sb-k">Зайнято</span><span className="ram-sb-v ram-c-occ">{occupied}/{roomUnits.length}</span></div>
           <div className="ram-sb-item"><span className="ram-sb-k">Вільно</span><span className="ram-sb-v ram-c-free">{Math.max(0, roomUnits.length - occupied)}</span></div>
-          <div className="ram-sb-item"><span className="ram-sb-k">Заїзди</span><span className="ram-sb-v ram-c-arr">{arrivalsToday}</span></div>
-          <div className="ram-sb-item"><span className="ram-sb-k">Виїзди</span><span className="ram-sb-v ram-c-lea">{departuresToday}</span></div>
+          <div className="ram-sb-item"><span className="ram-sb-k">Заїзди</span><span className="ram-sb-v ram-c-arr">{arrivalsOnDate}</span></div>
+          <div className="ram-sb-item"><span className="ram-sb-k">Виїзди</span><span className="ram-sb-v ram-c-lea">{departuresOnDate}</span></div>
         </div>
 
         {/* Чорновик is always visible and is a drop target so admins can
@@ -616,7 +667,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
               <div className="ram-wing-label">Ліве крило</div>
               <div className="ram-wing-list">
                 {leftWing.map(u => (
-                  <RoomCard key={u.id} unit={u} guest={bookingByUnit.get(u.id) || null} stateOf={stateOf} onTapEmpty={handleZoneClick} formatShort={fmt} />
+                  <RoomCard key={u.id} unit={u} guest={bookingByUnit.get(u.id) || null} upcoming={upcomingByUnit.get(u.id) || null} stateOf={stateOf} onTapEmpty={handleZoneClick} formatShort={fmt} viewDate={viewDate} />
                 ))}
                 {leftWing.length === 0 && <div className="ram-empty">—</div>}
               </div>
@@ -626,7 +677,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
               <div className="ram-wing-label">Праве крило</div>
               <div className="ram-wing-list">
                 {rightWing.map(u => (
-                  <RoomCard key={u.id} unit={u} guest={bookingByUnit.get(u.id) || null} stateOf={stateOf} onTapEmpty={handleZoneClick} formatShort={fmt} />
+                  <RoomCard key={u.id} unit={u} guest={bookingByUnit.get(u.id) || null} upcoming={upcomingByUnit.get(u.id) || null} stateOf={stateOf} onTapEmpty={handleZoneClick} formatShort={fmt} viewDate={viewDate} />
                 ))}
                 {rightWing.length === 0 && <div className="ram-empty">—</div>}
               </div>
@@ -653,14 +704,23 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   );
 }
 
-function RoomCard({ unit, guest, stateOf, onTapEmpty, formatShort: fmt }: {
+function RoomCard({ unit, guest, upcoming, stateOf, onTapEmpty, formatShort: fmt, viewDate }: {
   unit: UnitRow;
   guest: BookingRow | null;
+  upcoming: BookingRow | null;
   stateOf: (b: BookingRow) => RoomState;
   onTapEmpty: (unitId: string) => void;
   formatShort: (d: string) => string;
+  viewDate: string;
 }) {
   if (!guest) {
+    // Show upcoming arrival tag on free rooms
+    const upTag = upcoming ? (
+      upcoming.check_in === viewDate ? 'заїзд сьогодні'
+      : upcoming.check_in === addDays(viewDate, 1) ? `заїзд завтра`
+      : `заїзд ${fmt(upcoming.check_in)}`
+    ) : null;
+    const upTagClass = upcoming?.check_in === viewDate ? 'ram-tag-arr-strong' : 'ram-tag-arr';
     return (
       <div
         className="ram-room ram-room-free"
@@ -674,7 +734,11 @@ function RoomCard({ unit, guest, stateOf, onTapEmpty, formatShort: fmt }: {
             <span className="ram-occ-cap">0/{unit.beds}</span>
           </span>
         </div>
-        <div className="ram-room-free-text">вільна</div>
+        <div className="ram-room-meta" style={{ marginTop: 2 }}>
+          <span className="ram-room-free-text">вільна</span>
+          {upTag && <span className={`ram-tag ${upTagClass}`}>{upTag}</span>}
+          {upcoming && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>{upcoming.first_name}</span>}
+        </div>
       </div>
     );
   }
@@ -789,6 +853,39 @@ function RoomAllocationStyles() {
         .ram-legend { padding: 5px 14px; }
       }
       .ram-sheet { display: flex; flex-direction: column; }
+
+      .ram-datepicker {
+        display: flex; align-items: center; justify-content: center; gap: 4px;
+        padding: 0 14px 8px; flex-shrink: 0;
+      }
+      .ram-dp-btn {
+        width: 28px; height: 28px; border-radius: 7px;
+        background: var(--bg-tertiary); border: 1px solid var(--border-primary);
+        color: var(--text-secondary);
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; flex-shrink: 0;
+        transition: background .12s;
+      }
+      .ram-dp-btn:hover { background: var(--bg-secondary); }
+      .ram-dp-btn:active { transform: scale(0.92); }
+      .ram-dp-date {
+        display: flex; align-items: baseline; gap: 5px;
+        padding: 4px 14px; border-radius: 8px;
+        background: var(--bg-tertiary); border: 1px solid var(--border-primary);
+        cursor: pointer; transition: all .15s;
+      }
+      .ram-dp-date:hover { background: var(--bg-secondary); }
+      .ram-dp-today {
+        background: rgba(91,124,255,0.12) !important;
+        border-color: rgba(91,124,255,0.4) !important;
+      }
+      .ram-dp-label {
+        font-size: 12px; font-weight: 700; color: var(--text-primary);
+      }
+      .ram-dp-weekday {
+        font-size: 10px; color: var(--text-tertiary); font-weight: 500;
+      }
+
       .ram-head {
         display: flex; align-items: center; gap: 9px;
         padding: 12px 14px 9px; flex-shrink: 0;
