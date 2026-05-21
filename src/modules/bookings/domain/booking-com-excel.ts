@@ -59,15 +59,30 @@ const REQUIRED_COLS = [
 
 function parseDate(value: unknown): string | null {
   if (value == null || value === '') return null;
+  // XLSX cellDates:true → Date objects
   if (value instanceof Date) {
     const yyyy = value.getFullYear();
     const mm = String(value.getMonth() + 1).padStart(2, '0');
     const dd = String(value.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   }
+  // Excel serial number (e.g. 45835)
+  if (typeof value === 'number' && value > 10000 && value < 100000) {
+    const d = new Date((value - 25569) * 86400000);
+    if (!isNaN(d.getTime())) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+  }
   const s = String(value).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // YYYY-MM-DD (ISO)
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  // DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY (European)
+  const eu = s.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})/);
+  if (eu) return `${eu[3]}-${eu[2].padStart(2, '0')}-${eu[1].padStart(2, '0')}`;
+  // MM/DD/YYYY (US — fallback, only if month ≤ 12)
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us && parseInt(us[1]) <= 12) return `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`;
   return null;
 }
 

@@ -304,3 +304,154 @@ export async function listTelegramAccounts(request: NextRequest): Promise<NextRe
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+/**
+ * GET /api/finance/telegram-bridge/services
+ * Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>
+ *
+ * Returns active service catalog from additional_services.
+ */
+export async function listTelegramServices(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const db = getDb();
+
+    const services = db.prepare(`
+      SELECT id, name, name_en, icon, price, currency, service_type
+      FROM additional_services
+      WHERE is_active = 1
+      ORDER BY sort_order
+    `).all();
+
+    return NextResponse.json({ services });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/telegram-bridge/reservations
+ * Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>
+ *
+ * Returns active reservations (checked-in today, not cancelled/no_show)
+ * with guest and unit info.
+ */
+export async function listTelegramReservations(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const db = getDb();
+
+    const reservations = db.prepare(`
+      SELECT r.id, r.check_in, r.check_out, r.status,
+             g.first_name, g.last_name,
+             u.name AS unit_name, u.id AS unit_id
+      FROM reservations r
+      JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN units u ON r.unit_id = u.id
+      WHERE r.check_in <= date('now') AND r.check_out >= date('now')
+        AND r.status NOT IN ('cancelled', 'no_show')
+      ORDER BY u.name
+    `).all();
+
+    return NextResponse.json({ reservations });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/telegram-bridge/service-order
+ * Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>
+ *
+ * Creates a service order in booking_service_orders.
+ * If payment_status = 'paid', also creates a fin_operation (income).
+ *
+ * Body: { service_id, reservation_id, quantity, total_price,
+ *         payment_status, service_date, payment_method, recorded_by }
+ */
+export async function createTelegramServiceOrder(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const body = await request.json();
+    const {
+      service_id, reservation_id, quantity, total_price,
+      payment_status, service_date, payment_method, recorded_by,
+    } = body;
+
+    if (!service_id || !reservation_id) {
+      return NextResponse.json({ error: 'service_id and reservation_id are required' }, { status: 400 });
+    }
+    if (typeof total_price !== 'number' || !isFinite(total_price) || total_price <= 0) {
+      return NextResponse.json({ error: 'total_price must be a positive number' }, { status: 400 });
+    }
+
+    const db = getDb();
+    const orgId = getOrgId(db);
+
+    // Look up service name for the fin_operation description
+    const service = db.prepare('SELECT id, name, currency FROM additional_services WHERE id = ?').get(service_id) as
+      { id: string; name: string; currency?: string } | undefined;
+    if (!service) {
+      return NextResponse.json({ error: 'Service not found' }, { status: 404 });
+    }
+
+    const orderId = `bso_tg_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO booking_service_orders
+        (id, reservation_id, service_id, quantity, total_price,
+         status, payment_status, service_date, payment_method,
+         recorded_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?)
+    `).run(
+      orderId, reservation_id, service_id,
+      quantity || 1, total_price,
+      payment_status || 'pending',
+      service_date || now.substring(0, 10),
+      payment_method || null,
+      recorded_by || null,
+      now, now,
+    );
+
+    let finOperationId: string | null = null;
+
+    // If paid, create a fin_operation (income)
+    if (payment_status === 'paid') {
+      const currency = (service.currency || 'CZK').toUpperCase();
+      const accountId = defaultCashAccountId(db, orgId, currency);
+
+      if (accountId) {
+        finOperationId = createOperationInTx(db, orgId, {
+          op_type: 'income',
+          account_to_id: accountId,
+          amount: total_price,
+          currency,
+          paid_at: service_date || now.substring(0, 10),
+          comment: `Service: ${service.name}` + (recorded_by ? ` (via ${recorded_by})` : ''),
+          method: payment_method || 'cash',
+          source: 'telegram_service',
+          source_ref: `tg_service:${orderId}`,
+          reservation_id,
+          status: 'completed',
+        });
+      }
+    }
+
+    const order = db.prepare('SELECT * FROM booking_service_orders WHERE id = ?').get(orderId);
+
+    return NextResponse.json({
+      success: true,
+      order,
+      fin_operation_id: finOperationId,
+    }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

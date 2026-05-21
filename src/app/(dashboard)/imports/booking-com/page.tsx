@@ -47,7 +47,7 @@ export default function BookingComImportPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [importMode]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

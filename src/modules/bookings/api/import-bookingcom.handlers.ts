@@ -255,12 +255,25 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
 
     const arrayBuffer = await (file as File).arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.log(`[Import Booking.com] File received: ${(file as File).name}, size=${buffer.length} bytes`);
+
     const parsed = parseBookingComExcel(buffer);
     const mode = (formData.get('mode') || 'draft') as 'draft' | 'auto';
 
+    console.log(`[Import Booking.com] Parsed: ${parsed.rows.length} rows, ${parsed.errors.length} errors, totalInFile=${parsed.totalRowsInFile}`);
+    if (parsed.errors.length > 0) {
+      console.log('[Import Booking.com] Parse errors:', JSON.stringify(parsed.errors.slice(0, 5)));
+    }
+    if (parsed.rows.length > 0) {
+      const sample = parsed.rows[0];
+      console.log(`[Import Booking.com] Sample row: book=${sample.bookNumber}, guest=${sample.guestName}, in=${sample.checkIn}, out=${sample.checkOut}, price=${sample.priceMajor} ${sample.currency}, unit=${sample.unitTypeRaw}`);
+    }
+
     if (parsed.errors.length > 0 && parsed.errors[0].field === 'headers') {
+      const detail = parsed.errors[0];
+      console.error('[Import Booking.com] Header mismatch! Missing:', detail.reason, 'Available columns:', detail.raw);
       return NextResponse.json(
-        { error: 'Невідомий формат Excel — відсутні обов\'язкові колонки', detail: parsed.errors[0] },
+        { error: `Невідомий формат Excel — ${detail.reason}`, detail },
         { status: 422 },
       );
     }
@@ -301,8 +314,12 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
     };
     return NextResponse.json(response);
   } catch (e: any) {
-    console.error('[Import Booking.com] preview error:', e?.message, e?.stack);
-    return NextResponse.json({ error: 'Помилка парсингу', detail: e?.message }, { status: 500 });
+    console.error('[Import Booking.com] FATAL preview error:', e?.message);
+    console.error('[Import Booking.com] Stack:', e?.stack);
+    return NextResponse.json(
+      { error: `Помилка парсингу: ${e?.message || 'невідома помилка'}`, stack: process.env.NODE_ENV === 'development' ? e?.stack : undefined },
+      { status: 500 },
+    );
   }
 }
 
