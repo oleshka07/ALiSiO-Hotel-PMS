@@ -170,6 +170,7 @@ function CalendarDesktop() {
   const [blocks, setBlocks] = useState<{ id: string; unit_id: string; date_from: string; date_to: string; notes: string }[]>([]);
   const [toast, setToast] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
 
@@ -261,6 +262,14 @@ function CalendarDesktop() {
         }
       } catch { /* ignore */ }
     } catch (e) { console.error('Calendar fetch error:', e); }
+    // Fetch draft pool count
+    try {
+      const dcRes = await fetch('/api/booking/drafts-count');
+      if (dcRes.ok) {
+        const dcData = await dcRes.json();
+        setDraftCount(dcData.count || 0);
+      }
+    } catch { /* non-critical */ }
     setLoading(false);
   }, []);
 
@@ -618,6 +627,15 @@ function CalendarDesktop() {
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Users size={14} /> Групове</button>
               <button className="btn btn-secondary btn-sm" onClick={() => setShowRoomAllocation(true)} title="Розселення по кімнатах (Building View)" style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Building2 size={14} /> Будова</button>
+              {draftCount > 0 && (
+                <button
+                  className="draft-pool-badge"
+                  onClick={() => setShowRoomAllocation(true)}
+                  title={`${draftCount} бронювань у чорновику — натисніть для розподілу`}
+                >
+                  📋 {draftCount} в чорновику
+                </button>
+              )}
               <button className="btn btn-primary btn-sm" onClick={() => { setNewBookingPrefill(null); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
           </div>
@@ -1098,6 +1116,28 @@ function CalendarDesktop() {
 
       {/* ─── Mobile responsive styles ─── */}
       <style>{`
+        @keyframes pulse-draft {
+          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+          50% { opacity: 0.85; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+        }
+        .draft-pool-badge {
+          animation: pulse-draft 2s ease-in-out infinite;
+          background: linear-gradient(135deg, #ef4444, #dc2626);
+          color: #fff;
+          padding: 4px 10px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+          border: none;
+          white-space: nowrap;
+          letter-spacing: 0.3px;
+        }
+        .draft-pool-badge:hover {
+          animation: none;
+          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          transform: scale(1.05);
+        }
         @media (max-width: 768px) {
           .cal-toolbar-row1 { flex-wrap: wrap !important; gap: 4px !important; }
           .cal-toolbar-row1 > div { flex-wrap: wrap !important; }

@@ -81,9 +81,15 @@ function parseDateTime(value: unknown): string | null {
 function parsePrice(value: unknown): { amount: number; currency: string } {
   if (value == null || value === '') return { amount: 0, currency: 'EUR' };
   const s = String(value).trim();
-  const m = s.match(/([\d.,]+)\s*([A-Z]{3})?/);
+  const m = s.match(/([\d.,\s]+)\s*([A-Z]{3})?/);
   if (!m) return { amount: 0, currency: 'EUR' };
-  const numStr = m[1].replace(/,/g, '');
+  let numStr = m[1].trim();
+  // Detect European format: 1.234,56 (dot=thousands, comma=decimal)
+  if (numStr.includes(',') && numStr.indexOf(',') > numStr.lastIndexOf('.')) {
+    numStr = numStr.replace(/\./g, '').replace(',', '.');
+  } else {
+    numStr = numStr.replace(/,/g, '');
+  }
   const amount = parseFloat(numStr);
   const currency = (m[2] || 'EUR').toUpperCase();
   return { amount: isFinite(amount) ? amount : 0, currency };

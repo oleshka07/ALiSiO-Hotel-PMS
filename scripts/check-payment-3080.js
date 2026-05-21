@@ -1,26 +1,22 @@
 const Database = require('better-sqlite3');
 const db = new Database('D:/Antigraviti/ALiSiO PMS/data/alisio.db', { readonly: true });
 
-// List all tables
-const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
-console.log('Tables:', tables.map(t => t.name).join(', '));
+console.log('\n=== finance_accounts (cash/bank) ===');
+const accounts = db.prepare("SELECT id, name, type, currency, is_active FROM finance_accounts WHERE type IN ('cash','bank') ORDER BY sort_order").all();
+console.log(JSON.stringify(accounts, null, 2));
 
-// Get fin_operations schema
-try {
-  const schema = db.prepare("PRAGMA table_info(fin_operations)").all();
-  console.log('\nfin_operations columns:', schema.map(c => c.name).join(', '));
-} catch(e) { console.log('no fin_operations:', e.message); }
+console.log('\n=== fin_operations (source=booking_widget, last 10) ===');
+const ops = db.prepare("SELECT id, amount, currency, method, source, source_ref, account_to_id, comment, status, created_at FROM fin_operations WHERE source = 'booking_widget' ORDER BY created_at DESC LIMIT 10").all();
+console.log(JSON.stringify(ops, null, 2));
 
-// Check all columns by getting one row
-try {
-  const sample = db.prepare("SELECT * FROM fin_operations ORDER BY created_at DESC LIMIT 1").get();
-  console.log('\nSample fin_operation:', JSON.stringify(sample, null, 2));
-} catch(e) { console.log('Error:', e.message); }
+console.log('\n=== Reservations з internal_notes (Андрей, last 5) ===');
+const res = db.prepare("SELECT id, total_price, payment_status, status, internal_notes, created_at FROM reservations WHERE internal_notes LIKE '%Андрей%' OR internal_notes LIKE '%Готівку%' OR internal_notes LIKE '%Термінал%' ORDER BY created_at DESC LIMIT 10").all();
+console.log(JSON.stringify(res, null, 2));
 
-// Today's fin_operations (try common column names)
+console.log('\n=== audit_log payment_confirmed (last 10) ===');
 try {
-  const ops = db.prepare("SELECT * FROM fin_operations WHERE date(created_at) >= date('now') ORDER BY created_at DESC LIMIT 20").all();
-  console.log('\nToday fin_operations:', JSON.stringify(ops, null, 2));
-} catch(e) { console.log('Error today query:', e.message); }
+  const al = db.prepare("SELECT action, entity_id, new_values, created_at FROM audit_log WHERE action IN ('cash_payment_confirmed','terminal_payment_confirmed','payment_confirmed') ORDER BY created_at DESC LIMIT 10").all();
+  console.log(JSON.stringify(al, null, 2));
+} catch(e) { console.log('N/A:', e.message); }
 
 db.close();

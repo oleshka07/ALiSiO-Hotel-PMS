@@ -20,6 +20,7 @@ import {
   findOrCreateGuestForImport,
   insertImportedReservation,
   cancelReservation,
+  findPoolUnit,
 } from '../data/import.repo';
 
 export interface PlannedUnit {
@@ -44,6 +45,7 @@ export interface PreviewResponse {
   rows: PreviewRow[];
   parseErrors: { rowIndex: number; field: string; reason: string }[];
   totalRowsInFile: number;
+  mode: 'draft' | 'auto';
   summary: {
     create: number;
     cancel: number;
@@ -92,6 +94,7 @@ function overlappingClaimedUnits(claimedSlots: ClaimedSlot[], checkIn: string, c
 function planRow(
   row: BookingComRow,
   claimedSlots: ClaimedSlot[] = [],
+  mode: 'draft' | 'auto' = 'auto',
 ): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'plannedUnits' | 'existing' | 'action' | 'warnings'> {
   const warnings: string[] = [];
   const existing = findReservationByBcomId(row.bookNumber);
@@ -114,6 +117,33 @@ function planRow(
 
   if (existing) {
     return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'skip-already', warnings };
+  }
+
+  // Draft mode: skip room matching entirely — everything goes to pool unit.
+  if (mode === 'draft') {
+    const pool = findPoolUnit();
+    if (!pool) {
+      warnings.push('Pool unit (Чорновик F) не знайдено в БД');
+      return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing: null, action: 'skip-no-unit-type', warnings };
+    }
+    const requestedCount = Math.max(1, row.rooms || 1);
+    const units: PlannedUnit[] = [];
+    for (let i = 0; i < requestedCount; i++) {
+      units.push({
+        unitId: pool.id, unitName: pool.name,
+        capacity: row.persons || row.adults || 1,
+        unitTypeId: pool.unit_type_id, buildingCode: pool.building_code,
+      });
+    }
+    return {
+      matchedUnitType: { id: pool.unit_type_id, name: 'Чорновик F', code: 'F-POOL' },
+      freeUnitId: pool.id,
+      freeUnitName: pool.name,
+      plannedUnits: units,
+      existing: null,
+      action: 'create',
+      warnings,
+    };
   }
 
   // Resolve a list of capacities the booking needs. Booking sells by guest
@@ -225,6 +255,7 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
     const arrayBuffer = await (file as File).arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const parsed = parseBookingComExcel(buffer);
+    const mode = (formData.get('mode') || 'draft') as 'draft' | 'auto';
 
     if (parsed.errors.length > 0 && parsed.errors[0].field === 'headers') {
       return NextResponse.json(
@@ -241,7 +272,7 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
     const claimedSlots: ClaimedSlot[] = [];
     const rows: PreviewRow[] = [];
     for (const r of parsed.rows) {
-      const planned = planRow(r, claimedSlots);
+      const planned = planRow(r, claimedSlots, mode);
       rows.push({ ...r, ...planned });
       if (planned.action === 'create') {
         for (const u of planned.plannedUnits) {
@@ -263,6 +294,7 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
       rows,
       parseErrors: parsed.errors.map((e) => ({ rowIndex: e.rowIndex, field: e.field, reason: e.reason })),
       totalRowsInFile: parsed.totalRowsInFile,
+      mode,
       summary,
       resortPropertyResolved: !!propertyId,
     };
@@ -299,6 +331,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
     if (!body || !Array.isArray(body.rows)) {
       return NextResponse.json({ error: 'rows is required' }, { status: 400 });
     }
+    const mode = (body as any).mode === 'auto' ? 'auto' : 'draft';
 
     const propertyId = findResortPropertyId();
     if (!propertyId) {
@@ -325,7 +358,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
 
     for (const row of body.rows) {
       try {
-        const plan = planRow(row, claimedSlots);
+        const plan = planRow(row, claimedSlots, mode);
 
         if (plan.action === 'create') {
           if (plan.plannedUnits.length === 0) {
@@ -398,8 +431,9 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
               checkIn: row.checkIn,
               checkOut: row.checkOut,
               nights: row.duration || 1,
-              adults: unit.capacity,
+              adults: plan.plannedUnits.length === 1 ? row.adults : unit.capacity,
               children: isFirst ? row.children : 0,
+              status: mode === 'draft' ? 'draft' : 'confirmed',
               totalPrice: totalPriceCzk,
               currency: storedCurrency,
               bcomReservationId: row.bookNumber,
