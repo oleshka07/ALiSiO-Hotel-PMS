@@ -306,17 +306,51 @@ export async function createWidgetReservation(request: NextRequest) {
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
     let testEmailStatus = 'not_sent';
-    try {
-      const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
-      if (finalPrice === 0) {
-        const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-        sendBookingConfirmationEmail(resId, origin).catch(() => {});
+    if (email) {
+      try {
+        const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
+        const { sendEmail } = await import('@/lib/email');
+        const propertyInfo = db.prepare(`
+          SELECT p.name, u.name as unit_name
+          FROM units u LEFT JOIN properties p ON u.property_id = p.id
+          WHERE u.id = ?
+        `).get(unitId) as any;
+        const propertyName = propertyInfo?.name || 'ALiSiO';
+        const unitName = propertyInfo?.unit_name || '';
+        const guestPortalUrl = `${origin}/guest/${resId}`;
+        await sendEmail({
+          to: email,
+          subject: `Booking received — ${propertyName}`,
+          html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
+  <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
+    <div style="font-size:14px;color:#666;margin-bottom:24px;">Booking received</div>
+    <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
+    <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">Your booking has been registered. You will receive a payment confirmation once your payment is processed.</p>
+    <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
+      <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Booking ID</div>
+      <div style="font-size:20px;font-weight:700;color:#2E6B4F;margin-top:2px;">${resId}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:8px 0;color:#666;">Accommodation</td><td style="text-align:right;font-weight:600;">${unitName}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Check-in</td><td style="text-align:right;font-weight:600;">${checkIn}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Check-out</td><td style="text-align:right;font-weight:600;">${checkOut}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Nights</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
+      <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
+    </table>
+    <div style="margin-top:24px;text-align:center;">
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">Open guest page →</a>
+    </div>
+  </div>
+</body></html>`,
+        });
+        testEmailStatus = 'success';
+        console.log(`[Widget Reserve] Confirmation email sent to ${email} for ${resId}`);
+      } catch (emailErr: any) {
+        testEmailStatus = `failed: ${emailErr.message}`;
+        console.error('[Widget Reserve] Email failed:', emailErr.message);
       }
-      
-      // Test email logic has been removed for prod
-    } catch (err: any) {
-      testEmailStatus = `error: ${err.message}`;
-      console.error('[Widget Reserve] Failed to trigger confirmation/test email:', err.message);
     }
 
     // ── Bundle: pre-create service_orders for included services ──────────
