@@ -26,7 +26,7 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
     SELECT r.id, r.check_in, r.check_out, r.nights, r.adults, r.children,
            r.total_price, r.currency, r.guest_page_token, r.payment_status,
            g.first_name, g.last_name, g.email,
-           u.name as unit_name,
+           u.name as unit_name, u.thank_you_url,
            p.name as property_name, p.phone as property_phone
     FROM reservations r
     LEFT JOIN guests g ON r.guest_id = g.id
@@ -47,9 +47,15 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
 
   const guestName = `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Guest';
   const total = fmtPrice(row.total_price || 0, row.currency || 'CZK');
-  const guestPageUrl = row.guest_page_token && origin
-    ? `${origin}/guest/${row.guest_page_token}`
-    : null;
+  let guestPageUrl = null;
+  if (row.guest_page_token) {
+    if (row.thank_you_url) {
+      const sep = row.thank_you_url.includes('?') ? '&' : '?';
+      guestPageUrl = `${row.thank_you_url}${sep}guest_token=${row.guest_page_token}`;
+    } else if (origin) {
+      guestPageUrl = `${origin}/guest/${row.guest_page_token}`;
+    }
+  }
 
   const propertyName = row.property_name || 'ALiSiO';
   const propertyPhone = row.property_phone || '';

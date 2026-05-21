@@ -308,8 +308,10 @@ export async function createWidgetReservation(request: NextRequest) {
     let testEmailStatus = 'not_sent';
     try {
       const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
-      const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-      sendBookingConfirmationEmail(resId, origin).catch(() => {});
+      if (finalPrice === 0) {
+        const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+        sendBookingConfirmationEmail(resId, origin).catch(() => {});
+      }
       
       // Send a test message as requested
       if (email) {
