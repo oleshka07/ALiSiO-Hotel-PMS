@@ -63,10 +63,44 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [services, setServices] = useState<any[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
+  const [resolvedUtmParams, setResolvedUtmParams] = useState<Record<string, string>>({});
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
   const getOccupancyString = (u: any) => { const upTo = t.upTo || '\u0434\u043e'; if (u.maxChildren > 0) return `${upTo} ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`; return `${upTo} ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`; };
+
+  // ── postMessage UTM resolution for cross-origin iframes ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
+
+    // First, try reading from own URL (works when script-tag embedded or same-origin)
+    const ownParams = new URLSearchParams(window.location.search);
+    const ownUtm: Record<string, string> = {};
+    for (const key of UTM_KEYS) { const v = ownParams.get(key); if (v) ownUtm[key] = v; }
+    if (Object.keys(ownUtm).length > 0) {
+      setResolvedUtmParams(ownUtm);
+      return; // already have UTMs, no need for postMessage
+    }
+
+    // If inside an iframe, request UTMs from the parent via postMessage
+    if (window.parent !== window) {
+      const handleMessage = (e: MessageEvent) => {
+        if (e.data?.source === 'alisio-parent' && e.data?.event === 'utm_params') {
+          const utm: Record<string, string> = {};
+          for (const key of UTM_KEYS) { const v = e.data.utm?.[key]; if (v) utm[key] = v; }
+          setResolvedUtmParams(utm);
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+      window.addEventListener('message', handleMessage);
+      // Send the request to parent
+      window.parent.postMessage({ source: 'alisio-widget', event: 'request_utm' }, '*');
+      // Cleanup listener after 5s (parent may not have the script installed)
+      const cleanup = setTimeout(() => window.removeEventListener('message', handleMessage), 5000);
+      return () => { window.removeEventListener('message', handleMessage); clearTimeout(cleanup); };
+    }
+  }, []);
 
   useEffect(() => {
     setIsMounted(true);
@@ -211,21 +245,8 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r => setTimeout(r,1000)); setReservation({ success:true, reservationId:'MOCK-123', unitName:selectedUnit?.name||'Mock', checkIn, checkOut, nights, totalPrice:totalWithDiscount, currency:'Kc' }); setSubmitting(false); goToStep(4); return; }
     setSubmitting(true);
     try { 
-      // Capture UTM/tracking params from parent page (safe to read even from iframe)
-      const utmParams: Record<string, string> = (() => {
-        try {
-          const search = (window.top && window.top !== window)
-            ? window.top.location.search
-            : window.location.search;
-          const p = new URLSearchParams(search);
-          const result: Record<string, string> = {};
-          for (const key of ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid']) {
-            const v = p.get(key);
-            if (v) result[key] = v;
-          }
-          return result;
-        } catch { return {}; }
-      })();
+      // Use pre-resolved UTM params (captured via postMessage or own URL on mount)
+      const utmParams = resolvedUtmParams;
 
       const res = await fetch(`${API_BASE}/api/booking/reserve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ unitId:selectedUnitId, checkIn, checkOut, adults, children:kids, firstName, lastName, email, phone, siteId:siteId||undefined, couponCode:offerApplied?.code||undefined, extraCouponCode:extraCouponApplied?.code||undefined, currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', utmParams }) });
       if (res.ok) { 
