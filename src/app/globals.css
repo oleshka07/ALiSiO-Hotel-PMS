@@ -305,6 +305,41 @@ a:hover {
   font-size: 13px;
   font-weight: 500;
   transition: opacity var(--transition-base);
+  flex: 1;
+}
+
+.sidebar-draft-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  animation: sidebar-pulse 2s ease-in-out infinite;
+  line-height: 1;
+}
+
+@keyframes sidebar-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.5); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0); }
+}
+
+.sidebar.collapsed .sidebar-draft-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  margin-left: 0;
 }
 
 .sidebar-toggle {

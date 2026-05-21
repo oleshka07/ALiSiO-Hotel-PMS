@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import { getEurCzkRate } from '@/lib/hostex';
+import { getDb, generateGuestToken } from '@core/db';
 import {
   parseBookingComExcel,
   normalizeName,
@@ -213,7 +214,7 @@ function planRow(
 
   if (plannedUnits.length > 1) {
     const codes = plannedUnits.map((p) => p.unitName).join(', ');
-    warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться окремі резервації з тим самим Booking #.`);
+    warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться суб-бронювання (master + ${plannedUnits.length - 1} child).`);
   }
 
   // Highlight any unit that fell out of building F (the preferred resort
@@ -382,69 +383,98 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
             row.travelPurpose ? `Purpose: ${row.travelPurpose}` : '',
           ].filter(Boolean);
 
-          // Split price proportional to unit capacity. For a 367.21 EUR group
-          // booking across 3-3-4 capacity rooms: 110.16 / 110.16 / 146.89.
-          // Adults per room = the room's capacity, so per-unit reports stay
-          // sensible (no zeroes). Children all go on the first room.
-          const totalCapacity = plan.plannedUnits.reduce((s, u) => s + u.capacity, 0);
-
           // Currency handling mirrors Hostex sync: Booking sells in EUR for our
           // listings, but the PMS reports in CZK by default. Convert once per
           // row using the daily ČNB rate, then store both:
           //   total_price = CZK converted, currency = 'CZK'
           //   total_rate_eur = original EUR (preserved for audit + investor metrics)
           const isEurRow = (row.currency || '').toUpperCase() === 'EUR';
+          const isMultiRoom = plan.plannedUnits.length > 1;
+
+          let masterResId: string | null = null;
 
           for (let i = 0; i < plan.plannedUnits.length; i++) {
             const unit = plan.plannedUnits[i];
             const isFirst = i === 0;
-            const shareNative = totalCapacity > 0
-              ? +(row.priceMajor * unit.capacity / totalCapacity).toFixed(2)
-              : +(row.priceMajor / plan.plannedUnits.length).toFixed(2);
-            const shareCommissionNative = totalCapacity > 0
-              ? +(row.commissionMajor * unit.capacity / totalCapacity).toFixed(2)
-              : +(row.commissionMajor / plan.plannedUnits.length).toFixed(2);
 
-            const totalPriceCzk = isEurRow ? +(shareNative * eurToCzk).toFixed(2) : shareNative;
-            const commissionCzk = isEurRow ? +(shareCommissionNative * eurToCzk).toFixed(2) : shareCommissionNative;
-            const totalRateEur = isEurRow ? shareNative : null;
-            const commissionEur = isEurRow ? shareCommissionNative : null;
-            const storedCurrency = isEurRow ? 'CZK' : (row.currency || 'CZK');
+            if (isFirst) {
+              // Master reservation: gets the FULL price
+              const totalPriceCzk = isEurRow ? +(row.priceMajor * eurToCzk).toFixed(2) : row.priceMajor;
+              const commissionCzk = isEurRow ? +(row.commissionMajor * eurToCzk).toFixed(2) : row.commissionMajor;
+              const totalRateEur = isEurRow ? row.priceMajor : null;
+              const commissionEur = isEurRow ? row.commissionMajor : null;
+              const storedCurrency = isEurRow ? 'CZK' : (row.currency || 'CZK');
 
-            const notes = [
-              ...baseNotes,
-              plan.plannedUnits.length > 1
-                ? `Кімната ${i + 1} з ${plan.plannedUnits.length} (${unit.unitName})`
-                : '',
-              plan.plannedUnits.length > 1
-                ? `Group total: ${row.priceMajor.toFixed(2)} ${row.currency}`
-                : '',
-              isEurRow
-                ? `Конвертовано з EUR за курсом ${eurToCzk.toFixed(3)} (ČNB)`
-                : '',
-            ].filter(Boolean).join('\n');
+              const notes = [
+                ...baseNotes,
+                isMultiRoom ? `Групове бронювання: ${plan.plannedUnits.length} кімнат` : '',
+                isEurRow ? `Конвертовано з EUR за курсом ${eurToCzk.toFixed(3)} (ČNB)` : '',
+              ].filter(Boolean).join('\n');
 
-            const resId = insertImportedReservation({
-              propertyId,
-              unitId: unit.unitId,
-              guestId,
-              checkIn: row.checkIn,
-              checkOut: row.checkOut,
-              nights: row.duration || 1,
-              adults: plan.plannedUnits.length === 1 ? row.adults : unit.capacity,
-              children: isFirst ? row.children : 0,
-              status: mode === 'draft' ? 'draft' : 'confirmed',
-              totalPrice: totalPriceCzk,
-              currency: storedCurrency,
-              bcomReservationId: row.bookNumber,
-              commissionAmount: isFirst ? commissionCzk : 0,
-              notes,
-              totalRateEur,
-              commissionEur: isFirst ? commissionEur : (totalRateEur != null ? 0 : null),
-            });
-            created++;
-            details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
-            claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+              masterResId = insertImportedReservation({
+                propertyId,
+                unitId: unit.unitId,
+                guestId,
+                checkIn: row.checkIn,
+                checkOut: row.checkOut,
+                nights: row.duration || 1,
+                adults: row.adults,
+                children: row.children,
+                totalPrice: totalPriceCzk,
+                currency: storedCurrency,
+                bcomReservationId: row.bookNumber,
+                commissionAmount: commissionCzk,
+                notes,
+                totalRateEur,
+                commissionEur,
+                status: mode === 'draft' ? 'draft' : 'confirmed',
+              });
+              created++;
+              details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: masterResId });
+              claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+            } else {
+              // Child reservation linked to master via parent_id
+              const db = getDb();
+              const childResId = `bcom_xls_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_c${i}`;
+              const childToken = generateGuestToken();
+
+              db.prepare(`
+                INSERT INTO reservations (
+                  id, property_id, unit_id, guest_id, parent_id,
+                  check_in, check_out, nights, adults, children,
+                  status, payment_status, source, total_price, currency,
+                  external_uid, bcom_reservation_id,
+                  commission_amount, notes, guest_page_token
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'booking_com', 0, ?, ?, ?, 0, ?, ?)
+              `).run(
+                childResId, propertyId, unit.unitId, guestId, masterResId,
+                row.checkIn, row.checkOut, row.duration || 1,
+                unit.capacity, 0,
+                mode === 'draft' ? 'draft' : 'confirmed',
+                row.currency || 'CZK',
+                row.bookNumber, row.bookNumber,
+                `Sub-booking: Кімната ${i + 1} з ${plan.plannedUnits.length} (${unit.unitName})\nBooking.com #${row.bookNumber}`,
+                childToken
+              );
+
+              // Create sub-booking link
+              const subId = `sub_bcom_${Date.now()}_${i}`;
+              db.prepare(`
+                INSERT INTO reservation_sub_bookings (
+                  id, reservation_id, child_reservation_id, label,
+                  adults, children, infants, subtotal, notes, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+              `).run(
+                subId, masterResId, childResId,
+                `Кімната ${i + 1} (${unit.unitName})`,
+                unit.capacity, 0,
+                `Booking.com #${row.bookNumber}`, i
+              );
+
+              created++;
+              details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: childResId });
+              claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+            }
           }
         } else if (plan.action === 'cancel' && plan.existing) {
           cancelReservation(plan.existing.id);
