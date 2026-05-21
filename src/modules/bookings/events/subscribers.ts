@@ -23,11 +23,12 @@ export function registerBookingsSubscribers() {
       `).get(payload.paymentId, payload.paymentId, payload.paymentId) as { id: string } | undefined;
 
       if (row?.id) {
-        // Run asynchronously, don't await so we don't block the event bus longer than necessary
-        // In a real production setup, we'd enqueue this in a background job system (like BullMQ/Redis)
-        sendBookingConfirmationEmail(row.id).catch(e => {
-          console.error(`[Bookings Subscriber] Failed to send email for res ${row.id}:`, e);
-        });
+        // We must await it in serverless environments (Vercel) so the lambda doesn't freeze
+        try {
+          await sendBookingConfirmationEmail(row.id);
+        } catch (e: any) {
+          console.error(`[Bookings Subscriber] Failed to send email for res ${row.id}:`, e.message);
+        }
       } else {
         console.warn(`[Bookings Subscriber] Could not find reservation for payment ${payload.paymentId}`);
       }

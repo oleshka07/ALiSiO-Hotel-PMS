@@ -93,11 +93,12 @@ export async function handlePaymentReturn(req: Request) {
             }
           } catch (e: any) { console.error('[Payment Return] Booking TG notify error:', e.message); }
 
-          // Confirmation email to guest. Non-blocking — failure must not
-          // prevent the redirect back to /book.
-          sendBookingConfirmationEmail(reservationId, url.origin).catch((e) => {
+          // We MUST await the email sending in serverless environments, otherwise the lambda will die before it finishes.
+          try {
+            await sendBookingConfirmationEmail(reservationId, url.origin);
+          } catch (e: any) {
             console.error('[Payment Return] Email send error:', e?.message);
-          });
+          }
         }
       }
 
