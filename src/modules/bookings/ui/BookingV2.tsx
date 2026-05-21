@@ -553,6 +553,28 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <label className="v3-field-label">{t.phone}</label>
             <input className="v3-field-input" type="tel" placeholder="+420..." value={phone} onChange={e => setPhone(e.target.value)} />
           </div>
+
+          {/* Guest page & GDPR notice */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(46,107,79,0.06) 0%, rgba(46,107,79,0.02) 100%)',
+            border: '1px solid rgba(46,107,79,0.18)',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            marginTop: '4px',
+          }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '8px' }}>
+              <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '1px', flexShrink: 0 }}>📩</span>
+              <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.5', color: 'var(--v3-text-sub, #555)' }}>
+                {t.guestPageNotice}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', paddingTop: '8px', borderTop: '1px solid rgba(46,107,79,0.12)' }}>
+              <span style={{ fontSize: '14px', lineHeight: 1, marginTop: '1px', flexShrink: 0 }}>🔒</span>
+              <p style={{ margin: 0, fontSize: '11px', lineHeight: '1.4', color: 'var(--v3-text-muted, #888)' }}>
+                {t.gdprNote}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* STEP 4: SERVICES */}

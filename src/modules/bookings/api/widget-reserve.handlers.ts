@@ -41,7 +41,20 @@ export async function createWidgetReservation(request: NextRequest) {
       couponCode, certificateCode, extraCouponCode,
       siteId,
       currency: clientCurrency,
+      utmParams: rawUtmParams,
     } = body;
+
+    // Validate & sanitise UTM params — allowlist keys, cap value length
+    const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
+    const utmParams: Record<string, string> = {};
+    if (rawUtmParams && typeof rawUtmParams === 'object') {
+      for (const key of ALLOWED_UTM_KEYS) {
+        const val = (rawUtmParams as any)[key];
+        if (typeof val === 'string' && val.length > 0 && val.length <= 300) {
+          utmParams[key] = val;
+        }
+      }
+    }
 
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
       return NextResponse.json({
@@ -325,7 +338,22 @@ export async function createWidgetReservation(request: NextRequest) {
         `).get(unitId) as any;
         const propertyName = propertyInfo?.name || 'ALiSiO';
         const unitName = propertyInfo?.unit_name || '';
+
+        // ── Build primary CTA URL ─────────────────────────────────────
+        // Priority: thank_you_url (from site_listings) > guest portal
+        // Append guest_token + UTM params to thank-you URL for FB Pixel tracking
         const guestPortalUrl = `${origin}/guest/${guestPageToken}`;
+        let primaryUrl: string;
+        if (thankYouUrl) {
+          const sep = thankYouUrl.includes('?') ? '&' : '?';
+          const utmString = Object.entries(utmParams)
+            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+            .join('&');
+          primaryUrl = `${thankYouUrl}${sep}guest_token=${guestPageToken}${utmString ? '&' + utmString : ''}`;
+        } else {
+          primaryUrl = guestPortalUrl;
+        }
+
         await sendEmail({
           to: email,
           subject: `Booking received — ${propertyName}`,
@@ -347,9 +375,14 @@ export async function createWidgetReservation(request: NextRequest) {
       <tr><td style="padding:8px 0;color:#666;">Nights</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
       <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
     </table>
-    <div style="margin-top:24px;text-align:center;">
-      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">Open guest page →</a>
+    <div style="margin-top:28px;text-align:center;">
+      <a href="${primaryUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">View my booking →</a>
     </div>
+    ${thankYouUrl ? `
+    <div style="margin-top:16px;text-align:center;border-top:1px solid #eee;padding-top:16px;">
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#fff;color:#2E6B4F;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;border:1.5px solid #2E6B4F;">🏡 Open guest page</a>
+      <p style="font-size:11px;color:#999;margin:8px 0 0;">Available after payment confirmation</p>
+    </div>` : ''}
   </div>
 </body></html>`,
         });
