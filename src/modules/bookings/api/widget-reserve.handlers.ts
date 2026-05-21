@@ -305,12 +305,34 @@ export async function createWidgetReservation(request: NextRequest) {
       source: siteName
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
+    let testEmailStatus = 'not_sent';
     try {
       const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
       const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
       sendBookingConfirmationEmail(resId, origin).catch(() => {});
+      
+      // Send a test message as requested
+      if (email) {
+        try {
+          const { sendEmail } = await import('@/lib/email');
+          await sendEmail({
+            to: email,
+            subject: 'Тестове повідомлення ALiSiO',
+            html: `<div style="font-family:sans-serif;padding:20px;">
+              <h2>Привіт, ${firstName}!</h2>
+              <p>Це тестове повідомлення для перевірки роботи імейлів з віджета бронювання.</p>
+              <p>Бронювання: #${resId}</p>
+            </div>`
+          });
+          testEmailStatus = 'success';
+        } catch (emailErr: any) {
+          testEmailStatus = `failed: ${emailErr.message}`;
+          console.error('[Widget Reserve] Test email failed:', emailErr.message);
+        }
+      }
     } catch (err: any) {
-      console.error('[Widget Reserve] Failed to trigger confirmation email:', err.message);
+      testEmailStatus = `error: ${err.message}`;
+      console.error('[Widget Reserve] Failed to trigger confirmation/test email:', err.message);
     }
 
     // ── Bundle: pre-create service_orders for included services ──────────
@@ -358,6 +380,7 @@ export async function createWidgetReservation(request: NextRequest) {
       certificateDiscount,
       currency: resCurrency,
       thankYouUrl,
+      testEmailStatus,
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
     const msg = error?.message || String(error);

@@ -215,6 +215,20 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         const data = await res.json(); 
         setReservation(data); 
         
+        if (data.testEmailStatus) {
+          console.log('[ALiSiO Widget] Test email status:', data.testEmailStatus);
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage({ 
+                source: 'alisio-widget', 
+                event: 'test_email_status', 
+                status: data.testEmailStatus, 
+                reservationId: data.reservationId 
+              }, '*');
+            }
+          } catch(e) { console.error('Failed to postMessage:', e); }
+        }
+        
         if (data.totalPrice === 0 && data.thankYouUrl) {
           try {
             if (window.top) window.top.location.href = data.thankYouUrl;
