@@ -277,11 +277,12 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       const data = await res.json();
       if (data.session_url) {
         try {
-          if (window.top) {
-            window.top.location.href = data.session_url;
-          } else {
-            window.location.href = data.session_url;
-          }
+          // Use an anchor tag click to force top navigation, which works around iOS/Iframe limitations
+          const a = document.createElement('a');
+          a.href = data.session_url;
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
         } catch {
           window.location.href = data.session_url;
         }
