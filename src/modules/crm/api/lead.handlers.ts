@@ -148,7 +148,22 @@ export async function deleteLead(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    db.prepare('DELETE FROM crm_leads WHERE id = ?').run(id);
+    db.transaction(() => {
+      // Delete messages belonging to conversations of this lead
+      db.prepare(`
+        DELETE FROM crm_messages 
+        WHERE conversation_id IN (SELECT id FROM crm_conversations WHERE lead_id = ?)
+      `).run(id);
+      
+      // Delete conversations
+      db.prepare('DELETE FROM crm_conversations WHERE lead_id = ?').run(id);
+      
+      // Delete stage history
+      db.prepare('DELETE FROM crm_stage_history WHERE lead_id = ?').run(id);
+      
+      // Finally, delete the lead
+      db.prepare('DELETE FROM crm_leads WHERE id = ?').run(id);
+    })();
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     console.error('[CRM Lead DELETE]', error);
