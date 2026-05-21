@@ -102,7 +102,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
             sessionId: refs.sessionId,
             provider: 'teya',
             intentKind,
-            paymentId: refs.sessionId,
+            paymentId: refs.transactionId || refs.sessionId,
             amount: refs.amount > 1000 ? refs.amount / 100 : refs.amount,
             currency: refs.currency,
           })

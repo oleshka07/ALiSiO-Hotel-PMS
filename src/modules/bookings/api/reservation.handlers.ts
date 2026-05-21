@@ -240,7 +240,33 @@ export async function deleteReservation(_request: NextRequest, { params }: { par
     const db = getDb();
     const { id } = await params;
 
-    db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
+    db.transaction(() => {
+      // 1. Unlink from CRM leads
+      db.prepare('UPDATE crm_leads SET reservation_id = NULL WHERE reservation_id = ?').run(id);
+
+      // 2. Delete related cart events and activity logs
+      db.prepare('DELETE FROM cart_events WHERE reservation_id = ?').run(id);
+      db.prepare('DELETE FROM booking_activity_log WHERE reservation_id = ?').run(id);
+
+      // 3. Delete service orders
+      db.prepare('DELETE FROM service_orders WHERE reservation_id = ?').run(id);
+      db.prepare('DELETE FROM booking_service_orders WHERE reservation_id = ?').run(id);
+
+      // 4. Delete sub-booking structures (bundles)
+      db.prepare(`
+        DELETE FROM reservation_line_items 
+        WHERE sub_booking_id IN (SELECT id FROM reservation_sub_bookings WHERE reservation_id = ?)
+      `).run(id);
+      db.prepare('DELETE FROM reservation_sub_bookings WHERE reservation_id = ? OR child_reservation_id = ?').run(id, id);
+
+      // 5. Delete child reservations (if any multi-room logic was used)
+      // Since children might also have logs/service_orders, technically we should do this recursively,
+      // but for ALiSiO, children are usually lightweight placeholders.
+      db.prepare('DELETE FROM reservations WHERE parent_id = ?').run(id);
+
+      // 6. Finally delete the main reservation
+      db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
+    })();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

@@ -277,8 +277,11 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       const data = await res.json();
       if (data.session_url) {
         try {
-          window.open(data.session_url, '_blank');
-          goToStep(6);
+          if (window.top) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
         } catch {
           window.location.href = data.session_url;
         }
