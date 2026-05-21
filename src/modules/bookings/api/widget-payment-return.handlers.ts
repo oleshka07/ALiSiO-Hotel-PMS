@@ -55,30 +55,27 @@ export async function handlePaymentReturn(req: Request) {
         // No fin_operation is created here — Teya widget money sits on the
         // Teya merchant account and lands in the ledger only when the bank
         // statement arrives. TG notify the operator for visibility.
+        // Always update service orders — idempotent on already-paid rows
+        try {
+          db.prepare(`
+            UPDATE service_orders SET payment_status = 'paid', status = 'confirmed'
+            WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
+          `).run(reservationId);
+        } catch { /* table may not exist */ }
+        try {
+          db.prepare(`
+            UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed'
+            WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
+          `).run(reservationId);
+        } catch { /* table may not exist */ }
+
+        // Mark the booking_draft as paid so the log table stays in sync
+        try {
+          db.prepare(`UPDATE booking_drafts SET status = 'paid' WHERE reservation_id = ?`).run(reservationId);
+        } catch { /* table may not exist */ }
+
+        // TG notification (only when this handler actually changed the status)
         if (resResult.changes > 0) {
-          // Extras (service_orders / booking_service_orders) attached to the
-          // reservation never receive a payment_id from the widget flow, so
-          // mark them paid via reservation_id. Idempotent — re-running this
-          // on already-paid orders is a no-op.
-          try {
-            db.prepare(`
-              UPDATE service_orders SET payment_status = 'paid', status = 'confirmed'
-              WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
-            `).run(reservationId);
-          } catch { /* table may not exist */ }
-          try {
-            db.prepare(`
-              UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed'
-              WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
-            `).run(reservationId);
-          } catch { /* table may not exist */ }
-
-          // Mark the booking_draft as paid so the log table stays in sync
-          // with the actual reservation state. Used by widget polling.
-          try {
-            db.prepare(`UPDATE booking_drafts SET status = 'paid' WHERE reservation_id = ?`).run(reservationId);
-          } catch { /* table may not exist */ }
-
           try {
             const res = db.prepare('SELECT total_price, currency, unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
             if (res) {
@@ -92,13 +89,17 @@ export async function handlePaymentReturn(req: Request) {
               ].join('\n')).catch(() => {});
             }
           } catch (e: any) { console.error('[Payment Return] Booking TG notify error:', e.message); }
+        }
 
-          // We MUST await the email sending in serverless environments, otherwise the lambda will die before it finishes.
-          try {
-            await sendBookingConfirmationEmail(reservationId, url.origin);
-          } catch (e: any) {
-            console.error('[Payment Return] Email send error:', e?.message);
-          }
+        // Confirmation email — send unconditionally when reservationId is present.
+        // This handles the race condition where Teya webhook updates payment_status
+        // BEFORE this redirect fires, causing resResult.changes = 0 and the email
+        // being silently dropped. We await it so the lambda stays alive until sent.
+        console.log(`[Payment Return] Sending confirmation email for reservation ${reservationId}`);
+        try {
+          await sendBookingConfirmationEmail(reservationId, url.origin);
+        } catch (e: any) {
+          console.error('[Payment Return] Email send error:', e?.message);
         }
       }
 
