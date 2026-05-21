@@ -313,25 +313,7 @@ export async function createWidgetReservation(request: NextRequest) {
         sendBookingConfirmationEmail(resId, origin).catch(() => {});
       }
       
-      // Send a test message as requested
-      if (email) {
-        try {
-          const { sendEmail } = await import('@/lib/email');
-          await sendEmail({
-            to: email,
-            subject: 'Тестове повідомлення ALiSiO',
-            html: `<div style="font-family:sans-serif;padding:20px;">
-              <h2>Привіт, ${firstName}!</h2>
-              <p>Це тестове повідомлення для перевірки роботи імейлів з віджета бронювання.</p>
-              <p>Бронювання: #${resId}</p>
-            </div>`
-          });
-          testEmailStatus = 'success';
-        } catch (emailErr: any) {
-          testEmailStatus = `failed: ${emailErr.message}`;
-          console.error('[Widget Reserve] Test email failed:', emailErr.message);
-        }
-      }
+      // Test email logic has been removed for prod
     } catch (err: any) {
       testEmailStatus = `error: ${err.message}`;
       console.error('[Widget Reserve] Failed to trigger confirmation/test email:', err.message);
