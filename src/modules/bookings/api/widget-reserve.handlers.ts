@@ -285,14 +285,22 @@ export async function createWidgetReservation(request: NextRequest) {
     const resId = `r_${Date.now()}`;
     const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
     const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
+    // Generate a unique guest_page_token — retries on collision (UNIQUE index exists)
+    let guestPageToken = Math.random().toString(36).slice(2, 14);
+    for (let i = 0; i < 5; i++) {
+      const existing = db.prepare('SELECT 1 FROM reservations WHERE guest_page_token = ?').get(guestPageToken);
+      if (!existing) break;
+      guestPageToken = Math.random().toString(36).slice(2, 14);
+    }
 
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied, guest_page_token)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
+      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
+      guestPageToken
     );
 
     // --- Emit event for CRM and other modules ---
@@ -317,7 +325,7 @@ export async function createWidgetReservation(request: NextRequest) {
         `).get(unitId) as any;
         const propertyName = propertyInfo?.name || 'ALiSiO';
         const unitName = propertyInfo?.unit_name || '';
-        const guestPortalUrl = `${origin}/guest/${resId}`;
+        const guestPortalUrl = `${origin}/guest/${guestPageToken}`;
         await sendEmail({
           to: email,
           subject: `Booking received — ${propertyName}`,
