@@ -9,6 +9,13 @@
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const ADMIN_CHAT_IDS: string[] = (process.env.TELEGRAM_ADMIN_CHAT_IDS || '')
+  .split(',')
+  .map(id => id.trim())
+  .filter(id => id.length > 0 && id !== CHAT_ID);
+
+/** Map draftId → array of { chatId, messageId } for admin copies */
+const adminMessageMap = new Map<string, { chatId: string; messageId: number }[]>();
 
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -30,9 +37,28 @@ export async function sendTelegramMessage(
     return null;
   }
 
+  // Send to primary CHAT_ID
+  const primaryMsgId = await sendToChat(CHAT_ID, text, inlineKeyboard);
+
+  // Send copies to admin chats (fire-and-forget, don't block on errors)
+  for (const adminId of ADMIN_CHAT_IDS) {
+    sendToChat(adminId, text, inlineKeyboard).catch(err =>
+      console.error(`[Telegram] Admin send to ${adminId} failed:`, err.message)
+    );
+  }
+
+  return primaryMsgId;
+}
+
+/** Low-level: send a message to a specific chat ID */
+async function sendToChat(
+  chatId: string,
+  text: string,
+  inlineKeyboard?: { text: string; callback_data: string }[][]
+): Promise<number | null> {
   try {
     const body: any = {
-      chat_id: CHAT_ID,
+      chat_id: chatId,
       text,
       parse_mode: 'HTML',
     };
@@ -48,12 +74,12 @@ export async function sendTelegramMessage(
 
     const data: TelegramResult = await res.json();
     if (!data.ok) {
-      console.error('[Telegram] sendMessage failed:', data.description);
+      console.error(`[Telegram] sendMessage to ${chatId} failed:`, data.description);
       return null;
     }
     return data.result?.message_id || null;
   } catch (err: any) {
-    console.error('[Telegram] sendMessage error:', err.message);
+    console.error(`[Telegram] sendMessage to ${chatId} error:`, err.message);
     return null;
   }
 }
@@ -64,13 +90,37 @@ export async function sendTelegramMessage(
 export async function editTelegramMessage(
   messageId: number,
   text: string,
-  inlineKeyboard?: { text: string; callback_data: string }[][]
+  inlineKeyboard?: { text: string; callback_data: string }[][],
+  draftId?: string
 ): Promise<boolean> {
   if (!BOT_TOKEN || !CHAT_ID) return false;
 
+  // Edit primary message
+  const ok = await editInChat(CHAT_ID, messageId, text, inlineKeyboard);
+
+  // Edit admin copies if we have them
+  if (draftId) {
+    const adminCopies = adminMessageMap.get(draftId) || [];
+    for (const copy of adminCopies) {
+      editInChat(copy.chatId, copy.messageId, text, inlineKeyboard).catch(err =>
+        console.error(`[Telegram] Admin edit in ${copy.chatId} failed:`, err.message)
+      );
+    }
+  }
+
+  return ok;
+}
+
+/** Low-level: edit a message in a specific chat */
+async function editInChat(
+  chatId: string,
+  messageId: number,
+  text: string,
+  inlineKeyboard?: { text: string; callback_data: string }[][]
+): Promise<boolean> {
   try {
     const body: any = {
-      chat_id: CHAT_ID,
+      chat_id: chatId,
       message_id: messageId,
       text,
       parse_mode: 'HTML',
@@ -87,12 +137,12 @@ export async function editTelegramMessage(
 
     const data: TelegramResult = await res.json();
     if (!data.ok) {
-      console.error('[Telegram] editMessage failed:', data.description);
+      console.error(`[Telegram] editMessage in ${chatId} failed:`, data.description);
       return false;
     }
     return true;
   } catch (err: any) {
-    console.error('[Telegram] editMessage error:', err.message);
+    console.error(`[Telegram] editMessage in ${chatId} error:`, err.message);
     return false;
   }
 }
@@ -157,7 +207,26 @@ export async function sendDraftApproval(opts: {
     ],
   ];
 
-  return sendTelegramMessage(text, keyboard);
+  // Send to primary chat
+  const primaryMsgId = await sendToChat(CHAT_ID, text, keyboard);
+
+  // Send to admin chats and track message IDs for later editing
+  const adminCopies: { chatId: string; messageId: number }[] = [];
+  for (const adminId of ADMIN_CHAT_IDS) {
+    try {
+      const adminMsgId = await sendToChat(adminId, text, keyboard);
+      if (adminMsgId) {
+        adminCopies.push({ chatId: adminId, messageId: adminMsgId });
+      }
+    } catch (err: any) {
+      console.error(`[Telegram] Admin draft send to ${adminId} failed:`, err.message);
+    }
+  }
+  if (adminCopies.length > 0) {
+    adminMessageMap.set(opts.draftId, adminCopies);
+  }
+
+  return primaryMsgId;
 }
 
 /* ────────────────────────────────────────────────────────

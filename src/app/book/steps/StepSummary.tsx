@@ -15,6 +15,7 @@ interface Props {
   priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
   onPayOnline: (contact: { name: string; email: string; phone: string }) => void;
   onPayAdmin: (contact: { name: string; email: string; phone: string }) => void;
+  onPayTerminal: (contact: { name: string; email: string; phone: string }) => void;
   onShowQr: (contact: { name: string; email: string; phone: string }) => Promise<{ url: string; reservationId: string } | null>;
   onQrPaid: (reservationId: string) => void;
   submitting: boolean;
@@ -22,7 +23,7 @@ interface Props {
 
 export default function StepSummary({
   accommodationLabel, checkIn, checkOut, nights, guests,
-  total, extras, priceBreakdown, onPayOnline, onPayAdmin, onShowQr, onQrPaid, submitting,
+  total, extras, priceBreakdown, onPayOnline, onPayAdmin, onPayTerminal, onShowQr, onQrPaid, submitting,
 }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -118,7 +119,12 @@ export default function StepSummary({
         </button>
         <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
           onClick={() => onPayAdmin({ name, email, phone })} type="button">
-          🏢 Pay via administrator
+          🏢 Pay via administrator (cash)
+        </button>
+        <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
+          onClick={() => onPayTerminal({ name, email, phone })} type="button"
+          style={{ borderColor: '#3b82f6', color: '#1d4ed8' }}>
+          💳 Pay by terminal (card)
         </button>
       </div>
 

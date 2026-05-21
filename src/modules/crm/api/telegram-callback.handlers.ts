@@ -75,7 +75,7 @@ async function handleTranslate(db: any, draft: any, callbackQueryId?: string) {
       ],
     ];
 
-    await editTelegramMessage(draft.telegram_message_id, text, keyboard);
+    await editTelegramMessage(draft.telegram_message_id, text, keyboard, draft.id);
   }
 
   return NextResponse.json({ ok: true, translated: translated.substring(0, 100) });
@@ -106,7 +106,7 @@ async function handleEdit(db: any, draft: any, callbackQueryId?: string) {
       ],
     ];
 
-    await editTelegramMessage(draft.telegram_message_id, text, keyboard);
+    await editTelegramMessage(draft.telegram_message_id, text, keyboard, draft.id);
   }
 
   return NextResponse.json({ ok: true, editing: true, draftId: draft.id });
@@ -165,7 +165,7 @@ async function handleApplyCorrection(db: any, draft: any, correctionText?: strin
       ],
     ];
 
-    await editTelegramMessage(draft.telegram_message_id, text, keyboard);
+    await editTelegramMessage(draft.telegram_message_id, text, keyboard, draft.id);
   }
 
   return NextResponse.json({ ok: true, regenerated: true });
@@ -218,7 +218,7 @@ async function handleApprove(db: any, draft: any, callbackQueryId?: string, useT
       .run(draft.id);
     if (draft.telegram_message_id) {
       await editTelegramMessage(draft.telegram_message_id,
-        `❌ <b>Помилка відправки!</b>\n${escapeHtml(draft.reply_to_email)}\nСпробуйте через Inbox.`, []);
+        `❌ <b>Помилка відправки!</b>\n${escapeHtml(draft.reply_to_email)}\nСпробуйте через Inbox.`, [], draft.id);
     }
     return NextResponse.json({ error: 'Send failed' }, { status: 500 });
   }
@@ -263,7 +263,7 @@ async function handleApprove(db: any, draft: any, callbackQueryId?: string, useT
 
   if (draft.telegram_message_id) {
     await editTelegramMessage(draft.telegram_message_id,
-      `✅ <b>Відправлено!</b>\n📤 → ${escapeHtml(draft.reply_to_email)}\n📋 ${escapeHtml(draft.reply_subject || '')}\n\n${escapeHtml(content.substring(0, 200))}...`, []);
+      `✅ <b>Відправлено!</b>\n📤 → ${escapeHtml(draft.reply_to_email)}\n📋 ${escapeHtml(draft.reply_subject || '')}\n\n${escapeHtml(content.substring(0, 200))}...`, [], draft.id);
   }
 
   try {
@@ -286,7 +286,7 @@ async function handleReject(db: any, draft: any, callbackQueryId?: string) {
 
   if (draft.telegram_message_id) {
     await editTelegramMessage(draft.telegram_message_id,
-      `❌ <b>Відхилено</b>\n📧 ${escapeHtml(draft.reply_to_email)}\n📋 ${escapeHtml(draft.reply_subject || '')}\n\n<s>${escapeHtml(draft.draft_content_uk.substring(0, 100))}...</s>`, []);
+      `❌ <b>Відхилено</b>\n📧 ${escapeHtml(draft.reply_to_email)}\n📋 ${escapeHtml(draft.reply_subject || '')}\n\n<s>${escapeHtml(draft.draft_content_uk.substring(0, 100))}...</s>`, [], draft.id);
   }
 
   return NextResponse.json({ ok: true, rejected: true });

@@ -229,11 +229,22 @@ const ADMIN_PINS: Record<string, string> = {
   '0912': 'Антон',
 };
 
+// PIN → finance cash account name mapping.
+// When an admin confirms cash payment via PIN, the fin_operation is routed
+// to their personal cash account (not the first one by sort_order).
+const PIN_TO_ACCOUNT_NAME: Record<string, string> = {
+  '1315': 'Андрів cash',
+  '2099': 'Каса Кемпінг і проживання',
+  '0309': 'Олег наличные',
+  '0912': 'Антон Готівка',
+};
+
 export async function updateBookingDraft(req: Request) {
   try {
     const body = await req.json();
     const db = getDb();
-    const { id, status, reservation_id: directResId, admin_pin } = body;
+    const { id, status, reservation_id: directResId, admin_pin, payment_method } = body;
+    const isTerminal = payment_method === 'terminal';
     if (!id && !directResId) return NextResponse.json({ error: 'Missing id or reservation_id' }, { status: 400, headers: CORS_HEADERS });
 
     // ─── PIN validation (required for status = 'paid') ────────────────────
@@ -263,7 +274,9 @@ export async function updateBookingDraft(req: Request) {
     // ─── Confirm payment ───────────────────────────────────────────────────
     if (status === 'paid' && rid) {
       const now = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Prague' });
-      const note = `✅ Оплату прийняв: ${adminName} · ${now}`;
+      const note = isTerminal
+        ? `💳 Оплата терміналом, прийняв: ${adminName} · ${now}`
+        : `✅ Готівку прийняв: ${adminName} · ${now}`;
 
       // Guard: only update if not already paid. Lets us detect first-time
       // confirmation and avoid double-sending confirmation emails on a
@@ -283,8 +296,53 @@ export async function updateBookingDraft(req: Request) {
       try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
       try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
 
-      // Fire confirmation email on first payment only.
+      // First-time confirmation: create fin_operation + send email.
       if (confirmResult.changes > 0) {
+        // ─── Create fin_operation routed to admin's cash account ──────────
+        try {
+          const { createPaymentOperation, hasPaymentOperation } = await import('../../finance/api/payment-bridge');
+          const pinStr = String(admin_pin).trim();
+          // Prevent double-creation if widget retries
+          if (!hasPaymentOperation(rid, 'booking_widget', `pin_${rid}`)) {
+            const reservation = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(rid) as any;
+            const amount = reservation?.total_price || 0;
+            const currency = reservation?.currency || 'CZK';
+
+            // Resolve admin's cash account by name from PIN mapping
+            let accountId: string | undefined;
+            const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
+            if (wantedName) {
+              const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
+              if (orgRow?.organization_id) {
+                const acct = db.prepare(
+                  "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
+                ).get(orgRow.organization_id, wantedName) as any;
+                accountId = acct?.id;
+                if (!accountId) console.warn(`[AdminConfirm] Account "${wantedName}" not found for PIN ${pinStr.substring(0,2)}**`);
+              }
+            }
+
+            if (amount > 0) {
+              const methodLabel = isTerminal ? 'Термінал' : 'Готівка';
+              createPaymentOperation({
+                reservationId: rid,
+                amount,
+                currency,
+                method: isTerminal ? 'card' : 'cash',
+                paymentSubtype: 'full',
+                source: 'booking_widget',
+                sourceRef: `pin_${rid}`,
+                accountId,
+                comment: `${methodLabel} · ${adminName}`,
+              });
+              console.log(`[AdminConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
+            }
+          }
+        } catch (e: any) {
+          console.error('[AdminConfirm] fin_operation creation error (non-fatal):', e.message);
+        }
+
+        // Fire confirmation email
         const origin = (() => {
           try {
             const proto = req.headers.get('x-forwarded-proto') || 'https';
@@ -301,13 +359,15 @@ export async function updateBookingDraft(req: Request) {
       try {
         const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
         const orgId = orgRow?.organization_id || 'org_alisio_001';
+        const auditAction = isTerminal ? 'terminal_payment_confirmed' : 'cash_payment_confirmed';
         db.prepare(`
           INSERT INTO audit_log (organization_id, action, entity_type, entity_id, new_values, created_at)
-          VALUES (?, 'payment_confirmed', 'reservation', ?, ?, datetime('now'))
-        `).run(orgId, rid, JSON.stringify({ confirmed_by: adminName, reservation_id: rid, status: 'paid' }));
+          VALUES (?, ?, 'reservation', ?, ?, datetime('now'))
+        `).run(orgId, auditAction, rid, JSON.stringify({ confirmed_by: adminName, reservation_id: rid, status: 'paid', payment_method: payment_method || 'cash' }));
       } catch { /* audit_log might not exist */ }
 
-      console.log(`[AdminConfirm] Reservation ${rid} confirmed by ${adminName}`);
+      const logPrefix = isTerminal ? '[TerminalConfirm]' : '[CashConfirm]';
+      console.log(`${logPrefix} Reservation ${rid} confirmed by ${adminName}`);
     }
 
     // ─── Update draft status ───────────────────────────────────────────────

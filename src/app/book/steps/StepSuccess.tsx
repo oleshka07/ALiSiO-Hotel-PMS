@@ -31,7 +31,7 @@ async function resizeImageDataUrl(dataUrl: string, maxDim = 1600, quality = 0.85
 }
 
 interface Props {
-  status: 'success' | 'failed' | 'pending' | 'admin_pending';
+  status: 'success' | 'failed' | 'pending' | 'admin_pending' | 'terminal_pending';
   reservationId?: string;
   accommodationLabel: string;
   checkIn: string;
@@ -45,15 +45,20 @@ interface Props {
   qrCodeUrl?: string;
   onReset: () => void;
   onAdminConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
+  onTerminalConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
 }
 
 // ─── Admin PIN Popup ──────────────────────────────────────────────────────────
 function AdminPinPopup({
   onConfirm,
   onClose,
+  title = 'Підтвердження оплати',
+  successPrefix = '\u2705 \u041e\u043f\u043b\u0430\u0442\u0443 \u043f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u043e',
 }: {
   onConfirm: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
   onClose: () => void;
+  title?: string;
+  successPrefix?: string;
 }) {
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -67,7 +72,7 @@ function AdminPinPopup({
     const result = await onConfirm(pin);
     setLoading(false);
     if (result.ok) {
-      setSuccess(`✅ Оплату підтверджено · ${result.adminName}`);
+      setSuccess(`${successPrefix} \u00b7 ${result.adminName}`);
       setTimeout(() => onClose(), 2200);
     } else {
       setError(result.error || 'Помилка');
@@ -102,7 +107,7 @@ function AdminPinPopup({
           <>
             <div style={{ fontSize: 32, marginBottom: 8 }}>🔐</div>
             <div style={{ fontSize: 17, fontWeight: 800, color: '#111', marginBottom: 4 }}>
-              Підтвердження оплати
+              {title}
             </div>
             <div style={{ fontSize: 13, color: '#666', marginBottom: 20 }}>
               Введіть PIN-код адміністратора
@@ -291,7 +296,7 @@ function GuestPageLink({ token }: { token: string }) {
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
   nights, total, adults = 1, guestEmail, guestPageToken, paymentUrl, qrCodeUrl,
-  onReset, onAdminConfirm,
+  onReset, onAdminConfirm, onTerminalConfirm,
 }: Props) {
   const hasEmail = !!(guestEmail && guestEmail.trim());
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
@@ -301,6 +306,7 @@ export default function StepSuccess({
   const [registeredNames, setRegisteredNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showPinPopup, setShowPinPopup] = useState(false);
+  const [showTerminalPinPopup, setShowTerminalPinPopup] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -416,6 +422,55 @@ export default function StepSuccess({
             💳 Open payment page →
           </a>
         )}
+      </div>
+    );
+  }
+
+  // ─── Terminal pending ───────────────────────────────
+  if (status === 'terminal_pending') {
+    return (
+      <div className="kc-fade-in kc-success">
+        {/* Terminal PIN popup */}
+        {showTerminalPinPopup && onTerminalConfirm && (
+          <AdminPinPopup
+            title="Оплата через термінал 💳"
+            successPrefix="💳 Термінал підтверджено"
+            onConfirm={onTerminalConfirm}
+            onClose={() => setShowTerminalPinPopup(false)}
+          />
+        )}
+
+        <div className="kc-success-icon" style={{ background: '#eff6ff', color: '#1d4ed8' }}>💳</div>
+        <h2>Terminal payment</h2>
+        <p>Please pay by card at the terminal. The administrator will confirm the transaction.</p>
+
+        <div className="kc-summary" style={{ textAlign: 'left', marginTop: 20 }}>
+          {reservationId && <div className="kc-summary-row"><span>Booking ID</span><strong>{reservationId}</strong></div>}
+          <div className="kc-summary-row"><span>Total to pay</span><strong style={{ color: '#1d4ed8' }}>{formatPrice(total)} Kč</strong></div>
+        </div>
+
+        {/* Guest page QR — can share with guest right away */}
+        {guestPageToken && <GuestPageLink token={guestPageToken} />}
+
+        {/* Terminal confirm — protected by PIN popup */}
+        {onTerminalConfirm && (
+          <button
+            className="kc-btn"
+            onClick={() => setShowTerminalPinPopup(true)}
+            type="button"
+            style={{
+              marginTop: 20,
+              background: '#1d4ed8', color: '#fff',
+              border: 'none', borderRadius: 14,
+              padding: '13px 20px', fontWeight: 700, fontSize: 15,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            💳 Адміністратор: Підтвердити оплату терміналом
+          </button>
+        )}
+
+        <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact administrator</a>
       </div>
     );
   }

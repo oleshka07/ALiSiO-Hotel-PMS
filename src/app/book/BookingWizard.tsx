@@ -61,7 +61,7 @@ export default function BookingWizard() {
     accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [],
   });
   const [submitting, setSubmitting] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending' | 'admin_pending'>('pending');
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending' | 'admin_pending' | 'terminal_pending'>('pending');
   const [reservationId, setReservationId] = useState<string | undefined>();
   const [guestPageToken, setGuestPageToken] = useState<string | undefined>();
   const [paymentUrl, setPaymentUrl] = useState<string | undefined>();
@@ -256,7 +256,7 @@ export default function BookingWizard() {
     checkoutCacheRef.current = null;
   }, []);
 
-  // ─── Pay via Administrator ────────────────────────
+  // ─── Pay via Administrator (cash) ────────────────────────────────
   const handlePayAdmin = async (contact: { name: string; email: string; phone: string }) => {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
@@ -282,13 +282,53 @@ export default function BookingWizard() {
     } finally { setSubmitting(false); }
   };
 
-  // ─── Admin Confirm ────────────────────────────────
+  // ─── Pay via Terminal (card) ──────────────────────────────────
+  const handlePayTerminal = async (contact: { name: string; email: string; phone: string }) => {
+    setSubmitting(true); setState(s => ({ ...s, contact }));
+    try {
+      let pmsResId: string;
+      let tok: string | undefined;
+      if (checkoutCacheRef.current) {
+        pmsResId = checkoutCacheRef.current.pmsResId;
+        tok = checkoutCacheRef.current.guestPageToken;
+      } else {
+        const { draft } = await createDraft(contact);
+        pmsResId = draft.reservation_id || draft.id;
+        tok = draft.guest_page_token;
+      }
+      setReservationId(pmsResId);
+      if (tok) setGuestPageToken(tok);
+      setPaymentStatus('terminal_pending'); setStep('success');
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch (err: unknown) {
+      console.error('[Booking]', err); setPaymentStatus('failed'); setStep('success');
+    } finally { setSubmitting(false); }
+  };
+
+  // ─── Admin Confirm (cash) ────────────────────────────────
   const handleAdminConfirm = async (pin: string): Promise<{ ok: boolean; adminName?: string; error?: string }> => {
     if (!reservationId) return { ok: false, error: 'No reservation' };
     try {
       const res = await fetch('/api/booking/drafts', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid', admin_pin: pin }),
+        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid', admin_pin: pin, payment_method: 'cash' }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Error' };
+      setPaymentStatus('success');
+      return { ok: true, adminName: data.admin_name };
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Network error' };
+    }
+  };
+
+  // ─── Terminal Confirm (card) ────────────────────────────────
+  const handleTerminalConfirm = async (pin: string): Promise<{ ok: boolean; adminName?: string; error?: string }> => {
+    if (!reservationId) return { ok: false, error: 'No reservation' };
+    try {
+      const res = await fetch('/api/booking/drafts', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid', admin_pin: pin, payment_method: 'terminal' }),
       });
       const data = await res.json();
       if (!res.ok) return { ok: false, error: data.error || 'Error' };
@@ -395,6 +435,7 @@ export default function BookingWizard() {
             total={state.total} extras={state.extras}
             priceBreakdown={state.priceBreakdown}
             onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
+            onPayTerminal={handlePayTerminal}
             onShowQr={handleShowQr}
             onQrPaid={handleQrPaid}
             submitting={submitting}
@@ -411,7 +452,9 @@ export default function BookingWizard() {
             guestEmail={state.contact?.email || null}
             guestPageToken={guestPageToken}
             paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
-            onReset={resetAll} onAdminConfirm={handleAdminConfirm}
+            onReset={resetAll}
+            onAdminConfirm={handleAdminConfirm}
+            onTerminalConfirm={handleTerminalConfirm}
           />
         )}
       </div>

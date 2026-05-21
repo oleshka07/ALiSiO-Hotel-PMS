@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createOperationInTx } from './operations.handlers';
 
-type BridgeEventType = 'sauna_income' | 'cash_expense';
+type BridgeEventType = 'sauna_income' | 'cash_expense' | 'income' | 'expense' | 'transfer';
 
 interface BridgeEvent {
   type: BridgeEventType;
@@ -29,6 +29,11 @@ interface BridgeEvent {
   category_id?: string | null;
   project_id?: string | null;
   account_id?: string | null; // override default account
+  account_from_id?: string | null; // for transfers
+  account_to_id?: string | null;   // for transfers
+  counterparty_id?: string | null;
+  method?: string | null;     // cash, card, bank_transfer
+  fx_rate?: number | null;    // exchange rate for EUR operations
   comment?: string | null;
   // Telegram metadata for dedup
   chat_id: number | string;
@@ -87,8 +92,8 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
     const body = await request.json() as BridgeEvent;
     const { type, amount, chat_id, message_id } = body;
 
-    if (!type || !['sauna_income', 'cash_expense'].includes(type)) {
-      return NextResponse.json({ error: 'type must be sauna_income or cash_expense' }, { status: 400 });
+    if (!type || !['sauna_income', 'cash_expense', 'income', 'expense', 'transfer'].includes(type)) {
+      return NextResponse.json({ error: 'type must be income, expense, transfer, sauna_income, or cash_expense' }, { status: 400 });
     }
     if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
       return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 });
@@ -100,9 +105,23 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
     const db = getDb();
     const orgId = getOrgId(db);
 
-    const sourceTag = type === 'sauna_income' ? 'telegram_sauna' : 'telegram_cash';
+    const sourceTagMap: Record<string, string> = {
+      sauna_income: 'telegram_sauna',
+      cash_expense: 'telegram_cash',
+      income: 'telegram_income',
+      expense: 'telegram_expense',
+      transfer: 'telegram_transfer',
+    };
+    const opTypeMap: Record<string, string> = {
+      sauna_income: 'income',
+      cash_expense: 'expense',
+      income: 'income',
+      expense: 'expense',
+      transfer: 'transfer',
+    };
+    const sourceTag = sourceTagMap[type] || 'telegram_cash';
     const sourceRef = `tg:${chat_id}:${message_id}`;
-    const opType = type === 'sauna_income' ? 'income' : 'expense';
+    const opType = opTypeMap[type] || 'expense';
     const currency = (body.currency || 'CZK').toUpperCase();
     const paidAt = body.paid_at || new Date().toISOString();
 
@@ -114,11 +133,25 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       return NextResponse.json({ operation_id: existing.id, was_new: false }, { status: 200 });
     }
 
-    const accountId = body.account_id || defaultCashAccountId(db, orgId, currency);
-    if (!accountId) {
-      return NextResponse.json({
-        error: `No active cash/bank account in ${currency} for this organization`,
-      }, { status: 400 });
+    // Resolve accounts — for transfers use explicit from/to, otherwise derive from op_type
+    let accountFromId: string | null = null;
+    let accountToId: string | null = null;
+
+    if (opType === 'transfer') {
+      accountFromId = body.account_from_id || null;
+      accountToId = body.account_to_id || null;
+      if (!accountFromId || !accountToId) {
+        return NextResponse.json({ error: 'transfer requires account_from_id and account_to_id' }, { status: 400 });
+      }
+    } else {
+      const accountId = body.account_id || defaultCashAccountId(db, orgId, currency);
+      if (!accountId) {
+        return NextResponse.json({
+          error: `No active cash/bank account in ${currency} for this organization`,
+        }, { status: 400 });
+      }
+      accountFromId = opType === 'expense' ? accountId : null;
+      accountToId = opType === 'income' ? accountId : null;
     }
 
     const commentParts: string[] = [];
@@ -126,19 +159,25 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
     if (body.recorded_by) commentParts.push(`(via ${body.recorded_by})`);
     const comment = commentParts.length > 0
       ? commentParts.join(' ')
-      : (type === 'sauna_income' ? 'Сауна (бот)' : 'Готівкова витрата (бот)');
+      : (opType === 'income' ? 'Дохід (бот)' : opType === 'expense' ? 'Витрата (бот)' : 'Переміщення (бот)');
+
+    const fxRate = body.fx_rate || (currency !== 'CZK' ? 24 : null);
+    const amountCompany = fxRate ? amount * fxRate : amount;
 
     const operationId = createOperationInTx(db, orgId, {
       op_type: opType,
-      account_from_id: opType === 'expense' ? accountId : null,
-      account_to_id:   opType === 'income'  ? accountId : null,
+      account_from_id: accountFromId,
+      account_to_id: accountToId,
       amount,
       currency,
+      fx_rate: fxRate,
+      amount_company: amountCompany,
       paid_at: paidAt,
       category_id: body.category_id || null,
       project_id: body.project_id || null,
+      counterparty_id: body.counterparty_id || null,
       comment,
-      method: 'cash',
+      method: body.method || 'cash',
       source: sourceTag,
       source_ref: sourceRef,
       status: 'completed',
@@ -169,7 +208,7 @@ export async function listTelegramOperations(request: NextRequest): Promise<Next
     const sourceFilter = sp.get('source');
     const limit = Math.min(200, parseInt(sp.get('limit') || '50', 10));
 
-    const where: string[] = ["source IN ('telegram_sauna', 'telegram_cash')"];
+    const where: string[] = ["source IN ('telegram_sauna', 'telegram_cash', 'telegram_income', 'telegram_expense', 'telegram_transfer')"];
     const params: any[] = [];
     if (sourceFilter) {
       where.push('source = ?');
@@ -227,7 +266,40 @@ export async function listTelegramCategories(request: NextRequest): Promise<Next
       ORDER BY sort_order, name
     `).all(orgId);
 
-    return NextResponse.json({ categories, projects });
+    const accounts = db.prepare(`
+      SELECT id, name, type, currency FROM finance_accounts
+      WHERE organization_id = ? AND is_active = 1
+      ORDER BY sort_order, name
+    `).all(orgId);
+
+    return NextResponse.json({ categories, projects, accounts });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/telegram-bridge/accounts
+ * Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>
+ *
+ * Returns active finance accounts for the bot to use in transfers.
+ */
+export async function listTelegramAccounts(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+
+    const accounts = db.prepare(`
+      SELECT id, name, type, currency, initial_balance
+      FROM finance_accounts
+      WHERE organization_id = ? AND is_active = 1
+      ORDER BY sort_order, name
+    `).all(orgId);
+
+    return NextResponse.json({ accounts });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
