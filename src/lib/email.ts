@@ -9,11 +9,13 @@ let transporter: any = null;
 
 function getTransporter() {
   if (transporter) return transporter;
-  const port = parseInt(process.env.EMAIL_CZ_SMTP_PORT || '587', 10);
+  let port = parseInt(process.env.EMAIL_CZ_SMTP_PORT || '587', 10);
+  if (port === 465) port = 587; // Force 587 for Seznam to avoid Vercel/Render drop
+  
   transporter = nodemailer.createTransport({
     host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
     port: port,
-    secure: port === 465, // false for 587 (STARTTLS), true for 465 (SMTPS)
+    secure: port === 465, // Will be false for 587 (STARTTLS)
     connectionTimeout: 5000,
     greetingTimeout: 5000,
     socketTimeout: 5000,
