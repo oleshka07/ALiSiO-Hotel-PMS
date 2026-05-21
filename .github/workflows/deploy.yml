@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
 
+# Prevent parallel deploys: if a new push arrives while deploying,
+# wait for the current deploy to finish (cancel-in-progress: false).
+# Change to true if you prefer "cancel old, start fresh" behaviour.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -52,6 +59,22 @@ jobs:
 
             # Install dependencies
             npm ci --production=false
+
+            # Safe stale-lock cleanup: only remove .next/lock if the PID
+            # recorded in it is no longer running (i.e. previous build crashed).
+            # This avoids killing a legitimate parallel build.
+            if [ -f .next/lock ]; then
+              LOCK_PID=$(cat .next/lock 2>/dev/null || echo "")
+              if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
+                echo "Removing stale .next/lock (PID $LOCK_PID is gone)"
+                rm -f .next/lock
+              elif [ -z "$LOCK_PID" ]; then
+                echo "Removing empty .next/lock"
+                rm -f .next/lock
+              else
+                echo ".next/lock is held by running PID $LOCK_PID — waiting..."
+              fi
+            fi
 
             # Build Next.js
             if ! npm run build; then

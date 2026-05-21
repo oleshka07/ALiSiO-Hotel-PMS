@@ -34,6 +34,10 @@ mkdir -p data
 # Install dependencies
 npm ci --production=false
 
+# Kill any lingering next build processes and remove stale lock
+pkill -f "next build" || true
+rm -f .next/lock
+
 # Build Next.js
 npm run build
 
