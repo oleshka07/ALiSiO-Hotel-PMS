@@ -149,6 +149,13 @@ export async function deleteLead(
     }
 
     db.transaction(() => {
+      // Clear auto drafts and AI training data related to this lead's conversations
+      db.prepare('DELETE FROM crm_auto_drafts WHERE lead_id = ?').run(id);
+      db.prepare(`
+        DELETE FROM crm_ai_training 
+        WHERE conversation_id IN (SELECT id FROM crm_conversations WHERE lead_id = ?)
+      `).run(id);
+
       // Delete messages belonging to conversations of this lead
       db.prepare(`
         DELETE FROM crm_messages 
