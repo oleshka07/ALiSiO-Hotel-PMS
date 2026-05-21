@@ -14,6 +14,7 @@ function resolveIntentKind(metadata: Record<string, string> | undefined): string
   if (source === 'guest_booking_payment') return 'booking_balance';
   if (source === 'guest_cart') return 'service_cart';
   if (source === 'guest_page') return 'service_standalone';
+  if (source === 'widget_service') return 'service_standalone';
   if (source === 'crm_deposit') return 'booking_deposit';
   if (metadata?.reservation_id) return 'booking_full';
   return 'unknown';
@@ -219,6 +220,23 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
     txBsoChanges = txFallback2.changes;
     if (txSoChanges > 0 || txBsoChanges > 0) effectiveRef = transactionId;
     console.log('[Teya Webhook] Fallback by transactionId:', { transactionId, so: txSoChanges, bso: txBsoChanges, effectiveRef });
+  }
+
+  // Fallback: search for payment_id inside notes JSON (legacy widget-checkout
+  // stored payment_id only in notes, not in the column). This catches orders
+  // that were created before the column-fix was deployed.
+  if (result2.changes === 0 && txSoChanges === 0 && paymentRef) {
+    try {
+      const notesFallback = db.prepare(
+        `UPDATE service_orders SET payment_id = ?, payment_status = 'paid', status = 'confirmed'
+         WHERE payment_id IS NULL AND payment_status = 'pending'
+           AND notes LIKE '%' || ? || '%'`
+      ).run(paymentRef, paymentRef);
+      if (notesFallback.changes > 0) {
+        txSoChanges += notesFallback.changes;
+        console.log('[Teya Webhook] Fallback by notes JSON:', { paymentRef, matched: notesFallback.changes });
+      }
+    } catch { /* non-critical */ }
   }
 
   const bsoTotal = result1.changes + txBsoChanges;
