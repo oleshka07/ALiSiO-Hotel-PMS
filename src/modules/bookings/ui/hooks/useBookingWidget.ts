@@ -302,8 +302,10 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (!siteSlug) { goToStep(6); return; }
     setSubmitting(true);
     try {
-      // ── Prefer configured thank-you URL → parent page URL → widget URL ──
-      let retPath = siteThankYouUrl || (reservation as any).thankYouUrl || '';
+      // ── Prefer thank-you URL from reservation response (most reliable) → siteThankYouUrl state → parent page URL ──
+      // reservation.thankYouUrl is returned directly from /api/booking/reserve so it's always correct,
+      // avoiding the race condition where siteThankYouUrl state may not be populated yet.
+      let retPath = (reservation as any).thankYouUrl || siteThankYouUrl || '';
       if (!retPath) {
         try { retPath = (window.top as any).location.href.split('?')[0]; } catch { retPath = window.location.href.split('?')[0]; }
       }
