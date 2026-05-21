@@ -3,6 +3,10 @@ import { getDb } from '@core/db';
 import { onPaymentReceived } from '@/lib/crm/stage-transitions';
 
 export function registerCrmSubscribers() {
+  // Guard against double-registration (hot reload / repeated serverless warm-ups)
+  if ((eventBus as any).__crmSubscribersRegistered) return;
+  (eventBus as any).__crmSubscribersRegistered = true;
+
   eventBus.on('booking.created', async (payload) => {
     try {
       const db = getDb();
