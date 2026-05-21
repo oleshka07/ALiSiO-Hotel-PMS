@@ -97,7 +97,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
         rawPayload: rawBody,
       });
       if (refs.sessionId) {
-        eventBus
+        await eventBus
           .emit('payment.completed', {
             sessionId: refs.sessionId,
             provider: 'teya',
@@ -106,7 +106,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
             amount: refs.amount > 1000 ? refs.amount / 100 : refs.amount,
             currency: refs.currency,
           })
-          .catch((e) => console.error('[Teya Webhook] emit completed error:', e));
+          .catch((e: any) => console.error('[Teya Webhook] emit completed error:', e));
       }
     } else if (isPaymentFailed(eventType, event)) {
       handlePaymentFailed(db, event);
@@ -115,9 +115,9 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
         amount: refs.amount, currency: refs.currency, rawPayload: rawBody,
       });
       if (refs.sessionId) {
-        eventBus
+        await eventBus
           .emit('payment.failed', { sessionId: refs.sessionId, provider: 'teya', intentKind })
-          .catch((e) => console.error('[Teya Webhook] emit failed error:', e));
+          .catch((e: any) => console.error('[Teya Webhook] emit failed error:', e));
       }
     } else if (isRefund(eventType)) {
       handleRefund(db, event);
