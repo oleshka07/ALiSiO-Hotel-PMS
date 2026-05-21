@@ -120,7 +120,7 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
   }
 
   const sheet = workbook.Sheets[sheetName];
-  const json = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false }) as Record<string, any>[];
+  let json = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false }) as Record<string, any>[];
 
   const errors: ParseError[] = [];
 
@@ -128,12 +128,44 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
     return { rows: [], errors: [], totalRowsInFile: 0 };
   }
 
+  // Normalize localized column names to English
+  json = normalizeHeaders(json);
+
+  // If 'Guest name(s)' is still missing but 'Booked by' exists, use it as fallback
   const headerRow = json[0];
-  const missing = REQUIRED_COLS.filter((c) => !(c in headerRow));
+  if (!('Guest name(s)' in headerRow) && ('Booked by' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Guest name(s)': r['Guest name(s)'] || r['Booked by'] }));
+  }
+
+  // Duration can be calculated from dates if missing
+  if (!('Duration (nights)' in headerRow)) {
+    json = json.map((r) => {
+      const ci = parseDate(r['Check-in']);
+      const co = parseDate(r['Check-out']);
+      if (ci && co) {
+        const nights = Math.round((new Date(co).getTime() - new Date(ci).getTime()) / 86400000);
+        return { ...r, 'Duration (nights)': nights > 0 ? nights : 1 };
+      }
+      return { ...r, 'Duration (nights)': 1 };
+    });
+  }
+
+  // Adults/Children/Persons fallback — set defaults if columns missing
+  if (!('Adults' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Adults': r['Adults'] || r['Persons'] || 1 }));
+  }
+  if (!('Children' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Children': r['Children'] || 0 }));
+  }
+  if (!('Persons' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Persons': r['Persons'] || r['Adults'] || 1 }));
+  }
+
+  const missing = REQUIRED_COLS.filter((c) => !(c in json[0]));
   if (missing.length > 0) {
     return {
       rows: [],
-      errors: [{ rowIndex: 0, field: 'headers', reason: `Missing required columns: ${missing.join(', ')}`, raw: Object.keys(headerRow) }],
+      errors: [{ rowIndex: 0, field: 'headers', reason: `Missing required columns: ${missing.join(', ')}`, raw: Object.keys(json[0]) }],
       totalRowsInFile: json.length,
     };
   }
