@@ -175,6 +175,37 @@ function normalizeHeaders(rows: Record<string, any>[]): Record<string, any>[] {
   });
 }
 
+// Month name → number mapping for text-based date parsing
+const MONTH_NAMES: Record<string, number> = {
+  // English
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6,
+  jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+  // Ukrainian
+  'січ': 1, 'січня': 1, 'лют': 2, 'лютого': 2, 'бер': 3, 'березня': 3,
+  'кві': 4, 'квітня': 4, 'тра': 5, 'травня': 5, 'чер': 6, 'червня': 6,
+  'лип': 7, 'липня': 7, 'сер': 8, 'серпня': 8, 'вер': 9, 'вересня': 9,
+  'жов': 10, 'жовтня': 10, 'лис': 11, 'листопада': 11, 'гру': 12, 'грудня': 12,
+  // Czech
+  'led': 1, 'ledna': 1, 'úno': 2, 'února': 2, 'bře': 3, 'března': 3,
+  'dub': 4, 'dubna': 4, 'kvě': 5, 'května': 5, 'čvn': 6, 'června': 6, 'čer': 6,
+  'čvc': 7, 'července': 7, 'srp': 8, 'srpna': 8, 'zář': 9, 'září': 9,
+  'říj': 10, 'října': 10, 'lis': 11, 'listopadu': 11, 'pro': 12, 'prosince': 12,
+  // Russian
+  'янв': 1, 'января': 1, 'фев': 2, 'февраля': 2, 'мар': 3, 'марта': 3,
+  'апр': 4, 'апреля': 4, 'мая': 5, 'май': 5, 'июн': 6, 'июня': 6,
+  'июл': 7, 'июля': 7, 'авг': 8, 'августа': 8, 'сен': 9, 'сентября': 9,
+  'окт': 10, 'октября': 10, 'ноя': 11, 'ноября': 11, 'дек': 12, 'декабря': 12,
+  // German
+  'jän': 1, 'mär': 3, 'mai': 5, 'okt': 10, 'dez': 12,
+};
+
+function resolveMonth(token: string): number | null {
+  const key = token.toLowerCase().replace(/\.$/, ''); // strip trailing dot
+  return MONTH_NAMES[key] ?? null;
+}
+
 function parseDate(value: unknown): string | null {
   if (value == null || value === '') return null;
   // XLSX cellDates:true → Date objects
@@ -201,6 +232,24 @@ function parseDate(value: unknown): string | null {
   // MM/DD/YYYY (US — fallback, only if month ≤ 12)
   const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (us && parseInt(us[1]) <= 12) return `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`;
+  // Text month: "22 May 2026", "May 22, 2026", "22 трав. 2026", "22. května 2026"
+  const tokens = s.replace(/,/g, '').split(/[\s.]+/).filter(Boolean);
+  if (tokens.length >= 3) {
+    // Try "DD Month YYYY" or "Month DD YYYY"
+    const m1 = resolveMonth(tokens[1]);
+    if (m1 && /^\d{1,2}$/.test(tokens[0]) && /^\d{4}$/.test(tokens[2])) {
+      return `${tokens[2]}-${String(m1).padStart(2, '0')}-${tokens[0].padStart(2, '0')}`;
+    }
+    const m0 = resolveMonth(tokens[0]);
+    if (m0 && /^\d{1,2}$/.test(tokens[1]) && /^\d{4}$/.test(tokens[2])) {
+      return `${tokens[2]}-${String(m0).padStart(2, '0')}-${tokens[1].padStart(2, '0')}`;
+    }
+  }
+  // Last resort: try native Date.parse
+  const nativeDate = new Date(s);
+  if (!isNaN(nativeDate.getTime()) && nativeDate.getFullYear() > 2000) {
+    return `${nativeDate.getFullYear()}-${String(nativeDate.getMonth() + 1).padStart(2, '0')}-${String(nativeDate.getDate()).padStart(2, '0')}`;
+  }
   return null;
 }
 
@@ -312,10 +361,15 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
       return;
     }
 
-    const checkIn = parseDate(r['Check-in']);
-    const checkOut = parseDate(r['Check-out']);
+    const rawIn = r['Check-in'];
+    const rawOut = r['Check-out'];
+    const checkIn = parseDate(rawIn);
+    const checkOut = parseDate(rawOut);
     if (!checkIn || !checkOut) {
-      errors.push({ rowIndex: idx, field: 'Check-in/out', reason: 'invalid date', raw: { in: r['Check-in'], out: r['Check-out'] } });
+      if (idx === 0) {
+        console.error(`[Import Booking.com] Date parse FAILED for row 0. Raw Check-in: '${rawIn}' (${typeof rawIn}), Raw Check-out: '${rawOut}' (${typeof rawOut})`);
+      }
+      errors.push({ rowIndex: idx, field: 'Check-in/out', reason: `invalid date (raw: "${rawIn}" → "${rawOut}")`, raw: { in: rawIn, out: rawOut } });
       return;
     }
 
