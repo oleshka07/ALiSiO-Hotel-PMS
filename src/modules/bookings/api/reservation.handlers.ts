@@ -156,6 +156,15 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     }
 
+    // Generate guest token on demand (from mobile footer buttons)
+    if (body.generate_guest_token) {
+      const existing = db.prepare('SELECT guest_page_token FROM reservations WHERE id = ?').get(id) as any;
+      if (!existing?.guest_page_token) {
+        sets.push('guest_page_token = ?');
+        values.push(generateGuestToken());
+      }
+    }
+
     if (sets.length > 0) {
       sets.push("updated_at = datetime('now')");
       values.push(id);
@@ -228,7 +237,9 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     } catch (cascErr) { console.error('[PATCH] cascade to children error (non-fatal):', cascErr); }
 
-    return NextResponse.json({ success: true });
+    // Return updated booking with guest_page_token
+    const updated = db.prepare('SELECT guest_page_token FROM reservations WHERE id = ?').get(id) as any;
+    return NextResponse.json({ success: true, guest_page_token: updated?.guest_page_token || null });
   } catch (error: any) {
     console.error('PATCH /api/bookings/[id] error:', error?.message || error);
     return NextResponse.json({ error: error?.message || 'Failed to update booking' }, { status: 500 });

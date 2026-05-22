@@ -208,15 +208,40 @@ export default function MobileBookingDetail({
     showToast('Видалено');
   };
 
-  const handleCopyGuestLink = () => {
-    if (!b.guest_page_token) return;
-    navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`)
+  const handleCopyGuestLink = async () => {
+    let token = b.guest_page_token;
+    if (!token) {
+      // Auto-generate token
+      try {
+        const res = await fetch(`/api/bookings/${b.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generate_guest_token: true }),
+        });
+        const data = await res.json();
+        token = data.guest_page_token;
+        if (token) setBooking({ ...b, guest_page_token: token });
+      } catch { /* ignore */ }
+    }
+    if (!token) { showToast('Не вдалося створити посилання'); return; }
+    navigator.clipboard.writeText(`${window.location.origin}/guest/${token}`)
       .then(() => showToast('Посилання скопійовано'));
   };
 
-  const handleOpenGuestPage = () => {
-    if (!b.guest_page_token) return;
-    window.open(`/guest/${b.guest_page_token}`, '_blank');
+  const handleOpenGuestPage = async () => {
+    let token = b.guest_page_token;
+    if (!token) {
+      try {
+        const res = await fetch(`/api/bookings/${b.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generate_guest_token: true }),
+        });
+        const data = await res.json();
+        token = data.guest_page_token;
+        if (token) setBooking({ ...b, guest_page_token: token });
+      } catch { /* ignore */ }
+    }
+    if (!token) { showToast('Не вдалося створити посилання'); return; }
+    window.open(`/guest/${token}`, '_blank');
   };
 
   // ── Render helpers
@@ -704,21 +729,12 @@ export default function MobileBookingDetail({
           flexShrink: 0,
         }}>
           <button onClick={onClose} style={bottomActionStyle('default')}>Закрити</button>
-          {b.guest_page_token ? (
-            <>
               <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
                 <Copy size={12} /> Копія
               </button>
               <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
                 <ExternalLink size={12} /> Гостьова
               </button>
-            </>
-          ) : (
-            <>
-              <div />
-              <div />
-            </>
-          )}
           <button onClick={onEdit} style={bottomActionStyle('edit')}>
             <Edit3 size={12} /> Редагувати
           </button>

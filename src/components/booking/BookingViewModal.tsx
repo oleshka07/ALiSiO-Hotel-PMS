@@ -906,18 +906,11 @@ export default function BookingViewModal({
                               reader.onload = () => resolve(reader.result as string);
                               reader.readAsDataURL(file);
                             });
-                            const res = await fetch(b.guest_page_token
-                              ? `/api/guest/${b.guest_page_token}/ocr`
-                              : `/api/booking/register-guest`,
-                              {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(b.guest_page_token
-                                  ? { image: dataUrl }
-                                  : { reservation_id: b.id, document_urls: [dataUrl] }
-                                ),
-                              }
-                            );
+                            const res = await fetch('/api/bookings/ocr', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ image: dataUrl }),
+                            });
                             const data = await res.json();
                             if (data.success !== false) {
                               const ocr = data.data || data.ocr_results?.[0];
