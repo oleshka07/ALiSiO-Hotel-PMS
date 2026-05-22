@@ -57,6 +57,124 @@ const REQUIRED_COLS = [
   'Price',
 ] as const;
 
+/**
+ * Booking.com Extranet exports columns in the user's UI language.
+ * Map known translations → canonical English names.
+ */
+const COLUMN_ALIASES: Record<string, string> = {
+  // Ukrainian (UA)
+  'Номер бронювання': 'Book number',
+  "Ім'я гостя": 'Guest name(s)',
+  "Ім'я гостя(ів)": 'Guest name(s)',
+  'Імена гостей': 'Guest name(s)',
+  'Ким заброньовано': 'Booked by',
+  'Заїзд': 'Check-in',
+  'Виїзд': 'Check-out',
+  'Заброньовано': 'Booked on',
+  'Статус': 'Status',
+  'Назва помешкання': 'Unit type',
+  'Тип номера': 'Unit type',
+  'Тривалість (ночі)': 'Duration (nights)',
+  'Тривалість (ночей)': 'Duration (nights)',
+  'Дорослі': 'Adults',
+  'Діти': 'Children',
+  'Вік дітей': "Children's age(s)",
+  'Осіб': 'Persons',
+  'Персони': 'Persons',
+  'Ціна': 'Price',
+  'Всього до сплати': 'Price',
+  'Комісія': 'Commission amount',
+  'Сума комісії': 'Commission amount',
+  'Комісія %': 'Commission %',
+  '% комісії': 'Commission %',
+  'Валюта': 'Currency',
+  'Номери': 'Rooms',
+  'Кімнати': 'Rooms',
+  'Примітки': 'Remarks',
+  'Зауваження': 'Remarks',
+  'Країна гостя': 'Booker country',
+  'Мета поїздки': 'Travel purpose',
+  'Пристрій': 'Device',
+  'Адреса': 'Address',
+  'Номер телефону': 'Phone number',
+  'Телефон': 'Phone number',
+  'Дата скасування': 'Cancellation date',
+  'Розташування': 'Location',
+  'Мандрівник Genius': 'Genius traveler',
+  // Czech (CS)
+  'Číslo rezervace': 'Book number',
+  'Jméno hosta': 'Guest name(s)',
+  'Jména hostů': 'Guest name(s)',
+  'Rezervoval': 'Booked by',
+  'Příjezd': 'Check-in',
+  'Odjezd': 'Check-out',
+  'Rezervováno': 'Booked on',
+  'Typ pokoje': 'Unit type',
+  'Název ubytování': 'Unit type',
+  'Délka pobytu (nocí)': 'Duration (nights)',
+  'Dospělí': 'Adults',
+  'Děti': 'Children',
+  'Věk dětí': "Children's age(s)",
+  'Osoby': 'Persons',
+  'Cena': 'Price',
+  'Celkem k úhradě': 'Price',
+  'Provize': 'Commission amount',
+  'Výše provize': 'Commission amount',
+  'Měna': 'Currency',
+  'Pokoje': 'Rooms',
+  'Poznámky': 'Remarks',
+  'Země hosta': 'Booker country',
+  'Účel cesty': 'Travel purpose',
+  'Zařízení': 'Device',
+  'Adresa': 'Address',
+  'Telefonní číslo': 'Phone number',
+  'Datum zrušení': 'Cancellation date',
+  // Russian (RU)
+  'Номер брони': 'Book number',
+  'Имя гостя': 'Guest name(s)',
+  'Имена гостей': 'Guest name(s)',
+  'Кем забронировано': 'Booked by',
+  'Заезд': 'Check-in',
+  'Выезд': 'Check-out',
+  'Забронировано': 'Booked on',
+  'Название размещения': 'Unit type',
+  'Продолжительность (ночей)': 'Duration (nights)',
+  'Взрослые': 'Adults',
+  'Цена': 'Price',
+  'Итого к оплате': 'Price',
+  'Комиссия': 'Commission amount',
+  'Сумма комиссии': 'Commission amount',
+  'Комнаты': 'Rooms',
+  'Замечания': 'Remarks',
+  'Страна гостя': 'Booker country',
+  'Цель поездки': 'Travel purpose',
+  'Устройство': 'Device',
+  'Номер телефона': 'Phone number',
+  'Дата отмены': 'Cancellation date',
+};
+
+/**
+ * Normalize a row object: rename localized column names to their
+ * canonical English equivalents so the rest of the parser is locale-agnostic.
+ */
+function normalizeHeaders(rows: Record<string, any>[]): Record<string, any>[] {
+  if (rows.length === 0) return rows;
+  const sampleKeys = Object.keys(rows[0]);
+  const needsRemap = sampleKeys.some((k) => k in COLUMN_ALIASES);
+  if (!needsRemap) return rows; // already English
+
+  return rows.map((row) => {
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(row)) {
+      const canonical = COLUMN_ALIASES[key] || key;
+      if (!(canonical in out)) {
+        out[canonical] = value;
+      }
+    }
+    return out;
+  });
+}
+
 function parseDate(value: unknown): string | null {
   if (value == null || value === '') return null;
   // XLSX cellDates:true → Date objects
