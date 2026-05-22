@@ -149,6 +149,12 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         if (/(ota|channel|hostex)[\s_-]*block/.test(fullName)) return false;
         return true;
       });
+
+      // Debug: log what we found
+      const poolU = fUnits.find((u: any) => u.is_pool === 1);
+      const poolBks = list.filter((b: any) => poolU && b.unit_id === poolU.id);
+      console.log(`[RAM] Units: ${fUnits.length} (pool: ${poolU?.id || 'NONE'}, code: ${poolU?.code || '?'}), API bookings: ${list.length}, F-filtered: ${fBookings.length}, pool bookings in API: ${poolBks.length}`, poolBks.map((b: any) => `${b.id} status=${b.status} ${b.first_name} ${b.last_name}`));
+
       setUnits(fUnits as UnitRow[]);
       setBookings(fBookings as BookingRow[]);
     } catch (e: any) {
