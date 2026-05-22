@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X, MoreVertical, Phone, Mail, MessageCircle, Check, Clock, Lock,
   Plus, Copy, ExternalLink, Edit3, Loader2, Save, Receipt,
@@ -95,6 +95,8 @@ export default function MobileBookingDetail({
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
   const [subBookings, setSubBookings] = useState<any[]>([]);
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const ocrFileRef = useRef<HTMLInputElement>(null);
 
   const checkIn = formatDate(b.check_in);
   const checkOut = formatDate(b.check_out);
@@ -111,6 +113,13 @@ export default function MobileBookingDetail({
   const regBadge = `${registrations.length}/${regNeeded}`;
 
   const sourceInfo = sourceMap[b.source] || { label: b.source || 'Direct', color: '#6B7392' };
+
+  // Lock body scroll when sheet is open
+  useEffect(() => {
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = orig; };
+  }, []);
 
   useEffect(() => {
     if (!b?.id) return;
@@ -289,7 +298,7 @@ export default function MobileBookingDetail({
         </div>
 
         {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', minHeight: 0 }}>
 
           {/* Multi-room warning */}
           {b.is_multi_room && (
@@ -638,15 +647,70 @@ export default function MobileBookingDetail({
               )}
 
               {!showRegForm && registrations.length < regNeeded && (
-                <button onClick={() => setShowRegForm(true)}
-                  style={{
-                    marginTop: 12, width: '100%', padding: 12, borderRadius: 10,
-                    background: 'rgba(91,124,255,0.12)', color: '#5B7CFF',
-                    border: '1px solid rgba(91,124,255,0.3)', fontSize: 13, fontWeight: 600,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}>
-                  <Plus size={14} strokeWidth={2.3} /> Додати гостя
-                </button>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setShowRegForm(true)}
+                    style={{
+                      flex: 1, padding: 12, borderRadius: 10,
+                      background: 'rgba(91,124,255,0.12)', color: '#5B7CFF',
+                      border: '1px solid rgba(91,124,255,0.3)', fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                    <Plus size={14} strokeWidth={2.3} /> Додати гостя
+                  </button>
+                  <input type="file" accept="image/*" capture="environment" ref={ocrFileRef} style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setOcrScanning(true);
+                      try {
+                        const reader = new FileReader();
+                        const dataUrl = await new Promise<string>((resolve) => {
+                          reader.onload = () => resolve(reader.result as string);
+                          reader.readAsDataURL(file);
+                        });
+                        const res = await fetch('/api/bookings/ocr', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ image: dataUrl }),
+                        });
+                        const data = await res.json();
+                        if (data.success !== false && data.data) {
+                          const ocr = data.data;
+                          const docTypeMap: Record<string, string> = { id_card: 'ID_CARD', passport: 'PASSPORT', driving_license: 'DRIVING_LICENCE', other: 'OTHER' };
+                          setRegForm(p => ({
+                            ...p,
+                            firstName: ocr.firstName || p.firstName,
+                            lastName: ocr.lastName || p.lastName,
+                            dateOfBirth: ocr.dateOfBirth || p.dateOfBirth,
+                            documentNumber: ocr.documentNumber || p.documentNumber,
+                            documentType: docTypeMap[ocr.documentType] || p.documentType,
+                            nationality: ocr.nationality || p.nationality,
+                            address: ocr.address || p.address,
+                          }));
+                          setShowRegForm(true);
+                          showToast(`\u2705 ${ocr.firstName} ${ocr.lastName} (${ocr.confidence || '?'}%)`);
+                        } else {
+                          showToast(`\u274c ${data.error || 'Не вдалось розпізнати'}`);
+                        }
+                      } catch (err: any) {
+                        showToast(`\u274c ${err.message || 'Помилка'}`);
+                      } finally {
+                        setOcrScanning(false);
+                        if (ocrFileRef.current) ocrFileRef.current.value = '';
+                      }
+                    }} />
+                  <button onClick={() => ocrFileRef.current?.click()} disabled={ocrScanning}
+                    style={{
+                      padding: '12px 16px', borderRadius: 10,
+                      background: 'rgba(99,102,241,0.12)', color: '#6366f1',
+                      border: '1px solid rgba(99,102,241,0.25)', fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      whiteSpace: 'nowrap',
+                    }}>
+                    {ocrScanning ? <Loader2 size={14} className="animate-spin" /> : '\ud83d\udcf7'}
+                    {ocrScanning ? '...' : 'Фото'}
+                  </button>
+                </div>
               )}
 
               {showRegForm && (

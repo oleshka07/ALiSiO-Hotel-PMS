@@ -384,8 +384,8 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
       payment_status, service_date, payment_method, recorded_by,
     } = body;
 
-    if (!service_id || !reservation_id) {
-      return NextResponse.json({ error: 'service_id and reservation_id are required' }, { status: 400 });
+    if (!service_id) {
+      return NextResponse.json({ error: 'service_id is required' }, { status: 400 });
     }
     if (typeof total_price !== 'number' || !isFinite(total_price) || total_price <= 0) {
       return NextResponse.json({ error: 'total_price must be a positive number' }, { status: 400 });
@@ -406,18 +406,20 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
 
     db.prepare(`
       INSERT INTO booking_service_orders
-        (id, reservation_id, service_id, quantity, total_price,
-         status, payment_status, service_date, payment_method,
-         recorded_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?)
+        (id, reservation_id, service_id, quantity, unit_price, total_price,
+         status, payment_status, service_date, options_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
     `).run(
-      orderId, reservation_id, service_id,
-      quantity || 1, total_price,
+      orderId,
+      reservation_id === 'none' ? null : reservation_id,
+      service_id,
+      quantity || 1,
+      total_price / (quantity || 1),
+      total_price,
       payment_status || 'pending',
       service_date || now.substring(0, 10),
-      payment_method || null,
-      recorded_by || null,
-      now, now,
+      JSON.stringify({ recorded_by: recorded_by || null, payment_method: payment_method || null }),
+      now,
     );
 
     let finOperationId: string | null = null;
