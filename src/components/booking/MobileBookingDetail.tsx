@@ -279,24 +279,6 @@ export default function MobileBookingDetail({
       <div className="m-sheet-backdrop" onClick={onClose} />
       <div className="m-sheet mbd-sheet" style={{ maxHeight: '94dvh', display: 'flex', flexDirection: 'column' }}>
 
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 14px', borderBottom: '1px solid var(--border-primary)',
-          flexShrink: 0,
-        }}>
-          <button onClick={onClose} className="m-header-btn" aria-label="Закрити">
-            <X size={20} />
-          </button>
-          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Бронювання</span>
-            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>#{b.id}</span>
-          </div>
-          <button className="m-header-btn" aria-label="Більше">
-            <MoreVertical size={20} />
-          </button>
-        </div>
-
         {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', minHeight: 0 }}>
 
@@ -312,9 +294,17 @@ export default function MobileBookingDetail({
           )}
 
           {/* Guest section */}
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-              <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 4, paddingBottom: 8 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-primary)' }} />
+            </div>
+            {/* Name row with close button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={onClose} style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }} aria-label="Закрити">
+                <X size={16} />
+              </button>
+              <div style={{ flex: 1, fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
                 {b.first_name} {b.last_name}
               </div>
               <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
@@ -657,7 +647,7 @@ export default function MobileBookingDetail({
                     }}>
                     <Plus size={14} strokeWidth={2.3} /> Додати гостя
                   </button>
-                  <input type="file" accept="image/*" capture="environment" ref={ocrFileRef} style={{ display: 'none' }}
+                  <input type="file" accept="image/*" ref={ocrFileRef} style={{ display: 'none' }}
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -789,18 +779,20 @@ export default function MobileBookingDetail({
         {/* Bottom actions */}
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5,
-          padding: '9px 14px', borderTop: '1px solid var(--border-primary)',
-          flexShrink: 0,
+          padding: '9px 14px 12px', borderTop: '1px solid var(--border-primary)',
+          flexShrink: 0, background: 'var(--bg-card)',
         }}>
-          <button onClick={onClose} style={bottomActionStyle('default')}>Закрити</button>
-              <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
-                <Copy size={12} /> Копія
-              </button>
-              <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
-                <ExternalLink size={12} /> Гостьова
-              </button>
+          <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
+            <Copy size={12} /> Копія
+          </button>
+          <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
+            <ExternalLink size={12} /> Гостьова
+          </button>
           <button onClick={onEdit} style={bottomActionStyle('edit')}>
-            <Edit3 size={12} /> Редагувати
+            <Edit3 size={12} /> Змінити
+          </button>
+          <button onClick={() => { if (confirm('Скасувати бронювання?')) onChangeStatus(b.id, 'cancelled'); }} style={bottomActionStyle('danger')}>
+            <X size={12} /> Скасувати
           </button>
         </div>
       </div>
@@ -854,7 +846,7 @@ function payBtnStyle(variant: 'primary' | 'active' | 'default' | 'disabled'): Re
   }
 }
 
-function bottomActionStyle(variant: 'default' | 'edit'): React.CSSProperties {
+function bottomActionStyle(variant: 'default' | 'edit' | 'danger'): React.CSSProperties {
   const base: React.CSSProperties = {
     padding: '9px 4px', borderRadius: 7, fontSize: 12, fontWeight: 500,
     textAlign: 'center', cursor: 'pointer',
@@ -862,6 +854,9 @@ function bottomActionStyle(variant: 'default' | 'edit'): React.CSSProperties {
   };
   if (variant === 'edit') {
     return { ...base, background: 'rgba(91,124,255,0.1)', color: '#5B7CFF', border: '1px solid rgba(91,124,255,0.28)' };
+  }
+  if (variant === 'danger') {
+    return { ...base, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' };
   }
   return { ...base, background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)' };
 }
