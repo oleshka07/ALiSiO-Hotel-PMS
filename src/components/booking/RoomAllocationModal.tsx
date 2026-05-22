@@ -136,13 +136,15 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       const list = Array.isArray(bAll) ? bAll : (bAll.bookings || []);
       const fBookings = list.filter((b: any) => {
         if (!fUnitIds.has(b.unit_id)) return false;
-        // Real, occupiable reservations only.
-        if (['cancelled', 'no_show', 'draft'].includes(b.status)) return false;
+        // Cancelled / no-show never shown.
+        if (['cancelled', 'no_show'].includes(b.status)) return false;
+        // Draft bookings ARE shown when on pool units (staging strip),
+        // but hidden on real rooms (shouldn't normally happen).
+        // Find pool unit among the fetched units:
+        const isOnPool = fUnits.some((u: any) => u.id === b.unit_id && u.is_pool === 1);
+        if (b.status === 'draft' && !isOnPool) return false;
         // Hostex sometimes injects availability blocks as fake reservations
         // with sentinel guest names like "OTA Blocked" / "Channel Block".
-        // They tag the unit so it can't be booked — but they shouldn't show
-        // up here as occupants. Real channel blocks live in
-        // /api/availability-blocks and the calendar already renders them.
         const fullName = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
         if (/(ota|channel|hostex)[\s_-]*block/.test(fullName)) return false;
         return true;
@@ -298,21 +300,30 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     if (!res.ok) { if (res.reason) showToast(res.reason, 'err'); return; }
 
     if (res.type === 'move') {
+      // When a draft leaves the pool → promote to confirmed
+      const isDraft = guest.status === 'draft';
+      const destIsReal = destUnitId !== poolUnitId;
+      const patchBody: Record<string, string> = { unit_id: destUnitId };
+      if (isDraft && destIsReal) patchBody.status = 'confirmed';
+
       // Optimistic update
-      const next = bookings.map(b => b.id === bookingId ? { ...b, unit_id: destUnitId } : b);
+      const next = bookings.map(b => b.id === bookingId
+        ? { ...b, unit_id: destUnitId, status: (isDraft && destIsReal) ? 'confirmed' : b.status }
+        : b
+      );
       setBookings(next);
       try {
         const resp = await fetch(`/api/bookings/${bookingId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unit_id: destUnitId }),
+          body: JSON.stringify(patchBody),
         });
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           throw new Error(data.error || 'Не вдалося перенести');
         }
         const room = units.find(u => u.id === destUnitId);
-        showToast(`${guest.first_name} → ${room?.code || ''}`);
+        showToast(`${guest.first_name} → ${room?.code || ''}${isDraft && destIsReal ? ' ✓' : ''}`);
         onChanged?.();
       } catch (e: any) {
         showToast(e.message || 'Помилка', 'err');
