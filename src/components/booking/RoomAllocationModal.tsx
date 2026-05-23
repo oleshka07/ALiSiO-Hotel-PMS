@@ -121,6 +121,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         // include_pool=1 brings in the virtual staging pool unit; we
         // separate it from real rooms client-side.
         fetch('/api/units?category=resort&include_pool=1'),
+        // Room bookings: date-filtered for performance
         fetch(`/api/bookings?category=resort&check_out_from=${todayISO}&date_to=${horizonISO}&limit=500`),
       ]);
       if (!uRes.ok) throw new Error('Не вдалося завантажити юніти');
@@ -133,27 +134,43 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         return code.startsWith(buildingCode) || buildingNameUpper.includes(buildingCode);
       });
       const fUnitIds = new Set(fUnits.map((u: any) => u.id));
+
+      // Find pool unit to fetch its bookings separately (no date filter —
+      // pool bookings are drafts that must always be visible).
+      const poolU = fUnits.find((u: any) => u.is_pool === 1);
+      let poolBookings: any[] = [];
+      if (poolU) {
+        try {
+          const pbRes = await fetch(`/api/bookings?category=resort&status=draft`);
+          if (pbRes.ok) {
+            const pbAll = await pbRes.json();
+            const pbList = Array.isArray(pbAll) ? pbAll : (pbAll.bookings || []);
+            poolBookings = pbList.filter((b: any) => b.unit_id === poolU.id);
+          }
+        } catch { /* non-fatal */ }
+      }
+
       const list = Array.isArray(bAll) ? bAll : (bAll.bookings || []);
-      const fBookings = list.filter((b: any) => {
+      // Merge: main bookings + pool bookings (deduplicated)
+      const mainIds = new Set(list.map((b: any) => b.id));
+      const merged = [...list, ...poolBookings.filter((b: any) => !mainIds.has(b.id))];
+
+      const fBookings = merged.filter((b: any) => {
         if (!fUnitIds.has(b.unit_id)) return false;
         // Cancelled / no-show never shown.
         if (['cancelled', 'no_show'].includes(b.status)) return false;
         // Draft bookings ARE shown when on pool units (staging strip),
         // but hidden on real rooms (shouldn't normally happen).
-        // Find pool unit among the fetched units:
         const isOnPool = fUnits.some((u: any) => u.id === b.unit_id && u.is_pool === 1);
         if (b.status === 'draft' && !isOnPool) return false;
         // Hostex sometimes injects availability blocks as fake reservations
-        // with sentinel guest names like "OTA Blocked" / "Channel Block".
         const fullName = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
         if (/(ota|channel|hostex)[\s_-]*block/.test(fullName)) return false;
         return true;
       });
 
       // Debug: log what we found
-      const poolU = fUnits.find((u: any) => u.is_pool === 1);
-      const poolBks = list.filter((b: any) => poolU && b.unit_id === poolU.id);
-      console.log(`[RAM] Units: ${fUnits.length} (pool: ${poolU?.id || 'NONE'}, code: ${poolU?.code || '?'}), API bookings: ${list.length}, F-filtered: ${fBookings.length}, pool bookings in API: ${poolBks.length}`, poolBks.map((b: any) => `${b.id} status=${b.status} ${b.first_name} ${b.last_name}`));
+      console.log(`[RAM] Units: ${fUnits.length} (pool: ${poolU?.id || 'NONE'}), API bookings: ${list.length}, poolFetch: ${poolBookings.length}, merged: ${merged.length}, F-filtered: ${fBookings.length}`);
 
       setUnits(fUnits as UnitRow[]);
       setBookings(fBookings as BookingRow[]);
