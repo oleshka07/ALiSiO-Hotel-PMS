@@ -426,23 +426,29 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
 
     // If paid, create a fin_operation (income)
     if (payment_status === 'paid') {
-      const currency = (service.currency || 'CZK').toUpperCase();
-      const accountId = defaultCashAccountId(db, orgId, currency);
+      try {
+        const currency = (service.currency || 'CZK').toUpperCase();
+        const accountId = defaultCashAccountId(db, orgId, currency);
 
-      if (accountId) {
-        finOperationId = createOperationInTx(db, orgId, {
-          op_type: 'income',
-          account_to_id: accountId,
-          amount: total_price,
-          currency,
-          paid_at: service_date || now.substring(0, 10),
-          comment: `Service: ${service.name}` + (recorded_by ? ` (via ${recorded_by})` : ''),
-          method: payment_method || 'cash',
-          source: 'telegram_service',
-          source_ref: `tg_service:${orderId}`,
-          reservation_id,
-          status: 'completed',
-        });
+        if (accountId) {
+          const finResId = (reservation_id && reservation_id !== 'none') ? reservation_id : null;
+          finOperationId = createOperationInTx(db, orgId, {
+            op_type: 'income',
+            account_to_id: accountId,
+            amount: total_price,
+            currency,
+            paid_at: service_date || now.substring(0, 10),
+            comment: `Service: ${service.name}` + (recorded_by ? ` (via ${recorded_by})` : ''),
+            method: payment_method || 'cash',
+            source: 'telegram_service',
+            source_ref: `tg_service:${orderId}`,
+            reservation_id: finResId,
+            status: 'completed',
+          });
+        }
+      } catch (finErr: any) {
+        console.error('[telegram-bridge] fin_operation creation failed:', finErr.message);
+        // Order is still created, just fin_operation failed
       }
     }
 

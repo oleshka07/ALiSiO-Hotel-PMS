@@ -411,45 +411,6 @@ export default function MobileBookingDetail({
             />
           </div>
 
-          {/* Primary actions */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr',
-            gap: 6, padding: '10px 14px',
-            borderBottom: '1px solid var(--border-primary)',
-          }}>
-            {b.status === 'confirmed' && (
-              <button onClick={() => onChangeStatus(b.id, 'checked_in')} disabled={!canCheckIn}
-                style={primaryActionStyle(canCheckIn ? 'primary' : 'disabled')}
-                title={!canCheckIn ? 'Спочатку оплата та реєстрація' : ''}>
-                <Check size={14} strokeWidth={2.2} /> Заселити
-                {!canCheckIn && <Lock size={11} style={{ opacity: 0.7 }} />}
-              </button>
-            )}
-            {b.status === 'checked_in' && (
-              <button onClick={() => onChangeStatus(b.id, 'checked_out')} style={primaryActionStyle('primary')}>
-                <Check size={14} strokeWidth={2.2} /> Виселити
-              </button>
-            )}
-            {b.status === 'tentative' && (
-              <button onClick={() => onChangeStatus(b.id, 'confirmed')} style={primaryActionStyle('primary')}>
-                <Check size={14} strokeWidth={2.2} /> Підтвердити
-              </button>
-            )}
-            {!['confirmed','checked_in','checked_out','tentative'].includes(b.status) && (
-              <div style={{ ...primaryActionStyle('confirmed'), justifyContent: 'center', cursor: 'default' }}>
-                <span style={{ fontSize: 12 }}>{STATUS_LABELS[b.status] || b.status}</span>
-              </div>
-            )}
-            {!['cancelled','checked_out'].includes(b.status) ? (
-              <button onClick={() => { if (confirm('Скасувати бронювання?')) onChangeStatus(b.id, 'cancelled'); }}
-                style={primaryActionStyle('danger')}>
-                <X size={14} strokeWidth={2.2} /> Скасувати
-              </button>
-            ) : <div />}
-            <div style={primaryActionStyle('confirmed', { cursor: 'default' })}>
-              {STATUS_LABELS[b.status] || b.status}
-            </div>
-          </div>
 
           {/* Tabs */}
           <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid var(--border-primary)' }}>
@@ -776,10 +737,10 @@ export default function MobileBookingDetail({
           )}
         </div>
 
-        {/* Bottom actions */}
+        {/* Bottom actions — above the app nav bar */}
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5,
-          padding: '9px 14px 12px', borderTop: '1px solid var(--border-primary)',
+          padding: '8px 14px', borderTop: '1px solid var(--border-primary)',
           flexShrink: 0, background: 'var(--bg-card)',
         }}>
           <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
