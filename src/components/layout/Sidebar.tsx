@@ -32,6 +32,7 @@ import {
   GitBranch,
   UserPlus,
   Globe,
+  CheckSquare,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { NAV_PERMISSION_MAP, ROLE_LABELS, ROLE_COLORS, hasPermission } from '@/lib/permissions';
@@ -80,6 +81,7 @@ const navigation: NavSection[] = [
       { label: 'Звіти', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
       { label: 'Гості', href: '/guests', icon: <Users size={20} />, permission: 'nav:guests' },
       { label: 'Документи', href: '/documents', icon: <FileText size={20} />, permission: 'nav:documents' },
+      { label: 'Задачі', href: '/tasks', icon: <CheckSquare size={20} />, permission: 'nav:tasks' },
       { label: 'Сайти', href: '/sites', icon: <Globe size={20} />, permission: 'nav:sites' },
     ],
   },
