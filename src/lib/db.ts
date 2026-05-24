@@ -4617,6 +4617,21 @@ function runMigrations(database: any) {
     )
   `);
 
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_attachments (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      url TEXT NOT NULL,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      content_type TEXT,
+      created_by TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
+
 }
 
 

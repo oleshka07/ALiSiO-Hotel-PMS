@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useDevice } from '@/lib/useDevice';
+import MobileTasks from '@/components/mobile/pages/MobileTasks';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Plus, Search, X, RefreshCw, Loader2, LayoutGrid, List,
   Calendar, ChevronDown, ChevronRight, Check, Clock, Tag,
   User, Building2, FolderOpen, Inbox, AlertTriangle, Filter,
-  Hash, Flag, CheckSquare,
+  Hash, Flag, CheckSquare, Paperclip, Image, Trash2,
 } from 'lucide-react';
 import './tasks.css';
 
@@ -66,6 +68,12 @@ interface AppUser {
   id: string;
   full_name: string;
   role: string;
+}
+
+interface Property {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 /* ================================================================
@@ -186,12 +194,13 @@ function QuickAdd({ projectId, onCreated }: { projectId: string | null; onCreate
    Task Detail Drawer
    ================================================================ */
 function TaskDrawer({
-  task, projects, tags, users, onClose, onUpdated, onDeleted,
+  task, projects, tags, users, properties, onClose, onUpdated, onDeleted,
 }: {
   task: Task;
   projects: TaskProject[];
   tags: TaskTag[];
   users: AppUser[];
+  properties: Property[];
   onClose: () => void;
   onUpdated: () => void;
   onDeleted: () => void;
@@ -213,7 +222,11 @@ function TaskDrawer({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [attachments, setAttachments] = useState<{id: string; filename: string; url: string; file_size: number; content_type: string; created_at: string}[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch subtasks
   useEffect(() => {
@@ -222,6 +235,47 @@ function TaskDrawer({
       .then(data => setSubtasks(Array.isArray(data) ? data : data.tasks || []))
       .catch(() => {});
   }, [task.id]);
+
+  // Fetch attachments
+  useEffect(() => {
+    fetch(`/api/tasks/${task.id}/attachments`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAttachments(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [task.id]);
+
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (let i = 0; i < files.length; i++) {
+      const formData = new FormData();
+      formData.append('file', files[i]);
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/attachments`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (res.ok) {
+          const att = await res.json();
+          setAttachments(prev => [att, ...prev]);
+        }
+      } catch { /* */ }
+    }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    try {
+      await fetch(`/api/tasks/${task.id}/attachments`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attachment_id: attachmentId }),
+      });
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+    } catch { /* */ }
+  };
 
   // Auto-resize title
   useEffect(() => {
@@ -295,7 +349,7 @@ function TaskDrawer({
   };
 
   // Debounce save
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const autoSave = useCallback((updates: Partial<typeof form>) => {
     const newForm = { ...form, ...updates };
     setForm(newForm);
@@ -437,6 +491,9 @@ function TaskDrawer({
                   onChange={e => autoSave({ property_id: e.target.value })}
                 >
                   <option value="">Не прив&apos;язано</option>
+                  {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -540,6 +597,79 @@ function TaskDrawer({
               placeholder="Додати опис..."
             />
           </div>
+
+          {/* Attachments */}
+          <div className="task-drawer-section">
+            <div className="task-drawer-section-title">
+              <Paperclip size={12} /> Фото та файли
+              {attachments.length > 0 && (
+                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                  {attachments.length}
+                </span>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleUploadFile}
+            />
+            {attachments.length > 0 && (
+              <div className="task-attachments-grid">
+                {attachments.map(att => {
+                  const isImage = att.content_type?.startsWith('image/');
+                  return (
+                    <div key={att.id} className="task-attachment-item">
+                      {isImage ? (
+                        <img
+                          src={att.url}
+                          alt={att.filename}
+                          className="task-attachment-img"
+                          onClick={() => setPreviewImage(att.url)}
+                        />
+                      ) : (
+                        <div className="task-attachment-file" onClick={() => window.open(att.url, '_blank')}>
+                          <Paperclip size={20} />
+                          <span>{att.filename}</span>
+                        </div>
+                      )}
+                      <button
+                        className="task-attachment-delete"
+                        onClick={() => handleDeleteAttachment(att.id)}
+                        title="Видалити"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              className="subtask-add"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{ marginTop: 4 }}
+            >
+              {uploading ? <Loader2 size={14} className="animate-pulse" /> : <Image size={14} />}
+              {uploading ? 'Завантаження...' : 'Додати фото / файл'}
+            </button>
+          </div>
+
+          {/* Image Preview Lightbox */}
+          {previewImage && (
+            <div
+              className="task-lightbox"
+              onClick={() => setPreviewImage(null)}
+            >
+              <img src={previewImage} alt="Preview" />
+              <button className="task-lightbox-close" onClick={() => setPreviewImage(null)}>
+                <X size={20} />
+              </button>
+            </div>
+          )}
 
           {/* Subtasks */}
           <div className="task-drawer-section">
@@ -775,10 +905,17 @@ function CreateTagModal({ open, onClose, onCreated }: {
    Main Tasks Page
    ================================================================ */
 export default function TasksPage() {
+  const { isMobile } = useDevice();
+  if (isMobile) return <MobileTasks />;
+  return <TasksDesktop />;
+}
+
+function TasksDesktop() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<TaskProject[]>([]);
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'kanban'>('list');
   const [search, setSearch] = useState('');
@@ -788,6 +925,8 @@ export default function TasksPage() {
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showCreateTag, setShowCreateTag] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const onMenuClick = useMobileMenu();
 
   // Fetch data
@@ -834,11 +973,21 @@ export default function TasksPage() {
     } catch { /* */ }
   }, []);
 
+  const fetchProperties = useCallback(async () => {
+    try {
+      const res = await fetch('/api/properties');
+      if (res.ok) {
+        const data = await res.json();
+        setProperties(Array.isArray(data) ? data : []);
+      }
+    } catch { /* */ }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchTasks(), fetchProjects(), fetchTags(), fetchUsers()]);
+    await Promise.all([fetchTasks(), fetchProjects(), fetchTags(), fetchUsers(), fetchProperties()]);
     setLoading(false);
-  }, [fetchTasks, fetchProjects, fetchTags, fetchUsers]);
+  }, [fetchTasks, fetchProjects, fetchTags, fetchUsers, fetchProperties]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -917,6 +1066,67 @@ export default function TasksPage() {
     } catch { /* */ }
   };
 
+  /* ── Kanban Drag & Drop ── */
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', taskId);
+    // Make drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedTaskId(null);
+    setDragOverColumn(null);
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, statusKey: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColumn !== statusKey) setDragOverColumn(statusKey);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only reset if leaving the column entirely (not entering a child)
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
+    if (relatedTarget && e.currentTarget.contains(relatedTarget)) return;
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (!taskId) return;
+
+    // Optimistic update
+    setTasks(prev => prev.map(t =>
+      t.id === taskId
+        ? { ...t, status: newStatus, completed_at: newStatus === 'done' ? new Date().toISOString() : null }
+        : t
+    ));
+
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          completed_at: newStatus === 'done' ? new Date().toISOString() : null,
+        }),
+      });
+      fetchTasks();
+    } catch {
+      fetchTasks(); // Revert on error
+    }
+    setDraggedTaskId(null);
+  };
+
   /* ────────── Render Project Tree ────────── */
   const renderProjectItem = (project: TaskProject, depth = 0) => (
     <div key={project.id}>
@@ -938,7 +1148,7 @@ export default function TasksPage() {
   return (
     <>
       <Header title="Задачі" onMenuClick={onMenuClick} />
-      <div className="app-content" style={{ padding: 0 }}>
+      <div className="app-content" style={{ paddingLeft: 0, paddingRight: 0, paddingBottom: 0 }}>
         <div className="tasks-layout">
           {/* ═══════ SIDEBAR ═══════ */}
           <div className="tasks-sidebar">
@@ -1153,8 +1363,15 @@ export default function TasksPage() {
                   .filter(([key]) => key !== 'cancelled')
                   .map(([statusKey, cfg]) => {
                     const columnTasks = filteredTasks.filter(t => t.status === statusKey);
+                    const isOver = dragOverColumn === statusKey;
                     return (
-                      <div key={statusKey} className="tasks-kanban-column">
+                      <div
+                        key={statusKey}
+                        className={`tasks-kanban-column ${isOver ? 'kanban-drop-target' : ''}`}
+                        onDragOver={e => handleDragOver(e, statusKey)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={e => handleDrop(e, statusKey)}
+                      >
                         <div className="tasks-kanban-header">
                           <div className="tasks-kanban-title">
                             <span className="tasks-kanban-title-icon">{cfg.icon}</span>
@@ -1167,16 +1384,20 @@ export default function TasksPage() {
                         </div>
                         <div className="tasks-kanban-body">
                           {columnTasks.length === 0 && (
-                            <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
-                              Немає задач
+                            <div className={`kanban-empty-drop ${isOver ? 'active' : ''}`}
+                              style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
+                              {isOver ? 'Відпустити тут' : 'Немає задач'}
                             </div>
                           )}
                           {columnTasks.map(task => (
                             <div
                               key={task.id}
-                              className="tasks-kanban-card"
+                              className={`tasks-kanban-card ${draggedTaskId === task.id ? 'dragging' : ''}`}
                               style={{ '--priority-color': PRIORITY_CONFIG[task.priority]?.color } as React.CSSProperties}
                               onClick={() => setSelectedTask(task)}
+                              draggable
+                              onDragStart={e => handleDragStart(e, task.id)}
+                              onDragEnd={handleDragEnd}
                             >
                               <div className="tasks-kanban-card-title">{task.title}</div>
                               <div className="tasks-kanban-card-meta">
@@ -1272,6 +1493,7 @@ export default function TasksPage() {
           projects={projects}
           tags={tags}
           users={users}
+          properties={properties}
           onClose={() => setSelectedTask(null)}
           onUpdated={() => { fetchTasks(); fetchProjects(); }}
           onDeleted={() => { fetchTasks(); fetchProjects(); setSelectedTask(null); }}
