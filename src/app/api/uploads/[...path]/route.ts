@@ -26,6 +26,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const mimeTypes: Record<string, string> = {
       '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
       '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+      '.heic': 'image/heic', '.heif': 'image/heif',
+      '.pdf': 'application/pdf',
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
