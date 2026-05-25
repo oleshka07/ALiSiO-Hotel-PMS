@@ -138,6 +138,8 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       const uAll = await uRes.json();
       const bAll = await bRes.json();
       const fUnits = (Array.isArray(uAll) ? uAll : []).filter((u: any) => {
+        // Pool unit always included regardless of building — Чорновик is shared
+        if (u.is_pool === 1) return true;
         const code = (u.code || '').toUpperCase();
         const buildingNameUpper = (u.building_name || '').toUpperCase();
         return code.startsWith(activeBuilding) || buildingNameUpper.includes(activeBuilding);
@@ -150,11 +152,12 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       let poolBookings: any[] = [];
       if (poolU) {
         try {
-          const pbRes = await fetch(`/api/bookings?category=resort&status=draft`);
+          // Fetch pool bookings by unit_id — no date filter needed, only a few records
+          const pbRes = await fetch(`/api/bookings?unit_id=${poolU.id}`);
           if (pbRes.ok) {
             const pbAll = await pbRes.json();
             const pbList = Array.isArray(pbAll) ? pbAll : (pbAll.bookings || []);
-            poolBookings = pbList.filter((b: any) => b.unit_id === poolU.id);
+            poolBookings = pbList.filter((b: any) => !['cancelled', 'no_show'].includes(b.status));
           }
         } catch { /* non-fatal */ }
       }
@@ -318,7 +321,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     );
     if (otherInOrigin) return { ok: false, reason: `${fromRoom.code}: інше бронювання на ці дати` };
     return { ok: true, type: 'swap' };
-  }, [bookings, units, bookingByUnit]);
+  }, [bookings, units, bookingByUnit, poolUnitId]);
 
   const showToast = (text: string, kind: 'ok' | 'err' = 'ok') => {
     setToast({ text, kind });
@@ -326,6 +329,12 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   };
 
   const handleDeleteDraft = useCallback(async (bookingId: string) => {
+    // Safety: only allow deleting draft/pool bookings
+    const bk = bookings.find(b => b.id === bookingId);
+    if (bk && bk.status !== 'draft' && bk.unit_id !== poolUnitId) {
+      showToast('Можна видалити тільки чорновикові бронювання', 'err');
+      return;
+    }
     try {
       const resp = await fetch(`/api/bookings/${bookingId}`, { method: 'DELETE' });
       if (!resp.ok) {
@@ -339,7 +348,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     } catch (e: any) {
       showToast(e.message || 'Помилка видалення', 'err');
     }
-  }, [fetchData, onChanged]);
+  }, [fetchData, onChanged, bookings, poolUnitId]);
 
   const attemptMove = useCallback(async (bookingId: string, destUnitId: string) => {
     const guest = bookings.find(b => b.id === bookingId);
@@ -662,7 +671,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
             <button
               key={code}
               className={`ram-tab ${activeBuilding === code ? 'ram-tab-active' : ''}`}
-              onClick={() => setActiveBuilding(code)}
+              onClick={() => { setActiveBuilding(code); setDetailBooking(null); setSelectedId(null); }}
             >
               Будова {code}
             </button>
@@ -1158,7 +1167,7 @@ function RoomAllocationStyles() {
         font-family: 'JetBrains Mono', ui-monospace, monospace;
       }
       .ram-chip-info {
-        width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0;
+        width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
         background: rgba(91,124,255,0.12); border: 1px solid rgba(91,124,255,0.3);
         color: #5B7CFF; cursor: pointer;
         display: flex; align-items: center; justify-content: center;

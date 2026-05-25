@@ -94,6 +94,13 @@ export async function listReservations(request: NextRequest) {
       params.push(sourceFilter);
     }
 
+    // Filter by specific unit (e.g. pool unit for staging strip)
+    const unitIdFilter = searchParams.get('unit_id') || '';
+    if (unitIdFilter) {
+      query += ' AND r.unit_id = ?';
+      params.push(unitIdFilter);
+    }
+
     query += ' ORDER BY r.check_in ASC';
 
     const rows = db.prepare(query).all(...params);
