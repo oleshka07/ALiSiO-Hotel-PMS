@@ -162,6 +162,15 @@ jobs:
               node fix-eur-operations.js --apply || echo "[migration] fix-eur-operations.js returned non-zero (non-fatal)"
             fi
 
+            # ─────────────────────────────────────────────────────────
+            # One-time diagnostic: trace missing Štepanek Petr payment
+            # and find all orphaned paid reservations without fin_ops.
+            # ─────────────────────────────────────────────────────────
+            if [ -f diagnose-guest-payment.js ]; then
+              echo "[diagnostic] Running guest payment trace..."
+              node diagnose-guest-payment.js 2>&1 || echo "[diagnostic] script returned non-zero (non-fatal)"
+            fi
+
             # Restart service only after a successful build.
             systemctl restart alisio-pms
             sleep 3

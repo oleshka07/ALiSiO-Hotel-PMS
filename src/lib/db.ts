@@ -2,6 +2,7 @@
 import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 // Database file path — stored in project root /data directory
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -428,18 +429,19 @@ function runMigrations(database: any) {
     console.log('[DB] columns migration note:', e.message);
   }
 
-  // --- Migration: set default password for users without one ---
+  // --- Migration: set secure random password for users without one ---
   try {
     const usersWithoutPw: any[] = database.prepare(
       "SELECT id FROM app_users WHERE password_hash IS NULL OR password_hash = ''"
     ).all();
     if (usersWithoutPw.length > 0) {
-      const hash = bcrypt.hashSync('admin123', 10);
+      const randomPw = crypto.randomBytes(16).toString('hex');
+      const hash = bcrypt.hashSync(randomPw, 10);
       const stmt = database.prepare('UPDATE app_users SET password_hash = ? WHERE id = ?');
       for (const u of usersWithoutPw) {
         stmt.run(hash, u.id);
       }
-      console.log(`[DB] Set default password for ${usersWithoutPw.length} user(s)`);
+      console.warn(`[DB] ⚠️ Set random password for ${usersWithoutPw.length} user(s). Reset passwords manually via admin panel.`);
     }
   } catch (e: any) {
     console.log('[DB] password hash note:', e.message);
@@ -4635,14 +4637,9 @@ function runMigrations(database: any) {
 }
 
 
-// Generate a random 12-char token for guest pages
+// Generate a cryptographically secure random token for guest pages
 export function generateGuestToken(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 12; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function seedData(database: any) {
@@ -4727,8 +4724,8 @@ function seedData(database: any) {
   database.prepare('INSERT INTO fees_taxes (id, property_id, name, type, amount) VALUES (?, ?, ?, ?, ?)').run('fee_tax', propId, 'Туристичний збір', 'per_person_per_night', 50);
 
   // Admin users (owners)
-  const defaultPasswordHash = bcrypt.hashSync('admin123', 10);
-  const user4svHash = bcrypt.hashSync('4sv.exe', 10);
+  const defaultPasswordHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+  const user4svHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_admin', orgId, 'admin@alisio.cz', 'Admin ALiSiO', 'owner', defaultPasswordHash);
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_4sv', orgId, '4sv.exe@gmail.com', '4sv.exe Admin', 'owner', user4svHash);

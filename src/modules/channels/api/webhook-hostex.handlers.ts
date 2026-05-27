@@ -13,7 +13,8 @@ export async function hostexWebhook(request: NextRequest): Promise<NextResponse>
 
   const incomingToken = request.headers.get('Hostex-Webhook-Secret-Token') || '';
   if (WEBHOOK_SECRET && incomingToken !== WEBHOOK_SECRET) {
-    console.warn('[Hostex Webhook] Unexpected token:', incomingToken);
+    console.warn('[Hostex Webhook] Rejected: invalid secret token');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const event = (payload.event as string) || '';
