@@ -784,11 +784,25 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           </div>
 
           {totalWithDiscount === 0 ? (
-            <div className="v3-invoice-notice" style={{ background: 'rgba(47,79,43,0.06)', borderColor: 'rgba(47,79,43,0.25)' }}>
-              <div className="v3-invoice-notice-icon">🎁</div>
-              <div className="v3-invoice-notice-text">
-                <strong>{lang === 'cs' ? 'Bezplatná rezervace' : lang === 'de' ? 'Kostenlose Buchung' : lang === 'en' ? 'No payment required' : 'Оплачувати нічого не потрібно'}</strong>
-                <p>{lang === 'cs' ? 'Vaše rezervace je plně pokryta slevovým kódem. Stačí potvrdit.' : lang === 'de' ? 'Ihre Buchung ist vollständig durch Ihren Rabattcode abgedeckt. Bestätigen Sie einfach.' : lang === 'en' ? 'Your booking is fully covered by your offer. Just confirm.' : 'Ваше бронювання повністю покрите вашим промокодом. Просто підтвердіть.'}</p>
+            <div className="v3-invoice-notice" style={{ background: 'rgba(47,79,43,0.06)', borderColor: 'rgba(47,79,43,0.25)', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div className="v3-invoice-notice-icon">🎁</div>
+                <div className="v3-invoice-notice-text">
+                  <strong>{lang === 'cs' ? 'Bezplatná rezervace' : lang === 'de' ? 'Kostenlose Buchung' : lang === 'en' ? 'No payment required' : 'Оплачувати нічого не потрібно'}</strong>
+                  <p style={{ margin: '4px 0 0' }}>{lang === 'cs' ? 'Vaše rezervace je plně pokryta slevovým kódem. Stačí potvrdit.' : lang === 'de' ? 'Ihre Buchung ist vollständig durch Ihren Rabattcode abgedeckt. Bestätigen Sie einfach.' : lang === 'en' ? 'Your booking is fully covered by your offer. Just confirm.' : 'Ваше бронювання повністю покрите вашим промокодом. Просто підтвердіть.'}</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'rgba(47,79,43,0.09)', borderRadius: 8, padding: '10px 12px', borderLeft: '3px solid var(--moss)' }}>
+                <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>📩</span>
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--moss)', fontWeight: 600 }}>
+                  {lang === 'cs'
+                    ? 'Dokončete registraci přes odkaz, který přijde na váš e-mail — bez toho rezervace nebude potvrzena.'
+                    : lang === 'de'
+                    ? 'Schließen Sie die Registrierung über den Link ab, der an Ihre E-Mail gesendet wird — ohne dies wird die Buchung nicht bestätigt.'
+                    : lang === 'en'
+                    ? 'Complete your registration via the link sent to your email — your booking won\'t be confirmed without it.'
+                    : 'Важливо: завершіть реєстрацію за посиланням, яке надійде на вашу електронну пошту — без цього бронювання не буде підтверджено.'}
+                </p>
               </div>
             </div>
           ) : siteConfig?.hasPayment ? (
