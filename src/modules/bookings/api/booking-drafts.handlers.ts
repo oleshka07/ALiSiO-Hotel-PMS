@@ -233,7 +233,7 @@ const ADMIN_PINS: Record<string, string> = {
 // When an admin confirms cash payment via PIN, the fin_operation is routed
 // to their personal cash account (not the first one by sort_order).
 const PIN_TO_ACCOUNT_NAME: Record<string, string> = {
-  '1315': 'Андрів cash',
+  '1315': 'Андріїв cash',
   '2099': 'Каса Кемпінг і проживання',
   '0309': 'Олег наличные',
   '0912': 'Антон Готівка',

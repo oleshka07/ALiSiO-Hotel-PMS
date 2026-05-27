@@ -27,7 +27,7 @@ const db = new Database(DB_PATH);
 
 // Admin name → account name mapping (must match PIN_TO_ACCOUNT_NAME in booking-drafts.handlers.ts)
 const ADMIN_TO_ACCOUNT = {
-  'Андрей': 'Андрів cash',
+  'Андрей': 'Андріїв cash',
   'т. Наташа': 'Каса Кемпінг і проживання',
   'Олег': 'Олег наличные',
   'Антон': 'Антон Готівка',
