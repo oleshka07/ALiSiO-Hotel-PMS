@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X, MoreVertical, Phone, Mail, MessageCircle, Check, Clock, Lock,
   Plus, Copy, ExternalLink, Edit3, Loader2, Save, Receipt,
@@ -95,6 +95,8 @@ export default function MobileBookingDetail({
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
   const [subBookings, setSubBookings] = useState<any[]>([]);
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const ocrFileRef = useRef<HTMLInputElement>(null);
 
   const checkIn = formatDate(b.check_in);
   const checkOut = formatDate(b.check_out);
@@ -111,6 +113,13 @@ export default function MobileBookingDetail({
   const regBadge = `${registrations.length}/${regNeeded}`;
 
   const sourceInfo = sourceMap[b.source] || { label: b.source || 'Direct', color: '#6B7392' };
+
+  // Lock body scroll when sheet is open
+  useEffect(() => {
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = orig; };
+  }, []);
 
   useEffect(() => {
     if (!b?.id) return;
@@ -208,15 +217,40 @@ export default function MobileBookingDetail({
     showToast('Видалено');
   };
 
-  const handleCopyGuestLink = () => {
-    if (!b.guest_page_token) return;
-    navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`)
+  const handleCopyGuestLink = async () => {
+    let token = b.guest_page_token;
+    if (!token) {
+      // Auto-generate token
+      try {
+        const res = await fetch(`/api/bookings/${b.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generate_guest_token: true }),
+        });
+        const data = await res.json();
+        token = data.guest_page_token;
+        if (token) setBooking({ ...b, guest_page_token: token });
+      } catch { /* ignore */ }
+    }
+    if (!token) { showToast('Не вдалося створити посилання'); return; }
+    navigator.clipboard.writeText(`${window.location.origin}/guest/${token}`)
       .then(() => showToast('Посилання скопійовано'));
   };
 
-  const handleOpenGuestPage = () => {
-    if (!b.guest_page_token) return;
-    window.open(`/guest/${b.guest_page_token}`, '_blank');
+  const handleOpenGuestPage = async () => {
+    let token = b.guest_page_token;
+    if (!token) {
+      try {
+        const res = await fetch(`/api/bookings/${b.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generate_guest_token: true }),
+        });
+        const data = await res.json();
+        token = data.guest_page_token;
+        if (token) setBooking({ ...b, guest_page_token: token });
+      } catch { /* ignore */ }
+    }
+    if (!token) { showToast('Не вдалося створити посилання'); return; }
+    window.open(`/guest/${token}`, '_blank');
   };
 
   // ── Render helpers
@@ -245,26 +279,8 @@ export default function MobileBookingDetail({
       <div className="m-sheet-backdrop" onClick={onClose} />
       <div className="m-sheet mbd-sheet" style={{ maxHeight: '94dvh', display: 'flex', flexDirection: 'column' }}>
 
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 14px', borderBottom: '1px solid var(--border-primary)',
-          flexShrink: 0,
-        }}>
-          <button onClick={onClose} className="m-header-btn" aria-label="Закрити">
-            <X size={20} />
-          </button>
-          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Бронювання</span>
-            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>#{b.id}</span>
-          </div>
-          <button className="m-header-btn" aria-label="Більше">
-            <MoreVertical size={20} />
-          </button>
-        </div>
-
         {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', minHeight: 0 }}>
 
           {/* Multi-room warning */}
           {b.is_multi_room && (
@@ -278,9 +294,17 @@ export default function MobileBookingDetail({
           )}
 
           {/* Guest section */}
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-              <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 4, paddingBottom: 8 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-primary)' }} />
+            </div>
+            {/* Name row with close button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={onClose} style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }} aria-label="Закрити">
+                <X size={16} />
+              </button>
+              <div style={{ flex: 1, fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
                 {b.first_name} {b.last_name}
               </div>
               <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
@@ -387,45 +411,6 @@ export default function MobileBookingDetail({
             />
           </div>
 
-          {/* Primary actions */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr',
-            gap: 6, padding: '10px 14px',
-            borderBottom: '1px solid var(--border-primary)',
-          }}>
-            {b.status === 'confirmed' && (
-              <button onClick={() => onChangeStatus(b.id, 'checked_in')} disabled={!canCheckIn}
-                style={primaryActionStyle(canCheckIn ? 'primary' : 'disabled')}
-                title={!canCheckIn ? 'Спочатку оплата та реєстрація' : ''}>
-                <Check size={14} strokeWidth={2.2} /> Заселити
-                {!canCheckIn && <Lock size={11} style={{ opacity: 0.7 }} />}
-              </button>
-            )}
-            {b.status === 'checked_in' && (
-              <button onClick={() => onChangeStatus(b.id, 'checked_out')} style={primaryActionStyle('primary')}>
-                <Check size={14} strokeWidth={2.2} /> Виселити
-              </button>
-            )}
-            {b.status === 'tentative' && (
-              <button onClick={() => onChangeStatus(b.id, 'confirmed')} style={primaryActionStyle('primary')}>
-                <Check size={14} strokeWidth={2.2} /> Підтвердити
-              </button>
-            )}
-            {!['confirmed','checked_in','checked_out','tentative'].includes(b.status) && (
-              <div style={{ ...primaryActionStyle('confirmed'), justifyContent: 'center', cursor: 'default' }}>
-                <span style={{ fontSize: 12 }}>{STATUS_LABELS[b.status] || b.status}</span>
-              </div>
-            )}
-            {!['cancelled','checked_out'].includes(b.status) ? (
-              <button onClick={() => { if (confirm('Скасувати бронювання?')) onChangeStatus(b.id, 'cancelled'); }}
-                style={primaryActionStyle('danger')}>
-                <X size={14} strokeWidth={2.2} /> Скасувати
-              </button>
-            ) : <div />}
-            <div style={primaryActionStyle('confirmed', { cursor: 'default' })}>
-              {STATUS_LABELS[b.status] || b.status}
-            </div>
-          </div>
 
           {/* Tabs */}
           <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid var(--border-primary)' }}>
@@ -613,15 +598,70 @@ export default function MobileBookingDetail({
               )}
 
               {!showRegForm && registrations.length < regNeeded && (
-                <button onClick={() => setShowRegForm(true)}
-                  style={{
-                    marginTop: 12, width: '100%', padding: 12, borderRadius: 10,
-                    background: 'rgba(91,124,255,0.12)', color: '#5B7CFF',
-                    border: '1px solid rgba(91,124,255,0.3)', fontSize: 13, fontWeight: 600,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}>
-                  <Plus size={14} strokeWidth={2.3} /> Додати гостя
-                </button>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setShowRegForm(true)}
+                    style={{
+                      flex: 1, padding: 12, borderRadius: 10,
+                      background: 'rgba(91,124,255,0.12)', color: '#5B7CFF',
+                      border: '1px solid rgba(91,124,255,0.3)', fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                    <Plus size={14} strokeWidth={2.3} /> Додати гостя
+                  </button>
+                  <input type="file" accept="image/*" ref={ocrFileRef} style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setOcrScanning(true);
+                      try {
+                        const reader = new FileReader();
+                        const dataUrl = await new Promise<string>((resolve) => {
+                          reader.onload = () => resolve(reader.result as string);
+                          reader.readAsDataURL(file);
+                        });
+                        const res = await fetch('/api/bookings/ocr', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ image: dataUrl }),
+                        });
+                        const data = await res.json();
+                        if (data.success !== false && data.data) {
+                          const ocr = data.data;
+                          const docTypeMap: Record<string, string> = { id_card: 'ID_CARD', passport: 'PASSPORT', driving_license: 'DRIVING_LICENCE', other: 'OTHER' };
+                          setRegForm(p => ({
+                            ...p,
+                            firstName: ocr.firstName || p.firstName,
+                            lastName: ocr.lastName || p.lastName,
+                            dateOfBirth: ocr.dateOfBirth || p.dateOfBirth,
+                            documentNumber: ocr.documentNumber || p.documentNumber,
+                            documentType: docTypeMap[ocr.documentType] || p.documentType,
+                            nationality: ocr.nationality || p.nationality,
+                            address: ocr.address || p.address,
+                          }));
+                          setShowRegForm(true);
+                          showToast(`\u2705 ${ocr.firstName} ${ocr.lastName} (${ocr.confidence || '?'}%)`);
+                        } else {
+                          showToast(`\u274c ${data.error || 'Не вдалось розпізнати'}`);
+                        }
+                      } catch (err: any) {
+                        showToast(`\u274c ${err.message || 'Помилка'}`);
+                      } finally {
+                        setOcrScanning(false);
+                        if (ocrFileRef.current) ocrFileRef.current.value = '';
+                      }
+                    }} />
+                  <button onClick={() => ocrFileRef.current?.click()} disabled={ocrScanning}
+                    style={{
+                      padding: '12px 16px', borderRadius: 10,
+                      background: 'rgba(99,102,241,0.12)', color: '#6366f1',
+                      border: '1px solid rgba(99,102,241,0.25)', fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      whiteSpace: 'nowrap',
+                    }}>
+                    {ocrScanning ? <Loader2 size={14} className="animate-spin" /> : '\ud83d\udcf7'}
+                    {ocrScanning ? '...' : 'Фото'}
+                  </button>
+                </div>
               )}
 
               {showRegForm && (
@@ -697,30 +737,23 @@ export default function MobileBookingDetail({
           )}
         </div>
 
-        {/* Bottom actions */}
+        {/* Bottom actions — above the app nav bar */}
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5,
-          padding: '9px 14px', borderTop: '1px solid var(--border-primary)',
-          flexShrink: 0,
+          padding: '8px 14px', borderTop: '1px solid var(--border-primary)',
+          flexShrink: 0, background: 'var(--bg-card)',
         }}>
-          <button onClick={onClose} style={bottomActionStyle('default')}>Закрити</button>
-          {b.guest_page_token ? (
-            <>
-              <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
-                <Copy size={12} /> Копія
-              </button>
-              <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
-                <ExternalLink size={12} /> Гостьова
-              </button>
-            </>
-          ) : (
-            <>
-              <div />
-              <div />
-            </>
-          )}
+          <button onClick={handleCopyGuestLink} style={bottomActionStyle('default')}>
+            <Copy size={12} /> Копія
+          </button>
+          <button onClick={handleOpenGuestPage} style={bottomActionStyle('default')}>
+            <ExternalLink size={12} /> Гостьова
+          </button>
           <button onClick={onEdit} style={bottomActionStyle('edit')}>
-            <Edit3 size={12} /> Редагувати
+            <Edit3 size={12} /> Змінити
+          </button>
+          <button onClick={() => { if (confirm('Скасувати бронювання?')) onChangeStatus(b.id, 'cancelled'); }} style={bottomActionStyle('danger')}>
+            <X size={12} /> Скасувати
           </button>
         </div>
       </div>
@@ -774,7 +807,7 @@ function payBtnStyle(variant: 'primary' | 'active' | 'default' | 'disabled'): Re
   }
 }
 
-function bottomActionStyle(variant: 'default' | 'edit'): React.CSSProperties {
+function bottomActionStyle(variant: 'default' | 'edit' | 'danger'): React.CSSProperties {
   const base: React.CSSProperties = {
     padding: '9px 4px', borderRadius: 7, fontSize: 12, fontWeight: 500,
     textAlign: 'center', cursor: 'pointer',
@@ -782,6 +815,9 @@ function bottomActionStyle(variant: 'default' | 'edit'): React.CSSProperties {
   };
   if (variant === 'edit') {
     return { ...base, background: 'rgba(91,124,255,0.1)', color: '#5B7CFF', border: '1px solid rgba(91,124,255,0.28)' };
+  }
+  if (variant === 'danger') {
+    return { ...base, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' };
   }
   return { ...base, background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)' };
 }

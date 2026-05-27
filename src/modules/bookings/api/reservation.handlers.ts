@@ -156,6 +156,15 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     }
 
+    // Generate guest token on demand (from mobile footer buttons)
+    if (body.generate_guest_token) {
+      const existing = db.prepare('SELECT guest_page_token FROM reservations WHERE id = ?').get(id) as any;
+      if (!existing?.guest_page_token) {
+        sets.push('guest_page_token = ?');
+        values.push(generateGuestToken());
+      }
+    }
+
     if (sets.length > 0) {
       sets.push("updated_at = datetime('now')");
       values.push(id);
@@ -228,7 +237,9 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     } catch (cascErr) { console.error('[PATCH] cascade to children error (non-fatal):', cascErr); }
 
-    return NextResponse.json({ success: true });
+    // Return updated booking with guest_page_token
+    const updated = db.prepare('SELECT guest_page_token FROM reservations WHERE id = ?').get(id) as any;
+    return NextResponse.json({ success: true, guest_page_token: updated?.guest_page_token || null });
   } catch (error: any) {
     console.error('PATCH /api/bookings/[id] error:', error?.message || error);
     return NextResponse.json({ error: error?.message || 'Failed to update booking' }, { status: 500 });
@@ -240,7 +251,33 @@ export async function deleteReservation(_request: NextRequest, { params }: { par
     const db = getDb();
     const { id } = await params;
 
-    db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
+    db.transaction(() => {
+      // 1. Unlink from CRM leads
+      db.prepare('UPDATE crm_leads SET reservation_id = NULL WHERE reservation_id = ?').run(id);
+
+      // 2. Delete related cart events and activity logs
+      db.prepare('DELETE FROM cart_events WHERE reservation_id = ?').run(id);
+      db.prepare('DELETE FROM booking_activity_log WHERE reservation_id = ?').run(id);
+
+      // 3. Delete service orders
+      db.prepare('DELETE FROM service_orders WHERE reservation_id = ?').run(id);
+      db.prepare('DELETE FROM booking_service_orders WHERE reservation_id = ?').run(id);
+
+      // 4. Delete sub-booking structures (bundles)
+      db.prepare(`
+        DELETE FROM reservation_line_items 
+        WHERE sub_booking_id IN (SELECT id FROM reservation_sub_bookings WHERE reservation_id = ?)
+      `).run(id);
+      db.prepare('DELETE FROM reservation_sub_bookings WHERE reservation_id = ? OR child_reservation_id = ?').run(id, id);
+
+      // 5. Delete child reservations (if any multi-room logic was used)
+      // Since children might also have logs/service_orders, technically we should do this recursively,
+      // but for ALiSiO, children are usually lightweight placeholders.
+      db.prepare('DELETE FROM reservations WHERE parent_id = ?').run(id);
+
+      // 6. Finally delete the main reservation
+      db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
+    })();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

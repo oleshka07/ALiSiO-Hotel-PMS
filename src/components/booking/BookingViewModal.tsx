@@ -6,18 +6,20 @@ import {
   Loader2, Trash2, Phone, Receipt, RefreshCw, Clock, Lock, Mail, MessageCircle,
 } from 'lucide-react';
 
-function Modal({ open, onClose, title, children, footer, size }: {
+function Modal({ open, onClose, title, children, footer, size, hideTitle }: {
   open: boolean; onClose: () => void; title: string;
-  children: React.ReactNode; footer?: React.ReactNode; size?: 'lg';
+  children: React.ReactNode; footer?: React.ReactNode; size?: 'lg'; hideTitle?: boolean;
 }) {
   if (!open) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className={`modal ${size === 'lg' ? 'modal-lg' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3 className="modal-title">{title}</h3>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+        {!hideTitle && (
+          <div className="modal-header">
+            <h3 className="modal-title">{title}</h3>
+            <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          </div>
+        )}
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
@@ -83,6 +85,8 @@ export default function BookingViewModal({
   const [datesEditCI, setDatesEditCI] = useState('');
   const [datesEditCO, setDatesEditCO] = useState('');
   const [savingInline, setSavingInline] = useState(false);
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const ocrFileRef = React.useRef<HTMLInputElement>(null);
 
   // Sub-bookings state
   const [subBookings, setSubBookings] = useState<any[]>([]);
@@ -224,7 +228,7 @@ export default function BookingViewModal({
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Бронювання" size="lg"
+    <Modal open={true} onClose={onClose} title="Бронювання" size="lg" hideTitle={true}
       footer={<>
         <button className="btn btn-secondary" style={{ color: '#ef4444' }}
           onClick={() => { if (confirm('Точно скасувати бронь? Гість буде повідомлений.')) onChangeStatus(b.id, 'cancelled'); }}>
@@ -450,8 +454,9 @@ export default function BookingViewModal({
               </div>
             )}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
+          <div style={{ textAlign: 'right', position: 'relative' }}>
+            <button onClick={onClose} style={{ position: 'absolute', top: -2, right: -2, background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }} aria-label="Закрити"><X size={14} /></button>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 16 }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
             {(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}
             {b.currency !== 'EUR' && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>}
           </div>
@@ -505,10 +510,12 @@ export default function BookingViewModal({
               </div>
             );
           })()}
-          {/* Заселення */}
+          {/* Заселення — interactive chip */}
           {(() => {
             const isChecked = ['checked_in','checked_out'].includes(b.status);
+            const canDoAction = (b.status === 'confirmed' && canCheckIn) || b.status === 'checked_in';
             const chipStyle = isChecked ? { bg: 'rgba(34,197,94,0.05)', border: 'rgba(34,197,94,0.2)', dot: '#22c55e' }
+              : canDoAction ? { bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.35)', dot: '#f59e0b' }
               : { bg: 'var(--bg-secondary)', border: 'var(--border-primary)', dot: 'var(--text-tertiary)' };
             const daysUntil = Math.ceil((new Date(b.check_in + 'T00:00:00').getTime() - Date.now()) / 86400000);
             const checkinText = b.status === 'checked_out' ? 'Виїхав'
@@ -517,45 +524,31 @@ export default function BookingViewModal({
               : daysUntil === 1 ? 'Завтра'
               : daysUntil > 1 ? `Через ${daysUntil} дн.`
               : 'Минув';
+            const handleClick = () => {
+              if (b.status === 'confirmed' && canCheckIn) {
+                if (confirm('Заселити гостя?')) onChangeStatus(b.id, 'checked_in');
+              } else if (b.status === 'checked_in') {
+                if (confirm('Виселити гостя?')) onChangeStatus(b.id, 'checked_out');
+              }
+            };
             return (
-              <div style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px' }}>
+              <div onClick={canDoAction ? handleClick : undefined}
+                style={{ background: chipStyle.bg, border: `1px solid ${chipStyle.border}`, borderRadius: 10, padding: '10px 12px', cursor: canDoAction ? 'pointer' : 'default', transition: 'transform .15s, box-shadow .15s', ...(canDoAction ? { boxShadow: `0 0 0 1px ${chipStyle.dot}44` } : {}) }}
+                onMouseEnter={(e) => canDoAction && (e.currentTarget.style.transform = 'translateY(-1px)')}
+                onMouseLeave={(e) => canDoAction && (e.currentTarget.style.transform = '')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: isChecked ? `0 0 0 3px #22c55e33` : undefined, flexShrink: 0 }} />
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: chipStyle.dot, boxShadow: isChecked ? `0 0 0 3px #22c55e33` : canDoAction ? `0 0 0 3px ${chipStyle.dot}44` : undefined, flexShrink: 0, ...(canDoAction && !isChecked ? { animation: 'pulse 2s ease-in-out infinite' } : {}) }} />
                   <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 600 }}>Заселення</span>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 500, paddingLeft: 15, marginTop: 4, color: isChecked ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{checkinText}</div>
+                <div style={{ fontSize: 13, fontWeight: canDoAction ? 600 : 500, paddingLeft: 15, marginTop: 4, color: isChecked ? 'var(--text-primary)' : canDoAction ? chipStyle.dot : 'var(--text-tertiary)' }}>
+                  {canDoAction && b.status === 'confirmed' ? '▶ Заселити' : canDoAction && b.status === 'checked_in' ? '▶ Виселити' : checkinText}
+                </div>
               </div>
             );
           })()}
         </div>
 
-        {/* ── Action Buttons ── */}
-        <div style={{ display: 'flex', gap: 8, padding: '12px 0', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
-          {b.status === 'confirmed' && (
-            <button className="btn btn-sm btn-primary" disabled={!canCheckIn}
-              onClick={() => onChangeStatus(b.id, 'checked_in')}
-              title={!canCheckIn ? 'Спочатку оплатіть та зареєструйте гостей' : ''}>
-              <Check size={14} /> Заселити
-              {!canCheckIn && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>🔒</span>}
-            </button>
-          )}
-          {b.status === 'checked_in' && (
-            <button className="btn btn-sm btn-secondary" onClick={() => onChangeStatus(b.id, 'checked_out')}>
-              <ArrowRight size={14} /> Виселити
-            </button>
-          )}
-          {b.status === 'tentative' && (
-            <button className="btn btn-sm btn-primary" onClick={() => onChangeStatus(b.id, 'confirmed')}>
-              <Check size={14} /> Підтвердити
-            </button>
-          )}
-          {!['cancelled', 'checked_out'].includes(b.status) && (
-            <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }} onClick={() => onChangeStatus(b.id, 'cancelled')}>
-              <X size={14} /> Скасувати
-            </button>
-          )}
-          <span className={`badge ${STATUS_MAP[b.status]?.badge}`} style={{ alignSelf: 'center' }}>{STATUS_MAP[b.status]?.label}</span>
-        </div>
+
         {/* ── Next Action Banner ── */}
         {(() => {
           const daysUntil = Math.ceil((new Date(b.check_in + 'T00:00:00').getTime() - Date.now()) / 86400000);
@@ -749,24 +742,50 @@ export default function BookingViewModal({
                 </div>
               )}
 
-              {/* ── Invoice-to-company override ── */}
-              <div style={{ marginTop: 8, padding: '10px 14px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={companyMode}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setCompanyMode(next);
-                      await persistCompany(next, company);
-                      if (invoice) {
-                        showToast('ℹ️ Натисни "Перевиставити" щоб оновити фактуру');
-                      }
-                    }}
-                  />
-                  🏢 Виставити фактуру на компанію
-                  {savingCompany && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 'auto' }} />}
-                </label>
+              {/* ── Invoice + Company row ── */}
+              <div style={{ marginTop: 8, padding: '10px 14px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={companyMode}
+                      onChange={async (e) => {
+                        const next = e.target.checked;
+                        setCompanyMode(next);
+                        await persistCompany(next, company);
+                        if (invoice) {
+                          showToast('ℹ️ Натисни "Перевиставити" щоб оновити фактуру');
+                        }
+                      }}
+                    />
+                    🏢 На компанію
+                    {savingCompany && <Loader2 size={12} className="animate-spin" />}
+                  </label>
+                  {/* Invoice status inline */}
+                  {invoice ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Receipt size={13} style={{ color: '#22c55e', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#22c55e' }}>{invoice.invoice_number}</span>
+                      <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px' }}
+                        onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')}>👁</button>
+                      <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 3 }}
+                        onClick={handleReissue} disabled={reissuing}>
+                        {reissuing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                        Оновити
+                      </button>
+                    </div>
+                  ) : isPaid ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Receipt size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: '#f59e0b' }}>Не згенеровано</span>
+                      <button className="btn btn-sm btn-primary" style={{ fontSize: 10, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 3 }}
+                        onClick={handleReissue} disabled={reissuing}>
+                        {reissuing ? <Loader2 size={10} className="animate-spin" /> : <Receipt size={10} />}
+                        Згенерувати
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 {companyMode && (
                   <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <input
@@ -827,35 +846,6 @@ export default function BookingViewModal({
                 )}
               </div>
 
-              {/* ── Invoice block ── */}
-              {invoice ? (
-                <div style={{ marginTop: 8, padding: '12px 14px', background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Receipt size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>Фактура {invoice.invoice_number}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{invoice.issued_at} · {invoice.amount.toLocaleString()} {invoice.currency}</div>
-                  </div>
-                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }}
-                    onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')}>
-                    👁 Переглянути
-                  </button>
-                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}
-                    onClick={handleReissue} disabled={reissuing}>
-                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    Перевиставити
-                  </button>
-                </div>
-              ) : isPaid ? (
-                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Receipt size={14} style={{ flexShrink: 0 }} />
-                  <span style={{ flex: 1 }}>Інвойс ще не згенеровано</span>
-                  <button className="btn btn-sm btn-primary" style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                    onClick={handleReissue} disabled={reissuing}>
-                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <Receipt size={12} />}
-                    Згенерувати
-                  </button>
-                </div>
-              ) : null}
             </div>
           )}
 
@@ -902,7 +892,61 @@ export default function BookingViewModal({
 
               {registrations.length < regNeeded && (
                 <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-primary)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>➕ Гість #{registrations.length + 1}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>➕ Гість #{registrations.length + 1}</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input type="file" accept="image/*" capture="environment" ref={ocrFileRef} style={{ display: 'none' }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setOcrScanning(true);
+                          try {
+                            const reader = new FileReader();
+                            const dataUrl = await new Promise<string>((resolve) => {
+                              reader.onload = () => resolve(reader.result as string);
+                              reader.readAsDataURL(file);
+                            });
+                            const res = await fetch('/api/bookings/ocr', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ image: dataUrl }),
+                            });
+                            const data = await res.json();
+                            if (data.success !== false) {
+                              const ocr = data.data || data.ocr_results?.[0];
+                              if (ocr) {
+                                const docTypeMap: Record<string, string> = { id_card: 'ID_CARD', passport: 'PASSPORT', driving_license: 'DRIVING_LICENCE', other: 'OTHER' };
+                                setRegForm(p => ({
+                                  ...p,
+                                  firstName: ocr.firstName || p.firstName,
+                                  lastName: ocr.lastName || p.lastName,
+                                  dateOfBirth: ocr.dateOfBirth || p.dateOfBirth,
+                                  documentNumber: ocr.documentNumber || p.documentNumber,
+                                  documentType: docTypeMap[ocr.documentType] || p.documentType,
+                                  nationality: ocr.nationality || p.nationality,
+                                  address: ocr.address || p.address,
+                                }));
+                                showToast(`✅ Розпізнано: ${ocr.firstName} ${ocr.lastName} (точність: ${ocr.confidence || '?'}%)`);
+                              } else {
+                                showToast('⚠️ Не вдалося розпізнати документ');
+                              }
+                            } else {
+                              showToast(`❌ ${data.error || 'Помилка OCR'}`);
+                            }
+                          } catch (err: any) {
+                            showToast(`❌ ${err.message || 'Помилка'}`);
+                          } finally {
+                            setOcrScanning(false);
+                            if (ocrFileRef.current) ocrFileRef.current.value = '';
+                          }
+                        }} />
+                      <button onClick={() => ocrFileRef.current?.click()} disabled={ocrScanning}
+                        style={{ padding: '5px 10px', fontSize: 11, fontWeight: 600, background: 'rgba(99,102,241,0.12)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                        {ocrScanning ? <Loader2 size={12} className="animate-spin" /> : '📷'}
+                        {ocrScanning ? 'Розпізнається...' : 'Фото документа'}
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
                       <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Прізвище *</label>

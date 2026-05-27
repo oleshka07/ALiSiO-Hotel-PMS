@@ -4554,6 +4554,83 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_op ON fin_operation_audit(operation_id, performed_at DESC)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_fin_operation_audit_user ON fin_operation_audit(user_id, performed_at DESC)');
 
+  // --- Migration: create task management tables ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_projects (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      parent_id TEXT REFERENCES task_projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT NOT NULL DEFAULT '#4f6ef7',
+      icon TEXT DEFAULT '📁',
+      property_id TEXT REFERENCES properties(id) ON DELETE SET NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES task_projects(id) ON DELETE SET NULL,
+      parent_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'done', 'cancelled')),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+      due_date TEXT,
+      due_time TEXT,
+      assignee_id TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+      created_by TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+      property_id TEXT REFERENCES properties(id) ON DELETE SET NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_tags (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#6c7086',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_tag_links (
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      tag_id TEXT NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (task_id, tag_id)
+    )
+  `);
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_attachments (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      url TEXT NOT NULL,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      content_type TEXT,
+      created_by TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
 
 }
 

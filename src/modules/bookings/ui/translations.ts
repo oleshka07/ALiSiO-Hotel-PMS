@@ -172,6 +172,8 @@ export interface BookingTranslations {
   kidsOccupancyNotice: string;
   upTo?: string;
   datesConflict?: string;
+  guestPageNotice: string;
+  gdprNote: string;
 }
 
 const translations: Record<BookingLang, any> = {
@@ -318,6 +320,8 @@ const translations: Record<BookingLang, any> = {
     kidsOccupancyNotice: 'У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊',
     upTo: 'до',
     datesConflict: 'На жаль, ці дати вже заброньовано. Оберіть інші дати.',
+    guestPageNotice: 'Після заповнення форми ми надішлемо вам email з посиланням на вашу гостьову сторінку. Там ви знайдете пароль від будинку та Wi-Fi, точну адресу та інші деталі — після підтвердження оплати.',
+    gdprNote: 'Натискаючи «Далі», ви даєте згоду на обробку ваших персональних даних відповідно до нашої Політики конфіденційності.',
   },
   en: {
     brandName: 'QA Glamping',
@@ -462,6 +466,8 @@ const translations: Record<BookingLang, any> = {
     kidsOccupancyNotice: 'The house has one large bed — ideal for two adults. If you have a child, we are happy to make an exception: young guests do not require a separate bed 😊',
     upTo: 'up to',
     datesConflict: 'Sorry, these dates are already booked. Please choose different dates.',
+    guestPageNotice: 'After submitting the form, we will send you an email with a link to your guest page. There you will find the house & Wi-Fi password, exact address and other details — available after payment confirmation.',
+    gdprNote: 'By clicking "Next", you consent to the processing of your personal data in accordance with our Privacy Policy.',
   },
   cs: {
     brandName: 'QA Glamping',
@@ -606,6 +612,8 @@ const translations: Record<BookingLang, any> = {
     kidsOccupancyNotice: 'Dům má jednu velkou postel — ideální pro dva dospělé. Pokud máte dítě, rádi uděláme výjimku: malí hosté nepotřebují samostatnou postel 😊',
     upTo: 'až',
     datesConflict: 'Bohužel, tyto termíny jsou již obsazené. Zkuste prosím jiné termíny.',
+    guestPageNotice: 'Po vyplnění formuláře vám zašleme e-mail s odkazem na vaši stránku pro hosty. Tam najdete heslo k domu a Wi-Fi, přesnou adresu a další podrobnosti — dostupné po potvrzení platby.',
+    gdprNote: 'Kliknutím na „Další" souhlasíte se zpracováním vašich osobních údajů v souladu s našimi Zásadami ochrany osobních údajů.',
   },
   de: {
     brandName: 'QA Glamping',
@@ -750,6 +758,8 @@ const translations: Record<BookingLang, any> = {
     kidsOccupancyNotice: 'Das Haus verfügt über ein großes Bett — ideal für zwei Erwachsene. Wenn Sie ein Kind haben, machen wir gerne eine Ausnahme: Kleine Gäste benötigen kein separates Bett 😊',
     upTo: 'bis zu',
     datesConflict: 'Leider sind diese Termine bereits gebucht. Bitte wählen Sie andere Termine.',
+    guestPageNotice: 'Nach dem Absenden des Formulars senden wir Ihnen eine E-Mail mit einem Link zu Ihrer Gästseite. Dort finden Sie das Passwort für das Haus und WLAN, die genaue Adresse und weitere Details — nach Zahlungsbestätigung verfügbar.',
+    gdprNote: 'Mit dem Klick auf „Weiter" stimmen Sie der Verarbeitung Ihrer personenbezogenen Daten gemäß unserer Datenschutzerklärung zu.',
   },
 };
 

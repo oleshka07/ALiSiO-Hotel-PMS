@@ -45,7 +45,9 @@
       "@admin": ["./src/modules/admin/api"],
       "@admin/*": ["./src/modules/admin/api/*"],
       "@payments": ["./src/modules/payments/api"],
-      "@payments/*": ["./src/modules/payments/api/*"]
+      "@payments/*": ["./src/modules/payments/api/*"],
+      "@tasks": ["./src/modules/tasks/api"],
+      "@tasks/*": ["./src/modules/tasks/api/*"]
     }
   },
   "include": [

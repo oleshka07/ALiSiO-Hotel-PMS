@@ -256,6 +256,7 @@ export const uploadStatement = withPermission('import_bank_data', _uploadStateme
 // these are NOT wrapped with withPermission (the bot has no user session).
 export {
   recordTelegramOperation, listTelegramOperations, listTelegramCategories,
+  listTelegramServices, listTelegramReservations, createTelegramServiceOrder,
 } from './telegram-bridge.handlers';
 
 // ─── Attachments (PR #23) — manage_payments for write, view_finance for read ─

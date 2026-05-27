@@ -253,7 +253,7 @@ export async function createWidgetCheckoutSession(req: Request) {
         amount,
         currency: currency || 'CZK',
         description,
-        metadata: reservation_id ? { reservation_id, ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
+        metadata: reservation_id ? { reservation_id, source: 'widget_service', ...(orderId && { order_id: orderId }), ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
         credentials: hasSiteTeya ? {
           client_id: payCfg.teya.client_id,
           client_secret: payCfg.teya.client_secret,
@@ -275,11 +275,14 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       if (orderId) {
         try {
+          // Update payment_id COLUMN (critical for webhook matching) AND notes JSON
           const so = db.prepare("SELECT notes FROM service_orders WHERE id = ?").get(orderId) as any;
           if (so && so.notes) {
             const parsed = JSON.parse(so.notes);
             parsed.payment_id = session.sessionId;
-            db.prepare('UPDATE service_orders SET notes = ? WHERE id = ?').run(JSON.stringify(parsed), orderId);
+            db.prepare('UPDATE service_orders SET payment_id = ?, notes = ? WHERE id = ?').run(session.sessionId, JSON.stringify(parsed), orderId);
+          } else {
+            db.prepare('UPDATE service_orders SET payment_id = ? WHERE id = ?').run(session.sessionId, orderId);
           }
         } catch { /* */ }
       }

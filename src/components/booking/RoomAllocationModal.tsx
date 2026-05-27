@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { X, Building2, GripVertical, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Building2, GripVertical, Check, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 
 interface UnitRow {
   id: string;
@@ -33,6 +33,13 @@ interface BookingRow {
   last_name: string;
   guest_email?: string | null;
   guest_phone?: string | null;
+  total_price?: number;
+  currency?: string;
+  notes?: string | null;
+  internal_notes?: string | null;
+  nights?: number;
+  unit_type_name?: string;
+  unit_code?: string;
 }
 
 interface RoomAllocationModalProps {
@@ -89,6 +96,8 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null);
+  const [activeBuilding, setActiveBuilding] = useState(buildingCode || 'F');
+  const [detailBooking, setDetailBooking] = useState<BookingRow | null>(null);
 
   const todayISO = useMemo(() => toISO(new Date()), []);
   const [viewDate, setViewDate] = useState(todayISO);
@@ -121,6 +130,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
         // include_pool=1 brings in the virtual staging pool unit; we
         // separate it from real rooms client-side.
         fetch('/api/units?category=resort&include_pool=1'),
+        // Room bookings: date-filtered for performance
         fetch(`/api/bookings?category=resort&check_out_from=${todayISO}&date_to=${horizonISO}&limit=500`),
       ]);
       if (!uRes.ok) throw new Error('Не вдалося завантажити юніти');
@@ -128,25 +138,52 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       const uAll = await uRes.json();
       const bAll = await bRes.json();
       const fUnits = (Array.isArray(uAll) ? uAll : []).filter((u: any) => {
+        // Pool unit always included regardless of building — Чорновик is shared
+        if (u.is_pool === 1) return true;
         const code = (u.code || '').toUpperCase();
         const buildingNameUpper = (u.building_name || '').toUpperCase();
-        return code.startsWith(buildingCode) || buildingNameUpper.includes(buildingCode);
+        return code.startsWith(activeBuilding) || buildingNameUpper.includes(activeBuilding);
       });
       const fUnitIds = new Set(fUnits.map((u: any) => u.id));
+
+      // Find pool unit to fetch its bookings separately (no date filter —
+      // pool bookings are drafts that must always be visible).
+      const poolU = fUnits.find((u: any) => u.is_pool === 1);
+      let poolBookings: any[] = [];
+      if (poolU) {
+        try {
+          // Fetch pool bookings by unit_id — no date filter needed, only a few records
+          const pbRes = await fetch(`/api/bookings?unit_id=${poolU.id}`);
+          if (pbRes.ok) {
+            const pbAll = await pbRes.json();
+            const pbList = Array.isArray(pbAll) ? pbAll : (pbAll.bookings || []);
+            poolBookings = pbList.filter((b: any) => !['cancelled', 'no_show'].includes(b.status));
+          }
+        } catch { /* non-fatal */ }
+      }
+
       const list = Array.isArray(bAll) ? bAll : (bAll.bookings || []);
-      const fBookings = list.filter((b: any) => {
+      // Merge: main bookings + pool bookings (deduplicated)
+      const mainIds = new Set(list.map((b: any) => b.id));
+      const merged = [...list, ...poolBookings.filter((b: any) => !mainIds.has(b.id))];
+
+      const fBookings = merged.filter((b: any) => {
         if (!fUnitIds.has(b.unit_id)) return false;
-        // Real, occupiable reservations only.
-        if (['cancelled', 'no_show', 'draft'].includes(b.status)) return false;
+        // Cancelled / no-show never shown.
+        if (['cancelled', 'no_show'].includes(b.status)) return false;
+        // Draft bookings ARE shown when on pool units (staging strip),
+        // but hidden on real rooms (shouldn't normally happen).
+        const isOnPool = fUnits.some((u: any) => u.id === b.unit_id && u.is_pool === 1);
+        if (b.status === 'draft' && !isOnPool) return false;
         // Hostex sometimes injects availability blocks as fake reservations
-        // with sentinel guest names like "OTA Blocked" / "Channel Block".
-        // They tag the unit so it can't be booked — but they shouldn't show
-        // up here as occupants. Real channel blocks live in
-        // /api/availability-blocks and the calendar already renders them.
         const fullName = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
         if (/(ota|channel|hostex)[\s_-]*block/.test(fullName)) return false;
         return true;
       });
+
+      // Debug: log what we found
+      console.log(`[RAM] Units: ${fUnits.length} (pool: ${poolU?.id || 'NONE'}), API bookings: ${list.length}, poolFetch: ${poolBookings.length}, merged: ${merged.length}, F-filtered: ${fBookings.length}`);
+
       setUnits(fUnits as UnitRow[]);
       setBookings(fBookings as BookingRow[]);
     } catch (e: any) {
@@ -154,7 +191,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     } finally {
       setLoading(false);
     }
-  }, [todayISO, horizonISO, buildingCode]);
+  }, [todayISO, horizonISO, activeBuilding]);
 
   useEffect(() => {
     if (open) fetchData();
@@ -284,12 +321,34 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     );
     if (otherInOrigin) return { ok: false, reason: `${fromRoom.code}: інше бронювання на ці дати` };
     return { ok: true, type: 'swap' };
-  }, [bookings, units, bookingByUnit]);
+  }, [bookings, units, bookingByUnit, poolUnitId]);
 
   const showToast = (text: string, kind: 'ok' | 'err' = 'ok') => {
     setToast({ text, kind });
     setTimeout(() => setToast(null), 2400);
   };
+
+  const handleDeleteDraft = useCallback(async (bookingId: string) => {
+    // Safety: only allow deleting draft/pool bookings
+    const bk = bookings.find(b => b.id === bookingId);
+    if (bk && bk.status !== 'draft' && bk.unit_id !== poolUnitId) {
+      showToast('Можна видалити тільки чорновикові бронювання', 'err');
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/bookings/${bookingId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        throw new Error(d.error || 'Не вдалося видалити');
+      }
+      showToast('Бронювання видалено');
+      setDetailBooking(null);
+      await fetchData();
+      onChanged?.();
+    } catch (e: any) {
+      showToast(e.message || 'Помилка видалення', 'err');
+    }
+  }, [fetchData, onChanged, bookings, poolUnitId]);
 
   const attemptMove = useCallback(async (bookingId: string, destUnitId: string) => {
     const guest = bookings.find(b => b.id === bookingId);
@@ -298,21 +357,30 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
     if (!res.ok) { if (res.reason) showToast(res.reason, 'err'); return; }
 
     if (res.type === 'move') {
+      // When a draft leaves the pool → promote to confirmed
+      const isDraft = guest.status === 'draft';
+      const destIsReal = destUnitId !== poolUnitId;
+      const patchBody: Record<string, string> = { unit_id: destUnitId };
+      if (isDraft && destIsReal) patchBody.status = 'confirmed';
+
       // Optimistic update
-      const next = bookings.map(b => b.id === bookingId ? { ...b, unit_id: destUnitId } : b);
+      const next = bookings.map(b => b.id === bookingId
+        ? { ...b, unit_id: destUnitId, status: (isDraft && destIsReal) ? 'confirmed' : b.status }
+        : b
+      );
       setBookings(next);
       try {
         const resp = await fetch(`/api/bookings/${bookingId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unit_id: destUnitId }),
+          body: JSON.stringify(patchBody),
         });
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           throw new Error(data.error || 'Не вдалося перенести');
         }
         const room = units.find(u => u.id === destUnitId);
-        showToast(`${guest.first_name} → ${room?.code || ''}`);
+        showToast(`${guest.first_name} → ${room?.code || ''}${isDraft && destIsReal ? ' ✓' : ''}`);
         onChanged?.();
       } catch (e: any) {
         showToast(e.message || 'Помилка', 'err');
@@ -589,12 +657,25 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
             <Building2 size={17} strokeWidth={1.9} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="ram-title">Будова {buildingCode} · Розселення</div>
+            <div className="ram-title">Будова {activeBuilding} · Розселення</div>
             <div className="ram-subtitle">{roomUnits.length} кімнат</div>
           </div>
           <button className="ram-close" onClick={onClose} aria-label="Закрити">
             <X size={17} strokeWidth={2} />
           </button>
+        </div>
+
+        {/* ── Building switcher tabs ── */}
+        <div className="ram-tabs">
+          {['F', 'D'].map(code => (
+            <button
+              key={code}
+              className={`ram-tab ${activeBuilding === code ? 'ram-tab-active' : ''}`}
+              onClick={() => { setActiveBuilding(code); setDetailBooking(null); setSelectedId(null); }}
+            >
+              Будова {code}
+            </button>
+          ))}
         </div>
 
         {/* ── Date picker ── */}
@@ -635,7 +716,7 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
             {stagingBookings.length > 0 ? (
               <div className="ram-staging-scroll" onPointerDown={onPointerDown}>
                 {stagingBookings.map(b => (
-                  <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} />
+                  <StagingChip key={b.id} booking={b} stateOf={stateOf} formatShort={fmt} onInfo={setDetailBooking} />
                 ))}
               </div>
             ) : (
@@ -700,6 +781,14 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
           </div>
         )}
       </div>
+      {detailBooking && (
+        <StagingDetailPanel
+          booking={detailBooking}
+          onClose={() => setDetailBooking(null)}
+          onDelete={handleDeleteDraft}
+          fmt={fmt}
+        />
+      )}
     </>
   );
 }
@@ -780,10 +869,11 @@ function RoomCard({ unit, guest, upcoming, stateOf, onTapEmpty, formatShort: fmt
   );
 }
 
-function StagingChip({ booking, stateOf, formatShort: fmt }: {
+function StagingChip({ booking, stateOf, formatShort: fmt, onInfo }: {
   booking: BookingRow;
   stateOf: (b: BookingRow) => RoomState;
   formatShort: (d: string) => string;
+  onInfo: (b: BookingRow) => void;
 }) {
   const st = stateOf(booking);
   const tag = st === 'arrive-today' ? 'сьогодні'
@@ -803,6 +893,88 @@ function StagingChip({ booking, stateOf, formatShort: fmt }: {
         {tag && <span className={`ram-tag ${tagClass}`}>{tag}</span>}
         <span className="ram-chip-dates">{fmt(booking.check_in)}–{fmt(booking.check_out)}</span>
         {booking.source && <span className="ram-chip-src">{booking.source}</span>}
+        <button className="ram-chip-info" onClick={(e) => { e.stopPropagation(); onInfo(booking); }} title="Деталі"><Info size={12} strokeWidth={2} /></button>
+      </div>
+    </div>
+  );
+}
+
+function StagingDetailPanel({ booking, onClose, onDelete, fmt }: {
+  booking: BookingRow;
+  onClose: () => void;
+  onDelete: (id: string) => void;
+  fmt: (d: string) => string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const party = partyOf(booking);
+  return (
+    <div className="ram-detail-overlay" onClick={onClose}>
+      <div className="ram-detail" onClick={e => e.stopPropagation()}>
+        <div className="ram-detail-head">
+          <span className="ram-detail-name">{booking.first_name} {booking.last_name}</span>
+          <button className="ram-close" onClick={onClose} style={{width:26,height:26}}>
+            <X size={13} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="ram-detail-grid">
+          <div className="ram-detail-row">
+            <span className="ram-detail-k">Дати</span>
+            <span className="ram-detail-v">{fmt(booking.check_in)} — {fmt(booking.check_out)}{booking.nights ? ` (${booking.nights} ноч.)` : ''}</span>
+          </div>
+          <div className="ram-detail-row">
+            <span className="ram-detail-k">Гості</span>
+            <span className="ram-detail-v">{booking.adults || 0} дор.{booking.children ? ` + ${booking.children} діт.` : ''} ({party} ос.)</span>
+          </div>
+          {booking.unit_type_name && (
+            <div className="ram-detail-row">
+              <span className="ram-detail-k">Тип</span>
+              <span className="ram-detail-v">{booking.unit_type_name}</span>
+            </div>
+          )}
+          {booking.total_price != null && booking.total_price > 0 && (
+            <div className="ram-detail-row">
+              <span className="ram-detail-k">Ціна</span>
+              <span className="ram-detail-v">{booking.total_price} {booking.currency || 'CZK'}</span>
+            </div>
+          )}
+          <div className="ram-detail-row">
+            <span className="ram-detail-k">Джерело</span>
+            <span className="ram-detail-v">{booking.source || '—'}</span>
+          </div>
+          <div className="ram-detail-row">
+            <span className="ram-detail-k">Статус</span>
+            <span className="ram-detail-v">{booking.status}</span>
+          </div>
+          {booking.guest_email && (
+            <div className="ram-detail-row">
+              <span className="ram-detail-k">Email</span>
+              <span className="ram-detail-v">{booking.guest_email}</span>
+            </div>
+          )}
+          {booking.guest_phone && (
+            <div className="ram-detail-row">
+              <span className="ram-detail-k">Телефон</span>
+              <span className="ram-detail-v">{booking.guest_phone}</span>
+            </div>
+          )}
+          {booking.notes && (
+            <div className="ram-detail-row">
+              <span className="ram-detail-k">Нотатки</span>
+              <span className="ram-detail-v">{booking.notes}</span>
+            </div>
+          )}
+        </div>
+        <div className="ram-detail-actions">
+          {!confirming ? (
+            <button className="ram-detail-del" onClick={() => setConfirming(true)}>🗑 Видалити бронювання</button>
+          ) : (
+            <div className="ram-detail-confirm">
+              <span>Видалити {booking.first_name}?</span>
+              <button className="ram-detail-del-yes" onClick={() => onDelete(booking.id)}>Так</button>
+              <button className="ram-detail-del-no" onClick={() => setConfirming(false)}>Ні</button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -994,6 +1166,14 @@ function RoomAllocationStyles() {
         font-size: 9px; color: var(--text-secondary);
         font-family: 'JetBrains Mono', ui-monospace, monospace;
       }
+      .ram-chip-info {
+        width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+        background: rgba(91,124,255,0.12); border: 1px solid rgba(91,124,255,0.3);
+        color: #5B7CFF; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        margin-left: auto; transition: all .12s;
+      }
+      .ram-chip-info:hover { background: rgba(91,124,255,0.22); }
       .ram-chip-src {
         margin-left: auto; font-size: 8.5px; color: var(--text-tertiary);
         background: var(--bg-card); padding: 0.5px 4px; border-radius: 3px;
@@ -1146,6 +1326,57 @@ function RoomAllocationStyles() {
       .ram-toast-ok  .ram-toast-dot { background: #4ADE80; }
       .ram-toast-err { border-color: rgba(242,107,107,0.48); }
       .ram-toast-err .ram-toast-dot { background: #F26B6B; }
+
+      .ram-tabs { display: flex; gap: 4px; padding: 0 14px 8px; flex-shrink: 0; }
+      .ram-tab { flex: 1; padding: 6px 0; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; border: 1px solid var(--border-primary); background: var(--bg-tertiary); color: var(--text-secondary); transition: all .15s; }
+      .ram-tab:hover { background: var(--bg-secondary); }
+      .ram-tab-active { background: rgba(91,124,255,0.14) !important; border-color: rgba(91,124,255,0.45) !important; color: #5B7CFF !important; }
+
+      .ram-detail-overlay {
+        position: fixed; inset: 0; z-index: 10001;
+        background: rgba(0,0,0,0.45);
+        display: flex; align-items: center; justify-content: center;
+        animation: ram-fade-in 0.15s ease;
+      }
+      @keyframes ram-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .ram-detail {
+        background: var(--bg-primary); border: 1px solid var(--border-primary);
+        border-radius: 14px; width: 340px; max-width: 92vw;
+        box-shadow: 0 16px 48px -8px rgba(0,0,0,0.5);
+        animation: ram-pop-in 0.2s cubic-bezier(0.32,0.72,0,1);
+      }
+      .ram-detail-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 14px 8px; border-bottom: 1px solid var(--border-primary);
+      }
+      .ram-detail-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+      .ram-detail-grid { padding: 10px 14px; }
+      .ram-detail-row {
+        display: flex; justify-content: space-between; align-items: baseline;
+        padding: 4px 0; gap: 8px;
+      }
+      .ram-detail-k { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
+      .ram-detail-v { font-size: 11.5px; color: var(--text-primary); text-align: right; word-break: break-word; }
+      .ram-detail-actions {
+        padding: 8px 14px 12px; border-top: 1px solid var(--border-primary);
+      }
+      .ram-detail-del {
+        width: 100%; padding: 7px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+        color: #ef4444; cursor: pointer; transition: all .15s;
+      }
+      .ram-detail-del:hover { background: rgba(239,68,68,0.18); }
+      .ram-detail-confirm {
+        display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary);
+      }
+      .ram-detail-del-yes {
+        padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 700;
+        background: #ef4444; border: none; color: #fff; cursor: pointer;
+      }
+      .ram-detail-del-no {
+        padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        background: var(--bg-tertiary); border: 1px solid var(--border-primary); color: var(--text-secondary); cursor: pointer;
+      }
     `}</style>
   );
 }

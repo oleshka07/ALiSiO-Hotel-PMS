@@ -20,6 +20,7 @@ export default function BookingComImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<'draft' | 'auto'>('draft');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const upload = useCallback(async (file: File) => {
@@ -31,6 +32,7 @@ export default function BookingComImportPage() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('mode', importMode);
 
     try {
       const res = await fetch('/api/imports/booking-com/preview', { method: 'POST', body: formData });
@@ -45,7 +47,7 @@ export default function BookingComImportPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [importMode]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -69,7 +71,7 @@ export default function BookingComImportPage() {
       const res = await fetch('/api/imports/booking-com/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: preview.rows }),
+        body: JSON.stringify({ rows: preview.rows, mode: importMode }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,10 +97,42 @@ export default function BookingComImportPage() {
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Імпорт бронювань з Booking.com</h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 24 }}>
+      <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>
         Завантаж Excel-експорт з Booking Extranet (Reservations → Export → XLS).
         Усі бронювання потраплять у Resort, з дедуплікацією за Book number.
       </p>
+
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, padding: '10px 16px', background: 'var(--surface-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Режим:</span>
+        <button
+          onClick={() => setImportMode('draft')}
+          style={{
+            padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: importMode === 'draft' ? '2px solid #ef4444' : '1px solid var(--border)',
+            background: importMode === 'draft' ? 'rgba(239,68,68,0.1)' : 'transparent',
+            color: importMode === 'draft' ? '#ef4444' : 'var(--text-secondary)',
+          }}
+        >
+          📋 В чорновик
+        </button>
+        <button
+          onClick={() => setImportMode('auto')}
+          style={{
+            padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            border: importMode === 'auto' ? '2px solid #22c55e' : '1px solid var(--border)',
+            background: importMode === 'auto' ? 'rgba(34,197,94,0.1)' : 'transparent',
+            color: importMode === 'auto' ? '#22c55e' : 'var(--text-secondary)',
+          }}
+        >
+          ⚡ Авто-розподіл
+        </button>
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
+          {importMode === 'draft'
+            ? 'Всі бронювання потраплять у Чорновик F — потім розкладете вручну'
+            : 'Автоматичний розподіл по кімнатах Building F'}
+        </span>
+      </div>
 
       {!preview && !confirmResult && (
         <div
@@ -277,6 +311,20 @@ export default function BookingComImportPage() {
           >
             Імпортувати ще
           </button>
+          {importMode === 'draft' && confirmResult.created > 0 && (
+            <div style={{ marginTop: 16, padding: '14px 18px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20 }}>📋</span>
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <b>{confirmResult.created} бронювань</b> додано в Чорновик F. Розподіліть їх по кімнатах через календар.
+              </div>
+              <a
+                href="/calendar"
+                style={{ padding: '6px 14px', background: '#ef4444', color: '#fff', borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}
+              >
+                → Розподілити
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>

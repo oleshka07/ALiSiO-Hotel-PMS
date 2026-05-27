@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import { getEurCzkRate } from '@/lib/hostex';
+import { getDb, generateGuestToken } from '@core/db';
 import {
   parseBookingComExcel,
   normalizeName,
@@ -20,6 +21,7 @@ import {
   findOrCreateGuestForImport,
   insertImportedReservation,
   cancelReservation,
+  findPoolUnit,
 } from '../data/import.repo';
 
 export interface PlannedUnit {
@@ -44,6 +46,7 @@ export interface PreviewResponse {
   rows: PreviewRow[];
   parseErrors: { rowIndex: number; field: string; reason: string }[];
   totalRowsInFile: number;
+  mode: 'draft' | 'auto';
   summary: {
     create: number;
     cancel: number;
@@ -92,6 +95,7 @@ function overlappingClaimedUnits(claimedSlots: ClaimedSlot[], checkIn: string, c
 function planRow(
   row: BookingComRow,
   claimedSlots: ClaimedSlot[] = [],
+  mode: 'draft' | 'auto' = 'auto',
 ): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'plannedUnits' | 'existing' | 'action' | 'warnings'> {
   const warnings: string[] = [];
   const existing = findReservationByBcomId(row.bookNumber);
@@ -114,6 +118,33 @@ function planRow(
 
   if (existing) {
     return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'skip-already', warnings };
+  }
+
+  // Draft mode: skip room matching entirely — everything goes to pool unit.
+  if (mode === 'draft') {
+    const pool = findPoolUnit();
+    if (!pool) {
+      warnings.push('Pool unit (Чорновик F) не знайдено в БД');
+      return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing: null, action: 'skip-no-unit-type', warnings };
+    }
+    const requestedCount = Math.max(1, row.rooms || 1);
+    const units: PlannedUnit[] = [];
+    for (let i = 0; i < requestedCount; i++) {
+      units.push({
+        unitId: pool.id, unitName: pool.name,
+        capacity: row.persons || row.adults || 1,
+        unitTypeId: pool.unit_type_id, buildingCode: pool.building_code,
+      });
+    }
+    return {
+      matchedUnitType: { id: pool.unit_type_id, name: 'Чорновик F', code: 'F-POOL' },
+      freeUnitId: pool.id,
+      freeUnitName: pool.name,
+      plannedUnits: units,
+      existing: null,
+      action: 'create',
+      warnings,
+    };
   }
 
   // Resolve a list of capacities the booking needs. Booking sells by guest
@@ -183,7 +214,7 @@ function planRow(
 
   if (plannedUnits.length > 1) {
     const codes = plannedUnits.map((p) => p.unitName).join(', ');
-    warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться окремі резервації з тим самим Booking #.`);
+    warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться суб-бронювання (master + ${plannedUnits.length - 1} child).`);
   }
 
   // Highlight any unit that fell out of building F (the preferred resort
@@ -224,11 +255,25 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
 
     const arrayBuffer = await (file as File).arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.log(`[Import Booking.com] File received: ${(file as File).name}, size=${buffer.length} bytes`);
+
     const parsed = parseBookingComExcel(buffer);
+    const mode = (formData.get('mode') || 'draft') as 'draft' | 'auto';
+
+    console.log(`[Import Booking.com] Parsed: ${parsed.rows.length} rows, ${parsed.errors.length} errors, totalInFile=${parsed.totalRowsInFile}`);
+    if (parsed.errors.length > 0) {
+      console.log('[Import Booking.com] Parse errors:', JSON.stringify(parsed.errors.slice(0, 5)));
+    }
+    if (parsed.rows.length > 0) {
+      const sample = parsed.rows[0];
+      console.log(`[Import Booking.com] Sample row: book=${sample.bookNumber}, guest=${sample.guestName}, in=${sample.checkIn}, out=${sample.checkOut}, price=${sample.priceMajor} ${sample.currency}, unit=${sample.unitTypeRaw}`);
+    }
 
     if (parsed.errors.length > 0 && parsed.errors[0].field === 'headers') {
+      const detail = parsed.errors[0];
+      console.error('[Import Booking.com] Header mismatch! Missing:', detail.reason, 'Available columns:', detail.raw);
       return NextResponse.json(
-        { error: 'Невідомий формат Excel — відсутні обов\'язкові колонки', detail: parsed.errors[0] },
+        { error: `Невідомий формат Excel — ${detail.reason}`, detail },
         { status: 422 },
       );
     }
@@ -241,7 +286,7 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
     const claimedSlots: ClaimedSlot[] = [];
     const rows: PreviewRow[] = [];
     for (const r of parsed.rows) {
-      const planned = planRow(r, claimedSlots);
+      const planned = planRow(r, claimedSlots, mode);
       rows.push({ ...r, ...planned });
       if (planned.action === 'create') {
         for (const u of planned.plannedUnits) {
@@ -263,13 +308,18 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
       rows,
       parseErrors: parsed.errors.map((e) => ({ rowIndex: e.rowIndex, field: e.field, reason: e.reason })),
       totalRowsInFile: parsed.totalRowsInFile,
+      mode,
       summary,
       resortPropertyResolved: !!propertyId,
     };
     return NextResponse.json(response);
   } catch (e: any) {
-    console.error('[Import Booking.com] preview error:', e?.message, e?.stack);
-    return NextResponse.json({ error: 'Помилка парсингу', detail: e?.message }, { status: 500 });
+    console.error('[Import Booking.com] FATAL preview error:', e?.message);
+    console.error('[Import Booking.com] Stack:', e?.stack);
+    return NextResponse.json(
+      { error: `Помилка парсингу: ${e?.message || 'невідома помилка'}`, stack: process.env.NODE_ENV === 'development' ? e?.stack : undefined },
+      { status: 500 },
+    );
   }
 }
 
@@ -299,6 +349,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
     if (!body || !Array.isArray(body.rows)) {
       return NextResponse.json({ error: 'rows is required' }, { status: 400 });
     }
+    const mode = (body as any).mode === 'auto' ? 'auto' : 'draft';
 
     const propertyId = findResortPropertyId();
     if (!propertyId) {
@@ -325,7 +376,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
 
     for (const row of body.rows) {
       try {
-        const plan = planRow(row, claimedSlots);
+        const plan = planRow(row, claimedSlots, mode);
 
         if (plan.action === 'create') {
           if (plan.plannedUnits.length === 0) {
@@ -349,68 +400,98 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
             row.travelPurpose ? `Purpose: ${row.travelPurpose}` : '',
           ].filter(Boolean);
 
-          // Split price proportional to unit capacity. For a 367.21 EUR group
-          // booking across 3-3-4 capacity rooms: 110.16 / 110.16 / 146.89.
-          // Adults per room = the room's capacity, so per-unit reports stay
-          // sensible (no zeroes). Children all go on the first room.
-          const totalCapacity = plan.plannedUnits.reduce((s, u) => s + u.capacity, 0);
-
           // Currency handling mirrors Hostex sync: Booking sells in EUR for our
           // listings, but the PMS reports in CZK by default. Convert once per
           // row using the daily ČNB rate, then store both:
           //   total_price = CZK converted, currency = 'CZK'
           //   total_rate_eur = original EUR (preserved for audit + investor metrics)
           const isEurRow = (row.currency || '').toUpperCase() === 'EUR';
+          const isMultiRoom = plan.plannedUnits.length > 1;
+
+          let masterResId: string | null = null;
 
           for (let i = 0; i < plan.plannedUnits.length; i++) {
             const unit = plan.plannedUnits[i];
             const isFirst = i === 0;
-            const shareNative = totalCapacity > 0
-              ? +(row.priceMajor * unit.capacity / totalCapacity).toFixed(2)
-              : +(row.priceMajor / plan.plannedUnits.length).toFixed(2);
-            const shareCommissionNative = totalCapacity > 0
-              ? +(row.commissionMajor * unit.capacity / totalCapacity).toFixed(2)
-              : +(row.commissionMajor / plan.plannedUnits.length).toFixed(2);
 
-            const totalPriceCzk = isEurRow ? +(shareNative * eurToCzk).toFixed(2) : shareNative;
-            const commissionCzk = isEurRow ? +(shareCommissionNative * eurToCzk).toFixed(2) : shareCommissionNative;
-            const totalRateEur = isEurRow ? shareNative : null;
-            const commissionEur = isEurRow ? shareCommissionNative : null;
-            const storedCurrency = isEurRow ? 'CZK' : (row.currency || 'CZK');
+            if (isFirst) {
+              // Master reservation: gets the FULL price
+              const totalPriceCzk = isEurRow ? +(row.priceMajor * eurToCzk).toFixed(2) : row.priceMajor;
+              const commissionCzk = isEurRow ? +(row.commissionMajor * eurToCzk).toFixed(2) : row.commissionMajor;
+              const totalRateEur = isEurRow ? row.priceMajor : null;
+              const commissionEur = isEurRow ? row.commissionMajor : null;
+              const storedCurrency = isEurRow ? 'CZK' : (row.currency || 'CZK');
 
-            const notes = [
-              ...baseNotes,
-              plan.plannedUnits.length > 1
-                ? `Кімната ${i + 1} з ${plan.plannedUnits.length} (${unit.unitName})`
-                : '',
-              plan.plannedUnits.length > 1
-                ? `Group total: ${row.priceMajor.toFixed(2)} ${row.currency}`
-                : '',
-              isEurRow
-                ? `Конвертовано з EUR за курсом ${eurToCzk.toFixed(3)} (ČNB)`
-                : '',
-            ].filter(Boolean).join('\n');
+              const notes = [
+                ...baseNotes,
+                isMultiRoom ? `Групове бронювання: ${plan.plannedUnits.length} кімнат` : '',
+                isEurRow ? `Конвертовано з EUR за курсом ${eurToCzk.toFixed(3)} (ČNB)` : '',
+              ].filter(Boolean).join('\n');
 
-            const resId = insertImportedReservation({
-              propertyId,
-              unitId: unit.unitId,
-              guestId,
-              checkIn: row.checkIn,
-              checkOut: row.checkOut,
-              nights: row.duration || 1,
-              adults: unit.capacity,
-              children: isFirst ? row.children : 0,
-              totalPrice: totalPriceCzk,
-              currency: storedCurrency,
-              bcomReservationId: row.bookNumber,
-              commissionAmount: isFirst ? commissionCzk : 0,
-              notes,
-              totalRateEur,
-              commissionEur: isFirst ? commissionEur : (totalRateEur != null ? 0 : null),
-            });
-            created++;
-            details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
-            claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+              masterResId = insertImportedReservation({
+                propertyId,
+                unitId: unit.unitId,
+                guestId,
+                checkIn: row.checkIn,
+                checkOut: row.checkOut,
+                nights: row.duration || 1,
+                adults: row.adults,
+                children: row.children,
+                totalPrice: totalPriceCzk,
+                currency: storedCurrency,
+                bcomReservationId: row.bookNumber,
+                commissionAmount: commissionCzk,
+                notes,
+                totalRateEur,
+                commissionEur,
+                status: mode === 'draft' ? 'draft' : 'confirmed',
+              });
+              created++;
+              details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: masterResId });
+              claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+            } else {
+              // Child reservation linked to master via parent_id
+              const db = getDb();
+              const childResId = `bcom_xls_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_c${i}`;
+              const childToken = generateGuestToken();
+
+              db.prepare(`
+                INSERT INTO reservations (
+                  id, property_id, unit_id, guest_id, parent_id,
+                  check_in, check_out, nights, adults, children,
+                  status, payment_status, source, total_price, currency,
+                  external_uid, bcom_reservation_id,
+                  commission_amount, notes, guest_page_token
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'booking_com', 0, ?, ?, ?, 0, ?, ?)
+              `).run(
+                childResId, propertyId, unit.unitId, guestId, masterResId,
+                row.checkIn, row.checkOut, row.duration || 1,
+                unit.capacity, 0,
+                mode === 'draft' ? 'draft' : 'confirmed',
+                row.currency || 'CZK',
+                row.bookNumber, row.bookNumber,
+                `Sub-booking: Кімната ${i + 1} з ${plan.plannedUnits.length} (${unit.unitName})\nBooking.com #${row.bookNumber}`,
+                childToken
+              );
+
+              // Create sub-booking link
+              const subId = `sub_bcom_${Date.now()}_${i}`;
+              db.prepare(`
+                INSERT INTO reservation_sub_bookings (
+                  id, reservation_id, child_reservation_id, label,
+                  adults, children, infants, subtotal, notes, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+              `).run(
+                subId, masterResId, childResId,
+                `Кімната ${i + 1} (${unit.unitName})`,
+                unit.capacity, 0,
+                `Booking.com #${row.bookNumber}`, i
+              );
+
+              created++;
+              details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: childResId });
+              claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
+            }
           }
         } else if (plan.action === 'cancel' && plan.existing) {
           cancelReservation(plan.existing.id);

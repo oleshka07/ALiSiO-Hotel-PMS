@@ -32,6 +32,7 @@ import {
   GitBranch,
   UserPlus,
   Globe,
+  CheckSquare,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { NAV_PERMISSION_MAP, ROLE_LABELS, ROLE_COLORS, hasPermission } from '@/lib/permissions';
@@ -80,6 +81,7 @@ const navigation: NavSection[] = [
       { label: 'Звіти', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
       { label: 'Гості', href: '/guests', icon: <Users size={20} />, permission: 'nav:guests' },
       { label: 'Документи', href: '/documents', icon: <FileText size={20} />, permission: 'nav:documents' },
+      { label: 'Задачі', href: '/tasks', icon: <CheckSquare size={20} />, permission: 'nav:tasks' },
       { label: 'Сайти', href: '/sites', icon: <Globe size={20} />, permission: 'nav:sites' },
     ],
   },
@@ -115,6 +117,7 @@ const navigation: NavSection[] = [
 
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
   const pathname = usePathname();
   const { user, loading, logout } = useCurrentUser();
 
@@ -122,6 +125,22 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   useEffect(() => {
     if (onMobileClose) onMobileClose();
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch draft pool count for sidebar badge
+  useEffect(() => {
+    const fetchDrafts = async () => {
+      try {
+        const res = await fetch('/api/booking/drafts-count');
+        if (res.ok) {
+          const data = await res.json();
+          setDraftCount(data.count || 0);
+        }
+      } catch { /* non-critical */ }
+    };
+    fetchDrafts();
+    const interval = setInterval(fetchDrafts, 60000); // refresh every 60s
+    return () => clearInterval(interval);
+  }, []);
 
   // Filter navigation based on user permissions
   const filteredNavigation = navigation
@@ -177,6 +196,11 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                   >
                     <span className="sidebar-nav-icon">{item.icon}</span>
                     <span className="sidebar-nav-label">{item.label}</span>
+                    {item.href === '/calendar' && draftCount > 0 && (
+                      <span className="sidebar-draft-badge" title={`${draftCount} бронювань у чорновику`}>
+                        {draftCount}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

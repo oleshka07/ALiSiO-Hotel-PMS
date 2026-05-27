@@ -57,17 +57,199 @@ const REQUIRED_COLS = [
   'Price',
 ] as const;
 
+/**
+ * Booking.com Extranet exports columns in the user's UI language.
+ * Map known translations → canonical English names.
+ */
+const COLUMN_ALIASES: Record<string, string> = {
+  // Ukrainian (UA)
+  'Номер бронювання': 'Book number',
+  "Ім'я гостя": 'Guest name(s)',
+  "Ім'я гостя(ів)": 'Guest name(s)',
+  'Імена гостей': 'Guest name(s)',
+  'Ким заброньовано': 'Booked by',
+  'Заїзд': 'Check-in',
+  'Виїзд': 'Check-out',
+  'Заброньовано': 'Booked on',
+  'Статус': 'Status',
+  'Назва помешкання': 'Unit type',
+  'Тип номера': 'Unit type',
+  'Тривалість (ночі)': 'Duration (nights)',
+  'Тривалість (ночей)': 'Duration (nights)',
+  'Дорослі': 'Adults',
+  'Діти': 'Children',
+  'Вік дітей': "Children's age(s)",
+  'Осіб': 'Persons',
+  'Персони': 'Persons',
+  'Ціна': 'Price',
+  'Всього до сплати': 'Price',
+  'Комісія': 'Commission amount',
+  'Сума комісії': 'Commission amount',
+  'Комісія %': 'Commission %',
+  '% комісії': 'Commission %',
+  'Валюта': 'Currency',
+  'Номери': 'Rooms',
+  'Кімнати': 'Rooms',
+  'Примітки': 'Remarks',
+  'Зауваження': 'Remarks',
+  'Країна гостя': 'Booker country',
+  'Мета поїздки': 'Travel purpose',
+  'Пристрій': 'Device',
+  'Адреса': 'Address',
+  'Номер телефону': 'Phone number',
+  'Телефон': 'Phone number',
+  'Дата скасування': 'Cancellation date',
+  'Розташування': 'Location',
+  'Мандрівник Genius': 'Genius traveler',
+  // Czech (CS)
+  'Číslo rezervace': 'Book number',
+  'Jméno hosta': 'Guest name(s)',
+  'Jména hostů': 'Guest name(s)',
+  'Rezervoval': 'Booked by',
+  'Příjezd': 'Check-in',
+  'Odjezd': 'Check-out',
+  'Rezervováno': 'Booked on',
+  'Typ pokoje': 'Unit type',
+  'Název ubytování': 'Unit type',
+  'Délka pobytu (nocí)': 'Duration (nights)',
+  'Dospělí': 'Adults',
+  'Děti': 'Children',
+  'Věk dětí': "Children's age(s)",
+  'Osoby': 'Persons',
+  'Cena': 'Price',
+  'Celkem k úhradě': 'Price',
+  'Provize': 'Commission amount',
+  'Výše provize': 'Commission amount',
+  'Měna': 'Currency',
+  'Pokoje': 'Rooms',
+  'Poznámky': 'Remarks',
+  'Země hosta': 'Booker country',
+  'Účel cesty': 'Travel purpose',
+  'Zařízení': 'Device',
+  'Adresa': 'Address',
+  'Telefonní číslo': 'Phone number',
+  'Datum zrušení': 'Cancellation date',
+  // Russian (RU)
+  'Номер брони': 'Book number',
+  'Имя гостя': 'Guest name(s)',
+  'Имена гостей': 'Guest name(s)',
+  'Кем забронировано': 'Booked by',
+  'Заезд': 'Check-in',
+  'Выезд': 'Check-out',
+  'Забронировано': 'Booked on',
+  'Название размещения': 'Unit type',
+  'Продолжительность (ночей)': 'Duration (nights)',
+  'Взрослые': 'Adults',
+  'Цена': 'Price',
+  'Итого к оплате': 'Price',
+  'Комиссия': 'Commission amount',
+  'Сумма комиссии': 'Commission amount',
+  'Комнаты': 'Rooms',
+  'Замечания': 'Remarks',
+  'Страна гостя': 'Booker country',
+  'Цель поездки': 'Travel purpose',
+  'Устройство': 'Device',
+  'Номер телефона': 'Phone number',
+  'Дата отмены': 'Cancellation date',
+};
+
+/**
+ * Normalize a row object: rename localized column names to their
+ * canonical English equivalents so the rest of the parser is locale-agnostic.
+ */
+function normalizeHeaders(rows: Record<string, any>[]): Record<string, any>[] {
+  if (rows.length === 0) return rows;
+  const sampleKeys = Object.keys(rows[0]);
+  const needsRemap = sampleKeys.some((k) => k in COLUMN_ALIASES);
+  if (!needsRemap) return rows; // already English
+
+  return rows.map((row) => {
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(row)) {
+      const canonical = COLUMN_ALIASES[key] || key;
+      if (!(canonical in out)) {
+        out[canonical] = value;
+      }
+    }
+    return out;
+  });
+}
+
+// Month name → number mapping for text-based date parsing
+const MONTH_NAMES: Record<string, number> = {
+  // English
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6,
+  jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+  // Ukrainian
+  'січ': 1, 'січня': 1, 'лют': 2, 'лютого': 2, 'бер': 3, 'березня': 3,
+  'кві': 4, 'квітня': 4, 'тра': 5, 'травня': 5, 'чер': 6, 'червня': 6,
+  'лип': 7, 'липня': 7, 'сер': 8, 'серпня': 8, 'вер': 9, 'вересня': 9,
+  'жов': 10, 'жовтня': 10, 'лис': 11, 'листопада': 11, 'гру': 12, 'грудня': 12,
+  // Czech
+  'led': 1, 'ledna': 1, 'úno': 2, 'února': 2, 'bře': 3, 'března': 3,
+  'dub': 4, 'dubna': 4, 'kvě': 5, 'května': 5, 'čvn': 6, 'června': 6, 'čer': 6,
+  'čvc': 7, 'července': 7, 'srp': 8, 'srpna': 8, 'zář': 9, 'září': 9,
+  'říj': 10, 'října': 10, 'lis': 11, 'listopadu': 11, 'pro': 12, 'prosince': 12,
+  // Russian
+  'янв': 1, 'января': 1, 'фев': 2, 'февраля': 2, 'мар': 3, 'марта': 3,
+  'апр': 4, 'апреля': 4, 'мая': 5, 'май': 5, 'июн': 6, 'июня': 6,
+  'июл': 7, 'июля': 7, 'авг': 8, 'августа': 8, 'сен': 9, 'сентября': 9,
+  'окт': 10, 'октября': 10, 'ноя': 11, 'ноября': 11, 'дек': 12, 'декабря': 12,
+  // German
+  'jän': 1, 'mär': 3, 'mai': 5, 'okt': 10, 'dez': 12,
+};
+
+function resolveMonth(token: string): number | null {
+  const key = token.toLowerCase().replace(/\.$/, ''); // strip trailing dot
+  return MONTH_NAMES[key] ?? null;
+}
+
 function parseDate(value: unknown): string | null {
   if (value == null || value === '') return null;
+  // XLSX cellDates:true → Date objects
   if (value instanceof Date) {
     const yyyy = value.getFullYear();
     const mm = String(value.getMonth() + 1).padStart(2, '0');
     const dd = String(value.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   }
+  // Excel serial number (e.g. 45835)
+  if (typeof value === 'number' && value > 10000 && value < 100000) {
+    const d = new Date((value - 25569) * 86400000);
+    if (!isNaN(d.getTime())) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+  }
   const s = String(value).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // YYYY-MM-DD (ISO)
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  // DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY (European)
+  const eu = s.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})/);
+  if (eu) return `${eu[3]}-${eu[2].padStart(2, '0')}-${eu[1].padStart(2, '0')}`;
+  // MM/DD/YYYY (US — fallback, only if month ≤ 12)
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us && parseInt(us[1]) <= 12) return `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`;
+  // Text month: "22 May 2026", "May 22, 2026", "22 трав. 2026", "22. května 2026"
+  const tokens = s.replace(/,/g, '').split(/[\s.]+/).filter(Boolean);
+  if (tokens.length >= 3) {
+    // Try "DD Month YYYY" or "Month DD YYYY"
+    const m1 = resolveMonth(tokens[1]);
+    if (m1 && /^\d{1,2}$/.test(tokens[0]) && /^\d{4}$/.test(tokens[2])) {
+      return `${tokens[2]}-${String(m1).padStart(2, '0')}-${tokens[0].padStart(2, '0')}`;
+    }
+    const m0 = resolveMonth(tokens[0]);
+    if (m0 && /^\d{1,2}$/.test(tokens[1]) && /^\d{4}$/.test(tokens[2])) {
+      return `${tokens[2]}-${String(m0).padStart(2, '0')}-${tokens[1].padStart(2, '0')}`;
+    }
+  }
+  // Last resort: try native Date.parse
+  const nativeDate = new Date(s);
+  if (!isNaN(nativeDate.getTime()) && nativeDate.getFullYear() > 2000) {
+    return `${nativeDate.getFullYear()}-${String(nativeDate.getMonth() + 1).padStart(2, '0')}-${String(nativeDate.getDate()).padStart(2, '0')}`;
+  }
   return null;
 }
 
@@ -81,9 +263,15 @@ function parseDateTime(value: unknown): string | null {
 function parsePrice(value: unknown): { amount: number; currency: string } {
   if (value == null || value === '') return { amount: 0, currency: 'EUR' };
   const s = String(value).trim();
-  const m = s.match(/([\d.,]+)\s*([A-Z]{3})?/);
+  const m = s.match(/([\d.,\s]+)\s*([A-Z]{3})?/);
   if (!m) return { amount: 0, currency: 'EUR' };
-  const numStr = m[1].replace(/,/g, '');
+  let numStr = m[1].trim();
+  // Detect European format: 1.234,56 (dot=thousands, comma=decimal)
+  if (numStr.includes(',') && numStr.indexOf(',') > numStr.lastIndexOf('.')) {
+    numStr = numStr.replace(/\./g, '').replace(',', '.');
+  } else {
+    numStr = numStr.replace(/,/g, '');
+  }
   const amount = parseFloat(numStr);
   const currency = (m[2] || 'EUR').toUpperCase();
   return { amount: isFinite(amount) ? amount : 0, currency };
@@ -114,7 +302,7 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
   }
 
   const sheet = workbook.Sheets[sheetName];
-  const json = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false }) as Record<string, any>[];
+  let json = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false }) as Record<string, any>[];
 
   const errors: ParseError[] = [];
 
@@ -122,12 +310,44 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
     return { rows: [], errors: [], totalRowsInFile: 0 };
   }
 
+  // Normalize localized column names to English
+  json = normalizeHeaders(json);
+
+  // If 'Guest name(s)' is still missing but 'Booked by' exists, use it as fallback
   const headerRow = json[0];
-  const missing = REQUIRED_COLS.filter((c) => !(c in headerRow));
+  if (!('Guest name(s)' in headerRow) && ('Booked by' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Guest name(s)': r['Guest name(s)'] || r['Booked by'] }));
+  }
+
+  // Duration can be calculated from dates if missing
+  if (!('Duration (nights)' in headerRow)) {
+    json = json.map((r) => {
+      const ci = parseDate(r['Check-in']);
+      const co = parseDate(r['Check-out']);
+      if (ci && co) {
+        const nights = Math.round((new Date(co).getTime() - new Date(ci).getTime()) / 86400000);
+        return { ...r, 'Duration (nights)': nights > 0 ? nights : 1 };
+      }
+      return { ...r, 'Duration (nights)': 1 };
+    });
+  }
+
+  // Adults/Children/Persons fallback — set defaults if columns missing
+  if (!('Adults' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Adults': r['Adults'] || r['Persons'] || 1 }));
+  }
+  if (!('Children' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Children': r['Children'] || 0 }));
+  }
+  if (!('Persons' in headerRow)) {
+    json = json.map((r) => ({ ...r, 'Persons': r['Persons'] || r['Adults'] || 1 }));
+  }
+
+  const missing = REQUIRED_COLS.filter((c) => !(c in json[0]));
   if (missing.length > 0) {
     return {
       rows: [],
-      errors: [{ rowIndex: 0, field: 'headers', reason: `Missing required columns: ${missing.join(', ')}`, raw: Object.keys(headerRow) }],
+      errors: [{ rowIndex: 0, field: 'headers', reason: `Missing required columns: ${missing.join(', ')}`, raw: Object.keys(json[0]) }],
       totalRowsInFile: json.length,
     };
   }
@@ -141,10 +361,15 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
       return;
     }
 
-    const checkIn = parseDate(r['Check-in']);
-    const checkOut = parseDate(r['Check-out']);
+    const rawIn = r['Check-in'];
+    const rawOut = r['Check-out'];
+    const checkIn = parseDate(rawIn);
+    const checkOut = parseDate(rawOut);
     if (!checkIn || !checkOut) {
-      errors.push({ rowIndex: idx, field: 'Check-in/out', reason: 'invalid date', raw: { in: r['Check-in'], out: r['Check-out'] } });
+      if (idx === 0) {
+        console.error(`[Import Booking.com] Date parse FAILED for row 0. Raw Check-in: '${rawIn}' (${typeof rawIn}), Raw Check-out: '${rawOut}' (${typeof rawOut})`);
+      }
+      errors.push({ rowIndex: idx, field: 'Check-in/out', reason: `invalid date (raw: "${rawIn}" → "${rawOut}")`, raw: { in: rawIn, out: rawOut } });
       return;
     }
 

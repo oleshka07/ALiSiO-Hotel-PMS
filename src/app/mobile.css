@@ -160,8 +160,10 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 90;
+  z-index: 100;
   animation: m-fade-in 0.2s ease;
+  /* Prevent scroll on backdrop */
+  touch-action: none;
 }
 
 .m-sheet {
@@ -169,15 +171,18 @@
   bottom: 0;
   left: 0;
   right: 0;
-  max-height: 85dvh;
+  max-height: 94dvh;
   background: var(--bg-card);
   border-radius: 20px 20px 0 0;
-  z-index: 91;
+  z-index: 101;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   animation: m-slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   padding-bottom: env(safe-area-inset-bottom, 16px);
+  /* Prevent background scroll bleed-through */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .m-sheet-handle {

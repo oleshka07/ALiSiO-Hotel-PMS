@@ -668,7 +668,13 @@ export default function BookingPage() {
           try {
             await post({
               action: 'book-breakfast', reservationId: resId,
-              items, serviceDate: checkIn,
+              items,
+              // Breakfast is served the morning AFTER check-in (guest arrives afternoon)
+              serviceDate: (() => {
+                const d = new Date(checkIn + 'T00:00:00');
+                d.setDate(d.getDate() + 1);
+                return d.toISOString().split('T')[0];
+              })(),
             });
           } catch { /* non-fatal */ }
         }

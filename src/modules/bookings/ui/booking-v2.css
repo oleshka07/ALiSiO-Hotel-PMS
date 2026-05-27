@@ -200,7 +200,6 @@
 .v3-step {
   display: none;
   padding: 0 16px 24px;
-  flex: 1;
 }
 
 .v3-step.visible {

@@ -171,6 +171,20 @@ export function findFreeResortUnitByCapacity(
   return roundUp || null;
 }
 
+/** Find the pool (staging) unit for Building F. */
+export function findPoolUnit(): FreeUnit | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT u.id, u.name, u.code, u.unit_type_id, b.code AS building_code
+    FROM units u
+    LEFT JOIN buildings b ON b.id = u.building_id
+    WHERE u.is_pool = 1
+    ORDER BY u.name ASC
+    LIMIT 1
+  `).get() as any;
+  return row || null;
+}
+
 /** Find a reservation already imported with this Booking.com book number. */
 export function findReservationByBcomId(bookNumber: string): ExistingReservation | null {
   const db = getDb();
@@ -226,6 +240,7 @@ export interface InsertReservationArgs {
   nights: number;
   adults: number;
   children: number;
+  status?: 'confirmed' | 'draft';
   totalPrice: number;            // Amount in `currency`
   currency: string;              // Stored currency tag — usually 'CZK' even for EUR-source bookings
   bcomReservationId: string;
@@ -250,10 +265,11 @@ export function insertImportedReservation(args: InsertReservationArgs): string {
       external_uid, bcom_reservation_id,
       commission_amount, notes, guest_page_token,
       total_rate_eur, commission_eur
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'unpaid', 'booking_com', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'booking_com', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     resId, args.propertyId, args.unitId, args.guestId,
     args.checkIn, args.checkOut, args.nights, args.adults, args.children,
+    args.status || 'confirmed',
     args.totalPrice, args.currency,
     args.bcomReservationId, args.bcomReservationId,
     args.commissionAmount, args.notes, guestPageToken,

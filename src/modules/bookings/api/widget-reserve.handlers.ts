@@ -41,7 +41,20 @@ export async function createWidgetReservation(request: NextRequest) {
       couponCode, certificateCode, extraCouponCode,
       siteId,
       currency: clientCurrency,
+      utmParams: rawUtmParams,
     } = body;
+
+    // Validate & sanitise UTM params — allowlist keys, cap value length
+    const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
+    const utmParams: Record<string, string> = {};
+    if (rawUtmParams && typeof rawUtmParams === 'object') {
+      for (const key of ALLOWED_UTM_KEYS) {
+        const val = (rawUtmParams as any)[key];
+        if (typeof val === 'string' && val.length > 0 && val.length <= 300) {
+          utmParams[key] = val;
+        }
+      }
+    }
 
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
       return NextResponse.json({
@@ -285,14 +298,22 @@ export async function createWidgetReservation(request: NextRequest) {
     const resId = `r_${Date.now()}`;
     const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
     const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
+    // Generate a unique guest_page_token — retries on collision (UNIQUE index exists)
+    let guestPageToken = Math.random().toString(36).slice(2, 14);
+    for (let i = 0; i < 5; i++) {
+      const existing = db.prepare('SELECT 1 FROM reservations WHERE guest_page_token = ?').get(guestPageToken);
+      if (!existing) break;
+      guestPageToken = Math.random().toString(36).slice(2, 14);
+    }
 
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied, guest_page_token)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean))
+      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
+      guestPageToken
     );
 
     // --- Emit event for CRM and other modules ---
@@ -305,12 +326,72 @@ export async function createWidgetReservation(request: NextRequest) {
       source: siteName
     }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
-    try {
-      const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
-      const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-      sendBookingConfirmationEmail(resId, origin).catch(() => {});
-    } catch (err: any) {
-      console.error('[Widget Reserve] Failed to trigger confirmation email:', err.message);
+    let testEmailStatus = 'not_sent';
+    if (email) {
+      try {
+        const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
+        const { sendEmail } = await import('@/lib/email');
+        const propertyInfo = db.prepare(`
+          SELECT p.name, u.name as unit_name
+          FROM units u LEFT JOIN properties p ON u.property_id = p.id
+          WHERE u.id = ?
+        `).get(unitId) as any;
+        const propertyName = propertyInfo?.name || 'ALiSiO';
+        const unitName = propertyInfo?.unit_name || '';
+
+        // ── Build primary CTA URL ─────────────────────────────────────
+        // Priority: thank_you_url (from site_listings) > guest portal
+        // Append guest_token + UTM params to thank-you URL for FB Pixel tracking
+        const guestPortalUrl = `${origin}/guest/${guestPageToken}`;
+        let primaryUrl: string;
+        if (thankYouUrl) {
+          const sep = thankYouUrl.includes('?') ? '&' : '?';
+          const utmString = Object.entries(utmParams)
+            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+            .join('&');
+          primaryUrl = `${thankYouUrl}${sep}guest_token=${guestPageToken}${utmString ? '&' + utmString : ''}`;
+        } else {
+          primaryUrl = guestPortalUrl;
+        }
+
+        await sendEmail({
+          to: email,
+          subject: `Booking received — ${propertyName}`,
+          html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
+  <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
+    <div style="font-size:14px;color:#666;margin-bottom:24px;">Booking received</div>
+    <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
+    <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">Your booking has been registered. You will receive a payment confirmation once your payment is processed.</p>
+    <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
+      <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Booking ID</div>
+      <div style="font-size:20px;font-weight:700;color:#2E6B4F;margin-top:2px;">${resId}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:8px 0;color:#666;">Accommodation</td><td style="text-align:right;font-weight:600;">${unitName}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Check-in</td><td style="text-align:right;font-weight:600;">${checkIn}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Check-out</td><td style="text-align:right;font-weight:600;">${checkOut}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Nights</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
+      <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
+    </table>
+    <div style="margin-top:28px;text-align:center;">
+      <a href="${primaryUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">View my booking →</a>
+    </div>
+    ${thankYouUrl ? `
+    <div style="margin-top:16px;text-align:center;border-top:1px solid #eee;padding-top:16px;">
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#fff;color:#2E6B4F;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;border:1.5px solid #2E6B4F;">🏡 Open guest page</a>
+      <p style="font-size:11px;color:#999;margin:8px 0 0;">Available after payment confirmation</p>
+    </div>` : ''}
+  </div>
+</body></html>`,
+        });
+        testEmailStatus = 'success';
+        console.log(`[Widget Reserve] Confirmation email sent to ${email} for ${resId}`);
+      } catch (emailErr: any) {
+        testEmailStatus = `failed: ${emailErr.message}`;
+        console.error('[Widget Reserve] Email failed:', emailErr.message);
+      }
     }
 
     // ── Bundle: pre-create service_orders for included services ──────────
@@ -358,6 +439,7 @@ export async function createWidgetReservation(request: NextRequest) {
       certificateDiscount,
       currency: resCurrency,
       thankYouUrl,
+      testEmailStatus,
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
     const msg = error?.message || String(error);

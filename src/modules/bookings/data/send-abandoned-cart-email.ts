@@ -12,7 +12,7 @@ export async function sendAbandonedCartEmail(reservationId: string, origin?: str
   const row = db.prepare(`
     SELECT r.id, r.check_in, r.check_out, r.nights, r.total_price, r.currency, r.guest_page_token,
            g.first_name, g.email, g.phone,
-           u.name as unit_name,
+           u.name as unit_name, u.thank_you_url,
            p.name as property_name
     FROM reservations r
     LEFT JOIN guests g ON r.guest_id = g.id
@@ -32,7 +32,15 @@ export async function sendAbandonedCartEmail(reservationId: string, origin?: str
   const total = fmtPrice(row.total_price || 0, row.currency || 'CZK');
   const propertyName = row.property_name || 'Glamping';
   const appUrl = origin || process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
-  const guestPageUrl = `${appUrl}/guest/${row.guest_page_token}`;
+  let guestPageUrl = null;
+  if (row.guest_page_token) {
+    if (row.thank_you_url) {
+      const sep = row.thank_you_url.includes('?') ? '&' : '?';
+      guestPageUrl = `${row.thank_you_url}${sep}guest_token=${row.guest_page_token}`;
+    } else {
+      guestPageUrl = `${appUrl}/guest/${row.guest_page_token}`;
+    }
+  }
 
   const translations = {
     en: {

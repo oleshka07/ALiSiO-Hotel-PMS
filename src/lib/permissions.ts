@@ -18,6 +18,7 @@ export const ALL_PERMISSIONS = [
   'nav:settings',
   'nav:crm',
   'nav:sites',
+  'nav:tasks',
   // Features
   'manage_users',
   'manage_pricing',
@@ -35,6 +36,7 @@ export const ALL_PERMISSIONS = [
   'nav:investors',
   'manage_crm',
   'manage_sites',
+  'manage_tasks',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -54,6 +56,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'nav:finance', label: 'Фінанси' },
       { key: 'nav:crm', label: 'CRM' },
       { key: 'nav:sites', label: 'Сайти бронювання' },
+      { key: 'nav:tasks', label: 'Задачі' },
       { key: 'nav:settings', label: 'Налаштування' },
     ],
   },
@@ -76,6 +79,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'nav:investors', label: 'Доступ до розділу Інвестори' },
       { key: 'manage_crm', label: 'Керування CRM' },
       { key: 'manage_sites', label: 'Керування сайтами' },
+      { key: 'manage_tasks', label: 'Керування задачами' },
     ],
   },
 ];
@@ -86,15 +90,15 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
   director: [...ALL_PERMISSIONS],
   manager: [
     'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:pricing',
-    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance', 'nav:crm', 'nav:sites',
+    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance', 'nav:crm', 'nav:sites', 'nav:tasks',
     'manage_bookings', 'manage_guests', 'manage_pricing',
     'view_reports', 'manage_payments', 'manage_documents',
     'manage_expenses', 'view_finance', 'manage_finance_settings', 'import_bank_data',
-    'manage_crm', 'manage_sites',
+    'manage_crm', 'manage_sites', 'manage_tasks',
   ],
   receptionist: [
-    'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:guests', 'nav:crm',
-    'manage_bookings', 'manage_guests', 'manage_crm',
+    'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:guests', 'nav:crm', 'nav:tasks',
+    'manage_bookings', 'manage_guests', 'manage_crm', 'manage_tasks',
   ],
   housekeeper: [
     'nav:dashboard',
@@ -189,4 +193,5 @@ export const NAV_PERMISSION_MAP: Record<string, Permission> = {
   '/crm/leads': 'nav:crm',
   '/crm/settings': 'nav:crm',
   '/sites': 'nav:sites',
+  '/tasks': 'nav:tasks',
 };
