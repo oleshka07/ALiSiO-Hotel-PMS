@@ -371,8 +371,18 @@ export async function updateBookingDraft(req: Request) {
     }
 
     // ─── Update draft status ───────────────────────────────────────────────
+    // BookingWizard sends reservation_id as `id`, so try both draft.id and
+    // draft.reservation_id to make sure the draft row gets updated.
     if (id) {
-      try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id); } catch { /* */ }
+      try {
+        const result = db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id);
+        if (result.changes === 0) {
+          db.prepare(`UPDATE booking_drafts SET status = ? WHERE reservation_id = ?`).run(status, id);
+        }
+      } catch { /* */ }
+    }
+    if (rid && rid !== id) {
+      try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE reservation_id = ?`).run(status, rid); } catch { /* */ }
     }
 
     return NextResponse.json({ ok: true, reservation_id: rid, admin_name: adminName }, { headers: CORS_HEADERS });

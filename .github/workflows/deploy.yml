@@ -163,12 +163,12 @@ jobs:
             fi
 
             # ─────────────────────────────────────────────────────────
-            # One-time diagnostic: trace missing Štepanek Petr payment
-            # and find all orphaned paid reservations without fin_ops.
+            # One-time recovery: create fin_operations for all
+            # PIN-confirmed reservations that are missing them.
             # ─────────────────────────────────────────────────────────
-            if [ -f diagnose-guest-payment.js ]; then
-              echo "[diagnostic] Running guest payment trace..."
-              node diagnose-guest-payment.js 2>&1 || echo "[diagnostic] script returned non-zero (non-fatal)"
+            if [ -f recover-orphan-pin-payments.js ]; then
+              echo "[recovery] Running orphan PIN payments recovery..."
+              node recover-orphan-pin-payments.js --apply 2>&1 || echo "[recovery] script returned non-zero (non-fatal)"
             fi
 
             # Restart service only after a successful build.
