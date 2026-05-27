@@ -261,7 +261,9 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }
       const data = await res.json();
-      if (data.session_url) {
+      if (data.already_paid) {
+        goToStep(6);
+      } else if (data.session_url) {
         try {
           window.open(data.session_url, '_blank');
           goToStep(6);

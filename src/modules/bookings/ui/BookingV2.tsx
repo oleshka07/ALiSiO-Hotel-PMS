@@ -761,7 +761,15 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           </div>
 
-          {siteConfig?.hasPayment ? (
+          {totalWithDiscount === 0 ? (
+            <div className="v3-invoice-notice" style={{ background: 'rgba(47,79,43,0.06)', borderColor: 'rgba(47,79,43,0.25)' }}>
+              <div className="v3-invoice-notice-icon">🎁</div>
+              <div className="v3-invoice-notice-text">
+                <strong>{lang === 'cs' ? 'Bezplatná rezervace' : lang === 'de' ? 'Kostenlose Buchung' : lang === 'en' ? 'No payment required' : 'Оплачувати нічого не потрібно'}</strong>
+                <p>{lang === 'cs' ? 'Vaše rezervace je plně pokryta slevovým kódem. Stačí potvrdit.' : lang === 'de' ? 'Ihre Buchung ist vollständig durch Ihren Rabattcode abgedeckt. Bestätigen Sie einfach.' : lang === 'en' ? 'Your booking is fully covered by your offer. Just confirm.' : 'Ваше бронювання повністю покрите вашим промокодом. Просто підтвердіть.'}</p>
+              </div>
+            </div>
+          ) : siteConfig?.hasPayment ? (
             <>
               <div className="v3-pay-method selected">
                 <div className="v3-pay-method-radio"></div>
@@ -815,7 +823,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-cta-summary-line2">
                   {checkIn && checkOut && loadingAvail ? (
                     <span className="v3-cta-loader"></span>
-                  ) : nights > 0 && totalWithDiscount > 0 ? (
+                  ) : nights > 0 && (totalWithDiscount > 0 || offerApplied) ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {totalWithoutDiscount > totalWithDiscount && (
                         <span style={{ textDecoration: 'line-through', opacity: 0.6, fontSize: '0.85em', fontWeight: 500 }}>
@@ -852,12 +860,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   else if (step === 2) goToStep(3);
                   else if (step === 3) submitBooking();
                   else if (step === 4) goToStep(5);
-                  else if (step === 5) startPayment();
+                  else if (step === 5) { if (totalWithDiscount === 0) { goToStep(6); } else { startPayment(); } }
                 }}
               >
                 <span>
                   {step === 5
-                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Завершити'))
+                    ? (totalWithDiscount === 0 ? (t.finishBooking || 'Підтвердити') : (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Завершити')))
                     : (step === 1 ? t.selectDates
                       : (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
                 </span>

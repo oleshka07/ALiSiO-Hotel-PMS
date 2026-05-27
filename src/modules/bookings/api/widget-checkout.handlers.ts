@@ -127,6 +127,14 @@ export async function createWidgetCheckoutSession(req: Request) {
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
 
+      // Short-circuit: reservation is already fully covered (e.g. 100% offer) — no Teya needed
+      if (amount === 0) {
+        try {
+          db.prepare("UPDATE reservations SET payment_status = 'paid', status = 'confirmed' WHERE id = ? AND payment_status != 'paid'").run(reservation_id);
+        } catch { /* non-fatal */ }
+        return NextResponse.json({ session_url: null, already_paid: true }, { headers: CORS_HEADERS });
+      }
+
       // Also add unpaid service_orders to the total
       try {
         const svcOrders = db.prepare(
