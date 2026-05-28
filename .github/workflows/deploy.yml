@@ -187,16 +187,3 @@ jobs:
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
-
-            # One-time recovery: re-create 22 missing PIN-confirmed cash payments
-            # These were deleted by Cleanup #G on every restart (now removed).
-            if [ -f recover-pin-payments-v3.js ]; then
-              echo "[recovery] Running PIN payments recovery v3..."
-              node recover-pin-payments-v3.js --apply 2>&1 || echo "[recovery] v3 returned non-zero (non-fatal)"
-            fi
-
-            # Diagnostic: verify DB state after recovery
-            if [ -f list-recovered-operations.js ]; then
-              echo "[DIAG] Checking DB state..."
-              node list-recovered-operations.js 2>&1 || true
-            fi
