@@ -83,6 +83,7 @@ export async function listServiceOrders(req: NextRequest) {
       SELECT
         so.id, so.reservation_id, so.service_id, so.quantity,
         so.total_price, so.status, so.payment_status, so.created_at,
+        so.service_date, so.notes,
         ads.name as service_name, ads.name_en, ads.service_type,
         g.first_name, g.last_name,
         u.name as unit_name,
@@ -102,11 +103,22 @@ export async function listServiceOrders(req: NextRequest) {
     const gOrders = guestOrders.map(o => {
       let startHour = null, endHour = null;
       let notesDate: string | null = null;
-      if (o.notes && o.service_type === 'slot_booking') {
+      let menuItemName: string | null = null;
+      if (o.notes) {
         try {
           const n = JSON.parse(o.notes);
-          if (n.startHour != null) { startHour = n.startHour; endHour = n.startHour + (n.hours || 1); }
-          if (n.service_date) notesDate = n.service_date;
+          // Slot services (sauna, tub): extract time info
+          if (o.service_type === 'slot_booking') {
+            if (n.startHour != null) { startHour = n.startHour; endHour = n.startHour + (n.hours || 1); }
+            if (n.service_date) notesDate = n.service_date;
+          }
+          // Breakfast: extract menu item names
+          if (n.type === 'breakfast' && n.menu_items && Array.isArray(n.menu_items)) {
+            menuItemName = n.menu_items
+              .filter((mi: any) => mi.quantity > 0)
+              .map((mi: any) => `${mi.name || mi.menuItemId} ×${mi.quantity}`)
+              .join(', ');
+          }
         } catch { /* ignore */ }
       }
       return {
@@ -125,6 +137,7 @@ export async function listServiceOrders(req: NextRequest) {
         paymentStatus: o.payment_status,
         completedAt: null,
         couponCode: null,
+        menuItemName,
         guestName: `${o.first_name} ${o.last_name}`,
         unitName: o.unit_name,
         createdAt: o.created_at,
