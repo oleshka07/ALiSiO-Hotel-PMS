@@ -148,8 +148,8 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
 
     <p style="font-size:14px;line-height:1.6;margin:0 0 24px;color:#555;">
       ${isPaid 
-        ? 'On your personal page, you\\'ll find photos of the cabin, what\\'s inside, how to get here, and places to visit nearby.' 
-        : 'After payment, your personal page will open — there you\\'ll find photos of the cabin, what\\'s inside, how to get here, and places to visit nearby.'}
+        ? "On your personal page, you'll find photos of the cabin, what's inside, how to get here, and places to visit nearby." 
+        : "After payment, your personal page will open — there you'll find photos of the cabin, what's inside, how to get here, and places to visit nearby."}
     </p>
 
     <p style="font-size:15px;line-height:1.6;margin:0 0 32px;color:#444;">
