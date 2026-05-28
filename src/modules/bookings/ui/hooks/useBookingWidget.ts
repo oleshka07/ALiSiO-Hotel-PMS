@@ -209,7 +209,24 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const handleDayClick = (dateStr: string) => { const clicked = parseDate(dateStr); if (clicked < today) return; if (dateStr === checkIn && !checkOut) { setCheckIn(null); setSelectingCheckOut(false); return; } if (checkIn && checkOut && (dateStr === checkIn || dateStr === checkOut)) { setCheckIn(null); setCheckOut(null); setSelectingCheckOut(false); return; } if (!checkIn || (checkIn && checkOut) || !selectingCheckOut) { setCheckIn(dateStr); setCheckOut(null); setSelectingCheckOut(true); } else { if (clicked <= parseDate(checkIn!)) { setCheckIn(dateStr); setCheckOut(null); } else { setCheckOut(dateStr); setSelectingCheckOut(false); fetchAvailability(checkIn!, dateStr); } } };
 
-  const goToStep = (s: number) => { if (s===2 && (displayUnits.length===1 || (selectedUnitId && step===3))) { setStep(step===3 ? 1 : 3); window.scrollTo({top:0,behavior:'smooth'}); return; } if (s===4 && services.length===0 && !loadingServices) { setStep(step===5 ? 3 : 5); window.scrollTo({top:0,behavior:'smooth'}); } else { setStep(s); window.scrollTo({top:0,behavior:'smooth'}); } if (typeof window !== 'undefined' && window.parent !== window) setTimeout(() => window.parent.postMessage({source:'alisio-widget',event:'resize',height:document.body.scrollHeight},'*'), 100); };
+  const goToStep = (s: number) => {
+    if (s === 4) {
+      s = step === 5 ? 3 : 5;
+    }
+    if (s===2 && (displayUnits.length===1 || (selectedUnitId && step===3))) {
+      setStep(step===3 ? 1 : 3);
+      window.scrollTo({top:0,behavior:'smooth'});
+      return;
+    }
+    if (s===4 && services.length===0 && !loadingServices) {
+      setStep(step===5 ? 3 : 5);
+      window.scrollTo({top:0,behavior:'smooth'});
+    } else {
+      setStep(s);
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+    if (typeof window !== 'undefined' && window.parent !== window) setTimeout(() => window.parent.postMessage({source:'alisio-widget',event:'resize',height:document.body.scrollHeight},'*'), 100);
+  };
 
   const resolvedSiteId = siteId || siteConfig?.id || '';
 

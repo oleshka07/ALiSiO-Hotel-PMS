@@ -37,6 +37,12 @@ export interface WidgetConfig {
   supportContact?: string;
   site_url?: string;
   thank_you_url?: string;
+  email_received_subject?: string;
+  email_received_body?: string;
+  email_confirmed_subject?: string;
+  email_confirmed_body?: string;
+  email_unpaid_subject?: string;
+  email_unpaid_body?: string;
 }
 
 export interface Listing {

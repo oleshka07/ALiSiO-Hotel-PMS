@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Plus, Trash2, Package, ChevronDown, ChevronUp, Edit3, CopyPlus, Copy, Check, Code } from 'lucide-react';
+import { Loader2, Plus, Trash2, Package, ChevronDown, ChevronUp, Edit3, CopyPlus, Copy, Check, Code, Info } from 'lucide-react';
 import { Modal } from './SiteHelpers';
 import type { SiteService, Listing } from '../_types';
 
@@ -66,6 +66,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
   const [showCodeModal, setShowCodeModal] = useState<Bundle | null>(null);
   const [widgetLang, setWidgetLang] = useState<string>('');
   const [toast, setToast] = useState('');
+  const [showSplash, setShowSplash] = useState(false);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3500); };
 
@@ -148,14 +149,30 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
         </button>
       </div>
 
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.15)', display: 'flex', gap: 8, maxWidth: 400 }}>
-        <Package size={16} style={{ color: '#3b82f6', flexShrink: 0, marginTop: 1 }} />
-        <span>
-          <strong>Пакет (Акційний тариф)</strong> — це пропозиція, яка включає ночі та сервіси за фіксованою ціною. 
-          Ви задаєте пакету <strong>Промокод</strong> (напр., <code>SUMMER26</code>) та ліміт використань. 
-          Коли гість вводить цей код у віджеті — вказані послуги додаються безкоштовно, а загальна ціна бронювання стає рівною ціні пакету (гість оплачує пакет під час бронювання).
-        </span>
-      </div>
+      {!showSplash ? (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 400 }}>
+          <Package size={16} style={{ color: '#3b82f6', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, flex: 1 }}>Акційні пакети</span>
+          <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Детальніше">
+            <Info size={16} />
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.15)', display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 400 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <Package size={16} style={{ color: '#3b82f6', flexShrink: 0 }} />
+            <span style={{ fontWeight: 600, flex: 1 }}>Акційні пакети</span>
+            <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: '#3b82f6', display: 'flex', alignItems: 'center' }} title="Приховати">
+              <Info size={16} />
+            </button>
+          </div>
+          <span>
+            <strong>Пакет (Акційний тариф)</strong> — це пропозиція, яка включає ночі та сервіси за фіксованою ціною. 
+            Ви задаєте пакету <strong>Промокод</strong> (напр., <code>SUMMER26</code>) та ліміт використань. 
+            Коли гість вводить цей код у віджеті — вказані послуги додаються безкоштовно, а загальна ціна бронювання стає рівною ціні пакету (гість оплачує пакет під час бронювання).
+          </span>
+        </div>
+      )}
 
       {loading ? <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>
         : bundles.length === 0 ? (
@@ -531,6 +548,23 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
             </button>
           </div>
         </Modal>
+      )}
+
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          background: 'var(--surface-secondary)',
+          border: '1px solid var(--border-primary)',
+          padding: '10px 16px',
+          borderRadius: 8,
+          zIndex: 9999,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+          fontSize: 13,
+        }}>
+          {toast}
+        </div>
       )}
 
     </div>

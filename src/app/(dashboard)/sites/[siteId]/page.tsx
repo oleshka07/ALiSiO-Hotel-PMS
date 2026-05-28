@@ -16,6 +16,7 @@ import { CouponsTab } from './_components/CouponsTab';
 import { PackageOffersTab } from './_components/PackageOffersTab';
 import { ThankYouTab } from './_components/ThankYouTab';
 import { FormsTab } from './_components/FormsTab';
+import { NotificationsTab } from './_components/NotificationsTab';
 import type { Site } from './_types';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -84,29 +85,29 @@ export default function SiteDetailPage() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   if (loading) return (
-    <div className="page-layout">
+    <>
       <Header title="Завантаження..." onMenuClick={onMenuClick} />
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+      <div className="app-content" style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
         <Loader2 size={36} className="spin" style={{ color: 'var(--accent-primary)' }} />
       </div>
-    </div>
+    </>
   );
 
   if (!site) return (
-    <div className="page-layout">
+    <>
       <Header title="Сайт не знайдено" onMenuClick={onMenuClick} />
-      <div style={{ padding: 40, textAlign: 'center' }}>
+      <div className="app-content" style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ fontSize: 16, marginBottom: 12 }}>Сайт не знайдено або видалено</div>
         <button className="btn btn-primary" onClick={() => router.push('/sites')}><ArrowLeft size={16} /> Назад до списку</button>
       </div>
-    </div>
+    </>
   );
 
   return (
-    <div className="page-layout">
+    <>
       <Header title={site.name} onMenuClick={onMenuClick} onBack={() => router.push('/sites')} />
 
-      <div className="page-content" style={{ padding: 12 }}>
+      <div className="app-content">
         {/* Breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <button className="btn btn-ghost" onClick={() => router.push('/sites')} style={{ padding: '6px 10px' }}>
@@ -160,7 +161,8 @@ export default function SiteDetailPage() {
         {activeTab === 'coupons' && <CouponsTab siteId={siteId} siteCurrency={site.currency} onCountChange={couponCountCb} />}
         {activeTab === 'packages'    && <PackageOffersTab siteId={siteId} siteCurrency={site.currency} onCountChange={packageCountCb} />}
         {activeTab === 'forms'       && <FormsTab siteId={siteId} onCountChange={formsCountCb} />}
+        {activeTab === 'notifications' && <NotificationsTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: { ...s.widget_config, ...cfg } } : s)} />}
       </div>
-    </div>
+    </>
   );
 }

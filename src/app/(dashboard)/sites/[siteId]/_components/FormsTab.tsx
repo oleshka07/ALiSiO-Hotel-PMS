@@ -226,10 +226,8 @@ export function FormsTab({ siteId, onCountChange }: {
 
           {scripts.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
-              <Code2 size={40} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
-              <div style={{ marginBottom: 8 }}>Скриптів ще немає</div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16 }}>Створіть скрипт, вставте код на сайт — і заявки будуть збиратися автоматично</div>
-              <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Створити перший скрипт</button>
+              <Code2 size={40} style={{ margin: '0 auto 12px', opacity: 0.2 }} />
+              <div style={{ fontWeight: 600 }}>Скриптів ще немає</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

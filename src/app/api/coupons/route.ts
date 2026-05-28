@@ -45,6 +45,8 @@ export async function POST(req: NextRequest) {
       allowed_days,
       description,
       applies_to,
+      applied_listings,
+      applicable_services,
     } = body;
 
     if (!code || offer_amount === undefined || offer_amount === '') {
@@ -60,8 +62,8 @@ export async function POST(req: NextRequest) {
          valid_from, valid_until,
          min_nights, max_nights,
          max_uses, redemption_limit,
-         site_id, allowed_days, applies_to, is_active)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         site_id, allowed_days, applies_to, applied_listings, applicable_services, is_active)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
     `).run(
       id,
       String(code).toUpperCase().trim(),
@@ -77,6 +79,8 @@ export async function POST(req: NextRequest) {
       site_id || null,
       allowed_days ? JSON.stringify(allowed_days) : null,
       applies_to || 'services',
+      applied_listings ? JSON.stringify(applied_listings) : null,
+      applicable_services ? JSON.stringify(applicable_services) : null,
     );
 
     const created = db.prepare('SELECT * FROM coupons WHERE id = ?').get(id);

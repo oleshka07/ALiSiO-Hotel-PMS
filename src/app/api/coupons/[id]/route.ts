@@ -27,10 +27,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const db = getDb();
     const body = await req.json();
-
     const allowed = [
       'code', 'discount_type', 'offer_amount', 'valid_from', 'valid_until',
-      'min_nights', 'max_nights', 'redemption_limit', 'allowed_days', 'applies_to'
+      'min_nights', 'max_nights', 'redemption_limit', 'allowed_days', 'applies_to',
+      'applied_listings', 'applicable_services'
     ];
     
     const sets: string[] = [];
@@ -39,7 +39,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     for (const k of allowed) {
       if (k in body) {
         sets.push(`${k} = ?`);
-        if (k === 'allowed_days') {
+        if (k === 'allowed_days' || k === 'applied_listings' || k === 'applicable_services') {
           vals.push(body[k] ? JSON.stringify(body[k]) : null);
         } else if (k === 'max_uses' || k === 'redemption_limit') {
           // Keep max_uses in sync with redemption_limit for coupons logic

@@ -10,6 +10,19 @@ const nextConfig: NextConfig = {
   // Allow build to succeed during modular architecture migration
   // Remove once all modules are fully migrated and TS errors resolved
   typescript: { ignoreBuildErrors: true },
+  async headers() {
+    return [
+      {
+        source: "/w/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors *",
+          }
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
