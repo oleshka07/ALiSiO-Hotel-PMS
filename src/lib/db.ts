@@ -3583,86 +3583,15 @@ function runMigrations(database: any) {
   //  is_pms_signal column entirely, the migration is a no-op and was
   //  removed to avoid noisy «no such column» errors on every startup.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
-  //
-  // After clean-6 the /finance/operations list still contained ~67
-  // source='manual' rows with NULL account_to_id AND NULL account_from_id
-  // (legacy migration artefacts from old `income/expenses/transfers/
-  // payments` tables that pre-dated proper account assignment), plus one
-  // Finmap wizard import experiment and a -50,005,000 CZK «Test
-  // Transaction». None represent real money — NULL accounts make every
-  // balance / P&L aggregation skip them anyway. They only pollute the
-  // operations list.
-  //
-  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
-  // unattributed). Manual ops with a real account_to / account_from stay
-  // untouched even if they look auto-imported — operator can hide those
-  // individually via the row UI.
-  //
-  // Bank-transaction matched_operation_id nulled before DELETE so the FK
-  // does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const idsToWipe = database.prepare(`
-      SELECT id FROM fin_operations
-      WHERE source = 'wizard_import'
-         OR (source = 'manual'
-             AND account_to_id IS NULL
-             AND account_from_id IS NULL)
-         OR comment LIKE '%Test Transaction%'
-    `).all() as Array<{ id: string }>;
-    if (idsToWipe.length > 0) {
-      const placeholders = idsToWipe.map(() => '?').join(',');
-      const ids = idsToWipe.map((r) => r.id);
-      database.prepare(
-        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
-      ).run(...ids);
-      const result = database.prepare(
-        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
-      ).run(...ids);
-      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
-  }
+  // (Cleanup #H REMOVED 2026-05-28: this ran on EVERY restart and deleted
+  //  booking_widget / null-account operations, causing PIN-confirmed
+  //  cash payments to vanish after each deploy. One-time job already done.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #G: purge auto-created fin_operations.
-  //
-  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
-  // return), four code paths created fin_operations on every guest tap
-  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
-  // had never manually entered. The actual money still lives at the
-  // platform / Teya merchant until the bank statement arrives, so these
-  // rows were essentially a parallel ledger that diverged from reality.
-  //
-  // After clean-5 no NEW rows are created. This migration sweeps the
-  // accumulated ones — sources hostex / teia / booking_widget. Manual
-  // cash entries (source='manual') and bank-import rows (source='bank'
-  // / 'manual_bank' / 'kb_inbox') are preserved.
-  //
-  // Bank-transaction match pointers are nulled before the DELETE so the
-  // FK does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations
-        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
-  }
+  // (Cleanup #G REMOVED 2026-05-28: this ran on EVERY restart and deleted
+  //  ALL fin_operations with source IN ('hostex','teia','booking_widget',
+  //  'guest_page'). This was the ROOT CAUSE of 22+ missing cash payments —
+  //  booking widget PIN confirmations use source='booking_widget', so they
+  //  were wiped on every server restart. One-time job already done.)
 
   // ═══════════════════════════════════════════════════════════════════
   // Cleanup #I: drop dead FK columns on bank_transactions
@@ -3761,86 +3690,11 @@ function runMigrations(database: any) {
   //  is_pms_signal column entirely, the migration is a no-op and was
   //  removed to avoid noisy «no such column» errors on every startup.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
-  //
-  // After clean-6 the /finance/operations list still contained ~67
-  // source='manual' rows with NULL account_to_id AND NULL account_from_id
-  // (legacy migration artefacts from old `income/expenses/transfers/
-  // payments` tables that pre-dated proper account assignment), plus one
-  // Finmap wizard import experiment and a -50,005,000 CZK «Test
-  // Transaction». None represent real money — NULL accounts make every
-  // balance / P&L aggregation skip them anyway. They only pollute the
-  // operations list.
-  //
-  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
-  // unattributed). Manual ops with a real account_to / account_from stay
-  // untouched even if they look auto-imported — operator can hide those
-  // individually via the row UI.
-  //
-  // Bank-transaction matched_operation_id nulled before DELETE so the FK
-  // does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const idsToWipe = database.prepare(`
-      SELECT id FROM fin_operations
-      WHERE source = 'wizard_import'
-         OR (source = 'manual'
-             AND account_to_id IS NULL
-             AND account_from_id IS NULL)
-         OR comment LIKE '%Test Transaction%'
-    `).all() as Array<{ id: string }>;
-    if (idsToWipe.length > 0) {
-      const placeholders = idsToWipe.map(() => '?').join(',');
-      const ids = idsToWipe.map((r) => r.id);
-      database.prepare(
-        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
-      ).run(...ids);
-      const result = database.prepare(
-        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
-      ).run(...ids);
-      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
-  }
+  // (Cleanup #H copy-2 REMOVED 2026-05-28: duplicate of the block above,
+  //  same root-cause issue — see comment near line 3586.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #G: purge auto-created fin_operations.
-  //
-  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
-  // return), four code paths created fin_operations on every guest tap
-  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
-  // had never manually entered. The actual money still lives at the
-  // platform / Teya merchant until the bank statement arrives, so these
-  // rows were essentially a parallel ledger that diverged from reality.
-  //
-  // After clean-5 no NEW rows are created. This migration sweeps the
-  // accumulated ones — sources hostex / teia / booking_widget. Manual
-  // cash entries (source='manual') and bank-import rows (source='bank'
-  // / 'manual_bank' / 'kb_inbox') are preserved.
-  //
-  // Bank-transaction match pointers are nulled before the DELETE so the
-  // FK does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations
-        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
-  }
+  // (Cleanup #G copy-2 REMOVED 2026-05-28: duplicate of the block above,
+  //  same root-cause issue — see comment near line 3586.)
 
   // ═══════════════════════════════════════════════════════════════════
   // Cleanup #I: drop dead FK columns on bank_transactions
