@@ -63,6 +63,7 @@ const navigation: NavSection[] = [
       { label: 'Календар', href: '/calendar', icon: <CalendarDays size={20} />, permission: 'nav:calendar' },
       { label: 'Бронювання', href: '/bookings', icon: <BookOpen size={20} />, permission: 'nav:bookings' },
       { label: 'Імпорт Booking.com', href: '/imports/booking-com', icon: <Upload size={20} />, permission: 'nav:bookings' },
+      { label: 'Журнал змін', href: '/audit', icon: <Clock size={20} />, permission: 'nav:settings' },
     ],
   },
   {

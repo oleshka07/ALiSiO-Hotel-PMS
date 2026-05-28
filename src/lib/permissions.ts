@@ -194,4 +194,5 @@ export const NAV_PERMISSION_MAP: Record<string, Permission> = {
   '/crm/settings': 'nav:crm',
   '/sites': 'nav:sites',
   '/tasks': 'nav:tasks',
+  '/audit': 'nav:settings',
 };
