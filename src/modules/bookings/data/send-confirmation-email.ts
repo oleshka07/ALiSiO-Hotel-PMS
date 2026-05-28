@@ -61,10 +61,10 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
   const propertyPhone = row.property_phone || '';
   const isPaid = row.payment_status === 'paid' || row.payment_status === 'prepaid';
 
-  const subject = `Booking confirmed — ${propertyName} #${row.id}`;
-  const messageText = isPaid
-    ? 'Thank you for your reservation. Your payment has been received and your booking is confirmed.'
-    : 'Thank you for your reservation. Your booking is confirmed.';
+  const subject = isPaid 
+    ? `Booking confirmed — ${propertyName} #${row.id}`
+    : `Action required: Complete your booking at ${propertyName}`;
+    
   const totalLabel = isPaid ? 'Paid' : 'Total';
 
   const html = `<!DOCTYPE html>
@@ -73,11 +73,35 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
   <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
-    <div style="font-size:14px;color:#666;margin-bottom:24px;">Booking confirmed</div>
+    <div style="font-size:14px;color:#666;margin-bottom:24px;">${isPaid ? 'Booking confirmed' : 'Booking registered'}</div>
 
-    <p style="font-size:16px;margin:0 0 16px;">Hi ${guestName},</p>
-    <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">
-      ${messageText}
+    <p style="font-size:16px;margin:0 0 16px;">Hi ${guestName}!</p>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 20px;color:#444;">
+      Thank you for choosing ${propertyName}. We built this place so you could come here to exhale — nature, silence, a hot tub under the stars. There is no need to rush here. Only to rest.
+    </p>
+    
+    <p style="font-size:15px;line-height:1.6;margin:0 0 24px;color:#444;font-weight:600;">
+      ${isPaid 
+        ? 'Your booking is fully confirmed and your payment has been received.' 
+        : 'Your booking is registered. To secure your dates, please complete your payment.'}
+    </p>
+
+    ${guestPageUrl ? `
+    <div style="margin-bottom:24px;">
+      <a href="${guestPageUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600;font-size:15px;box-shadow:0 2px 4px rgba(46,107,79,0.2);">
+        ${isPaid ? 'Open guest page →' : 'Go to payment →'}
+      </a>
+    </div>` : ''}
+
+    <p style="font-size:14px;line-height:1.6;margin:0 0 24px;color:#555;">
+      ${isPaid 
+        ? 'On your personal page, you\\'ll find photos of the cabin, what\\'s inside, how to get here, and places to visit nearby.' 
+        : 'After payment, your personal page will open — there you\\'ll find photos of the cabin, what\\'s inside, how to get here, and places to visit nearby.'}
+    </p>
+
+    <p style="font-size:15px;line-height:1.6;margin:0 0 32px;color:#444;">
+      See you soon,<br>
+      Oleg Stepeniev 🌿
     </p>
 
     <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
@@ -93,12 +117,6 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
       <tr><td style="padding:8px 0;color:#666;">Guests</td><td style="text-align:right;font-weight:600;">${row.adults || 1}${row.children ? ` + ${row.children} child` : ''}</td></tr>
       <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>${totalLabel}</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${total}</td></tr>
     </table>
-
-    ${guestPageUrl ? `
-    <div style="margin-top:24px;text-align:center;">
-      <a href="${guestPageUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">Open guest page →</a>
-      <div style="font-size:12px;color:#888;margin-top:8px;">Manage your stay, register guests, book extras</div>
-    </div>` : ''}
 
     <hr style="border:none;border-top:1px solid #eee;margin:28px 0 16px;">
     <div style="font-size:13px;color:#777;line-height:1.5;">
