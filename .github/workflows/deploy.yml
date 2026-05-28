@@ -184,3 +184,9 @@ jobs:
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
+
+            # Diagnostic: check if rec2_ records survived
+            if [ -f list-recovered-operations.js ]; then
+              echo "[DIAG] Checking DB state..."
+              node list-recovered-operations.js 2>&1 || true
+            fi
