@@ -184,8 +184,3 @@ jobs:
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
-
-            # One-time: check for duplicates after recovery
-            if [ -f list-recovered-operations.js ]; then
-              node list-recovered-operations.js 2>&1 || true
-            fi
