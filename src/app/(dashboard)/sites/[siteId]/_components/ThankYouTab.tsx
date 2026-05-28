@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Check, Save, PartyPopper, ExternalLink } from 'lucide-react';
+import { Loader2, Check, Save, PartyPopper, ExternalLink, Info } from 'lucide-react';
 import type { Site, WidgetConfig } from '../_types';
 
 export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfig) => void }) {
   const [cfg, setCfg] = useState<WidgetConfig>(site.widget_config || {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
 
   const save = async () => {
     setSaving(true);
@@ -42,20 +43,42 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
       </div>
 
       {/* How it works */}
-      <div style={{
-        background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.2)',
-        borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13,
-      }}>
-        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--accent-primary)' }}>Як це працює</div>
-        <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: 'var(--text-secondary)' }}>
-          <li>Гість завершує бронювання і оплачує через Teya</li>
-          <li>Система підтверджує оплату і надсилає email-підтвердження</li>
-          <li>Гість автоматично переходить на URL нижче</li>
-        </ol>
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>
-          Застосовується до всіх об&apos;єктів сайту <strong>{site.name}</strong>. Якщо порожньо — гість залишається на сторінці підтвердження.
+      {!showSplash ? (
+        <div style={{
+          fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28,
+          padding: '10px 14px', background: 'rgba(59,130,246,0.06)',
+          borderRadius: 12, border: '1px solid rgba(59,130,246,0.15)',
+          display: 'flex', alignItems: 'center', gap: 8, maxWidth: 640
+        }}>
+          <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, flex: 1 }}>Як це працює</span>
+          <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Детальніше">
+            <Info size={16} />
+          </button>
         </div>
-      </div>
+      ) : (
+        <div style={{
+          background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13,
+          display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 640
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+            <span style={{ fontWeight: 600, flex: 1, color: 'var(--accent-primary)' }}>Як це працює</span>
+            <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }} title="Приховати">
+              <Info size={16} />
+            </button>
+          </div>
+          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: 'var(--text-secondary)' }}>
+            <li>Гість завершує бронювання і оплачує через Teya</li>
+            <li>Система підтверджує оплату і надсилає email-підтвердження</li>
+            <li>Гість автоматично переходить на URL нижче</li>
+          </ol>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            Застосовується до всіх об&apos;єктів сайту <strong>{site.name}</strong>. Якщо порожньо — гість залишається на сторінці підтвердження.
+          </div>
+        </div>
+      )}
 
       {/* URL field */}
       <div className="form-group" style={{ marginBottom: 20 }}>

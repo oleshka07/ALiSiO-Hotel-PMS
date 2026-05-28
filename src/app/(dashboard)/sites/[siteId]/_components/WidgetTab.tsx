@@ -1,18 +1,81 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Check, Save } from 'lucide-react';
+import { Loader2, Check, Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { CopyBtn } from './SiteHelpers';
 import type { Site, WidgetConfig } from '../_types';
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  const [isOpen, setIsOpen] = useState(n === 1);
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <div style={{ marginBottom: 28 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{n}</div>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
+    <div style={{ 
+      marginBottom: 16, 
+      background: 'var(--bg-card)', 
+      border: '1px solid var(--border-primary)', 
+      borderRadius: 12, 
+      overflow: 'hidden',
+      transition: 'all 0.2s ease'
+    }}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          padding: '14px 16px', 
+          cursor: 'pointer',
+          userSelect: 'none',
+          background: isOpen 
+            ? 'rgba(79, 110, 247, 0.04)' 
+            : isHovered 
+              ? 'rgba(255, 255, 255, 0.02)' 
+              : 'transparent',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ 
+            width: 26, 
+            height: 26, 
+            borderRadius: '50%', 
+            background: isOpen ? 'var(--accent-primary)' : 'var(--bg-tertiary)', 
+            color: isOpen ? '#fff' : 'var(--text-secondary)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            fontSize: 12, 
+            fontWeight: 700, 
+            flexShrink: 0,
+            transition: 'all 0.2s ease'
+          }}>
+            {n}
+          </div>
+          <div style={{ 
+            fontSize: 14, 
+            fontWeight: 600, 
+            color: isOpen ? 'var(--text-primary)' : 'var(--text-secondary)', 
+            transition: 'color 0.2s ease' 
+          }}>
+            {title}
+          </div>
+        </div>
+        <div style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}>
+          {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </div>
       </div>
-      {children}
+      
+      {isOpen && (
+        <div style={{ 
+          padding: '0 16px 20px 54px', 
+          animation: 'slideDown 0.2s ease'
+        }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }

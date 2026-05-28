@@ -35,7 +35,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* PROGRESS */}
         {step < 6 && (
           <div className="v3-progress">
-            {[1, 2, 3, 4, 5].map(s => (
+            {[1, 2, 3, 5].map(s => (
               <div key={s} className={`v3-progress-step ${step >= s ? 'active' : ''}`} />
             ))}
           </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, Plus, Trash2, Percent, Copy, Check, Edit3, CopyPlus } from 'lucide-react';
+import { Loader2, Plus, Trash2, Percent, Copy, Check, Edit3, CopyPlus, Info } from 'lucide-react';
 import { Modal } from './SiteHelpers';
 
 const DAYS = [
@@ -18,16 +18,21 @@ const emptyForm = () => ({
   min_nights: 1, max_nights: '', redemption_limit: '',
   allowed_days: [] as number[],
   applies_to: 'services' as 'services' | 'listings' | 'both',
+  applied_listings: [] as string[],
+  applicable_services: [] as string[],
 });
 
 export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { siteId: string; siteCurrency?: string; onCountChange?: (n: number) => void }) {
   const [codes, setCodes] = useState<Record<string, unknown>[]>([]);
+  const [listings, setListings] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [showSplash, setShowSplash] = useState(false);
 
   const onCountRef = useRef(onCountChange);
   useEffect(() => { onCountRef.current = onCountChange; }, [onCountChange]);
@@ -35,12 +40,26 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
   const fetchCodes = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/coupons?site_id=${siteId}`);
-      const d = await res.json();
-      const list = Array.isArray(d) ? d : Array.isArray(d.codes) ? d.codes : [];
+      const [resCodes, resServices, resListings] = await Promise.all([
+        fetch(`/api/coupons?site_id=${siteId}`).then(r => r.json()),
+        fetch(`/api/booking-sites/${siteId}/services`).then(r => r.json()),
+        fetch(`/api/booking-sites/${siteId}/listings`).then(r => r.json()),
+      ]);
+
+      const list = Array.isArray(resCodes) ? resCodes : Array.isArray(resCodes.codes) ? resCodes.codes : [];
       setCodes(list);
       onCountRef.current?.(list.length);
-    } catch { setCodes([]); onCountRef.current?.(0); }
+
+      if (Array.isArray(resServices.services)) {
+        setServices(resServices.services.filter((s: any) => s.is_enabled));
+      }
+      if (Array.isArray(resListings.listings)) {
+        setListings(resListings.listings);
+      }
+    } catch {
+      setCodes([]);
+      onCountRef.current?.(0);
+    }
     setLoading(false);
   }, [siteId]);
 
@@ -76,6 +95,12 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
           site_id: siteId,
           allowed_days: form.allowed_days.length > 0 ? form.allowed_days : null,
           applies_to: form.applies_to,
+          applied_listings: (form.applies_to === 'listings' || form.applies_to === 'both') && form.applied_listings.length > 0
+            ? form.applied_listings
+            : null,
+          applicable_services: (form.applies_to === 'services' || form.applies_to === 'both') && form.applicable_services.length > 0
+            ? form.applicable_services
+            : null,
         }),
       });
       const data = await res.json();
@@ -104,10 +129,26 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
         </button>
       </div>
 
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(34,197,94,0.06)', borderRadius: 10, border: '1px solid rgba(34,197,94,0.15)', display: 'flex', gap: 8, maxWidth: 400 }}>
-        <Percent size={16} style={{ color: '#22c55e', flexShrink: 0, marginTop: 1 }} />
-        <span>Промокод — це код на знижку для бронювання. Ви можете створювати їх вручну для акцій, або вони можуть генеруватись автоматично при купівлі ваучерів (див. вкладку Автоматизація).</span>
-      </div>
+      {!showSplash ? (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(34,197,94,0.06)', borderRadius: 10, border: '1px solid rgba(34,197,94,0.15)', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 400 }}>
+          <Percent size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, flex: 1 }}>Промокоди</span>
+          <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Детальніше">
+            <Info size={16} />
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, padding: '10px 14px', background: 'rgba(34,197,94,0.06)', borderRadius: 10, border: '1px solid rgba(34,197,94,0.15)', display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 400 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <Percent size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
+            <span style={{ fontWeight: 600, flex: 1 }}>Промокоди</span>
+            <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: '#22c55e', display: 'flex', alignItems: 'center' }} title="Приховати">
+              <Info size={16} />
+            </button>
+          </div>
+          <span>Промокод — це код на знижку для бронювання. Ви можете створювати їх вручну для акцій, або вони можуть генеруватись автоматично при купівлі ваучерів (див. вкладку Автоматизація).</span>
+        </div>
+      )}
 
       {codes.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
@@ -162,6 +203,8 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                         redemption_limit: c.redemption_limit ? String(c.redemption_limit) : '',
                         allowed_days: c.allowed_days ? JSON.parse(String(c.allowed_days)) : [],
                         applies_to: String(c.applies_to || 'services') as 'services' | 'listings' | 'both',
+                        applied_listings: (() => { try { return c.applied_listings ? JSON.parse(String(c.applied_listings)) : []; } catch { return []; } })(),
+                        applicable_services: (() => { try { return c.applicable_services ? JSON.parse(String(c.applicable_services)) : []; } catch { return []; } })(),
                       });
                       setEditId(String(c.id));
                       setShowCreate(true);
@@ -180,6 +223,8 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
                         redemption_limit: c.redemption_limit ? String(c.redemption_limit) : '',
                         allowed_days: c.allowed_days ? JSON.parse(String(c.allowed_days)) : [],
                         applies_to: String(c.applies_to || 'services') as 'services' | 'listings' | 'both',
+                        applied_listings: (() => { try { return c.applied_listings ? JSON.parse(String(c.applied_listings)) : []; } catch { return []; } })(),
+                        applicable_services: (() => { try { return c.applicable_services ? JSON.parse(String(c.applicable_services)) : []; } catch { return []; } })(),
                       });
                       setEditId(null);
                       setShowCreate(true);
@@ -310,6 +355,68 @@ export function CouponsTab({ siteId, siteCurrency = 'CZK', onCountChange }: { si
             </div>
           )}
         </div>
+
+        {(form.applies_to === 'listings' || form.applies_to === 'both') && (
+          <div className="form-group" style={{ marginTop: 14 }}>
+            <label className="form-label">
+              Застосовується до будиночків 
+              <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11, marginLeft: 6 }}>
+                {form.applied_listings.length === 0 ? '(всі будиночки)' : `(${form.applied_listings.length} вибрано)`}
+              </span>
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 8, padding: 8, background: 'var(--surface-primary)' }}>
+              {listings.map(l => {
+                const targetId = l.unit_id || l.unit_type_id;
+                const targetName = l.unit_name || l.unit_type_name || 'Без назви';
+                if (!targetId) return null;
+                const on = form.applied_listings.includes(targetId);
+                
+                let photoUrl = '';
+                try {
+                  const photoStr = l.photos || l.unit_type_photos || '';
+                  if (photoStr) photoUrl = photoStr.split(',')[0].trim();
+                } catch {}
+
+                return (
+                  <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 13, padding: '6px 8px', borderRadius: 8, background: on ? 'rgba(34,197,94,0.06)' : 'transparent', border: `1px solid ${on ? '#22c55e' : 'transparent'}` }}>
+                    <input type="checkbox" checked={on} onChange={e => setForm(f => ({ ...f, applied_listings: e.target.checked ? [...f.applied_listings, targetId] : f.applied_listings.filter(x => x !== targetId) }))} />
+                    {photoUrl ? (
+                      <div style={{ width: 32, height: 32, borderRadius: 6, backgroundImage: `url(${photoUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: 14 }}>🏠</span>
+                      </div>
+                    )}
+                    <span style={{ fontWeight: on ? 600 : 400 }}>{targetName}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {(form.applies_to === 'services' || form.applies_to === 'both') && (
+          <div className="form-group" style={{ marginTop: 14 }}>
+            <label className="form-label">
+              Застосовується до сервісів 
+              <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11, marginLeft: 6 }}>
+                {form.applicable_services.length === 0 ? '(всі сервіси)' : `(${form.applicable_services.length} вибрано)`}
+              </span>
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 8, padding: 8, background: 'var(--surface-primary)' }}>
+              {services.map(svc => {
+                const on = form.applicable_services.includes(svc.id);
+                return (
+                  <label key={svc.id} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 13, padding: '6px 8px', borderRadius: 8, background: on ? 'rgba(34,197,94,0.06)' : 'transparent', border: `1px solid ${on ? '#22c55e' : 'transparent'}` }}>
+                    <input type="checkbox" checked={on} onChange={e => setForm(f => ({ ...f, applicable_services: e.target.checked ? [...f.applicable_services, svc.id] : f.applicable_services.filter(x => x !== svc.id) }))} />
+                    <span style={{ fontSize: 16 }}>{svc.icon}</span>
+                    <span style={{ fontWeight: on ? 600 : 400 }}>{svc.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

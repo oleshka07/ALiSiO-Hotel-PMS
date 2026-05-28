@@ -23,7 +23,7 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
   const db = getDb();
 
   const row = db.prepare(`
-    SELECT r.id, r.check_in, r.check_out, r.nights, r.adults, r.children,
+    SELECT r.id, r.unit_id, r.check_in, r.check_out, r.nights, r.adults, r.children,
            r.total_price, r.currency, r.guest_page_token, r.payment_status,
            g.first_name, g.last_name, g.email,
            u.name as unit_name, u.thank_you_url,
@@ -57,14 +57,63 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
     }
   }
 
+  let widgetConfig: any = {};
+  if (row.unit_id) {
+    try {
+      const siteRow = db.prepare(`
+        SELECT bs.widget_config FROM site_listings sl
+        JOIN booking_sites bs ON sl.site_id = bs.id
+        WHERE sl.unit_id = ? AND sl.is_active = 1
+        LIMIT 1
+      `).get(row.unit_id) as any;
+      if (siteRow?.widget_config) {
+        widgetConfig = JSON.parse(siteRow.widget_config);
+      }
+    } catch (e: any) {
+      console.error('[BookingEmail] Failed to fetch site widget_config:', e.message);
+    }
+  }
+
   const propertyName = row.property_name || 'ALiSiO';
   const propertyPhone = row.property_phone || '';
   const isPaid = row.payment_status === 'paid' || row.payment_status === 'prepaid';
 
-  const subject = `Booking confirmed — ${propertyName} #${row.id}`;
-  const messageText = isPaid
+  const replaceDict: Record<string, string> = {
+    propertyName,
+    bookingId: row.id,
+    guestName,
+    firstName: row.first_name || '',
+    lastName: row.last_name || '',
+    checkIn: fmtDate(row.check_in),
+    checkOut: fmtDate(row.check_out),
+    nights: String(row.nights || 1),
+    totalPrice: total,
+    unitName: row.unit_name || '—'
+  };
+
+  const replacePlaceholders = (tpl: string, dict: Record<string, string>) => {
+    let str = tpl;
+    for (const [k, v] of Object.entries(dict)) {
+      str = str.split(`{${k}}`).join(v);
+    }
+    return str;
+  };
+
+  const defaultSubject = `Booking confirmed — ${propertyName} #${row.id}`;
+  const defaultBody = isPaid
     ? 'Thank you for your reservation. Your payment has been received and your booking is confirmed.'
     : 'Thank you for your reservation. Your booking is confirmed.';
+
+  const rawSubject = isPaid
+    ? (widgetConfig.email_confirmed_subject || defaultSubject)
+    : (widgetConfig.email_unpaid_subject || defaultSubject);
+
+  const rawBody = isPaid
+    ? (widgetConfig.email_confirmed_body || defaultBody)
+    : (widgetConfig.email_unpaid_body || defaultBody);
+
+  const subject = replacePlaceholders(rawSubject, replaceDict);
+  const messageText = replacePlaceholders(rawBody, replaceDict);
   const totalLabel = isPaid ? 'Paid' : 'Total';
 
   const html = `<!DOCTYPE html>

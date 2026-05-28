@@ -22,8 +22,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Apply security headers to all routes
-        source: '/(.*)',
+        source: "/w/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors *",
+          },
+        ],
+      },
+      {
+        source: "/((?!w/).*)",
         headers: securityHeaders,
       },
     ];

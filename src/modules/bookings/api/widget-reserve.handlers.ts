@@ -354,16 +354,53 @@ export async function createWidgetReservation(request: NextRequest) {
           primaryUrl = guestPortalUrl;
         }
 
+        let widgetConfig: any = {};
+        if (siteId) {
+          const siteRow = db.prepare('SELECT widget_config FROM booking_sites WHERE id = ?').get(siteId) as any;
+          if (siteRow?.widget_config) {
+            try {
+              widgetConfig = JSON.parse(siteRow.widget_config);
+            } catch { /* */ }
+          }
+        }
+
+        const rawSubject = widgetConfig.email_received_subject || 'Booking received — {propertyName}';
+        const rawBody = widgetConfig.email_received_body || 'Your booking has been registered. You will receive a payment confirmation once your payment is processed.';
+
+        const replaceDict: Record<string, string> = {
+          propertyName,
+          bookingId: resId,
+          guestName: `${firstName || ''} ${lastName || ''}`.trim(),
+          firstName: firstName || '',
+          lastName: lastName || '',
+          checkIn,
+          checkOut,
+          nights: String(nights),
+          totalPrice: `${finalPrice} ${resCurrency}`,
+          unitName
+        };
+
+        const replacePlaceholders = (tpl: string, dict: Record<string, string>) => {
+          let str = tpl;
+          for (const [k, v] of Object.entries(dict)) {
+            str = str.split(`{${k}}`).join(v);
+          }
+          return str;
+        };
+
+        const customizedSubject = replacePlaceholders(rawSubject, replaceDict);
+        const customizedBody = replacePlaceholders(rawBody, replaceDict);
+
         await sendEmail({
           to: email,
-          subject: `Booking received — ${propertyName}`,
+          subject: customizedSubject,
           html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
   <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
     <div style="font-size:14px;color:#666;margin-bottom:24px;">Booking received</div>
     <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
-    <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">Your booking has been registered. You will receive a payment confirmation once your payment is processed.</p>
+    <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">${customizedBody}</p>
     <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
       <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Booking ID</div>
       <div style="font-size:20px;font-weight:700;color:#2E6B4F;margin-top:2px;">${resId}</div>

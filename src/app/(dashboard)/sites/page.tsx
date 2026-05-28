@@ -6,7 +6,7 @@ import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Globe, Plus, Search, Trash2, ExternalLink,
-  Loader2, X, ToggleLeft, ToggleRight, Settings
+  Loader2, X, ToggleLeft, ToggleRight, Settings, Info
   
 } from 'lucide-react';
 
@@ -82,6 +82,7 @@ export default function SitesPage() {
   const [editType, setEditType] = useState<'widget' | 'self-hosted'>('widget');
   const [editCurrency, setEditCurrency] = useState('CZK');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
 
   /* ── fetch ── */
   const fetchSites = useCallback(async () => {
@@ -177,27 +178,60 @@ export default function SitesPage() {
 
   /* ── render ── */
   return (
-    <div className="page-layout">
+    <>
       <Header title="Сайти бронювання" onMenuClick={onMenuClick} />
 
-      <div className="page-content" style={{ padding: 12 }}>
+      <div className="app-content">
 
         
         {/* Hero / Intro блок */}
-            <div style={{
-              background: 'var(--surface-secondary)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: 12,
-              padding: '24px 28px',
-              marginBottom: 20,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16,
-            }}>
-              <div style={{ maxWidth: 400 }}>
+        {!showSplash ? (
+          <div style={{
+            background: 'var(--surface-secondary)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 12,
+            padding: '16px 20px',
+            marginBottom: 20,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Globe size={20} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Сайти прямого бронювання
+                <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Показати довідку">
+                  <Info size={16} />
+                </button>
+              </h2>
+            </div>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Новий сайт
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            background: 'var(--surface-secondary)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 12,
+            padding: '24px 28px',
+            marginBottom: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ maxWidth: 500 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <Globe size={22} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Сайти прямого бронювання</h2>
+                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Сайти прямого бронювання
+                    <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }} title="Приховати довідку">
+                      <Info size={16} />
+                    </button>
+                  </h2>
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 10px' }}>
                   Створіть власний сайт для прямого бронювання короткострокової оренди.
@@ -216,12 +250,12 @@ export default function SitesPage() {
                   ))}
                 </div>
               </div>
-              <div>
-                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                  <Plus size={16} /> Новий сайт
-                </button>
-              </div>
+              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                <Plus size={16} /> Новий сайт
+              </button>
             </div>
+          </div>
+        )}
 
             {/* Пошук */}
             {(sites.length > 0 || search) && (
@@ -503,6 +537,6 @@ export default function SitesPage() {
           ✓ {toast}
         </div>
       )}
-    </div>
+    </>
   );
 }
