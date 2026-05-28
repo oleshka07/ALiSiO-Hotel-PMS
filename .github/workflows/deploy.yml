@@ -184,14 +184,3 @@ jobs:
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
-
-            # Recovery: run AFTER restart to ensure DB is stable
-            if [ -f recover-orphan-pin-payments.js ]; then
-              echo "[recovery] Running orphan PIN payments recovery v2..."
-              node recover-orphan-pin-payments.js --apply 2>&1 || echo "[recovery] non-zero (non-fatal)"
-            fi
-
-            # List last 30 ops for verification
-            if [ -f list-recovered-operations.js ]; then
-              node list-recovered-operations.js 2>&1 || true
-            fi
