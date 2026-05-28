@@ -233,7 +233,7 @@ const ADMIN_PINS: Record<string, string> = {
 // When an admin confirms cash payment via PIN, the fin_operation is routed
 // to their personal cash account (not the first one by sort_order).
 const PIN_TO_ACCOUNT_NAME: Record<string, string> = {
-  '1315': 'Андрів cash',
+  '1315': 'Андріїв cash',
   '2099': 'Каса Кемпінг і проживання',
   '0309': 'Олег наличные',
   '0912': 'Антон Готівка',
@@ -371,8 +371,18 @@ export async function updateBookingDraft(req: Request) {
     }
 
     // ─── Update draft status ───────────────────────────────────────────────
+    // BookingWizard sends reservation_id as `id`, so try both draft.id and
+    // draft.reservation_id to make sure the draft row gets updated.
     if (id) {
-      try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id); } catch { /* */ }
+      try {
+        const result = db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id);
+        if (result.changes === 0) {
+          db.prepare(`UPDATE booking_drafts SET status = ? WHERE reservation_id = ?`).run(status, id);
+        }
+      } catch { /* */ }
+    }
+    if (rid && rid !== id) {
+      try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE reservation_id = ?`).run(status, rid); } catch { /* */ }
     }
 
     return NextResponse.json({ ok: true, reservation_id: rid, admin_name: adminName }, { headers: CORS_HEADERS });

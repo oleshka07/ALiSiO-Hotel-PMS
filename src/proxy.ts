@@ -1,9 +1,66 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+// ─── Security: Public routes that do NOT require authentication ───────
+const PUBLIC_PREFIXES = [
+  '/api/auth/',          // login, logout, me
+  '/api/guest/',         // guest portal (token-based)
+  '/api/public/',        // public capture, availability
+  '/api/webhooks/',      // Hostex, Teya webhooks (own auth)
+  '/api/ical-export/',   // iCal feed (token-based URL)
+  '/api/booking/',       // guest self-registration, payments
+  '/api/cron/',          // cron jobs (own secret-header auth)
+  '/api/finance/telegram-bridge/', // Telegram bot (Bearer token auth)
+  '/api/widget',         // widget-* endpoints (public embed)
+  '/login',              // login page
+  '/guest/',             // guest portal page
+  '/book/',              // public booking wizard
+  '/invest/',            // investor portal (token-based)
+  '/w/',                 // booking widget
+];
+
+const PUBLIC_EXACT = [
+  '/',
+  '/login',
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/me',
+];
+
+function isPublicRoute(pathname: string): boolean {
+  if (PUBLIC_EXACT.includes(pathname)) return true;
+  return PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
+}
+
+// ─── Device detection ─────────────────────────────────────────────────
 const MOBILE_UA = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i;
 
 export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // ─── Auth gate ──────────────────────────────────────────────────────
+  if (!isPublicRoute(pathname)) {
+    const sessionId = request.cookies.get('session_id')?.value;
+
+    if (pathname.startsWith('/api/')) {
+      // API routes: return 401 JSON
+      if (!sessionId) {
+        return NextResponse.json(
+          { error: 'Unauthorized — session required' },
+          { status: 401 }
+        );
+      }
+    } else {
+      // Dashboard pages: redirect to login
+      if (!sessionId) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = '/login';
+        return NextResponse.redirect(loginUrl);
+      }
+    }
+  }
+
+  // ─── Device detection (existing logic) ──────────────────────────────
   const response = NextResponse.next();
 
   // Allow force override via cookie (for testing)
@@ -21,5 +78,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|icons|widget|guest).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icons|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|woff|woff2|ttf|eot)$).*)'],
 };

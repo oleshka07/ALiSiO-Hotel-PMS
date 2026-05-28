@@ -27,6 +27,9 @@ export async function createWidgetCheckoutSession(req: Request) {
       start_hour,
       hours,
       addons,
+      // Breakfast-specific fields from service-embed.js
+      breakfast_dates,
+      menu_items: clientMenuItems,
       // Legacy fields from booking/page.tsx (glamping flow)
       amount: clientAmount,
       currency: clientCurrency,
@@ -75,11 +78,12 @@ export async function createWidgetCheckoutSession(req: Request) {
     let description = 'ALiSiO Booking';
 
     if (service_id && service_date) {
-      // Service-only order (e.g. Sauna/Tub from Guest Page widget)
-      const svc = db.prepare('SELECT name, name_en, price, currency FROM additional_services WHERE id = ?').get(service_id) as any;
+      // Service-only order (e.g. Sauna/Tub/Breakfast from Guest Page widget)
+      const svc = db.prepare('SELECT name, name_en, price, currency, service_type FROM additional_services WHERE id = ?').get(service_id) as any;
       if (!svc) return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
 
-      const h = hours || 1;
+      const isBreakfast = svc.service_type === 'menu_selection' || service_id === 'svc_breakfast';
+      const h = isBreakfast ? 1 : (hours || 1);
       let basePrice = svc.price;
 
       // Apply Coupon code discount if provided
@@ -96,14 +100,30 @@ export async function createWidgetCheckoutSession(req: Request) {
         } catch { /* offer lookup failed — use full price */ }
       }
 
-      amount = basePrice * h;
+      // For breakfast, use client-sent amount (calculated from menu items × days)
+      // because per-item pricing varies. For slot services, recalculate server-side.
+      if (isBreakfast && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
+        amount = clientAmount;
+      } else {
+        amount = basePrice * h;
+      }
       currency = svc.currency || 'CZK';
       const svcName = svc.name_en || svc.name;
-      const sHour = start_hour || 14;
-      description = `${svcName} — ${h} hodin, ${service_date}`;
 
-      // Handle addons
-      if (addons && Array.isArray(addons)) {
+      if (isBreakfast) {
+        // Breakfast: "Breakfast — 2026-05-30" or "Breakfast — 2 days"
+        const bDays = breakfast_dates && breakfast_dates.length > 0 ? breakfast_dates : [service_date];
+        description = bDays.length > 1
+          ? `${svcName} — ${bDays.length} days (${bDays[0]} – ${bDays[bDays.length - 1]})`
+          : `${svcName} — ${bDays[0]}`;
+      } else {
+        // Slot service: "Sauna — 2 hodin, 2026-05-27"
+        const sHour = start_hour || 14;
+        description = `${svcName} — ${h} hodin, ${service_date}`;
+      }
+
+      // Handle addons (slot services only)
+      if (!isBreakfast && addons && Array.isArray(addons)) {
         for (const addon of addons) {
           const addonPrice = addon.price || 0;
           const addonQty = addon.quantity || 1;
@@ -167,26 +187,49 @@ export async function createWidgetCheckoutSession(req: Request) {
 
     // Step 1: Create preliminary order for services if needed
     let orderId: string | null = null;
+    const svcInfo = service_id ? db.prepare('SELECT service_type FROM additional_services WHERE id = ?').get(service_id) as any : null;
+    const isBreakfastOrder = svcInfo?.service_type === 'menu_selection' || service_id === 'svc_breakfast';
+
     if (service_id && service_date) {
       try {
         orderId = `so_${Date.now()}`;
-        const h = hours || 2;
-        const sHour = start_hour || 14;
-        const notesObj = {
-          service_date,
-          startHour: sHour,
-          hours: h,
-          addons: addons || [],
-          unit_price: amount / h,
-          payment_id: 'pending_teya'
-        };
 
-        db.prepare(`
-          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
-          VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)
-        `).run(
-          orderId, reservation_id || 'system_fallback', service_id, h, amount, service_date || null, JSON.stringify(notesObj)
-        );
+        if (isBreakfastOrder) {
+          // Breakfast order: store selected dates and menu items, no hours/slots
+          const bDays = breakfast_dates && breakfast_dates.length > 0 ? breakfast_dates : [service_date];
+          const notesObj = {
+            type: 'breakfast',
+            breakfast_dates: bDays,
+            menu_items: clientMenuItems || [],
+            payment_id: 'pending_teya'
+          };
+          db.prepare(`
+            INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
+            VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)
+          `).run(
+            orderId, reservation_id || 'system_fallback', service_id,
+            bDays.length,  // quantity = number of breakfast days
+            amount, bDays[0], JSON.stringify(notesObj)
+          );
+        } else {
+          // Slot service (sauna, tub): keep existing behavior
+          const h = hours || 2;
+          const sHour = start_hour || 14;
+          const notesObj = {
+            service_date,
+            startHour: sHour,
+            hours: h,
+            addons: addons || [],
+            unit_price: amount / h,
+            payment_id: 'pending_teya'
+          };
+          db.prepare(`
+            INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, payment_status, service_date, notes)
+            VALUES (?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)
+          `).run(
+            orderId, reservation_id || 'system_fallback', service_id, h, amount, service_date || null, JSON.stringify(notesObj)
+          );
+        }
       } catch (dbErr: any) {
         console.error('[Checkout Session] DB error inserting service_orders:', dbErr.message);
       }
@@ -212,17 +255,33 @@ export async function createWidgetCheckoutSession(req: Request) {
         } catch { /* guest lookup failed */ }
       }
 
-      const sHour = start_hour || 14;
-      const h = hours || 2;
-      const timeRange = service_id ? `${String(sHour).padStart(2, '0')}:00–${String(sHour + h).padStart(2, '0')}:00` : '';
-
       const lines = [
         `📦 <b>Нове замовлення: ${esc(description)}</b>`,
         '',
       ];
       if (guestName) lines.push(`👤 ${esc(guestName)}`);
       if (unitName) lines.push(`🏠 ${esc(unitName)}`);
-      if (service_date && timeRange) lines.push(`📅 ${service_date}, ${timeRange}`);
+
+      if (isBreakfastOrder) {
+        // Breakfast: show dates without time range
+        const bDays = breakfast_dates && breakfast_dates.length > 0 ? breakfast_dates : [service_date];
+        lines.push(`📅 ${bDays.join(', ')}`);
+        // Show menu items if available
+        if (clientMenuItems && Array.isArray(clientMenuItems)) {
+          for (const mi of clientMenuItems) {
+            if (mi.quantity > 0) {
+              lines.push(`  🍽️ ${esc(mi.name || mi.menuItemId)} × ${mi.quantity}`);
+            }
+          }
+        }
+      } else if (service_id && service_date) {
+        // Slot service: show date + time range
+        const sHour = start_hour || 14;
+        const h = hours || 2;
+        const timeRange = `${String(sHour).padStart(2, '0')}:00–${String(sHour + h).padStart(2, '0')}:00`;
+        lines.push(`📅 ${service_date}, ${timeRange}`);
+      }
+
       lines.push(`💰 ${amount} ${currency}`);
       if (body.couponCode) lines.push(`🏷️ Промокод: ${esc(body.couponCode)}`);
       lines.push(`💳 Очікує оплати`);

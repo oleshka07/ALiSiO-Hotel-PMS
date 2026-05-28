@@ -70,7 +70,7 @@ export default function BookingViewModal({
   onClose, onEdit, onChangeStatus, onFetchPayments, onFetchBookings, onFetchRegistrations,
   showToast, setBooking,
 }: Props) {
-  const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'groups' | 'tax' | 'notes' | 'history'>('payment');
+  const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'groups' | 'tax' | 'notes' | 'history' | 'audit'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
@@ -87,6 +87,23 @@ export default function BookingViewModal({
   const [savingInline, setSavingInline] = useState(false);
   const [ocrScanning, setOcrScanning] = useState(false);
   const ocrFileRef = React.useRef<HTMLInputElement>(null);
+
+  // Owner-only audit tab
+  const [isOwner, setIsOwner] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(data => {
+      if (data.user?.role === 'owner' || data.role === 'owner') setIsOwner(true);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (viewTab === 'audit' && b?.id) {
+      fetch(`/api/audit/bookings?reservation_id=${b.id}`)
+        .then(r => r.json())
+        .then(data => setAuditLogs(data.items || []))
+        .catch(() => {});
+    }
+  }, [viewTab, b?.id]);
 
   // Sub-bookings state
   const [subBookings, setSubBookings] = useState<any[]>([]);
@@ -608,6 +625,7 @@ export default function BookingViewModal({
             { key: 'tax' as const, label: '🏛️ Збір', badge: undefined as string | undefined },
             { key: 'notes' as const, label: '📝 Примітки', badge: undefined as string | undefined },
             { key: 'history' as const, label: '📊 Історія', badge: undefined as string | undefined },
+            ...(isOwner ? [{ key: 'audit' as const, label: '🕐 Історія', badge: undefined as string | undefined }] : []),
           ]).map(tab => (
             <button key={tab.key} onClick={() => setViewTab(tab.key)}
               style={{
@@ -1380,6 +1398,61 @@ export default function BookingViewModal({
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {viewTab === 'audit' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {auditLogs.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  Немає записів
+                </div>
+              ) : (
+                auditLogs.map((log: any) => {
+                  const date = new Date(log.created_at + 'Z');
+                  const timeStr = date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+                  const actionColors: Record<string, string> = {
+                    created: '#4ADE80',
+                    deleted: '#F26B6B',
+                    status_change: '#5B7CFF',
+                    payment_status_change: '#F5B847',
+                    price_change: '#F5B847',
+                    unit_change: '#A78BFA',
+                    dates_change: '#A78BFA',
+                    registration_change: '#5B7CFF',
+                    notes_change: 'var(--text-tertiary)',
+                    internal_notes_change: 'var(--text-tertiary)',
+                  };
+                  const actionIcons: Record<string, string> = {
+                    created: '✨', deleted: '🗑️', status_change: '🔄', payment_status_change: '💰',
+                    price_change: '💲', unit_change: '🏠', dates_change: '📅',
+                    registration_change: '📋', notes_change: '📝', internal_notes_change: '📝',
+                  };
+                  return (
+                    <div key={log.id} style={{
+                      padding: '10px 14px', borderBottom: '1px solid var(--border-primary)',
+                      display: 'flex', gap: 10, alignItems: 'flex-start',
+                    }}>
+                      <div style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>
+                        {actionIcons[log.action] || '📌'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: actionColors[log.action] || 'var(--text-primary)' }}>
+                            {log.details}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>
+                            {timeStr}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {log.user_name || 'Система'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
 import { findOrCreateGuest } from '@guests';
 import { notifyReservationCreated } from '../domain/reservation-tg-notify';
+import { writeBookingAudit, getBookingActor } from './audit-log.handlers';
 
 export async function listReservations(request: NextRequest) {
   try {
@@ -210,6 +211,13 @@ export async function createReservation(request: NextRequest) {
     }
 
     notifyReservationCreated(resId, { sourceLabel: `Ручне додавання · ${source || 'direct'}` });
+
+    // Audit log
+    try {
+      const actor = await getBookingActor();
+      const afterRow = db.prepare('SELECT * FROM reservations WHERE id = ?').get(resId);
+      writeBookingAudit(db, resId, 'created', `Створено: ${firstName} ${lastName} · ${source || 'direct'}`, actor, null, afterRow);
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ id: resId, guestId, guestPageToken }, { status: 201 });
   } catch (error) {

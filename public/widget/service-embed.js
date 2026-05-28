@@ -339,13 +339,31 @@
       var res = await fetch(API_BASE + '/api/booking/checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(SERVICE_TYPE === 'breakfast' ? {
+          // Breakfast-specific payload: no hours/slots
           amount: amount,
           currency: 'CZK',
           description: description,
           reservation_id: RESERVATION_ID || undefined,
           return_path: window.location.pathname,
-          // Service booking context for preliminary order + TG notification
+          service_id: serviceId,
+          service_date: (state.selectedBreakfastDates && state.selectedBreakfastDates.length > 0)
+            ? state.selectedBreakfastDates[0]
+            : (STAY_CHECKIN || new Date().toISOString().split('T')[0]),
+          breakfast_dates: state.selectedBreakfastDates.length > 0
+            ? state.selectedBreakfastDates : undefined,
+          menu_items: Object.keys(state.itemQty).filter(function(id) { return state.itemQty[id] > 0; }).map(function(id) {
+            var item = state.menuItems.find(function(m) { return m.id === id; });
+            return { menuItemId: id, name: (item && (item.nameEn || item.name)) || id, quantity: state.itemQty[id] };
+          }),
+          promoCode: (state.promoApplied && state.promoCode) ? state.promoCode : undefined,
+        } : {
+          // Slot service (sauna/tub) payload
+          amount: amount,
+          currency: 'CZK',
+          description: description,
+          reservation_id: RESERVATION_ID || undefined,
+          return_path: window.location.pathname,
           service_id: serviceId,
           service_date: state.date,
           start_hour: state.startHour,

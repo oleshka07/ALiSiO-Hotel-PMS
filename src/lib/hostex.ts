@@ -6,7 +6,10 @@ import https from 'https';
 
 const HOSTEX_BASE = 'api.hostex.io';
 const HOSTEX_API_VERSION = '/v3';
-const HOSTEX_TOKEN = process.env.HOSTEX_ACCESS_TOKEN || '97A3kap2tmSqAOqFAaeDUi4EQ3va1bXCq9a8nM2MwuTYmOWpaoTyyVPycD4Hw0dF';
+const HOSTEX_TOKEN = process.env.HOSTEX_ACCESS_TOKEN;
+if (!HOSTEX_TOKEN) {
+  console.error('[Hostex] CRITICAL: HOSTEX_ACCESS_TOKEN environment variable is not set!');
+}
 
 // ─── Types ────────────────────────────────────────────────
 export interface HostexRate {

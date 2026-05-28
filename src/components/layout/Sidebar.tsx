@@ -63,6 +63,7 @@ const navigation: NavSection[] = [
       { label: 'Календар', href: '/calendar', icon: <CalendarDays size={20} />, permission: 'nav:calendar' },
       { label: 'Бронювання', href: '/bookings', icon: <BookOpen size={20} />, permission: 'nav:bookings' },
       { label: 'Імпорт Booking.com', href: '/imports/booking-com', icon: <Upload size={20} />, permission: 'nav:bookings' },
+      { label: 'Журнал змін', href: '/audit', icon: <Clock size={20} />, permission: 'nav:settings' },
     ],
   },
   {
@@ -91,6 +92,7 @@ const navigation: NavSection[] = [
       { label: 'Огляд', href: '/finance', icon: <Wallet size={20} />, permission: 'nav:finance' },
       { label: 'Reconcile (чеклист)', href: '/finance/reconcile', icon: <Inbox size={20} />, permission: 'nav:finance' },
       { label: 'Операції', href: '/finance/operations', icon: <ListChecks size={20} />, permission: 'nav:finance' },
+      { label: 'Історія змін', href: '/finance/history', icon: <Clock size={20} />, permission: 'nav:finance' },
       { label: 'Clearing (платформи)', href: '/finance/clearing', icon: <Repeat size={20} />, permission: 'nav:finance' },
       { label: 'Чеки з пошти', href: '/finance/receipts', icon: <Mail size={20} />, permission: 'nav:finance' },
       { label: 'Import wizard', href: '/finance/import', icon: <Upload size={20} />, permission: 'nav:finance' },

@@ -14,7 +14,7 @@ export async function logout() {
     const response = NextResponse.json({ success: true });
     response.cookies.set('session_id', '', {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 0,

@@ -2,6 +2,7 @@
 import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 // Database file path — stored in project root /data directory
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -428,18 +429,19 @@ function runMigrations(database: any) {
     console.log('[DB] columns migration note:', e.message);
   }
 
-  // --- Migration: set default password for users without one ---
+  // --- Migration: set secure random password for users without one ---
   try {
     const usersWithoutPw: any[] = database.prepare(
       "SELECT id FROM app_users WHERE password_hash IS NULL OR password_hash = ''"
     ).all();
     if (usersWithoutPw.length > 0) {
-      const hash = bcrypt.hashSync('admin123', 10);
+      const randomPw = crypto.randomBytes(16).toString('hex');
+      const hash = bcrypt.hashSync(randomPw, 10);
       const stmt = database.prepare('UPDATE app_users SET password_hash = ? WHERE id = ?');
       for (const u of usersWithoutPw) {
         stmt.run(hash, u.id);
       }
-      console.log(`[DB] Set default password for ${usersWithoutPw.length} user(s)`);
+      console.warn(`[DB] ⚠️ Set random password for ${usersWithoutPw.length} user(s). Reset passwords manually via admin panel.`);
     }
   } catch (e: any) {
     console.log('[DB] password hash note:', e.message);
@@ -3581,86 +3583,15 @@ function runMigrations(database: any) {
   //  is_pms_signal column entirely, the migration is a no-op and was
   //  removed to avoid noisy «no such column» errors on every startup.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
-  //
-  // After clean-6 the /finance/operations list still contained ~67
-  // source='manual' rows with NULL account_to_id AND NULL account_from_id
-  // (legacy migration artefacts from old `income/expenses/transfers/
-  // payments` tables that pre-dated proper account assignment), plus one
-  // Finmap wizard import experiment and a -50,005,000 CZK «Test
-  // Transaction». None represent real money — NULL accounts make every
-  // balance / P&L aggregation skip them anyway. They only pollute the
-  // operations list.
-  //
-  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
-  // unattributed). Manual ops with a real account_to / account_from stay
-  // untouched even if they look auto-imported — operator can hide those
-  // individually via the row UI.
-  //
-  // Bank-transaction matched_operation_id nulled before DELETE so the FK
-  // does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const idsToWipe = database.prepare(`
-      SELECT id FROM fin_operations
-      WHERE source = 'wizard_import'
-         OR (source = 'manual'
-             AND account_to_id IS NULL
-             AND account_from_id IS NULL)
-         OR comment LIKE '%Test Transaction%'
-    `).all() as Array<{ id: string }>;
-    if (idsToWipe.length > 0) {
-      const placeholders = idsToWipe.map(() => '?').join(',');
-      const ids = idsToWipe.map((r) => r.id);
-      database.prepare(
-        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
-      ).run(...ids);
-      const result = database.prepare(
-        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
-      ).run(...ids);
-      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
-  }
+  // (Cleanup #H REMOVED 2026-05-28: this ran on EVERY restart and deleted
+  //  booking_widget / null-account operations, causing PIN-confirmed
+  //  cash payments to vanish after each deploy. One-time job already done.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #G: purge auto-created fin_operations.
-  //
-  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
-  // return), four code paths created fin_operations on every guest tap
-  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
-  // had never manually entered. The actual money still lives at the
-  // platform / Teya merchant until the bank statement arrives, so these
-  // rows were essentially a parallel ledger that diverged from reality.
-  //
-  // After clean-5 no NEW rows are created. This migration sweeps the
-  // accumulated ones — sources hostex / teia / booking_widget. Manual
-  // cash entries (source='manual') and bank-import rows (source='bank'
-  // / 'manual_bank' / 'kb_inbox') are preserved.
-  //
-  // Bank-transaction match pointers are nulled before the DELETE so the
-  // FK does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations
-        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
-  }
+  // (Cleanup #G REMOVED 2026-05-28: this ran on EVERY restart and deleted
+  //  ALL fin_operations with source IN ('hostex','teia','booking_widget',
+  //  'guest_page'). This was the ROOT CAUSE of 22+ missing cash payments —
+  //  booking widget PIN confirmations use source='booking_widget', so they
+  //  were wiped on every server restart. One-time job already done.)
 
   // ═══════════════════════════════════════════════════════════════════
   // Cleanup #I: drop dead FK columns on bank_transactions
@@ -3759,86 +3690,11 @@ function runMigrations(database: any) {
   //  is_pms_signal column entirely, the migration is a no-op and was
   //  removed to avoid noisy «no such column» errors on every startup.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #H: purge NULL-account leftovers + wizard_import + test garbage.
-  //
-  // After clean-6 the /finance/operations list still contained ~67
-  // source='manual' rows with NULL account_to_id AND NULL account_from_id
-  // (legacy migration artefacts from old `income/expenses/transfers/
-  // payments` tables that pre-dated proper account assignment), plus one
-  // Finmap wizard import experiment and a -50,005,000 CZK «Test
-  // Transaction». None represent real money — NULL accounts make every
-  // balance / P&L aggregation skip them anyway. They only pollute the
-  // operations list.
-  //
-  // Conservative scope: ONLY rows where BOTH accounts are NULL (truly
-  // unattributed). Manual ops with a real account_to / account_from stay
-  // untouched even if they look auto-imported — operator can hide those
-  // individually via the row UI.
-  //
-  // Bank-transaction matched_operation_id nulled before DELETE so the FK
-  // does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const idsToWipe = database.prepare(`
-      SELECT id FROM fin_operations
-      WHERE source = 'wizard_import'
-         OR (source = 'manual'
-             AND account_to_id IS NULL
-             AND account_from_id IS NULL)
-         OR comment LIKE '%Test Transaction%'
-    `).all() as Array<{ id: string }>;
-    if (idsToWipe.length > 0) {
-      const placeholders = idsToWipe.map(() => '?').join(',');
-      const ids = idsToWipe.map((r) => r.id);
-      database.prepare(
-        `UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (${placeholders})`,
-      ).run(...ids);
-      const result = database.prepare(
-        `DELETE FROM fin_operations WHERE id IN (${placeholders})`,
-      ).run(...ids);
-      console.log(`[DB] Cleanup #H: purged ${result.changes} unattributed / wizard / test fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #H purge null-account junk:', e.message);
-  }
+  // (Cleanup #H copy-2 REMOVED 2026-05-28: duplicate of the block above,
+  //  same root-cause issue — see comment near line 3586.)
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #G: purge auto-created fin_operations.
-  //
-  // Until clean-1 (Hostex) and clean-5 (Teya widget + widget-payment-
-  // return), four code paths created fin_operations on every guest tap
-  // of «Pay now» — accumulating ~180 phantom rows on prod that the user
-  // had never manually entered. The actual money still lives at the
-  // platform / Teya merchant until the bank statement arrives, so these
-  // rows were essentially a parallel ledger that diverged from reality.
-  //
-  // After clean-5 no NEW rows are created. This migration sweeps the
-  // accumulated ones — sources hostex / teia / booking_widget. Manual
-  // cash entries (source='manual') and bank-import rows (source='bank'
-  // / 'manual_bank' / 'kb_inbox') are preserved.
-  //
-  // Bank-transaction match pointers are nulled before the DELETE so the
-  // FK does not dangle. Idempotent — re-runs delete 0 rows.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    database.prepare(`
-      UPDATE bank_transactions SET matched_operation_id = NULL
-      WHERE matched_operation_id IN (
-        SELECT id FROM fin_operations
-        WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-      )
-    `).run();
-    const result = database.prepare(`
-      DELETE FROM fin_operations
-      WHERE source IN ('hostex', 'teia', 'booking_widget', 'guest_page')
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #G: purged ${result.changes} auto-created legacy fin_operations`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #G purge legacy auto-ops:', e.message);
-  }
+  // (Cleanup #G copy-2 REMOVED 2026-05-28: duplicate of the block above,
+  //  same root-cause issue — see comment near line 3586.)
 
   // ═══════════════════════════════════════════════════════════════════
   // Cleanup #I: drop dead FK columns on bank_transactions
@@ -4632,17 +4488,61 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
 
+  // --- Migration: enhance booking_activity_log with user tracking + before/after snapshots ---
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN user_id TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN user_name TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN before_json TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN after_json TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN booking_label TEXT");
+  } catch { /* column already exists */ }
+
+  // --- Migration: recreate booking_activity_log WITHOUT foreign key CASCADE ---
+  try {
+    // Check if the table still has the CASCADE FK by looking at the SQL
+    const tableInfo = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='booking_activity_log'").get() as any;
+    if (tableInfo?.sql?.includes('ON DELETE CASCADE')) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS booking_activity_log_new (
+          id TEXT PRIMARY KEY,
+          reservation_id TEXT,
+          action TEXT NOT NULL,
+          details TEXT,
+          user_id TEXT,
+          user_name TEXT,
+          before_json TEXT,
+          after_json TEXT,
+          booking_label TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO booking_activity_log_new SELECT id, reservation_id, action, details,
+          CASE WHEN typeof(user_id)='text' THEN user_id ELSE NULL END,
+          CASE WHEN typeof(user_name)='text' THEN user_name ELSE NULL END,
+          CASE WHEN typeof(before_json)='text' THEN before_json ELSE NULL END,
+          CASE WHEN typeof(after_json)='text' THEN after_json ELSE NULL END,
+          CASE WHEN typeof(booking_label)='text' THEN booking_label ELSE NULL END,
+          created_at
+        FROM booking_activity_log;
+        DROP TABLE booking_activity_log;
+        ALTER TABLE booking_activity_log_new RENAME TO booking_activity_log;
+      `);
+    }
+  } catch (e: any) { console.error('[migration] booking_activity_log FK removal (non-fatal):', e?.message); }
+
 }
 
 
-// Generate a random 12-char token for guest pages
+// Generate a cryptographically secure random token for guest pages
 export function generateGuestToken(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 12; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function seedData(database: any) {
@@ -4727,8 +4627,8 @@ function seedData(database: any) {
   database.prepare('INSERT INTO fees_taxes (id, property_id, name, type, amount) VALUES (?, ?, ?, ?, ?)').run('fee_tax', propId, 'Туристичний збір', 'per_person_per_night', 50);
 
   // Admin users (owners)
-  const defaultPasswordHash = bcrypt.hashSync('admin123', 10);
-  const user4svHash = bcrypt.hashSync('4sv.exe', 10);
+  const defaultPasswordHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+  const user4svHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_admin', orgId, 'admin@alisio.cz', 'Admin ALiSiO', 'owner', defaultPasswordHash);
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_4sv', orgId, '4sv.exe@gmail.com', '4sv.exe Admin', 'owner', user4svHash);
