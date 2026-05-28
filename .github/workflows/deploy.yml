@@ -76,6 +76,9 @@ jobs:
               fi
             fi
 
+            # Clean .next directory to prevent Turbopack cache/ENOENT build errors
+            rm -rf .next
+
             # Build Next.js
             if ! npm run build; then
               echo "Build failed — aborting deploy. Live service untouched."
