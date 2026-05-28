@@ -84,7 +84,7 @@ export default function MobileBookingDetail({
   onFetchPayments, onFetchBookings, onFetchRegistrations,
   showToast, setBooking,
 }: MobileBookingDetailProps) {
-  const [tab, setTab] = useState<'payment' | 'registration' | 'groups'>('payment');
+  const [tab, setTab] = useState<'payment' | 'registration' | 'groups' | 'audit'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [showRegForm, setShowRegForm] = useState(false);
@@ -97,6 +97,23 @@ export default function MobileBookingDetail({
   const [subBookings, setSubBookings] = useState<any[]>([]);
   const [ocrScanning, setOcrScanning] = useState(false);
   const ocrFileRef = useRef<HTMLInputElement>(null);
+
+  // Owner-only audit tab
+  const [isOwner, setIsOwner] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(data => {
+      if (data.user?.role === 'owner' || data.role === 'owner') setIsOwner(true);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (tab === 'audit' && b?.id) {
+      fetch(`/api/audit/bookings?reservation_id=${b.id}`)
+        .then(r => r.json())
+        .then(data => setAuditLogs(data.items || []))
+        .catch(() => {});
+    }
+  }, [tab, b?.id]);
 
   const checkIn = formatDate(b.check_in);
   const checkOut = formatDate(b.check_out);
@@ -418,6 +435,7 @@ export default function MobileBookingDetail({
               { k: 'payment' as const, l: 'Оплата', Icon: CreditCard, badge: !isPaid && total > 0 ? `${pct}%` : undefined },
               { k: 'registration' as const, l: 'Реєстрація', Icon: FileText, badge: !isRegistered ? regBadge : undefined },
               { k: 'groups' as const, l: 'Групи', Icon: Users, badge: subBookings.length > 0 ? String(subBookings.length) : undefined },
+              ...(isOwner ? [{ k: 'audit' as const, l: '🕐 Історія', Icon: Clock, badge: undefined as string | undefined }] : []),
             ]).map(t => (
               <button key={t.k} onClick={() => setTab(t.k)}
                 style={{
@@ -732,6 +750,61 @@ export default function MobileBookingDetail({
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          )}
+
+          {tab === 'audit' && (
+            <div style={{ padding: '12px 14px' }}>
+              {auditLogs.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  Немає записів
+                </div>
+              ) : (
+                auditLogs.map((log: any) => {
+                  const date = new Date(log.created_at + 'Z');
+                  const timeStr = date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+                  const actionColors: Record<string, string> = {
+                    created: '#4ADE80',
+                    deleted: '#F26B6B',
+                    status_change: '#5B7CFF',
+                    payment_status_change: '#F5B847',
+                    price_change: '#F5B847',
+                    unit_change: '#A78BFA',
+                    dates_change: '#A78BFA',
+                    registration_change: '#5B7CFF',
+                    notes_change: 'var(--text-tertiary)',
+                    internal_notes_change: 'var(--text-tertiary)',
+                  };
+                  const actionIcons: Record<string, string> = {
+                    created: '✨', deleted: '🗑️', status_change: '🔄', payment_status_change: '💰',
+                    price_change: '💲', unit_change: '🏠', dates_change: '📅',
+                    registration_change: '📋', notes_change: '📝', internal_notes_change: '📝',
+                  };
+                  return (
+                    <div key={log.id} style={{
+                      padding: '10px 14px', borderBottom: '1px solid var(--border-primary)',
+                      display: 'flex', gap: 10, alignItems: 'flex-start',
+                    }}>
+                      <div style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>
+                        {actionIcons[log.action] || '📌'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: actionColors[log.action] || 'var(--text-primary)' }}>
+                            {log.details}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>
+                            {timeStr}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {log.user_name || 'Система'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}

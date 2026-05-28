@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
 import { generateInvoiceForReservation } from '@finance';
+import { cookies } from 'next/headers';
+import { getSessionUser } from '@/lib/auth';
+import { writeBookingAudit, getBookingActor, buildBookingLabel } from './audit-log.handlers';
 
 export async function getReservation(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -84,6 +87,9 @@ export async function updateReservation(request: NextRequest, { params }: { para
     ];
     const sets: string[] = [];
     const values: (string | number)[] = [];
+
+    // Capture full row snapshot BEFORE the update for audit trail
+    const beforeSnapshot = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
 
     if (body.status === 'checked_in') {
       const current = db.prepare('SELECT payment_status, registration_status FROM reservations WHERE id = ?').get(id) as any;
@@ -192,23 +198,26 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     }
 
+    // --- Audit logging with user + before/after ---
     try {
+      const actor = await getBookingActor();
+      const afterRow = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
       const logActions: { action: string; details: string }[] = [];
       if (body.status) logActions.push({ action: 'status_change', details: `Статус → ${body.status}` });
       if (body.payment_status) logActions.push({ action: 'payment_status_change', details: `Оплата → ${body.payment_status}` });
       if (body.total_price !== undefined) logActions.push({ action: 'price_change', details: `Ціна → ${body.total_price} CZK` });
-      // Forensic trail for unit moves — without this we can't tell whether
-      // a "stale unit in TG" report is a save failure, a duplicate-booking
-      // edit, or a downstream cache.
       if (body.unit_id !== undefined) {
         const nextRow = db.prepare('SELECT name FROM units WHERE id = ?').get(body.unit_id) as { name?: string } | undefined;
         const before = prevUnitLabel || '—';
         const after  = nextRow?.name || body.unit_id;
         logActions.push({ action: 'unit_change', details: `Юніт: ${before} → ${after}` });
       }
+      if (body.check_in || body.check_out) logActions.push({ action: 'dates_change', details: `Дати: ${body.check_in || '—'} — ${body.check_out || '—'}` });
+      if (body.notes !== undefined) logActions.push({ action: 'notes_change', details: 'Нотатки змінено' });
+      if (body.internal_notes !== undefined) logActions.push({ action: 'internal_notes_change', details: 'Внутрішні нотатки змінено' });
+      if (body.registration_status) logActions.push({ action: 'registration_change', details: `Реєстрація → ${body.registration_status}` });
       for (const log of logActions) {
-        db.prepare("INSERT INTO booking_activity_log (id, reservation_id, action, details) VALUES (?, ?, ?, ?)")
-          .run(`al_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, id, log.action, log.details);
+        writeBookingAudit(db, id, log.action, log.details, actor, beforeSnapshot, afterRow);
       }
     } catch { /* non-critical */ }
 
@@ -251,13 +260,17 @@ export async function deleteReservation(_request: NextRequest, { params }: { par
     const db = getDb();
     const { id } = await params;
 
+    // Capture snapshot + actor BEFORE deletion for audit
+    const beforeSnapshot = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id) as any;
+    const label = buildBookingLabel(db, id);
+    const actor = await getBookingActor();
+
     db.transaction(() => {
       // 1. Unlink from CRM leads
       db.prepare('UPDATE crm_leads SET reservation_id = NULL WHERE reservation_id = ?').run(id);
 
-      // 2. Delete related cart events and activity logs
+      // 2. Delete related cart events (keep activity logs — no cascade)
       db.prepare('DELETE FROM cart_events WHERE reservation_id = ?').run(id);
-      db.prepare('DELETE FROM booking_activity_log WHERE reservation_id = ?').run(id);
 
       // 3. Delete service orders
       db.prepare('DELETE FROM service_orders WHERE reservation_id = ?').run(id);
@@ -270,14 +283,15 @@ export async function deleteReservation(_request: NextRequest, { params }: { par
       `).run(id);
       db.prepare('DELETE FROM reservation_sub_bookings WHERE reservation_id = ? OR child_reservation_id = ?').run(id, id);
 
-      // 5. Delete child reservations (if any multi-room logic was used)
-      // Since children might also have logs/service_orders, technically we should do this recursively,
-      // but for ALiSiO, children are usually lightweight placeholders.
+      // 5. Delete child reservations
       db.prepare('DELETE FROM reservations WHERE parent_id = ?').run(id);
 
       // 6. Finally delete the main reservation
       db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
     })();
+
+    // Write audit AFTER deletion (FK removed in migration, so this works)
+    writeBookingAudit(db, id, 'deleted', `Видалено: ${label}`, actor, beforeSnapshot, null, label);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

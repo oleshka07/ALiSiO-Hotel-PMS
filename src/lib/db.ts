@@ -4634,6 +4634,55 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
 
+  // --- Migration: enhance booking_activity_log with user tracking + before/after snapshots ---
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN user_id TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN user_name TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN before_json TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN after_json TEXT");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE booking_activity_log ADD COLUMN booking_label TEXT");
+  } catch { /* column already exists */ }
+
+  // --- Migration: recreate booking_activity_log WITHOUT foreign key CASCADE ---
+  try {
+    // Check if the table still has the CASCADE FK by looking at the SQL
+    const tableInfo = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='booking_activity_log'").get() as any;
+    if (tableInfo?.sql?.includes('ON DELETE CASCADE')) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS booking_activity_log_new (
+          id TEXT PRIMARY KEY,
+          reservation_id TEXT,
+          action TEXT NOT NULL,
+          details TEXT,
+          user_id TEXT,
+          user_name TEXT,
+          before_json TEXT,
+          after_json TEXT,
+          booking_label TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO booking_activity_log_new SELECT id, reservation_id, action, details,
+          CASE WHEN typeof(user_id)='text' THEN user_id ELSE NULL END,
+          CASE WHEN typeof(user_name)='text' THEN user_name ELSE NULL END,
+          CASE WHEN typeof(before_json)='text' THEN before_json ELSE NULL END,
+          CASE WHEN typeof(after_json)='text' THEN after_json ELSE NULL END,
+          CASE WHEN typeof(booking_label)='text' THEN booking_label ELSE NULL END,
+          created_at
+        FROM booking_activity_log;
+        DROP TABLE booking_activity_log;
+        ALTER TABLE booking_activity_log_new RENAME TO booking_activity_log;
+      `);
+    }
+  } catch (e: any) { console.error('[migration] booking_activity_log FK removal (non-fatal):', e?.message); }
+
 }
 
 
