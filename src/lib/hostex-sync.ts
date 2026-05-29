@@ -30,7 +30,7 @@ const PROPERTY_MAP: Record<number, string> = {
   12590381: 'u_st1',                           // B1            → B1 - Stealth
   12590382: 'u_st2',                           // B2            → B2 - Stealth
   12446084: 'u_st3',                           // B3 Stealth    → B3 - Stealth
-  12565124: '1e7f6c7bd383af9cdfaa43eb50160148', // B4 Svitanok   → B4 - Svitanok
+  12565124: 'd503be0cd56044e5fe4d1a5a727c8bdb', // B4 Svitanok   → ST4 - Stealth 4
 };
 
 const PROPERTY_ID = 'prop_main_001';
