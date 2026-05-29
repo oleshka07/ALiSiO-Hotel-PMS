@@ -11,6 +11,8 @@ const PUBLIC_PREFIXES = [
   '/api/booking/',       // guest self-registration, payments
   '/api/cron/',          // cron jobs (own secret-header auth)
   '/api/finance/telegram-bridge/', // Telegram bot (Bearer token auth)
+  '/api/crm/channels/',            // CRM email poll + telegram callback (own auth)
+  '/api/crm/leads/from-bot',       // Telegram bot → PMS lead creation
   '/api/widget',         // widget-* endpoints (public embed)
   '/login',              // login page
   '/guest/',             // guest portal page
