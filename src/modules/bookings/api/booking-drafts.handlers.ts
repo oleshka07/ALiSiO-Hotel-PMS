@@ -93,17 +93,57 @@ export async function createBookingDraft(req: Request) {
     let unitId: string | null = null;
 
     if (accommodationType === 'camping') {
-      const campingUnit = db.prepare(`
-        SELECT u.id FROM units u
-        JOIN unit_types ut ON u.unit_type_id = ut.id
-        WHERE u.property_id = ? AND u.is_active = 1
-          AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
-               OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
-               OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
-        ORDER BY u.sort_order, u.name
-        LIMIT 1
-      `).get(property.id) as any;
-      unitId = campingUnit?.id || null;
+      const checkIn  = body.check_in  || null;
+      const checkOut = body.check_out || null;
+
+      // Pick the first camping unit that has NO overlapping active reservation.
+      // Overlap condition: existing.check_in < new.check_out AND existing.check_out > new.check_in
+      const campingUnit = (checkIn && checkOut)
+        ? db.prepare(`
+            SELECT u.id FROM units u
+            JOIN unit_types ut ON u.unit_type_id = ut.id
+            WHERE u.property_id = ? AND u.is_active = 1
+              AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
+                   OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
+                   OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
+              AND NOT EXISTS (
+                SELECT 1 FROM reservations r
+                WHERE r.unit_id = u.id
+                  AND r.status NOT IN ('cancelled', 'no_show')
+                  AND r.check_in  < ?
+                  AND r.check_out > ?
+              )
+            ORDER BY u.sort_order, u.name
+            LIMIT 1
+          `).get(property.id, checkOut, checkIn) as any
+        : db.prepare(`
+            SELECT u.id FROM units u
+            JOIN unit_types ut ON u.unit_type_id = ut.id
+            WHERE u.property_id = ? AND u.is_active = 1
+              AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
+                   OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
+                   OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
+            ORDER BY u.sort_order, u.name
+            LIMIT 1
+          `).get(property.id) as any;
+
+      // Fallback: if all camping units are occupied (or only 1 exists), just grab the first one
+      // so the booking still goes through and staff can sort it out in PMS.
+      if (!campingUnit && (checkIn && checkOut)) {
+        const fallbackCamping = db.prepare(`
+          SELECT u.id FROM units u
+          JOIN unit_types ut ON u.unit_type_id = ut.id
+          WHERE u.property_id = ? AND u.is_active = 1
+            AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
+                 OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
+                 OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
+          ORDER BY u.sort_order, u.name LIMIT 1
+        `).get(property.id) as any;
+        unitId = fallbackCamping?.id || null;
+        console.warn('[BookingDraft] All camping units occupied — using first unit as fallback');
+      } else {
+        unitId = campingUnit?.id || null;
+      }
     } else if (accommodationType === 'glamping') {
       const unitCode = (body.accommodation_data?.unit === 'barn') ? 'barn' : 'tiny';
       const glamUnit = db.prepare(`
