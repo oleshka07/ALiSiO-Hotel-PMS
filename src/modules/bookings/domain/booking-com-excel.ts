@@ -310,8 +310,16 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
     return { rows: [], errors: [], totalRowsInFile: 0 };
   }
 
+  // Log raw column names BEFORE normalization for debugging
+  const rawColumns = Object.keys(json[0]);
+  console.log(`[Import Booking.com] Raw columns (${rawColumns.length}):`, JSON.stringify(rawColumns));
+
   // Normalize localized column names to English
   json = normalizeHeaders(json);
+
+  // Log normalized columns
+  const normalizedColumns = Object.keys(json[0]);
+  console.log(`[Import Booking.com] Normalized columns (${normalizedColumns.length}):`, JSON.stringify(normalizedColumns));
 
   // If 'Guest name(s)' is still missing but 'Booked by' exists, use it as fallback
   const headerRow = json[0];
@@ -344,10 +352,42 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
   }
 
   const missing = REQUIRED_COLS.filter((c) => !(c in json[0]));
+  // Fuzzy fallback: if some required columns are still missing,
+  // try case-insensitive substring matching against available columns
   if (missing.length > 0) {
+    const availKeys = Object.keys(json[0]);
+    const FUZZY_MAP: Record<string, string[]> = {
+      'Book number': ['book', 'reserv', 'номер', 'číslo', 'брон'],
+      'Guest name(s)': ['guest', 'name', 'гост', 'host', 'ім\'я', 'имя'],
+      'Check-in': ['check-in', 'checkin', 'arrival', 'заїзд', 'заезд', 'příjezd'],
+      'Check-out': ['check-out', 'checkout', 'departure', 'виїзд', 'выезд', 'odjezd'],
+      'Status': ['status', 'статус', 'stav'],
+      'Unit type': ['unit', 'room', 'type', 'помешк', 'номер', 'pokoj', 'ubytov', 'размещ'],
+      'Duration (nights)': ['duration', 'night', 'ніч', 'ноч', 'noc', 'тривал', 'продолж', 'délka'],
+      'Adults': ['adult', 'дорос', 'взрос', 'dospěl'],
+      'Children': ['child', 'дит', 'děti', 'діт'],
+      'Persons': ['person', 'осіб', 'персон', 'osoby', 'людей'],
+      'Price': ['price', 'total', 'цін', 'ціна', 'всього', 'итого', 'cena', 'celkem', 'сплат', 'úhrad'],
+    };
+    for (const col of [...missing]) {
+      const patterns = FUZZY_MAP[col];
+      if (!patterns) continue;
+      const matched = availKeys.find(k => {
+        const lower = k.toLowerCase();
+        return patterns.some(p => lower.includes(p));
+      });
+      if (matched && !(col in json[0])) {
+        console.log(`[Import Booking.com] Fuzzy match: "${matched}" → "${col}"`);
+        json = json.map(r => ({ ...r, [col]: r[matched] }));
+        missing.splice(missing.indexOf(col), 1);
+      }
+    }
+  }
+  if (missing.length > 0) {
+    console.error(`[Import Booking.com] Still missing after fuzzy: ${missing.join(', ')}. Available: ${Object.keys(json[0]).join(', ')}`);
     return {
       rows: [],
-      errors: [{ rowIndex: 0, field: 'headers', reason: `Missing required columns: ${missing.join(', ')}`, raw: Object.keys(json[0]) }],
+      errors: [{ rowIndex: 0, field: 'headers', reason: `відсутні обов'язкові колонки: ${missing.join(', ')}`, raw: Object.keys(json[0]) }],
       totalRowsInFile: json.length,
     };
   }
