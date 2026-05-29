@@ -8,16 +8,22 @@ const PUBLIC_PREFIXES = [
   '/api/public/',        // public capture, availability
   '/api/webhooks/',      // Hostex, Teya webhooks (own auth)
   '/api/ical-export/',   // iCal feed (token-based URL)
+  '/api/ical-sync/',     // iCal cron sync (own ?secret= auth)
   '/api/booking/',       // guest self-registration, payments
   '/api/cron/',          // cron jobs (own secret-header auth)
   '/api/finance/telegram-bridge/', // Telegram bot (Bearer token auth)
   '/api/crm/channels/',            // CRM email poll + telegram callback (own auth)
   '/api/crm/leads/from-bot',       // Telegram bot → PMS lead creation
+  '/api/hostex/sync',              // Hostex sync (cron secret in route.ts)
+  '/api/hostex/bulk-sync',         // Hostex bulk sync (cron secret in route.ts)
+  '/api/channels/reservations/poll', // Booking.com polling (cron secret in route.ts)
+  '/api/channels/sync/process',    // ARI sync queue (cron secret in route.ts)
+  '/api/invest/',                  // investor portal API (token-based auth in handler)
   '/api/widget',         // widget-* endpoints (public embed)
   '/login',              // login page
   '/guest/',             // guest portal page
   '/book/',              // public booking wizard
-  '/invest/',            // investor portal (token-based)
+  '/invest/',            // investor portal page (token-based)
   '/w/',                 // booking widget
 ];
 
