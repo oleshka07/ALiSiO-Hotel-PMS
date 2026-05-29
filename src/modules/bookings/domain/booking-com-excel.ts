@@ -154,19 +154,43 @@ const COLUMN_ALIASES: Record<string, string> = {
 };
 
 /**
+ * Strip invisible / BOM / control characters from a column-name string.
+ * Booking.com exports sometimes contain BOM (\uFEFF), zero-width spaces
+ * (\u200B), non-breaking spaces (\u00A0), or Unicode apostrophes (ʼ U+02BC).
+ */
+function sanitizeKey(k: string): string {
+  return k
+    .replace(/[\uFEFF\u200B\u200C\u200D\u2060\u00A0]/g, ' ')  // invisible → regular space
+    .replace(/[\u02BC\u2019\u2018\u0060\u00B4]/g, "'")          // Unicode apostrophes → ASCII
+    .replace(/\s+/g, ' ')                                        // collapse whitespace
+    .trim();
+}
+
+/**
  * Normalize a row object: rename localized column names to their
  * canonical English equivalents so the rest of the parser is locale-agnostic.
  */
 function normalizeHeaders(rows: Record<string, any>[]): Record<string, any>[] {
   if (rows.length === 0) return rows;
+
+  // Build sanitized alias lookup once
+  const sanitizedAliases: Record<string, string> = {};
+  for (const [alias, canonical] of Object.entries(COLUMN_ALIASES)) {
+    sanitizedAliases[sanitizeKey(alias)] = canonical;
+  }
+
   const sampleKeys = Object.keys(rows[0]);
-  const needsRemap = sampleKeys.some((k) => k in COLUMN_ALIASES);
+  const needsRemap = sampleKeys.some((k) => {
+    const clean = sanitizeKey(k);
+    return clean in sanitizedAliases || k in COLUMN_ALIASES;
+  });
   if (!needsRemap) return rows; // already English
 
   return rows.map((row) => {
     const out: Record<string, any> = {};
     for (const [key, value] of Object.entries(row)) {
-      const canonical = COLUMN_ALIASES[key] || key;
+      const clean = sanitizeKey(key);
+      const canonical = COLUMN_ALIASES[key] || sanitizedAliases[clean] || clean;
       if (!(canonical in out)) {
         out[canonical] = value;
       }
@@ -313,6 +337,11 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
   // Log raw column names BEFORE normalization for debugging
   const rawColumns = Object.keys(json[0]);
   console.log(`[Import Booking.com] Raw columns (${rawColumns.length}):`, JSON.stringify(rawColumns));
+  // Hex dump first 3 column names to detect invisible chars
+  rawColumns.slice(0, 3).forEach((col, i) => {
+    const hex = [...col].map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
+    console.log(`[Import Booking.com] Col[${i}] hex: ${hex} = "${col}"`);
+  });
 
   // Normalize localized column names to English
   json = normalizeHeaders(json);
