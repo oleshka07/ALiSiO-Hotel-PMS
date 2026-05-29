@@ -338,48 +338,54 @@ export async function updateBookingDraft(req: Request) {
 
       // First-time confirmation: create fin_operation + send email.
       if (confirmResult.changes > 0) {
-        // ─── Create fin_operation routed to admin's cash account ──────────
-        try {
-          const { createPaymentOperation, hasPaymentOperation } = await import('../../finance/api/payment-bridge');
-          const pinStr = String(admin_pin).trim();
-          // Prevent double-creation if widget retries
-          if (!hasPaymentOperation(rid, 'booking_widget', `pin_${rid}`)) {
-            const reservation = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(rid) as any;
-            const amount = reservation?.total_price || 0;
-            const currency = reservation?.currency || 'CZK';
+        // ─── Create fin_operation ONLY for CASH payments ──────────────────
+        // Terminal payments do NOT get a fin_operation here — the money
+        // arrives via bank statement and will be recorded through bank import.
+        // Cash must be tracked immediately because there's no bank trail.
+        if (!isTerminal) {
+          try {
+            const { createPaymentOperation, hasPaymentOperation } = await import('../../finance/api/payment-bridge');
+            const pinStr = String(admin_pin).trim();
+            // Prevent double-creation if widget retries
+            if (!hasPaymentOperation(rid, 'booking_widget', `pin_${rid}`)) {
+              const reservation = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(rid) as any;
+              const amount = reservation?.total_price || 0;
+              const currency = reservation?.currency || 'CZK';
 
-            // Resolve admin's cash account by name from PIN mapping
-            let accountId: string | undefined;
-            const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
-            if (wantedName) {
-              const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
-              if (orgRow?.organization_id) {
-                const acct = db.prepare(
-                  "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
-                ).get(orgRow.organization_id, wantedName) as any;
-                accountId = acct?.id;
-                if (!accountId) console.warn(`[AdminConfirm] Account "${wantedName}" not found for PIN ${pinStr.substring(0,2)}**`);
+              // Resolve admin's cash account by name from PIN mapping
+              let accountId: string | undefined;
+              const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
+              if (wantedName) {
+                const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
+                if (orgRow?.organization_id) {
+                  const acct = db.prepare(
+                    "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
+                  ).get(orgRow.organization_id, wantedName) as any;
+                  accountId = acct?.id;
+                  if (!accountId) console.warn(`[AdminConfirm] Account "${wantedName}" not found for PIN ${pinStr.substring(0,2)}**`);
+                }
+              }
+
+              if (amount > 0) {
+                createPaymentOperation({
+                  reservationId: rid,
+                  amount,
+                  currency,
+                  method: 'cash',
+                  paymentSubtype: 'full',
+                  source: 'booking_widget',
+                  sourceRef: `pin_${rid}`,
+                  accountId,
+                  comment: `Готівка · ${adminName}`,
+                });
+                console.log(`[CashConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
               }
             }
-
-            if (amount > 0) {
-              const methodLabel = isTerminal ? 'Термінал' : 'Готівка';
-              createPaymentOperation({
-                reservationId: rid,
-                amount,
-                currency,
-                method: isTerminal ? 'card' : 'cash',
-                paymentSubtype: 'full',
-                source: 'booking_widget',
-                sourceRef: `pin_${rid}`,
-                accountId,
-                comment: `${methodLabel} · ${adminName}`,
-              });
-              console.log(`[AdminConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
-            }
+          } catch (e: any) {
+            console.error('[AdminConfirm] fin_operation creation error (non-fatal):', e.message);
           }
-        } catch (e: any) {
-          console.error('[AdminConfirm] fin_operation creation error (non-fatal):', e.message);
+        } else {
+          console.log(`[TerminalConfirm] Skipping fin_operation for ${rid} — terminal payment will arrive via bank statement`);
         }
 
         // Fire confirmation email

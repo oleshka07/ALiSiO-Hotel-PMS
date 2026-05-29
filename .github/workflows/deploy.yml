@@ -187,3 +187,9 @@ jobs:
 
             echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager
+
+            # One-time: remove terminal payment fin_operations (they should come via bank)
+            if [ -f remove-terminal-ops.js ]; then
+              echo "[cleanup] Removing terminal fin_operations..."
+              node remove-terminal-ops.js --apply 2>&1 || true
+            fi
