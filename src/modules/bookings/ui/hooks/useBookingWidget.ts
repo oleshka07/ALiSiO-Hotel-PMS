@@ -27,7 +27,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [adults, setAdults] = useState(2);
   const [kids, setKids] = useState(0);
   const [calMonthOffset, setCalMonthOffset] = useState(0);
-  const [calOpen, setCalOpen] = useState(false);
+  const [calOpen, setCalOpen] = useState(true);
   const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
   const [partialDates, setPartialDates] = useState<Set<string>>(new Set());
   const [socialProof, setSocialProof] = useState<{ viewers: number; lastBooking?: string } | null>(null);
