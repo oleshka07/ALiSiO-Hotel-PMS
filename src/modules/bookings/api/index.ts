@@ -11,6 +11,7 @@ export { assignGuest } from './group-booking-assign.handlers';
 export { listSubBookings, createSubBooking, updateSubBooking, deleteSubBooking } from './sub-bookings.handlers';
 export { listBookingSources, createBookingSource } from './booking-sources.handlers';
 export { updateBookingSource, deleteBookingSource } from './booking-source.handlers';
+export { listWidgetSiteSources } from './booking-source-widgets.handlers';
 export { getAvailability, getAvailabilityOptions } from './widget-availability.handlers';
 export { validatePromo, validatePromoOptions } from './widget-activate.handlers';
 export { getWidgetReservation, getWidgetReservationOptions } from './widget-reservation.handlers';

@@ -102,7 +102,7 @@ export async function createWidgetReservation(request: NextRequest) {
     if (siteId) {
       if (existingTables.has('booking_sites')) {
         const site = db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any;
-        if (site) siteName = site.name;
+        if (site) siteName = `widget:${siteId}`; // unified format: widget:<siteId>
       }
       if (existingTables.has('site_listings')) {
         const listing = db.prepare('SELECT price_override, thank_you_url FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId) as any;

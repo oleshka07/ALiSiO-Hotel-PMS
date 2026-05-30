@@ -51,6 +51,14 @@ export interface BookingSourceRow {
   city_tax_included_default?: number | boolean;
 }
 
+export interface WidgetSiteSourceRow {
+  code: string;   // 'widget:<siteId>'
+  name: string;
+  color?: string;
+  site_url?: string | null;
+  site_id?: string;
+}
+
 interface BookingFormProps {
   mode: 'create' | 'edit';
   bookingId?: string;
@@ -59,6 +67,8 @@ interface BookingFormProps {
   unitTypes: UnitTypeRow[];
   allUnits: UnitRow[];
   bookingSources: BookingSourceRow[];
+  /** Active booking_sites to show under the "Widgets" optgroup */
+  widgetSources?: WidgetSiteSourceRow[];
   onSaved: (bookingId: string) => void;
   onCancel: () => void;
 }
@@ -131,6 +141,7 @@ export default function BookingForm({
   unitTypes,
   allUnits,
   bookingSources,
+  widgetSources = [],
   onSaved,
   onCancel,
 }: BookingFormProps) {
@@ -389,10 +400,25 @@ export default function BookingForm({
         <div className="form-group">
           <label className="form-label">Джерело</label>
           <select className="form-select" value={form.source} onChange={e => onSourceChange(e.target.value)}>
-            {bookingSources.length === 0 && <option value="direct">Direct</option>}
-            {bookingSources.map(s => (
-              <option key={s.code} value={s.code}>{s.name}</option>
-            ))}
+            {bookingSources.length === 0 && widgetSources.length === 0 && (
+              <option value="direct">Direct</option>
+            )}
+            {/* ── Standard channels ── */}
+            {bookingSources.length > 0 && (
+              <optgroup label="Канали">
+                {bookingSources.map(s => (
+                  <option key={s.code} value={s.code}>{s.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {/* ── Booking widget sites ── */}
+            {widgetSources.length > 0 && (
+              <optgroup label="🌐 Віджети бронювань">
+                {widgetSources.map(s => (
+                  <option key={s.code} value={s.code}>🌐 {s.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
       </div>

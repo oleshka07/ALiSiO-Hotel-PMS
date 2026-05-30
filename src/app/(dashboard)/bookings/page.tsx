@@ -10,7 +10,7 @@ import MobileFilterBar from '@/components/mobile/MobileFilterBar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
 import GroupViewModal from '@/components/booking/GroupViewModal';
 import BookingViewModal from '@/components/booking/BookingViewModal';
-import BookingForm from '@/components/booking/BookingForm';
+import BookingForm, { type WidgetSiteSourceRow } from '@/components/booking/BookingForm';
 import {
   Plus,
   Search,
@@ -171,16 +171,20 @@ function BookingsDesktop() {
   const [unitTypes, setUnitTypes] = useState<UnitTypeRow[]>([]);
   const [allUnits, setAllUnits] = useState<UnitRow[]>([]);
   const [bookingSources, setBookingSources] = useState<any[]>([]);
+  const [widgetSources, setWidgetSources] = useState<WidgetSiteSourceRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Build dynamic source map from fetched sources
+  // Build dynamic source map from fetched sources (OTA + widget sites)
   const sourceMap = useMemo(() => {
     const map: Record<string, { label: string; color: string }> = {};
     for (const s of bookingSources) {
       map[s.code] = { label: s.name, color: s.color };
     }
+    for (const s of widgetSources) {
+      map[s.code] = { label: `🌐 ${s.name}`, color: s.color || '#6366f1' };
+    }
     return map;
-  }, [bookingSources]);
+  }, [bookingSources, widgetSources]);
 
   /* ── filters ──────────────────────────────────────── */
   const [search, setSearch] = useState('');
@@ -354,10 +358,12 @@ function BookingsDesktop() {
       fetch('/api/unit-types').then(r => r.json()),
       fetch('/api/units').then(r => r.json()),
       fetch('/api/booking-sources').then(r => r.json()),
-    ]).then(([uts, us, srcs]) => {
+      fetch('/api/booking-sources/widget-sites').then(r => r.json()),
+    ]).then(([uts, us, srcs, widgets]) => {
       if (Array.isArray(uts)) setUnitTypes(uts);
       if (Array.isArray(us)) setAllUnits(us);
       if (Array.isArray(srcs)) setBookingSources(srcs);
+      if (Array.isArray(widgets)) setWidgetSources(widgets);
     });
   }, []);
 
@@ -576,11 +582,22 @@ function BookingsDesktop() {
               <span style={{ color: 'var(--text-tertiary)' }}>—</span>
               <input className="form-input" type="date" style={{ width: 140 }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
-            <select className="form-select" style={{ width: 160 }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+            <select className="form-select" style={{ width: 175 }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
               <option value="">Всі джерела</option>
-              {bookingSources.map((s: any) => (
-                <option key={s.code} value={s.code}>{s.name}</option>
-              ))}
+              {bookingSources.length > 0 && (
+                <optgroup label="Канали">
+                  {bookingSources.map((s: any) => (
+                    <option key={s.code} value={s.code}>{s.name}</option>
+                  ))}
+                </optgroup>
+              )}
+              {widgetSources.length > 0 && (
+                <optgroup label="🌐 Віджети">
+                  {widgetSources.map((s) => (
+                    <option key={s.code} value={s.code}>🌐 {s.name}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
         </div>
@@ -902,6 +919,7 @@ function BookingsDesktop() {
               unitTypes={unitTypes}
               allUnits={allUnits}
               bookingSources={bookingSources}
+              widgetSources={widgetSources}
               onSaved={() => {
                 setShowNewBooking(false);
                 showToast('Бронювання створено!');
@@ -923,6 +941,7 @@ function BookingsDesktop() {
               unitTypes={unitTypes}
               allUnits={allUnits}
               bookingSources={bookingSources}
+              widgetSources={widgetSources}
               onSaved={() => {
                 const closingId = editBooking.id;
                 setEditBooking(null);
