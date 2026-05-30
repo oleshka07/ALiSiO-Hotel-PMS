@@ -30,6 +30,7 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 | `createBookingSource(req)` | Створення джерела |
 | `updateBookingSource(req, ctx)` | Оновлення джерела |
 | `deleteBookingSource(req, ctx)` | Видалення джерела |
+| `listWidgetSiteSources()` | Активні `booking_sites` як pseudo-sources для CRM форми (code = `widget:<siteId>`) |
 | `listAdditionalServices()` | Список додаткових послуг |
 | `createAdditionalService(req)` | Створення послуги |
 | `updateAdditionalService(req)` | Оновлення послуги |
@@ -92,6 +93,7 @@ bookings/
     group-booking-assign.handlers.ts
     booking-sources.handlers.ts
     booking-source.handlers.ts
+    booking-source-widgets.handlers.ts    ← GET /api/booking-sources/widget-sites
     additional-services.handlers.ts
     availability-blocks.handlers.ts
     service-orders.handlers.ts
