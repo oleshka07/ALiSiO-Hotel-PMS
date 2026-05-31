@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Search, RefreshCw, Plus, X, Check, Calendar, Flag, Tag,
   User, FolderOpen, Loader2, Paperclip, Image, Trash2,
-  CheckSquare, Clock, AlertTriangle,
+  CheckSquare, Clock, AlertTriangle, Send,
 } from 'lucide-react';
 
 /* ================================================================
@@ -97,7 +97,7 @@ function initials(name: string): string {
    Task Detail Bottom Sheet
    ================================================================ */
 function TaskSheet({
-  task, projects, tags, users, onClose, onUpdated, onDeleted,
+  task, projects, tags, users, onClose, onUpdated, onDeleted, onSaved,
 }: {
   task: Task;
   projects: TaskProject[];
@@ -106,6 +106,7 @@ function TaskSheet({
   onClose: () => void;
   onUpdated: () => void;
   onDeleted: () => void;
+  onSaved: () => void;
 }) {
   const [form, setForm] = useState({
     title: task.title,
@@ -125,6 +126,8 @@ function TaskSheet({
   const [attachments, setAttachments] = useState<{ id: string; filename: string; url: string; content_type: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [creatingTag, setCreatingTag] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +143,8 @@ function TaskSheet({
       .catch(() => {});
   }, [task.id]);
 
+  const [saved, setSaved] = useState(false);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -148,8 +153,10 @@ function TaskSheet({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, tag_ids: taskTags }),
       });
-      onUpdated();
-    } catch { /* */ }
+      setSaved(true);
+      onSaved();
+      setTimeout(() => setSaved(false), 1500);
+    } catch { alert('Помилка збереження'); }
     setSaving(false);
   };
 
@@ -227,6 +234,29 @@ function TaskSheet({
     setTaskTags(newTags);
   };
 
+  const TAG_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#6366f1'];
+
+  const handleCreateTag = async () => {
+    if (!newTagName.trim() || creatingTag) return;
+    setCreatingTag(true);
+    try {
+      const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+      const res = await fetch('/api/tasks/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newTagName.trim(), color }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        toggleTag(created.id);
+        setNewTagName('');
+        // Refresh tags list in parent
+        onUpdated();
+      }
+    } catch { /* */ }
+    setCreatingTag(false);
+  };
+
   /* Field row helper */
   const fieldRow = (icon: React.ReactNode, label: string, children: React.ReactNode) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border-primary)' }}>
@@ -240,13 +270,13 @@ function TaskSheet({
   return (
     <>
       <div className="m-sheet-backdrop" onClick={onClose} />
-      <div className="m-sheet" style={{ maxHeight: '94dvh' }}>
+      <div className="m-sheet" style={{ maxHeight: '94dvh', display: 'flex', flexDirection: 'column' }}>
         <div className="m-sheet-handle" />
         <div className="m-sheet-header">
           <h2 style={{ fontSize: 17 }}>Задача</h2>
           <button className="m-header-btn" onClick={onClose}><X size={20} /></button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 32px', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px', WebkitOverflowScrolling: 'touch' }}>
           {/* Title */}
           <textarea
             value={form.title}
@@ -356,6 +386,7 @@ function TaskSheet({
               </button>
             </div>
             {showTagPicker && (
+              <>
               <div style={{
                 display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8,
                 padding: 8, borderRadius: 10, background: 'var(--bg-tertiary)',
@@ -370,10 +401,37 @@ function TaskSheet({
                     {t.name}
                   </button>
                 ))}
-                {tags.filter(t => !taskTags.includes(t.id)).length === 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Немає доступних тегів</span>
+                {tags.filter(t => !taskTags.includes(t.id)).length === 0 && !newTagName.trim() && (
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Введіть назву нового тегу ↓</span>
                 )}
               </div>
+              {/* Inline tag creation */}
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input
+                  className="form-input"
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
+                  placeholder="Новий тег..."
+                  style={{ flex: 1, fontSize: 12, padding: '6px 10px', borderRadius: 8 }}
+                />
+                {newTagName.trim() && (
+                  <button
+                    onClick={handleCreateTag}
+                    disabled={creatingTag}
+                    style={{
+                      padding: '6px 12px', borderRadius: 8, border: 'none',
+                      background: 'var(--accent-primary)', color: '#fff',
+                      fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    {creatingTag ? <Loader2 size={12} className="animate-pulse" /> : <Plus size={12} />}
+                    Створити
+                  </button>
+                )}
+              </div>
+              </>
             )}
           </div>
 
@@ -506,16 +564,18 @@ function TaskSheet({
           </div>
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingBottom: 24 }}>
-            <button className="btn btn-primary" style={{ flex: 1, borderRadius: 12, padding: '12px 0' }} onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 size={14} className="animate-pulse" /> : <Check size={14} />}
-              {' '}Зберегти
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingBottom: 16 }}>
+            <button className="btn btn-primary" style={{ flex: 1, borderRadius: 12, padding: '12px 0', background: saved ? '#22c55e' : undefined, borderColor: saved ? '#22c55e' : undefined, transition: 'all 0.3s ease' }} onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 size={14} className="animate-pulse" /> : saved ? <Check size={14} /> : <Check size={14} />}
+              {' '}{saving ? 'Зберігаємо...' : saved ? 'Збережено ✓' : 'Зберегти'}
             </button>
             <button className="btn btn-danger" style={{ borderRadius: 12, padding: '12px 16px' }} onClick={handleDelete} disabled={deleting}>
               {deleting ? <Loader2 size={14} className="animate-pulse" /> : <Trash2 size={14} />}
             </button>
           </div>
         </div>
+        {/* Safe area spacer */}
+        <div style={{ padding: '0 16px 8px', paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))', flexShrink: 0 }} />
       </div>
 
       {/* Image Preview Lightbox */}
@@ -578,7 +638,7 @@ export default function MobileTasks() {
       if (tRes.ok) { const d = await tRes.json(); setTasks(Array.isArray(d) ? d : d.tasks || []); }
       if (pRes.ok) { const d = await pRes.json(); setProjects(Array.isArray(d) ? d : []); }
       if (tgRes.ok) { const d = await tgRes.json(); setTags(Array.isArray(d) ? d : []); }
-      if (uRes.ok) { const d = await uRes.json(); setUsers(Array.isArray(d) ? d : []); }
+      if (uRes.ok) { const d = await uRes.json(); setUsers(Array.isArray(d) ? d : d.users || []); }
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [projectFilter, search]);
@@ -895,6 +955,7 @@ export default function MobileTasks() {
           onClose={() => setViewTask(null)}
           onUpdated={() => { setViewTask(null); fetchData(); }}
           onDeleted={() => { setViewTask(null); fetchData(); }}
+          onSaved={() => fetchData()}
         />
       )}
     </div>

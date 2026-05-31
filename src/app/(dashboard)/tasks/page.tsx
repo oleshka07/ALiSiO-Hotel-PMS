@@ -222,6 +222,7 @@ function TaskDrawer({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
   const [attachments, setAttachments] = useState<{id: string; filename: string; url: string; file_size: number; content_type: string; created_at: string}[]>([]);
   const [uploading, setUploading] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -581,11 +582,46 @@ function TaskDrawer({
                         {tag.name}
                       </button>
                     ))}
-                    {tags.filter(t => !taskTags.includes(t.id)).length === 0 && (
+                    {tags.filter(t => !taskTags.includes(t.id)).length === 0 && !newTagName.trim() && (
                       <div style={{ padding: 8, fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                        Немає доступних тегів
+                        Введіть назву нового тегу
                       </div>
                     )}
+                    {/* Inline tag create */}
+                    <div style={{ borderTop: '1px solid var(--border-primary)', padding: '6px 4px 4px', marginTop: 4 }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          className="form-input"
+                          value={newTagName}
+                          onChange={e => setNewTagName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && newTagName.trim()) {
+                              e.preventDefault();
+                              const TAG_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+                              const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+                              fetch('/api/tasks/tags', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: newTagName.trim(), color }),
+                              }).then(r => r.ok ? r.json() : null).then(created => {
+                                if (created) {
+                                  const newTags = [...taskTags, created.id];
+                                  setTaskTags(newTags);
+                                  setNewTagName('');
+                                  fetch(`/api/tasks/${task.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ tag_ids: newTags }),
+                                  }).then(() => onUpdated());
+                                }
+                              });
+                            }
+                          }}
+                          placeholder="Новий тег... Enter"
+                          style={{ flex: 1, fontSize: 11, padding: '4px 8px' }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -975,7 +1011,7 @@ function TasksDesktop() {
       const res = await fetch('/api/users');
       if (res.ok) {
         const data = await res.json();
-        setUsers(Array.isArray(data) ? data : []);
+        setUsers(Array.isArray(data) ? data : data.users || []);
       }
     } catch { /* */ }
   }, []);
