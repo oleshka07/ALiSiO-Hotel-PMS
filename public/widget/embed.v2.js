@@ -93,7 +93,11 @@
     }
     
     if (e.data.type === 'alisio:redirect' && e.data.url) {
-      window.location.href = e.data.url;
+      // Relay to parent — works both when used directly on a page (parent = window)
+      // and when loaded inside a srcdoc iframe (parent = the React host window).
+      try { parent.postMessage({ type: 'alisio:redirect', url: e.data.url }, '*'); } catch(pe) {}
+      // Also navigate this window as fallback for direct (non-iframe) usage
+      if (window === parent) { window.location.href = e.data.url; }
     }
   }, false);
 
