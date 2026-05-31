@@ -447,6 +447,51 @@ function runMigrations(database: any) {
     console.log('[DB] password hash note:', e.message);
   }
 
+  // --- Migration: add default_cash_account_id to app_users ---
+  // Each admin can have their own cash account so that when they record
+  // a cash payment from a booking, it goes to their register, not the
+  // first one in sort order (which happens to be Олег's).
+  try {
+    const userCols2 = database.prepare("PRAGMA table_info(app_users)").all() as { name: string }[];
+    if (!userCols2.some((c: any) => c.name === 'default_cash_account_id')) {
+      database.exec("ALTER TABLE app_users ADD COLUMN default_cash_account_id TEXT REFERENCES finance_accounts(id)");
+      console.log('[DB] Added default_cash_account_id to app_users');
+
+      // Backfill: match user full_name to known cash account names.
+      // PIN mapping: Андрій → 'Андріїв cash', Олег → 'Олег наличные',
+      // Наталія → 'Каса Кемпінг і проживання', Антон → 'Антон Готівка'
+      const NAME_TO_ACCOUNT: Record<string, string> = {
+        'Андрій': 'Андріїв cash',
+        'Андрей': 'Андріїв cash',
+        'Andrii': 'Андріїв cash',
+        'Олег':  'Олег наличные',
+        'Oleg':  'Олег наличные',
+        'Наталія': 'Каса Кемпінг і проживання',
+        'Наташа': 'Каса Кемпінг і проживання',
+        'Natasha': 'Каса Кемпінг і проживання',
+        'Антон': 'Антон Готівка',
+        'Anton': 'Антон Готівка',
+      };
+      const users = database.prepare('SELECT id, full_name, organization_id FROM app_users').all() as any[];
+      for (const u of users) {
+        for (const [namePart, acctName] of Object.entries(NAME_TO_ACCOUNT)) {
+          if (u.full_name && u.full_name.includes(namePart)) {
+            const acct = database.prepare(
+              "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
+            ).get(u.organization_id, acctName) as any;
+            if (acct) {
+              database.prepare('UPDATE app_users SET default_cash_account_id = ? WHERE id = ?').run(acct.id, u.id);
+              console.log(`[DB] Mapped ${u.full_name} → ${acctName} (${acct.id})`);
+            }
+            break;
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] default_cash_account_id migration:', e.message);
+  }
+
   // --- Migration: create sessions table if not exists ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

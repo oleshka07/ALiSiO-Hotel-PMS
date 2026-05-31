@@ -79,6 +79,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // attributed to him in the operations audit log, not anonymous).
     if (CASH_METHODS.has(method)) {
       const actor = await getOptionalActor();
+
+      // Route to the logged-in user's personal cash account.
+      // Each admin has a default_cash_account_id in app_users (e.g. Андрій → 'Андріїв cash').
+      // Without this, every cash payment falls to the first cash account by sort_order (Олег's).
+      let accountId: string | undefined;
+      if (actor?.id) {
+        const userRow = db.prepare(
+          'SELECT default_cash_account_id FROM app_users WHERE id = ?'
+        ).get(actor.id) as { default_cash_account_id: string | null } | undefined;
+        accountId = userRow?.default_cash_account_id || undefined;
+      }
+
       const { operationId } = createPaymentOperation({
         reservationId: reservation_id,
         amount: Math.abs(Number(amount)),
@@ -89,6 +101,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         paidAt: paid_at || new Date().toISOString(),
         comment: notes || null,
         actor,
+        accountId,
       });
       return NextResponse.json({ id: operationId, ok: true, kind: 'fin_operation' }, { status: 201 });
     }
