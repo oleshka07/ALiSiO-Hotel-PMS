@@ -220,6 +220,9 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
   const [lead, setLead] = useState<LeadFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [changingStage, setChangingStage] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   useEffect(() => {
     (async () => {
@@ -227,7 +230,7 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
       try {
         const res = await fetch(`/api/crm/leads/${leadId}`);
         if (res.ok) setLead(await res.json());
-      } catch { /* */ }
+      } catch (err: any) { console.error('Помилка завантаження деталей ліда:', err); showError(err.message || 'Помилка завантаження деталей ліда'); }
       setLoading(false);
     })();
   }, [leadId]);
@@ -243,7 +246,7 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
       });
       setLead(prev => prev ? { ...prev, stage: newStage } : null);
       onStageChanged();
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка зміни етапу:', err); showError(err.message || 'Помилка зміни етапу'); }
     setChangingStage(false);
   };
 
@@ -266,6 +269,11 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
 
   return (
     <div className="inbox-detail-panel">
+      {error && (
+        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+          ⚠️ {error}
+        </div>
+      )}
       <div className="inbox-detail-header">
         <span style={{ fontSize: 14, fontWeight: 700 }}>Деталі ліда</span>
         <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X size={16} /></button>
@@ -409,6 +417,9 @@ export default function CrmInboxPage() {
   const [aiDraft, setAiDraft] = useState<string | null>(null);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState<any | null>(null);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -423,7 +434,7 @@ export default function CrmInboxPage() {
       params.set('limit', '200');
       const res = await fetch(`/api/crm/leads?${params}`);
       if (res.ok) { const data = await res.json(); setLeads(data.leads || []); }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка завантаження лідів:', err); showError(err.message || 'Помилка завантаження лідів'); }
     setLoading(false);
   }, [search, stageFilter]);
 
@@ -452,7 +463,7 @@ export default function CrmInboxPage() {
           });
         }
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка завантаження розмови:', err); showError(err.message || 'Помилка завантаження розмови'); }
     setConvLoading(false);
     fetchLeads();
   }, [fetchLeads]);
@@ -541,7 +552,7 @@ export default function CrmInboxPage() {
       setNewMessage('');
       setAiDraft(null);
       if (selectedLeadId) fetchConversation(selectedLeadId);
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка відправки повідомлення:', err); showError(err.message || 'Помилка відправки повідомлення'); }
     setSending(false);
   };
 
@@ -553,7 +564,7 @@ export default function CrmInboxPage() {
         body: JSON.stringify(form),
       });
       setShowKnowledgeModal(null);
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка збереження в базу знань:', err); showError(err.message || 'Помилка збереження в базу знань'); }
     setSavingKnowledge(false);
   };
 
@@ -575,6 +586,11 @@ export default function CrmInboxPage() {
 
   return (
     <>
+      {error && (
+        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+          ⚠️ {error}
+        </div>
+      )}
       <Header title="Inbox" onMenuClick={onMenuClick} />
       <div className="inbox-container" data-v="2">
         {/* LEFT PANEL */}

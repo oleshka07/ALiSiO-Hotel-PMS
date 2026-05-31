@@ -152,7 +152,7 @@ function AddLeadModal({ open, onClose, onCreated }: {
           notes: '',
         });
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка створення ліда:', err); alert(err.message || 'Помилка створення ліда'); }
     setSaving(false);
   };
 
@@ -329,14 +329,17 @@ export default function CrmPipelinePage() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const onMenuClick = useMobileMenu();
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/crm/pipeline');
       if (res.ok) setData(await res.json());
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка завантаження pipeline:', err); showError(err.message || 'Помилка завантаження даних'); }
     setLoading(false);
   }, []);
 
@@ -365,7 +368,7 @@ export default function CrmPipelinePage() {
         body: JSON.stringify({ stage: newStage, trigger: 'manual' }),
       });
       fetchData();
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка зміни стадії:', err); showError(err.message || 'Помилка зміни стадії'); }
   };
 
   // Stages to show on Kanban (hide lost/spam)
@@ -373,6 +376,11 @@ export default function CrmPipelinePage() {
 
   return (
     <>
+      {error && (
+        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+          ⚠️ {error}
+        </div>
+      )}
       <Header title="CRM" onMenuClick={onMenuClick} />
       <div className="app-content">
         {/* Stats */}

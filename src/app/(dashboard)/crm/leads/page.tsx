@@ -127,7 +127,7 @@ function AddLeadModal({ open, onClose, onCreated }: {
           notes: '',
         });
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка створення ліда:', err); alert(err.message || 'Помилка створення ліда'); }
     setSaving(false);
   };
 
@@ -246,7 +246,10 @@ export default function CrmLeadsPage() {
   const [page, setPage] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const limit = 50;
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -264,7 +267,7 @@ export default function CrmLeadsPage() {
         setLeads(data.leads || []);
         setTotal(data.total || 0);
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка завантаження лідів:', err); showError(err.message || 'Помилка завантаження лідів'); }
     setLoading(false);
   }, [search, stageFilter, sourceFilter, priorityFilter, page]);
 
@@ -275,7 +278,7 @@ export default function CrmLeadsPage() {
     try {
       await fetch(`/api/crm/leads/${id}`, { method: 'DELETE' });
       fetchLeads();
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка видалення ліда:', err); showError(err.message || 'Помилка видалення ліда'); }
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -283,6 +286,11 @@ export default function CrmLeadsPage() {
 
   return (
     <>
+      {error && (
+        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+          ⚠️ {error}
+        </div>
+      )}
       <Header title="Ліди" onMenuClick={onMenuClick} />
       <div className="app-content">
         {/* Filters */}
@@ -619,7 +627,7 @@ export default function CrmLeadsPage() {
                             });
                             setSelectedLead({ ...selectedLead, stage: id });
                             fetchLeads();
-                          } catch { /* */ }
+                          } catch (err: any) { console.error('Помилка зміни етапу:', err); showError(err.message || 'Помилка зміни етапу'); }
                         }}
                       >
                         {stage.icon} {stage.label}

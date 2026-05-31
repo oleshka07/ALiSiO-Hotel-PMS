@@ -113,6 +113,9 @@ function PromptsTab() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<PromptConfig> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   const fetchPrompts = useCallback(async () => {
     setLoading(true);
@@ -122,7 +125,7 @@ function PromptsTab() {
         const data = await res.json();
         setPrompts(data.prompts || []);
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка завантаження промптів:', err); showError(err.message || 'Помилка завантаження промптів'); }
     setLoading(false);
   }, []);
 
@@ -151,7 +154,7 @@ function PromptsTab() {
         setEditing(null);
         fetchPrompts();
       }
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка збереження промпта:', err); showError(err.message || 'Помилка збереження промпта'); }
     setSaving(false);
   };
 
@@ -160,7 +163,7 @@ function PromptsTab() {
     try {
       await fetch(`/api/crm/ai/prompts?id=${id}`, { method: 'DELETE' });
       fetchPrompts();
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка видалення промпта:', err); showError(err.message || 'Помилка видалення промпта'); }
   };
 
   const handleToggleActive = async (prompt: PromptConfig) => {
@@ -181,11 +184,18 @@ function PromptsTab() {
         }),
       });
       fetchPrompts();
-    } catch { /* */ }
+    } catch (err: any) { console.error('Помилка перемикання промпта:', err); showError(err.message || 'Помилка перемикання промпта'); }
   };
+
+  const errorToast = error ? (
+    <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+      ⚠️ {error}
+    </div>
+  ) : null;
 
   if (editing) {
     return (
+      <>{errorToast}
       <div className="crm-prompt-editor">
         <div className="crm-prompt-editor-header">
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -294,11 +304,13 @@ function PromptsTab() {
           </button>
         </div>
       </div>
+    </>
     );
   }
 
   return (
     <div>
+      {errorToast}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>AI Промпти</h3>
@@ -386,6 +398,9 @@ function TrainingTab() {
   const [records, setRecords] = useState<TrainingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
 
   useEffect(() => {
     (async () => {
@@ -396,7 +411,7 @@ function TrainingTab() {
           const data = await res.json();
           setRecords(data.training || []);
         }
-      } catch { /* */ }
+      } catch (err: any) { console.error('Помилка завантаження training data:', err); showError(err.message || 'Помилка завантаження даних тренування'); }
       setLoading(false);
     })();
   }, []);
@@ -410,6 +425,11 @@ function TrainingTab() {
 
   return (
     <div>
+      {error && (
+        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
+          ⚠️ {error}
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Training Data</h3>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
