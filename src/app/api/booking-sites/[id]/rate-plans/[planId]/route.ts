@@ -38,7 +38,9 @@ export async function PATCH(
     for (const key of allowed) {
       if (key in body) {
         setClauses.push(`${key} = ?`);
-        const val = body[key];
+        let val = body[key];
+        // Normalise legacy 'derived' → 'dependent' (DB CHECK constraint)
+        if (key === 'pricing_mode' && val === 'derived') val = 'dependent';
         values.push(jsonFields.includes(key) && typeof val !== 'string'
           ? JSON.stringify(val)
           : val ?? null);

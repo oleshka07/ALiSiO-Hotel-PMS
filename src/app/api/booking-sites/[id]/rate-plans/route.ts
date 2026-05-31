@@ -79,6 +79,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       db.prepare('UPDATE site_rate_plans SET is_default = 0 WHERE site_id = ?').run(id);
     }
 
+    // Normalise legacy 'derived' value → 'dependent' (DB CHECK constraint)
+    const safePricingMode = pricing_mode === 'derived' ? 'dependent' : pricing_mode;
+
     const result = db.prepare(`
       INSERT INTO site_rate_plans (
         site_id, name, is_default, cancellation_policy, payment_schedule,
@@ -91,11 +94,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       JSON.stringify(payment_schedule),
       JSON.stringify(meals_included),
       min_days_before_checkin, same_day_cutoff_hour,
-      min_stay, max_stay, pricing_mode,
+      min_stay, max_stay, safePricingMode,
       JSON.stringify(applied_listings),
       pricing_modifier_percent, pricing_modifier_type, derived_from_plan_id,
       valid_weekdays ? JSON.stringify(valid_weekdays) : null
     );
+
 
     const plan = db.prepare('SELECT * FROM site_rate_plans WHERE rowid = ?').get(result.lastInsertRowid) as any;
     try { plan.payment_schedule = JSON.parse(plan.payment_schedule); } catch { /* */ }
