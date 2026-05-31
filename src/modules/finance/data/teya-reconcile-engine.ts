@@ -118,11 +118,21 @@ export async function runTeyaSyncTickIfDue(db: any): Promise<boolean> {
       }
     })
     .catch((e: any) => {
-      console.log('[Teya tick] error:', e.message);
+      // Suppress repeated log noise for scope errors that require Teya portal fix
+      if (e.message?.includes('invalid_scope') || e.message?.includes('No valid scope')) {
+        if (!runTeyaSyncTickIfDue._scopeWarned) {
+          console.warn('[Teya tick] OAuth scope error (will not repeat):', e.message,
+            '\n  → Add "transactions/list" scope in Teya developer portal to enable auto-reconciliation.');
+          runTeyaSyncTickIfDue._scopeWarned = true;
+        }
+      } else {
+        console.log('[Teya tick] error:', e.message);
+      }
     });
 
   return true;
 }
+runTeyaSyncTickIfDue._scopeWarned = false as boolean;
 
 /**
  * Pulls transactions from Teya and reconciles against fin_operations.

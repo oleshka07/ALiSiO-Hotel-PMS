@@ -517,7 +517,9 @@ export default function GuestPage() {
     script.setAttribute('data-container', widgetId);
     script.setAttribute('data-nonce', nonce);
     if (r?.id) script.setAttribute('data-reservation', r.id);
-    if (widgetService === 'sauna') script.setAttribute('data-offer', 'GLAMPING');
+    if (r?.check_in) script.setAttribute('data-checkin', r.check_in);
+    if (r?.check_out) script.setAttribute('data-checkout', r.check_out);
+    if (widgetService === 'sauna') script.setAttribute('data-promo', 'GLAMPING');
     container.appendChild(script);
 
     return () => { container.innerHTML = ''; };

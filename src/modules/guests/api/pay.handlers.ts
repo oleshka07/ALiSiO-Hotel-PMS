@@ -82,8 +82,8 @@ async function handleSinglePay(
       description: `${serviceName} × ${effectiveQty} — ${guestName}`,
       lineItems: [{ description: serviceName, quantity: effectiveQty, unitPriceMajor: service.price }],
       metadata: { order_ids: orderIds.join(','), reservation_id: reservation.id, service_id: serviceId, source: 'guest_page' },
-      successUrl: `${baseUrl}/guest/${token}?payment=success`,
-      cancelUrl: `${baseUrl}/guest/${token}?payment=cancel`,
+      successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
+      cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });
     for (const oid of orderIds) actionsRepo.updateOrderPaymentId(oid, session.sessionId);
     console.log(`[Guest Pay] Teya session created: ${session.sessionId}`);
@@ -267,8 +267,8 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
         reservation_id: reservation.id,
         source: 'guest_cart',
       },
-      successUrl: `${baseUrl}/guest/${token}?payment=success`,
-      cancelUrl: `${baseUrl}/guest/${token}?payment=cancel`,
+      successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
+      cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });
     for (const orderId of orderIds) actionsRepo.updateOrderPaymentId(orderId, session.sessionId);
     for (const bsoId of bsoOrderIds) actionsRepo.updateBookingServiceOrderPaymentId(bsoId, session.sessionId);

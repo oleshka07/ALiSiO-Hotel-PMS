@@ -4593,6 +4593,20 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.error('[migration] booking_activity_log FK removal (non-fatal):', e?.message); }
 
+  // ═══ Evidenční kniha (Guest Registry) columns ═══
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN visa_number TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN purpose_of_stay TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN is_foreigner INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN fee_amount REAL DEFAULT 0"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN fee_exempt INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN fee_exempt_reason TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_reported INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_reported_at TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_report_ref TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_given INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_at TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_ip TEXT"); } catch { /* already exists */ }
+
 }
 
 

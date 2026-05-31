@@ -104,7 +104,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
             provider: 'teya',
             intentKind,
             paymentId: refs.sessionId || refs.transactionId,
-            amount: refs.amount > 1000 ? refs.amount / 100 : refs.amount,
+            amount: Math.round(refs.amount / 100),
             currency: refs.currency,
           })
           .catch((e: any) => console.error('[Teya Webhook] emit completed error:', e));
@@ -193,7 +193,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   }
   console.log('[Teya Webhook] Processing payment success:', { eventType, sessionId, transactionId, amount, currency });
 
-  const result1 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(paymentRef);
+  const result1 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(paymentRef);
   const result2 = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(paymentRef);
   const result3 = db.prepare("UPDATE reservations SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now') WHERE id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ?) AND status = 'tentative'").run(paymentRef);
   const result4 = db.prepare("UPDATE reservations SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now') WHERE payment_id = ? AND status = 'tentative'").run(paymentRef);
@@ -215,7 +215,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   let effectiveRef = paymentRef;
   if (result2.changes === 0 && !result1.changes && transactionId && transactionId !== paymentRef) {
     const txFallback  = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
-    const txFallback2 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
+    const txFallback2 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
     txSoChanges = txFallback.changes;
     txBsoChanges = txFallback2.changes;
     if (txSoChanges > 0 || txBsoChanges > 0) effectiveRef = transactionId;
@@ -441,7 +441,7 @@ function sendBookingPaymentTG(db: any, paymentRef: string, amount: number, curre
     `).get(paymentRef) as any;
     if (!res) { console.log('[Teya Webhook] sendBookingPaymentTG: no reservation found for', paymentRef); return; }
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
-    const displayAmount = amount > 100 ? Math.round(amount / 100) : amount; // Teya sends minor units
+    const displayAmount = Math.round(amount / 100); // Teya always sends minor units (cents)
     const text = [
       `✅ <b>Оплата бронювання підтверджена</b>`, ``,
       `👤 ${esc(res.first_name)} ${esc(res.last_name)}`,

@@ -11,6 +11,7 @@
  */
 import { getDb } from '@/lib/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { maskLastName, maskEmail } from '@core/security/pii-mask';
 
 /* ────────────────────────────────────────────────────────
    Stage ordering — higher index = further in pipeline
@@ -246,8 +247,8 @@ function notifyStageChange(db: any, leadId: string, fromStage: string, toStage: 
   const text = [
     `${stageLabels[toStage] || toStage}`,
     ``,
-    `👤 <b>${esc(lead.first_name)} ${esc(lead.last_name || '')}</b>`,
-    lead.email ? `📧 ${esc(lead.email)}` : '',
+    `👤 <b>${esc(lead.first_name)} ${esc(maskLastName(lead.last_name))}</b>`,
+    lead.email ? `📧 ${esc(maskEmail(lead.email))}` : '',
     lead.check_in_date ? `📅 ${lead.check_in_date} — ${lead.check_out_date || '?'}` : '',
     lead.estimated_value ? `💰 ${lead.estimated_value} ${lead.currency || 'CZK'}` : '',
     ``,

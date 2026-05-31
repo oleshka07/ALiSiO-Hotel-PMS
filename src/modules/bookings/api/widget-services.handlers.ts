@@ -201,7 +201,7 @@ export async function bookWidgetService(request: NextRequest) {
           if (offer.valid_until && now > offer.valid_until) applicable = false;
 
           if (applicable) {
-            appliedCoupon = offer.code;
+            appliedPromo = offer.code;
             if (offer.discount_type === 'fixed_price') {
               pricePerHour = offer.offer_amount;
             } else if (offer.discount_type === 'percentage') {

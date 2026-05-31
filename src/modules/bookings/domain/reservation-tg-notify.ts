@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { maskLastName } from '@core/security/pii-mask';
 
 export interface NotifyOptions {
   sourceLabel?: string;
@@ -36,7 +37,7 @@ export function notifyReservationCreated(reservationId: string, options: NotifyO
       return;
     }
 
-    const guestName = [r.first_name, r.last_name].filter(Boolean).map(escHtml).join(' ') || 'Гість невідомий';
+    const guestName = [r.first_name, r.first_name ? maskLastName(r.last_name) : r.last_name].filter(Boolean).map(escHtml).join(' ') || 'Гість невідомий';
     const unit = r.unit_name
       ? `${escHtml(r.unit_name)}${r.unit_code ? ` (${escHtml(r.unit_code)})` : ''}`
       : 'Юніт не призначено';
@@ -47,8 +48,6 @@ export function notifyReservationCreated(reservationId: string, options: NotifyO
       `${emoji} <b>Нове бронювання</b> · ${escHtml(sourceLabel)}`,
       ``,
       `👤 ${guestName}`,
-      r.email ? `📧 ${escHtml(r.email)}` : '',
-      r.phone ? `📞 ${escHtml(r.phone)}` : '',
       `🏠 ${unit}${r.category_type ? ` · ${escHtml(r.category_type)}` : ''}`,
       `📅 ${r.check_in} → ${r.check_out}${r.nights ? ` (${r.nights}н)` : ''}`,
       r.adults ? `👥 ${r.adults} дорослих${r.children ? ` + ${r.children} дітей` : ''}` : '',

@@ -60,13 +60,15 @@ export async function handlePaymentReturn(req: Request) {
           db.prepare(`
             UPDATE service_orders SET payment_status = 'paid', status = 'confirmed'
             WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
-          `).run(reservationId);
+              AND (payment_id = ? OR payment_id = 'pending_teya' OR payment_id IS NULL)
+          `).run(reservationId, sessionId);
         } catch { /* table may not exist */ }
         try {
           db.prepare(`
             UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed'
             WHERE reservation_id = ? AND payment_status IN ('pending', 'unpaid', 'none')
-          `).run(reservationId);
+              AND (payment_id = ? OR payment_id = 'pending_teya' OR payment_id IS NULL)
+          `).run(reservationId, sessionId);
         } catch { /* table may not exist */ }
 
         // Mark the booking_draft as paid so the log table stays in sync

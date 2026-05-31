@@ -4,6 +4,7 @@ import * as registrationRepo from '../data/registration.repo';
 // TODO: replace with @channels eventBus event when channels module is migrated
 import { checkRateLimit } from '@/lib/rate-limit';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { maskFullName, maskDob, maskDocNumber, maskDobForSheets, maskDocNumberForSheets } from '@core/security/pii-mask';
 
 /** POST to Google Apps Script (same endpoint as the Telegram bot uses) */
 async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void> {
@@ -20,12 +21,12 @@ async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void
       full_name: `${guest.lastName || ''} ${guest.firstName || ''}`.trim(),
       surname: guest.lastName || '',
       first_name: guest.firstName || '',
-      birth_date: guest.dateOfBirth || '',
+      birth_date: maskDobForSheets(guest.dateOfBirth),
       doc_type: guest.documentType || '',
-      doc_number: guest.documentNumber || '',
+      doc_number: maskDocNumberForSheets(guest.documentNumber),
       country_code: '',
       nationality: guest.nationality || '',
-      address: guest.address || '',
+      address: '',  // PII minimization — full address stays in PMS only
       visa_number: '',
       check_in: reservation.check_in || '',
       check_out: reservation.check_out || '',
@@ -122,11 +123,10 @@ export async function registerGuests(
       const guestLines = registeredGuests.map((g: any, i: number) => {
         const docLabel: Record<string, string> = { passport: 'Passport', id_card: 'ID Card', driving_license: 'Driving Licence' };
         return [
-          `\n👤 <b>Гість ${i + 1}:</b> ${escHtml(g.first_name)} ${escHtml(g.last_name)}`,
-          g.date_of_birth ? `🎂 ${g.date_of_birth}` : '',
-          g.document_type ? `🪪 ${docLabel[g.document_type] || g.document_type}: ${escHtml(g.document_number || '')}` : '',
-          g.nationality ? `🌍 Країна: ${escHtml(g.nationality)}` : '',
-          g.address ? `🏠 Адреса: ${escHtml(g.address)}` : '',
+          `\n👤 <b>Гість ${i + 1}:</b> ${escHtml(maskFullName(g.first_name, g.last_name))}`,
+          g.date_of_birth ? `🎂 ${maskDob(g.date_of_birth)}` : '',
+          g.document_type ? `🪪 ${docLabel[g.document_type] || g.document_type}: ${maskDocNumber(g.document_number)}` : '',
+          g.nationality ? `🌍 ${escHtml(g.nationality)}` : '',
         ].filter(Boolean).join('\n');
       }).join('\n');
 
@@ -138,10 +138,8 @@ export async function registerGuests(
         `💰 ${reservation.total_price} ${reservation.currency} | ${escHtml(reservation.source || 'Direct')}`,
         `📊 Статус: ${reservation.status} | Оплата: ${reservation.payment_status}`,
         ``,
-        `━━━ Контакти з бронювання ━━━`,
-        `👤 ${escHtml(reservation.booking_first_name)} ${escHtml(reservation.booking_last_name)}`,
-        reservation.booking_email ? `📧 ${escHtml(reservation.booking_email)}` : '',
-        reservation.booking_phone ? `📞 ${reservation.booking_phone}` : '',
+        `━━━ Бронювання ━━━`,
+        `👤 ${escHtml(maskFullName(reservation.booking_first_name, reservation.booking_last_name))}`,
         ``,
         `━━━ Зареєстровані гості (${registeredGuests.length}/${reservation.adults}) ━━━`,
         guestLines,
