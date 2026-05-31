@@ -340,11 +340,11 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Установіть ціни незалежно для цього тарифного плану.</div>
             </div>
           </label>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, border: '1px solid var(--border-primary)', borderRadius: 8, background: form.pricing_mode === 'derived' ? 'var(--surface-secondary)' : 'transparent' }}>
-            <input type="radio" name={`pricing_${isNew ? 'new' : plan?.id}`} value="derived" checked={form.pricing_mode === 'derived'} onChange={() => setForm(f => ({ ...f, pricing_mode: 'derived' }))} style={{ marginTop: 2 }} />
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, border: '1px solid var(--border-primary)', borderRadius: 8, background: form.pricing_mode === 'dependent' ? 'var(--surface-secondary)' : 'transparent' }}>
+            <input type="radio" name={`pricing_${isNew ? 'new' : plan?.id}`} value="dependent" checked={form.pricing_mode === 'dependent'} onChange={() => setForm(f => ({ ...f, pricing_mode: 'dependent' }))} style={{ marginTop: 2 }} />
             <div>
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Ціна цього тарифного плану залежить від цін інших тарифних планів.</div>
-              {form.pricing_mode === 'derived' && (
+              {form.pricing_mode === 'dependent' && (
                 <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14 }}>Ціна становить</span>
                   <input type="number" min="0" max="100" className="form-input" style={{ width: 80, padding: '6px 10px' }} value={form.pricing_modifier_percent} onChange={e => setForm(f => ({ ...f, pricing_modifier_percent: +e.target.value }))} />
