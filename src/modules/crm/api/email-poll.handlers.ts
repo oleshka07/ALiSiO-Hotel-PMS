@@ -75,10 +75,30 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
 
   let classification;
   if (bookingData.isBookingCom) {
+    // --- Booking.com email filter ---
+    // Only actionable emails: new reservations or guest messages.
+    // Skip system notifications (modifications, confirmations, cancellations,
+    // reminders, marketing, review requests) — we can't reply to those via Telegram.
+    const isActionable = bookingData.isNewReservation || !!bookingData.guestMessage;
+
+    if (!isActionable) {
+      // Check if this is a modification/cancellation for an existing reservation
+      // so we can still update the reservation record without creating a CRM lead.
+      const isModOrCancel = isBookingComModification(email.subject, email.textBody);
+      if (isModOrCancel && bookingData.confirmationId) {
+        console.log(`[Email:${email.accountId}] Booking.com modification/cancellation for ${bookingData.confirmationId} — skipping CRM lead`);
+      } else {
+        console.log(`[Email:${email.accountId}] Booking.com system email (no guest message, not new reservation) — skipping`);
+      }
+      results.booking_com_parsed++;
+      db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'booking_system')").run(email.messageId);
+      return;
+    }
+
     classification = {
       category: 'guest' as const,
       confidence: 1.0,
-      reason: 'Booking.com notification',
+      reason: bookingData.isNewReservation ? 'Booking.com new reservation' : 'Booking.com guest message',
       guestName: bookingData.guestName || email.from.name,
       language: bookingData.language || 'en',
     };
@@ -526,4 +546,36 @@ function autoCreateReservationFromEmail(db: any, leadId: string, data: any, emai
   } catch (err: any) {
     console.error(`[AutoRes] Error:`, err.message);
   }
+}
+
+/* ────────────────────────────────────────────────────────
+   Detect Booking.com modification / cancellation / system emails
+   These are NOT actionable from CRM (can't reply via Telegram).
+   ──────────────────────────────────────────────────────── */
+function isBookingComModification(subject: string, body: string): boolean {
+  const s = (subject || '').toLowerCase();
+  const b = (body || '').substring(0, 500).toLowerCase();
+
+  const patterns = [
+    // Modifications
+    'зміна бронювання', 'modification', 'змінено', 'modified', 'änderung', 'změna',
+    // Cancellations
+    'скасування', 'скасовано', 'cancellation', 'cancelled', 'canceled', 'stornierung', 'zrušení',
+    // Confirmations (not new — already confirmed)
+    'підтвердження бронювання', 'confirmation of booking',
+    // Reminders
+    'нагадування', 'reminder', 'erinnerung', 'připomínka',
+    // Reviews / feedback
+    'відгук', 'review', 'bewertung', 'recenze', 'оцінка',
+    // Payment / commission
+    'комісія', 'commission', 'provision', 'invoice from booking',
+    // No-show
+    'незаїзд', 'no-show', 'no show',
+    // Marketing
+    'special offer', 'promotion', 'deal', 'партнерська програма',
+    // System
+    'rate plan', 'тарифний план', 'availability', 'extranet',
+  ];
+
+  return patterns.some(p => s.includes(p) || b.includes(p));
 }
