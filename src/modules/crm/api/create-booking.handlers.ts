@@ -160,7 +160,7 @@ export async function convertLeadToBooking(
 
     // 5. Link CRM lead → reservation
     db.prepare(`
-      UPDATE crm_leads SET reservation_id = ?, guest_id = ?, stage = 'payment_pending',
+      UPDATE crm_leads SET reservation_id = ?, guest_id = ?, stage = 'negotiation',
         estimated_value = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(reservationIds[0], guestId, totalPrice, leadId);

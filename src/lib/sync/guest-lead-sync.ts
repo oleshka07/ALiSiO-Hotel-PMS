@@ -8,6 +8,7 @@
  * Both stay in sync via these functions.
  */
 import { getDb } from '@/lib/db';
+import { updateLeadStage } from '@/lib/crm/stage-transitions';
 
 /* ────────────────────────────────────────────────────────
    Find or create a guest from lead data
@@ -220,18 +221,14 @@ export function syncReservationStages(): { updated: number } {
     }
     
     if (newStage) {
-      db.prepare(`
-        UPDATE crm_leads SET stage = ?, updated_at = datetime('now') WHERE id = ?
-      `).run(newStage, lead.lead_id);
-      
-      // Record stage history
-      const histId = `sh_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-      db.prepare(`
-        INSERT INTO crm_stage_history (id, lead_id, from_stage, to_stage, trigger, notes)
-        VALUES (?, ?, ?, ?, 'auto_sync', 'Reservation status sync')
-      `).run(histId, lead.lead_id, lead.current_stage, newStage);
-      
-      updated++;
+      const transitioned = updateLeadStage(
+        lead.lead_id,
+        lead.current_stage,
+        newStage,
+        'auto_sync',
+        `Reservation status sync: ${lead.res_status}`,
+      );
+      if (transitioned) updated++;
     }
   }
   

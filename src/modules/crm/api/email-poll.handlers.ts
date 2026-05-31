@@ -120,12 +120,17 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
   // --- Vrbo / Homeaway (PowerBO) parsing ---
   const vrboData = parseVrboEmail(email.textBody, email.subject);
   if (vrboData.isVrbo && lead.id) {
-    // Enrich lead with Vrbo data
-    const sets = [];
-    if (vrboData.guestName) sets.push(`name = '${vrboData.guestName.replace(/'/g, "''")}'`);
-    if (vrboData.guestPhone) sets.push(`phone = '${vrboData.guestPhone}'`);
-    if (sets.length > 0) {
-      db.prepare(`UPDATE crm_leads SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(lead.id);
+    // Enrich lead with Vrbo data (parameterized to prevent SQL injection)
+    if (vrboData.guestName) {
+      const parts = vrboData.guestName.trim().split(/\s+/);
+      const firstName = parts[0] || '';
+      const lastName = parts.slice(1).join(' ') || '';
+      db.prepare(`UPDATE crm_leads SET first_name = ?, last_name = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(firstName, lastName, lead.id);
+    }
+    if (vrboData.guestPhone) {
+      db.prepare(`UPDATE crm_leads SET phone = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(vrboData.guestPhone, lead.id);
     }
 
     // Auto-create reservation for Vrbo (Resort by default)
