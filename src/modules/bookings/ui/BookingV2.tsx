@@ -118,20 +118,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
           <div className={`v3-cal-wrap ${calOpen ? 'open' : ''}`}>
             <div className="v3-cal-head">
-              <div className="v3-cal-month">
-                {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString({ uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' }[lang] || 'uk-UA', { month: 'long', year: 'numeric' })}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div className="v3-cal-nav">
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
-                </div>
-                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </div>
+              <div className="v3-cal-title">{t.selectDates || 'Оберіть дати'}</div>
+              <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
 
             <div className="v3-cal-months-grid">
@@ -150,7 +142,35 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
                 return (
                   <div key={offset} className="v3-month-section">
-                    <div className="v3-month-divider">{monthName}</div>
+                    <div className="v3-month-header">
+                      <button
+                        type="button"
+                        className="v3-month-nav-btn prev"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCalMonthOffset(o => o - 1);
+                        }}
+                        title={lang === 'uk' ? 'Попередній місяць' : 'Previous month'}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <div className="v3-month-title">{monthName}</div>
+                      <button
+                        type="button"
+                        className="v3-month-nav-btn next"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCalMonthOffset(o => o + 1);
+                        }}
+                        title={lang === 'uk' ? 'Наступний місяць' : 'Next month'}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M6 12L10 8L6 4" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
                     <div className="v3-cal-weekdays">
                       {[...t.dayNamesShort.slice(1), t.dayNamesShort[0]].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
                     </div>
@@ -270,8 +290,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
           <div className="v3-offer-section">
             {!offerApplied && (
-              <button className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
-                {showOffer ? '−' : '+'} {t.couponCode} / {t.certificateCode}
+              <button type="button" className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
+                <span style={{ fontSize: '14px', marginRight: '2px' }}>🏷️</span> {t.couponCode} / {t.certificateCode}
               </button>
             )}
             {offerApplied && (() => {
@@ -312,8 +332,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             {offerApplied?.offerType === 'package' && offerApplied.bundle?.allowed_promo_codes?.length > 0 && (
               <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border-primary)' }}>
                 {!extraCouponApplied && (
-                  <button className="v3-offer-toggle" onClick={() => setShowExtraOffer(!showExtraOffer)}>
-                    {showExtraOffer ? '−' : '+'} {t.couponCode}
+                  <button type="button" className="v3-offer-toggle" onClick={() => setShowExtraOffer(!showExtraOffer)}>
+                    <span style={{ fontSize: '14px', marginRight: '2px' }}>🏷️</span> {t.couponCode}
                   </button>
                 )}
                 {extraCouponApplied && (
