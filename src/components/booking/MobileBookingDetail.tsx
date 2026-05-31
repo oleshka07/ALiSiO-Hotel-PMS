@@ -129,7 +129,9 @@ export default function MobileBookingDetail({
   const regNeeded = b.adults || 1;
   const regBadge = `${registrations.length}/${regNeeded}`;
 
-  const sourceInfo = sourceMap[b.source] || { label: b.source || 'Direct', color: '#6B7392' };
+  const sourceInfo = sourceMap[b.source] || (b.source === 'widget' || b.source?.startsWith('widget:')
+    ? { label: '🌐 Віджет', color: '#6366f1' }
+    : { label: b.source || 'Direct', color: '#6B7392' });
 
   // Lock body scroll when sheet is open
   useEffect(() => {

@@ -262,10 +262,45 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (isPreview) { setSubmitting(true); await new Promise(r => setTimeout(r,1000)); setReservation({ success:true, reservationId:'MOCK-123', unitName:selectedUnit?.name||'Mock', checkIn, checkOut, nights, totalPrice:totalWithDiscount, currency:'Kc' }); setSubmitting(false); goToStep(4); return; }
     setSubmitting(true);
     try { 
+      // 1. Fetch security handshake token to prevent reservation spam
+      let handshakeToken = '';
+      try {
+        const hsRes = await fetch(`${API_BASE}/api/booking/handshake?siteSlug=${siteSlug || ''}&siteId=${siteId || ''}`);
+        if (hsRes.ok) {
+          const hsData = await hsRes.json();
+          handshakeToken = hsData.token || '';
+        }
+      } catch (e) {
+        console.error('Handshake failed:', e);
+      }
+
       // Use pre-resolved UTM params (captured via postMessage or own URL on mount)
       const utmParams = resolvedUtmParams;
 
-      const res = await fetch(`${API_BASE}/api/booking/reserve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ unitId:selectedUnitId, checkIn, checkOut, adults, children:kids, firstName, lastName, email, phone, siteId:siteId||undefined, couponCode:offerApplied?.code||undefined, extraCouponCode:extraCouponApplied?.code||undefined, currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', utmParams }) });
+      const res = await fetch(`${API_BASE}/api/booking/reserve`, { 
+        method:'POST', 
+        headers:{
+          'Content-Type':'application/json',
+          ...(handshakeToken ? { 'X-Handshake-Token': handshakeToken } : {})
+        }, 
+        body: JSON.stringify({ 
+          unitId:selectedUnitId, 
+          checkIn, 
+          checkOut, 
+          adults, 
+          children:kids, 
+          firstName, 
+          lastName, 
+          email, 
+          phone, 
+          siteId:siteId||undefined, 
+          couponCode:offerApplied?.code||undefined, 
+          extraCouponCode:extraCouponApplied?.code||undefined, 
+          currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', 
+          utmParams,
+          handshakeToken
+        }) 
+      });
       if (res.ok) { 
         const data = await res.json(); 
         setReservation(data); 

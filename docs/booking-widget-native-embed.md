@@ -8,14 +8,14 @@ This document outlines the architectural design, security measures, and implemen
 
 To support Microsoft Clarity, Facebook Pixel, and Google Tag Manager (GTM) event tracking, the widget must run directly in the host website's DOM. 
 
-We will introduce a **Unified Script Loader** (`widget-loader.js`) and a **Standalone Compiled Bundle** (`alisio-widget.js` + `alisio-widget.css`) while keeping the Next.js `/w/[siteSlug]` page route intact for iframe backwards compatibility.
+We will introduce a **Unified Script Loader** (`native-embed.js`) and a **Standalone Compiled Bundle** (`native-bundle.js` + `native-bundle.css`) while keeping the Next.js `/w/[siteSlug]` page route intact for iframe backwards compatibility.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │ HOST WEBSITE (e.g., glamping.cz)                                       │
 │                                                                        │
 │  Option A (Existing): <iframe src="https://pms.cz/w/glamping-vip">     │
-│  Option B (New):      <div id="alisio-widget" data-site="vip">         │
+│  Option B (New):      <div id="alisio-booking-widget" data-site="vip"> │
 │                       └─► Dynamic Injection (Light DOM)                │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │ Fetch Assets & API Requests
@@ -23,8 +23,8 @@ We will introduce a **Unified Script Loader** (`widget-loader.js`) and a **Stand
 ┌────────────────────────────────────────────────────────────────────────┐
 │ ALiSiO PMS BACKEND (pms.cz)                                            │
 │                                                                        │
-│  - Static Assets: /public/widget-loader.js                             │
-│                  /public/alisio-widget.js & alisio-widget.css          │
+│  - Static Assets: /public/widget/native-embed.js                       │
+│                  /public/widget/native-bundle.js & native-bundle.css   │
 │  - API Endpoints: /api/booking/availability                            │
 │                  /api/booking/reserve                                  │
 └────────────────────────────────────────────────────────────────────────┘
@@ -43,7 +43,7 @@ Existing clients who currently use iframes must experience zero disruption.
 
 ## 3. Implementation Blueprint
 
-### Step A: The Loader Script (`public/widget-loader.js`)
+### Step A: The Loader Script (`public/widget/native-embed.js`)
 This lightweight loader is placed on the client's site. It detects the target container, loads the React widget bundle dynamically, and injects it into the DOM.
 
 ```javascript
@@ -58,16 +58,16 @@ This lightweight loader is placed on the client's site. It detects the target co
   // 1. Inject Stylesheet
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = `${apiHost}/alisio-widget.css`;
+  link.href = `${apiHost}/widget/native-bundle.css`;
   document.head.appendChild(link);
 
   // 2. Load and Mount Bundle
   const script = document.createElement('script');
-  script.src = `${apiHost}/alisio-widget.js`;
+  script.src = `${apiHost}/widget/native-bundle.js`;
   script.async = true;
   script.onload = function() {
-    if (window.AlisioWidget) {
-      window.AlisioWidget.init({
+    if (window.AlisioBookingWidget) {
+      window.AlisioBookingWidget.init({
         target: container,
         siteSlug: siteSlug,
         lang: lang,
@@ -81,8 +81,8 @@ This lightweight loader is placed on the client's site. It detects the target co
 
 ### Step B: Build/Compilation Script
 We will add a mini bundler script (using `esbuild` or `vite` configured for library mode) that compiles `BookingV2.tsx` and its dependencies into static assets in the `/public` folder:
-* Output JS: `public/alisio-widget.js`
-* Output CSS: `public/alisio-widget.css`
+* Output JS: `public/widget/native-bundle.js`
+* Output CSS: `public/widget/native-bundle.css`
 
 ---
 

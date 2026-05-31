@@ -1002,8 +1002,12 @@ function CalendarDesktop() {
               <div><span style={{ color: pm.color }}>{pm.icon} {pm.label}</span></div>
             </div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086', fontSize: 11 }}>
-                {sourceMap[b.source]?.label || b.source}
+              <span className="badge" style={{
+                background: (sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086')) + '22',
+                color: sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086'),
+                fontSize: 11
+              }}>
+                {sourceMap[b.source]?.label || (b.source === 'widget' || b.source?.startsWith('widget:') ? '🌐 Віджет' : b.source)}
               </span>
               <span className={`badge ${STATUS_MAP[b.status]?.badge}`} style={{ fontSize: 11 }}>{STATUS_MAP[b.status]?.label || b.status}</span>
             </div>

@@ -757,7 +757,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 10px;
   padding: 6px 0;
   margin-bottom: 8px;
 }
@@ -769,12 +769,12 @@
   color: var(--ink);
   text-transform: capitalize;
   text-align: center;
-  min-width: 130px;
+  min-width: 100px;
 }
 
 .v3-month-nav-btn {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--card);
@@ -786,6 +786,7 @@
   transition: all 0.2s ease;
   box-sizing: border-box;
   outline: none;
+  touch-action: manipulation;
 }
 
 .v3-month-nav-btn:hover {

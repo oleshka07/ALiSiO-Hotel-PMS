@@ -26,11 +26,47 @@ export async function getAvailability(request: NextRequest) {
 
     const bundleId = searchParams.get('bundleId') || '';
 
-    // Resolve siteId from siteSlug if only slug is provided
+    // Resolve siteId and check origin CORS whitelist
     let siteIdObj = siteId;
-    if (!siteIdObj && siteSlug) {
-      const site = db.prepare("SELECT id FROM booking_sites WHERE (slug = ? OR id = ?) AND status != 'deleted'").get(siteSlug, siteSlug) as any;
-      if (site) siteIdObj = site.id;
+    let allowedSiteUrl: string | null = null;
+    const lookupSite = siteId || siteSlug;
+    if (lookupSite) {
+      const site = db.prepare("SELECT id, site_url FROM booking_sites WHERE (slug = ? OR id = ?) AND status != 'deleted'").get(lookupSite, lookupSite) as any;
+      if (site) {
+        siteIdObj = site.id;
+        allowedSiteUrl = site.site_url;
+      }
+    }
+
+    const origin = request.headers.get('origin');
+    const dynamicHeaders: Record<string, string> = {
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
+    if (origin) {
+      if (allowedSiteUrl) {
+        try {
+          const originHost = new URL(origin).hostname;
+          const allowedHost = new URL(allowedSiteUrl.startsWith('http') ? allowedSiteUrl : `https://${allowedSiteUrl}`).hostname;
+          
+          if (
+            originHost !== allowedHost && 
+            !originHost.endsWith(`.${allowedHost}`) && 
+            originHost !== 'localhost' && 
+            originHost !== '127.0.0.1'
+          ) {
+            return NextResponse.json({ error: 'Origin domain not authorized for this widget' }, { status: 403, headers: CORS_HEADERS });
+          }
+          dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+        } catch (e) {
+          // ignore malformed URLs
+        }
+      } else {
+        dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+      }
+    } else {
+      dynamicHeaders['Access-Control-Allow-Origin'] = '*';
     }
 
     let activeRatePlan: any = null;
@@ -332,7 +368,7 @@ export async function getAvailability(request: NextRequest) {
           try { return JSON.parse(activeRatePlan.included_services_json || '[]'); } catch { return []; }
         })()
       } : null,
-    }, { headers: CORS_HEADERS });
+    }, { headers: dynamicHeaders });
   } catch (error: any) {
     console.error('GET /api/booking/availability error:', error?.message || error);
     return NextResponse.json({ error: 'Failed to check availability' }, { status: 500, headers: CORS_HEADERS });

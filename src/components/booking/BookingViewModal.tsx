@@ -332,7 +332,7 @@ export default function BookingViewModal({
                   </>
                 )}
               </div>
-              <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || '#6c7086') + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceMap[b.source]?.color || '#6c7086', fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || b.source}</span>
+              <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086')) + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086'), fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || (b.source === 'widget' || b.source?.startsWith('widget:') ? '🌐 Віджет' : b.source)}</span>
               <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
               {/* Dates — inline edit */}
               {!datesEditOpen ? (

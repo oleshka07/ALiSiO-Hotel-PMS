@@ -33,13 +33,86 @@ export async function createWidgetReservation(request: NextRequest) {
     const db = getDb();
     const body = await request.json();
 
+    const siteId = body.siteId;
+    const siteSlug = body.siteSlug;
+
+    // Failsafe table creation for handshakes
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS widget_handshakes (
+        token TEXT PRIMARY KEY,
+        site_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
+      )
+    `).run();
+
+    // Check allowed origin from DB
+    let allowedSiteUrl: string | null = null;
+    const searchSite = siteId || siteSlug;
+    if (searchSite) {
+      const site = db.prepare("SELECT site_url FROM booking_sites WHERE (id = ? OR slug = ?) AND status != 'deleted'").get(searchSite, searchSite) as { site_url: string | null } | undefined;
+      if (site) {
+        allowedSiteUrl = site.site_url;
+      }
+    }
+
+    const origin = request.headers.get('origin');
+    const dynamicHeaders: Record<string, string> = {
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Handshake-Token',
+    };
+    
+    if (origin) {
+      if (allowedSiteUrl) {
+        try {
+          const originHost = new URL(origin).hostname;
+          const allowedHost = new URL(allowedSiteUrl.startsWith('http') ? allowedSiteUrl : `https://${allowedSiteUrl}`).hostname;
+          
+          if (
+            originHost !== allowedHost && 
+            !originHost.endsWith(`.${allowedHost}`) && 
+            originHost !== 'localhost' && 
+            originHost !== '127.0.0.1'
+          ) {
+            return NextResponse.json({ error: 'Origin domain not authorized for this widget' }, { status: 403, headers: CORS_HEADERS });
+          }
+          dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+        } catch (e) {
+          // ignore malformed URLs
+        }
+      } else {
+        dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+      }
+    } else {
+      dynamicHeaders['Access-Control-Allow-Origin'] = '*';
+    }
+
+    // Verify and consume handshake token
+    if (siteId || siteSlug) {
+      const handshakeToken = request.headers.get('x-handshake-token') || body.handshakeToken || '';
+      if (!handshakeToken) {
+        return NextResponse.json({ error: 'Security handshake token required' }, { status: 403, headers: dynamicHeaders });
+      }
+      
+      const handshake = db.prepare(`
+        SELECT token FROM widget_handshakes 
+        WHERE token = ? AND expires_at > datetime('now')
+      `).get(handshakeToken) as { token: string } | undefined;
+
+      if (!handshake) {
+        return NextResponse.json({ error: 'Security handshake expired or invalid. Please retry.' }, { status: 403, headers: dynamicHeaders });
+      }
+
+      // Single-use token: consume it immediately
+      db.prepare('DELETE FROM widget_handshakes WHERE token = ?').run(handshakeToken);
+    }
+
     const {
       unitId, checkIn, checkOut,
       adults = 2, children = 0,
       hasPet = false,
       firstName, lastName, email, phone,
       couponCode, certificateCode, extraCouponCode,
-      siteId,
       currency: clientCurrency,
       utmParams: rawUtmParams,
     } = body;
@@ -59,7 +132,7 @@ export async function createWidgetReservation(request: NextRequest) {
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
       return NextResponse.json({
         error: 'unitId, checkIn, checkOut, firstName, lastName, phone are required',
-      }, { status: 400, headers: CORS_HEADERS });
+      }, { status: 400, headers: dynamicHeaders });
     }
 
     const ciDate = new Date(checkIn);
@@ -477,7 +550,7 @@ export async function createWidgetReservation(request: NextRequest) {
       currency: resCurrency,
       thankYouUrl,
       testEmailStatus,
-    }, { status: 201, headers: CORS_HEADERS });
+    }, { status: 201, headers: dynamicHeaders });
   } catch (error: any) {
     const msg = error?.message || String(error);
     console.error('POST /api/booking/reserve error:', msg);

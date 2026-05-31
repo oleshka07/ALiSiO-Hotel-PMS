@@ -165,6 +165,19 @@ export default function BookingsPage() {
   return <BookingsDesktop />;
 }
 
+const getSourceIconEmoji = (code: string) => {
+  switch (code) {
+    case 'direct': return '👤 ';
+    case 'phone': return '📞 ';
+    case 'whatsapp': return '💬 ';
+    case 'booking_com': return '🏨 ';
+    case 'airbnb': return '🏡 ';
+    case 'vrbo': return '✈️ ';
+    case 'other_ota': return '🔌 ';
+    default: return '';
+  }
+};
+
 function BookingsDesktop() {
   /* ── data ──────────────────────────────────────────── */
   const [bookings, setBookings] = useState<BookingRow[]>([]);
@@ -176,9 +189,11 @@ function BookingsDesktop() {
 
   // Build dynamic source map from fetched sources (OTA + widget sites)
   const sourceMap = useMemo(() => {
-    const map: Record<string, { label: string; color: string }> = {};
+    const map: Record<string, { label: string; color: string }> = {
+      widget: { label: '🌐 Віджет (Загальний)', color: '#6366f1' },
+    };
     for (const s of bookingSources) {
-      map[s.code] = { label: s.name, color: s.color };
+      map[s.code] = { label: getSourceIconEmoji(s.code) + s.name, color: s.color };
     }
     for (const s of widgetSources) {
       map[s.code] = { label: `🌐 ${s.name}`, color: s.color || '#6366f1' };
@@ -583,21 +598,20 @@ function BookingsDesktop() {
               <input className="form-input" type="date" style={{ width: 140 }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
             <select className="form-select" style={{ width: 175 }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-              <option value="">Всі джерела</option>
+              <option value="">Всі канали</option>
               {bookingSources.length > 0 && (
                 <optgroup label="Канали">
                   {bookingSources.map((s: any) => (
-                    <option key={s.code} value={s.code}>{s.name}</option>
+                    <option key={s.code} value={s.code}>{getSourceIconEmoji(s.code)}{s.name}</option>
                   ))}
                 </optgroup>
               )}
-              {widgetSources.length > 0 && (
-                <optgroup label="🌐 Віджети">
-                  {widgetSources.map((s) => (
-                    <option key={s.code} value={s.code}>🌐 {s.name}</option>
-                  ))}
-                </optgroup>
-              )}
+              <optgroup label="🌐 Віджети">
+                <option value="widget">🌐 Всі віджети (загальні)</option>
+                {widgetSources.map((s) => (
+                  <option key={s.code} value={s.code}>🌐 {s.name}</option>
+                ))}
+              </optgroup>
             </select>
           </div>
         </div>
