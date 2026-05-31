@@ -123,6 +123,11 @@ export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCoun
 
 function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: { siteId: string; plan?: RatePlan | null; listings: Listing[]; allPlans: RatePlan[]; onSaved: () => void; onDeleted: () => void }) {
   const isNew = !plan;
+
+  // The standard/default plan — used as the base for all Derived plans
+  const defaultPlan = allPlans.find(p => p.is_default === 1) ?? allPlans[0];
+  const defaultDerivedId = plan?.derived_from_plan_id ?? defaultPlan?.id ?? '';
+
   const [form, setForm] = useState({
     name: plan?.name || '',
     cancellation_policy: plan?.cancellation_policy || 'non_refundable',
@@ -137,7 +142,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
     same_day_cutoff_hour: plan?.same_day_cutoff_hour ?? null,
     pricing_modifier_percent: plan?.pricing_modifier_percent ?? 0,
     pricing_modifier_type: plan?.pricing_modifier_type ?? 'less',
-    derived_from_plan_id: plan?.derived_from_plan_id ?? '',
+    derived_from_plan_id: defaultDerivedId,
     valid_weekdays: plan?.valid_weekdays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
   });
   const [saving, setSaving] = useState(false);
@@ -163,6 +168,8 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
         valid_weekdays: plan.valid_weekdays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
       });
     } else {
+      // New plan: default derived_from_plan_id to the standard/default plan
+      const fallbackPlan = allPlans.find(p => p.is_default === 1) ?? allPlans[0];
       setForm({
         name: '', cancellation_policy: 'non_refundable',
         payment_schedule: [{ percent: 100, trigger: 'at_booking' }],
@@ -172,7 +179,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
         valid_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         pricing_modifier_percent: 0,
         pricing_modifier_type: 'less',
-        derived_from_plan_id: '',
+        derived_from_plan_id: fallbackPlan?.id ?? '',
       });
     }
   }, [plan]);
@@ -349,10 +356,15 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
                   <span style={{ fontSize: 14 }}>ніж</span>
                   <select className="form-input" style={{ width: 200, padding: '6px 10px' }} value={form.derived_from_plan_id} onChange={e => setForm(f => ({ ...f, derived_from_plan_id: e.target.value }))}>
                     <option value="" disabled>Оберіть тарифний план</option>
-                    {allPlans.filter(p => p.id !== plan?.id).map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                    {[...allPlans.filter(p => p.id !== plan?.id)]
+                      .sort((a, b) => (b.is_default ?? 0) - (a.is_default ?? 0))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.is_default ? ' (стандарт)' : ''}
+                        </option>
+                      ))}
                   </select>
+
                 </div>
               )}
             </div>
