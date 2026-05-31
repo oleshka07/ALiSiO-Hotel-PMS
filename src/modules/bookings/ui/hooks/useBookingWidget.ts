@@ -371,14 +371,17 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         goToStep(6);
       } else if (data.session_url) {
         try {
-          // Use an anchor tag click to force top navigation, which works around iOS/Iframe limitations
-          const a = document.createElement('a');
-          a.href = data.session_url;
-          a.target = '_blank';
-          document.body.appendChild(a);
-          a.click();
+          if (window.top && window.top !== window) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
         } catch {
-          window.location.href = data.session_url;
+          try {
+            window.open(data.session_url, '_top');
+          } catch {
+            window.location.href = data.session_url;
+          }
         }
       } else setError(data.error||'Payment failed');
     } catch { setError('Payment gateway error'); }

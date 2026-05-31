@@ -380,7 +380,19 @@
 
       // Redirect to Teya Hosted Checkout
       if (data.session_url) {
-        window.location.href = data.session_url;
+        try {
+          if (window.top && window.top !== window) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
+        } catch (e) {
+          try {
+            window.open(data.session_url, '_top');
+          } catch (err) {
+            window.location.href = data.session_url;
+          }
+        }
         return data;
       } else {
         throw new Error('No checkout URL received');
