@@ -49,7 +49,6 @@ const REQUIRED_COLS = [
   'Check-in',
   'Check-out',
   'Status',
-  'Unit type',
   'Duration (nights)',
   'Adults',
   'Children',
@@ -379,6 +378,11 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
   if (!('Persons' in headerRow)) {
     json = json.map((r) => ({ ...r, 'Persons': r['Persons'] || r['Adults'] || 1 }));
   }
+  // Unit type may be absent in some Booking.com export variants
+  if (!('Unit type' in json[0])) {
+    console.log('[Import Booking.com] "Unit type" column missing — using empty default');
+    json = json.map((r) => ({ ...r, 'Unit type': '' }));
+  }
 
   const missing = REQUIRED_COLS.filter((c) => !(c in json[0]));
   // Fuzzy fallback: if some required columns are still missing,
@@ -391,7 +395,7 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
       'Check-in': ['check-in', 'checkin', 'arrival', 'заїзд', 'заезд', 'příjezd'],
       'Check-out': ['check-out', 'checkout', 'departure', 'виїзд', 'выезд', 'odjezd'],
       'Status': ['status', 'статус', 'stav'],
-      'Unit type': ['unit', 'room', 'type', 'помешк', 'номер', 'pokoj', 'ubytov', 'размещ'],
+      'Unit type': ['unit type', 'room type', 'помешк', 'тип номер', 'pokoj', 'ubytov', 'размещен'],
       'Duration (nights)': ['duration', 'night', 'ніч', 'ноч', 'noc', 'тривал', 'продолж', 'délka'],
       'Adults': ['adult', 'дорос', 'взрос', 'dospěl'],
       'Children': ['child', 'дит', 'děti', 'діт'],
