@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { BookingLang } from '../translations';
 import { getBookingTranslations } from '../translations';
-import type { UnitResult, AvailabilityResponse, ReserveResponse, DesignConfig } from '../types';
+import type { UnitResult, AvailabilityResponse, ReserveResponse, DesignConfig, ActiveRatePlan } from '../types';
 import { fmtDate, parseDate, formatPrice } from '../utils';
 import { v3Locales } from '../locales';
 
@@ -64,6 +64,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [loadingServices, setLoadingServices] = useState(false);
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
   const [resolvedUtmParams, setResolvedUtmParams] = useState<Record<string, string>>({});
+  const [activeRatePlan, setActiveRatePlan] = useState<ActiveRatePlan | null>(null);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
@@ -199,7 +200,24 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
     if (isPreview) { setLoadingAvail(true); await new Promise(r => setTimeout(r,800)); const mock: AvailabilityResponse = { checkIn: ci, checkOut: co, nights: Math.round((parseDate(co).getTime()-parseDate(ci).getTime())/86400000), units: [{ id:'mock-1', name:'Premium Glamping Tent', code:'P1', beds:2, unitTypeId:'t1', typeName:'Tent', typeCode:'T', description:'Beautiful tent', maxAdults:2, maxChildren:1, maxOccupancy:3, baseOccupancy:2, avgPricePerNight:2500, totalPrice:5000, currency:'Kc', extraPersonCharge:500, petAllowed:true, petCharge:200, photos:[], amenities:[] }] }; setAvailability(mock); setLoadingAvail(false); return mock; }
     setLoadingAvail(true);
-    try { const p = new URLSearchParams({ checkIn: ci, checkOut: co }); if (siteId) p.set('siteId', siteId); if (siteSlug) p.set('siteSlug', siteSlug); const res = await fetch(`${API_BASE}/api/booking/availability?${p.toString()}`); if (res.ok) { const data = await res.json(); setAvailability(data); setLoadingAvail(false); if (data.units?.length === 0) findNextAvailable(co); return data; } } catch(e) { console.error(e); }
+    try {
+      const p = new URLSearchParams({ checkIn: ci, checkOut: co });
+      if (siteId) p.set('siteId', siteId);
+      if (siteSlug) p.set('siteSlug', siteSlug);
+      // Forward ratePlanId from URL if present
+      const urlParams = new URLSearchParams(window.location.search);
+      const rp = urlParams.get('ratePlanId') || urlParams.get('ratePlan');
+      if (rp) p.set('ratePlanId', rp);
+      const res = await fetch(`${API_BASE}/api/booking/availability?${p.toString()}`);
+      if (res.ok) {
+        const data: AvailabilityResponse = await res.json();
+        setAvailability(data);
+        setActiveRatePlan(data.activeRatePlan ?? null);
+        setLoadingAvail(false);
+        if (data.units?.length === 0) findNextAvailable(co);
+        return data;
+      }
+    } catch(e) { console.error(e); }
     setLoadingAvail(false); return null;
   }, [siteId, siteSlug]);
 
@@ -396,7 +414,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
 
   const invalidNightsMsg = offerApplied?.offerType==='package' && offerApplied.bundle?.nights_included && nights>0 && nights!==offerApplied.bundle.nights_included ? t.packageNightsError(offerApplied.bundle.nights_included) : null;
 
-  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, setExtraCouponApplied, extraCouponError, setExtraCouponError, applyingExtraCoupon, handleApplyExtraOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId };
+  return { lang, setLang, setOfferError, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, unitInfo, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, setExtraCouponApplied, extraCouponError, setExtraCouponError, applyingExtraCoupon, handleApplyExtraOffer, isHiddenBundle, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, handleApplyOffer, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, resolvedSiteId, activeRatePlan };
 }
 
 

@@ -9,7 +9,7 @@ import type { BookingLang } from './translations';
 import { useBookingWidget } from './hooks/useBookingWidget';
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
-  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
+  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, activeRatePlan } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -279,6 +279,22 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               >+</button>
             </div>
           </div>
+
+          {/* Active Rate Plan badge — shown after dates are selected and availability returned */}
+          {activeRatePlan && checkIn && checkOut && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'rgba(47,79,43,0.07)',
+              border: '1px solid rgba(47,79,43,0.2)',
+              borderRadius: 10, padding: '8px 14px',
+              marginBottom: 4, marginTop: 4,
+            }}>
+              <span style={{ fontSize: 15 }}>✦</span>
+              <span style={{ fontSize: 13, color: 'var(--moss)', fontWeight: 600 }}>
+                {activeRatePlan.name}
+              </span>
+            </div>
+          )}
 
           {/* Occupancy notice */}
           {kids > 0 && (
@@ -761,6 +777,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
                 <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
+              </div>
+            )}
+            {activeRatePlan && !offerApplied && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>✦ {activeRatePlan.name}</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600, fontSize: 12, opacity: 0.8 }}>
+                  {{
+                    uk: 'Ціна за тарифом',
+                    en: 'Plan pricing',
+                    cs: 'Sazba tarifu',
+                    de: 'Tarifpreis'
+                  }[lang] || 'Plan pricing'}
+                </span>
               </div>
             )}
             {offerApplied && offerApplied.offerType !== 'package' && (
