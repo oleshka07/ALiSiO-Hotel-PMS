@@ -17,7 +17,7 @@ export async function listUsers() {
 
     const db = getDb();
     const users = db.prepare(`
-      SELECT id, organization_id, email, full_name, phone, role, is_active, last_login, created_at, updated_at
+      SELECT id, organization_id, email, full_name, phone, telegram_chat_id, role, is_active, last_login, created_at, updated_at
       FROM app_users
       WHERE organization_id = ?
       ORDER BY
@@ -64,7 +64,7 @@ export async function createUser(request: Request) {
     }
 
     const body = await request.json();
-    const { email, full_name, phone, role, password, permissions_overrides } = body;
+    const { email, full_name, phone, telegram_chat_id, role, password, permissions_overrides } = body;
 
     if (!email || !full_name || !role || !password) {
       return NextResponse.json({ error: "Заповніть усі обов'язкові поля" }, { status: 400 });
@@ -85,9 +85,9 @@ export async function createUser(request: Request) {
     const id = crypto.randomUUID().replace(/-/g, '').substring(0, 32);
 
     db.prepare(`
-      INSERT INTO app_users (id, organization_id, email, full_name, phone, role, password_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, currentUser.organization_id, email, full_name, phone || null, role, passwordHash);
+      INSERT INTO app_users (id, organization_id, email, full_name, phone, telegram_chat_id, role, password_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, currentUser.organization_id, email, full_name, phone || null, telegram_chat_id || null, role, passwordHash);
 
     if (permissions_overrides && Array.isArray(permissions_overrides)) {
       const insertOverride = db.prepare(

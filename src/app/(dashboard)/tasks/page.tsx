@@ -259,8 +259,11 @@ function TaskDrawer({
         if (res.ok) {
           const att = await res.json();
           setAttachments(prev => [att, ...prev]);
+        } else {
+          const err = await res.json().catch(() => ({ error: 'Помилка завантаження' }));
+          alert(err.error || 'Помилка завантаження файлу');
         }
-      } catch { /* */ }
+      } catch { alert('Помилка з\'єднання при завантаженні'); }
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -268,13 +271,17 @@ function TaskDrawer({
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     try {
-      await fetch(`/api/tasks/${task.id}/attachments`, {
+      const res = await fetch(`/api/tasks/${task.id}/attachments`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ attachment_id: attachmentId }),
       });
-      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
-    } catch { /* */ }
+      if (res.ok) {
+        setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+      } else {
+        alert('Не вдалося видалити файл');
+      }
+    } catch { alert('Помилка з\'єднання'); }
   };
 
   // Auto-resize title

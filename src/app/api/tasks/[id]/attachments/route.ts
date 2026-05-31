@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import path from 'path';
 import fs from 'fs';
+import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'tasks');
 
@@ -34,6 +35,7 @@ export async function POST(
 ) {
   try {
     const { id: taskId } = await context.params;
+    const user = getSessionUser(getSessionIdFromCookies(request.headers.get('cookie')));
     const db = getDb();
 
     // Verify task exists
@@ -87,9 +89,9 @@ export async function POST(
     // Save to DB
     const url = `/api/uploads/tasks/${filename}`;
     const result = db.prepare(`
-      INSERT INTO task_attachments (task_id, organization_id, filename, url, file_size, content_type)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(taskId, task.organization_id, file.name, url, file.size, file.type);
+      INSERT INTO task_attachments (task_id, organization_id, filename, url, file_size, content_type, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(taskId, task.organization_id, file.name, url, file.size, file.type, user?.id ?? null);
 
     const attachment = db.prepare('SELECT * FROM task_attachments WHERE rowid = ?').get(result.lastInsertRowid);
 
@@ -106,7 +108,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    await context.params; // consume params
+    const { id: taskId } = await context.params;
     const { attachment_id } = await request.json();
 
     if (!attachment_id) {
@@ -114,7 +116,7 @@ export async function DELETE(
     }
 
     const db = getDb();
-    const attachment = db.prepare('SELECT * FROM task_attachments WHERE id = ?').get(attachment_id) as any;
+    const attachment = db.prepare('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?').get(attachment_id, taskId) as any;
 
     if (!attachment) {
       return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });

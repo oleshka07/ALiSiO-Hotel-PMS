@@ -492,6 +492,17 @@ function runMigrations(database: any) {
     console.log('[DB] default_cash_account_id migration:', e.message);
   }
 
+  // --- Migration: add telegram_chat_id to app_users ---
+  try {
+    const userColsTg = database.prepare("PRAGMA table_info(app_users)").all() as { name: string }[];
+    if (!userColsTg.some((c: any) => c.name === 'telegram_chat_id')) {
+      database.exec("ALTER TABLE app_users ADD COLUMN telegram_chat_id TEXT");
+      console.log('[DB] Added telegram_chat_id to app_users');
+    }
+  } catch (e: any) {
+    console.log('[DB] telegram_chat_id migration:', e.message);
+  }
+
   // --- Migration: create sessions table if not exists ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

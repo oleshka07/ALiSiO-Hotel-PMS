@@ -201,7 +201,8 @@ function TaskSheet({
       try {
         const res = await fetch(`/api/tasks/${task.id}/attachments`, { method: 'POST', body: fd });
         if (res.ok) { const att = await res.json(); setAttachments(prev => [att, ...prev]); }
-      } catch { /* */ }
+        else { const err = await res.json().catch(() => ({ error: 'Помилка' })); alert(err.error || 'Помилка завантаження'); }
+      } catch { alert('Помилка з\'єднання'); }
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -209,13 +210,14 @@ function TaskSheet({
 
   const handleDeleteAttachment = async (attId: string) => {
     try {
-      await fetch(`/api/tasks/${task.id}/attachments`, {
+      const res = await fetch(`/api/tasks/${task.id}/attachments`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ attachment_id: attId }),
       });
-      setAttachments(prev => prev.filter(a => a.id !== attId));
-    } catch { /* */ }
+      if (res.ok) { setAttachments(prev => prev.filter(a => a.id !== attId)); }
+      else { alert('Не вдалося видалити файл'); }
+    } catch { alert('Помилка з\'єднання'); }
   };
 
   const toggleTag = (tagId: string) => {

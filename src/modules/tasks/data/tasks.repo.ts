@@ -1,5 +1,7 @@
 import { getDb } from '@core/db';
 import type { Task, TaskTag } from '../domain/types';
+import path from 'path';
+import fs from 'fs';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -244,6 +246,21 @@ export function updateTask(id: string, fields: Record<string, unknown>): Task | 
 
 export function deleteTask(id: string): { ok: boolean } {
   const db = getDb();
+
+  // Clean up attachment files from disk before cascade delete removes DB rows
+  const attachments = db.prepare(
+    'SELECT url FROM task_attachments WHERE task_id = ?'
+  ).all(id) as { url: string }[];
+
+  const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'tasks');
+  for (const att of attachments) {
+    const filename = att.url.split('/').pop();
+    if (filename) {
+      const filePath = path.join(UPLOAD_DIR, filename);
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* ignore */ }
+    }
+  }
+
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
   return { ok: true };
 }

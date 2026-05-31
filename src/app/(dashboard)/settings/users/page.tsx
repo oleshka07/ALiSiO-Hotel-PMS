@@ -5,6 +5,7 @@ import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Plus, Pencil, Trash2, X, Check, Shield, Eye, EyeOff, Search, ChevronDown,
+  MessageCircle,
 } from 'lucide-react';
 import {
   ROLE_LABELS, ROLE_COLORS, PERMISSION_GROUPS, ROLE_DEFAULTS,
@@ -18,6 +19,7 @@ interface UserData {
   email: string;
   full_name: string;
   phone: string | null;
+  telegram_chat_id: string | null;
   role: UserRole;
   is_active: number;
   last_login: string | null;
@@ -30,6 +32,7 @@ interface UserForm {
   full_name: string;
   email: string;
   phone: string;
+  telegram_chat_id: string;
   role: UserRole;
   password: string;
   is_active: boolean;
@@ -37,7 +40,7 @@ interface UserForm {
 }
 
 const emptyForm: UserForm = {
-  full_name: '', email: '', phone: '', role: 'receptionist',
+  full_name: '', email: '', phone: '', telegram_chat_id: '', role: 'receptionist',
   password: '', is_active: true, overrides: [],
 };
 
@@ -97,6 +100,7 @@ export default function UsersPage() {
       full_name: user.full_name,
       email: user.email,
       phone: user.phone || '',
+      telegram_chat_id: user.telegram_chat_id || '',
       role: user.role,
       password: '',
       is_active: user.is_active === 1,
@@ -175,6 +179,7 @@ export default function UsersPage() {
             full_name: form.full_name,
             email: form.email,
             phone: form.phone || null,
+            telegram_chat_id: form.telegram_chat_id || null,
             role: form.role,
             password: form.password,
             permissions_overrides: form.overrides,
@@ -187,6 +192,7 @@ export default function UsersPage() {
           full_name: form.full_name,
           email: form.email,
           phone: form.phone || null,
+          telegram_chat_id: form.telegram_chat_id || null,
           role: form.role,
           is_active: form.is_active,
           permissions_overrides: form.overrides,
@@ -420,6 +426,13 @@ export default function UsersPage() {
                 <div className="form-group">
                   <label className="form-label">Телефон</label>
                   <input className="form-input" value={form.phone} onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))} placeholder="+380..." />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MessageCircle size={14} /> Telegram Chat ID
+                  </label>
+                  <input className="form-input" value={form.telegram_chat_id} onChange={e => setForm(prev => ({ ...prev, telegram_chat_id: e.target.value }))} placeholder="123456789" />
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>Для сповіщень про задачі. Дізнатися: @userinfobot</div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Роль *</label>
