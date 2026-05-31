@@ -115,7 +115,10 @@ export async function createWidgetReservation(request: NextRequest) {
       couponCode, certificateCode, extraCouponCode,
       currency: clientCurrency,
       utmParams: rawUtmParams,
+      lang: rawLang,
     } = body;
+
+    const lang: string = ['en', 'uk', 'cs', 'de'].includes(rawLang) ? rawLang : 'en';
 
     // Validate & sanitise UTM params — allowlist keys, cap value length
     const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
@@ -437,8 +440,37 @@ export async function createWidgetReservation(request: NextRequest) {
           }
         }
 
-        const rawSubject = widgetConfig.email_received_subject || 'Завершіть реєстрацію — {propertyName}';
-        const rawBody = widgetConfig.email_received_body || 'Ваше бронювання зареєстроване. Щоб зберегти обрані дати, потрібно завершити бронювання на вашій персональній сторінці.';
+        // ── Localized email defaults ──────────────────────────────────────
+        const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string }> = {
+          en: {
+            subject: 'Complete your registration — {propertyName}',
+            body: 'Your booking is registered. To secure your dates, please complete your booking on your personal page.',
+            header: 'Complete your registration',
+            btnText: 'Personal page →',
+          },
+          uk: {
+            subject: 'Завершіть реєстрацію — {propertyName}',
+            body: 'Ваше бронювання зареєстроване. Щоб зберегти обрані дати, потрібно завершити бронювання на вашій персональній сторінці.',
+            header: 'Завершіть реєстрацію',
+            btnText: 'Персональна сторінка →',
+          },
+          cs: {
+            subject: 'Dokončete registraci — {propertyName}',
+            body: 'Vaše rezervace je registrována. Pro zachování termínu prosím dokončete rezervaci na vaší osobní stránce.',
+            header: 'Dokončete registraci',
+            btnText: 'Osobní stránka →',
+          },
+          de: {
+            subject: 'Schließen Sie Ihre Registrierung ab — {propertyName}',
+            body: 'Ihre Buchung ist registriert. Um Ihre Termine zu sichern, schließen Sie bitte die Buchung auf Ihrer persönlichen Seite ab.',
+            header: 'Registrierung abschließen',
+            btnText: 'Persönliche Seite →',
+          },
+        };
+        const emailTpl = EMAIL_TEMPLATES[lang] || EMAIL_TEMPLATES.en;
+
+        const rawSubject = widgetConfig.email_received_subject || emailTpl.subject;
+        const rawBody = widgetConfig.email_received_body || emailTpl.body;
 
         const replaceDict: Record<string, string> = {
           propertyName,
@@ -487,7 +519,7 @@ export async function createWidgetReservation(request: NextRequest) {
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
   <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
-    <div style="font-size:14px;color:#666;margin-bottom:24px;">Завершіть реєстрацію</div>
+    <div style="font-size:14px;color:#666;margin-bottom:24px;">${emailTpl.header}</div>
     <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
     <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">${customizedBody}</p>
     <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
@@ -502,7 +534,7 @@ export async function createWidgetReservation(request: NextRequest) {
       <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
     </table>
     <div style="margin-top:28px;text-align:center;">
-      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">Персональна сторінка →</a>
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
     </div>
   </div>
 </body></html>`,

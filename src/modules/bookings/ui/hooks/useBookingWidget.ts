@@ -298,7 +298,8 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
           extraCouponCode:extraCouponApplied?.code||undefined, 
           currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', 
           utmParams,
-          handshakeToken
+          handshakeToken,
+          lang,
         }) 
       });
       if (res.ok) { 
