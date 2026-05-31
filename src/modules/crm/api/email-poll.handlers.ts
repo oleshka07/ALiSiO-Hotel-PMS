@@ -75,34 +75,15 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
 
   let classification;
   if (bookingData.isBookingCom) {
-    // --- Booking.com email filter ---
-    // Only actionable emails: new reservations or guest messages.
-    // Skip system notifications (modifications, confirmations, cancellations,
-    // reminders, marketing, review requests) — we can't reply to those via Telegram.
-    const isActionable = bookingData.isNewReservation || !!bookingData.guestMessage;
-
-    if (!isActionable) {
-      // Check if this is a modification/cancellation for an existing reservation
-      // so we can still update the reservation record without creating a CRM lead.
-      const isModOrCancel = isBookingComModification(email.subject, email.textBody);
-      if (isModOrCancel && bookingData.confirmationId) {
-        console.log(`[Email:${email.accountId}] Booking.com modification/cancellation for ${bookingData.confirmationId} — skipping CRM lead`);
-      } else {
-        console.log(`[Email:${email.accountId}] Booking.com system email (no guest message, not new reservation) — skipping`);
-      }
-      results.booking_com_parsed++;
-      db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'booking_system')").run(email.messageId);
-      return;
-    }
-
-    classification = {
-      category: 'guest' as const,
-      confidence: 1.0,
-      reason: bookingData.isNewReservation ? 'Booking.com new reservation' : 'Booking.com guest message',
-      guestName: bookingData.guestName || email.from.name,
-      language: bookingData.language || 'en',
-    };
+    // --- Booking.com: FULL SKIP ---
+    // All Booking.com emails are filtered out completely.
+    // We can't reply to them from CRM/Telegram, and they clutter the pipeline.
+    // They stay UNREAD in the mailbox for manual handling via Booking.com extranet.
+    console.log(`[Email:${email.accountId}] Booking.com email from ${email.from.address} — skipping entirely (subject: ${email.subject?.substring(0, 60)})`);
     results.booking_com_parsed++;
+    // Don't mark as read — leave in mailbox. Only record in email_processed to avoid re-processing.
+    db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'booking_skipped')").run(email.messageId);
+    return;
   } else {
     classification = await classifyEmail(email);
   }

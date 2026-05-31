@@ -290,8 +290,8 @@ export function isBlacklisted(email: IncomingEmail): boolean {
     if (senderDomain.includes(rule) || senderAddr.includes(rule)) return true;
   }
 
-  // Whitelist: OTA platforms that send from noreply@ addresses
-  const whitelistedDomains = ['booking.com', 'airbnb.com', 'expedia.com', 'agoda.com'];
+  // Whitelist: OTA platforms that send from noreply@ addresses (booking.com filtered upstream)
+  const whitelistedDomains = ['airbnb.com', 'expedia.com', 'agoda.com'];
   const isWhitelisted = whitelistedDomains.some(d => senderDomain.includes(d));
 
   // Skip obvious system emails (but NOT whitelisted OTA platforms)
