@@ -33,16 +33,92 @@ export async function createWidgetReservation(request: NextRequest) {
     const db = getDb();
     const body = await request.json();
 
+    const siteId = body.siteId;
+    const siteSlug = body.siteSlug;
+
+    // Failsafe table creation for handshakes
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS widget_handshakes (
+        token TEXT PRIMARY KEY,
+        site_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
+      )
+    `).run();
+
+    // Check allowed origin from DB
+    let allowedSiteUrl: string | null = null;
+    const searchSite = siteId || siteSlug;
+    if (searchSite) {
+      const site = db.prepare("SELECT site_url FROM booking_sites WHERE (id = ? OR slug = ?) AND status != 'deleted'").get(searchSite, searchSite) as { site_url: string | null } | undefined;
+      if (site) {
+        allowedSiteUrl = site.site_url;
+      }
+    }
+
+    const origin = request.headers.get('origin');
+    const dynamicHeaders: Record<string, string> = {
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Handshake-Token',
+    };
+    
+    if (origin) {
+      if (allowedSiteUrl) {
+        try {
+          const originHost = new URL(origin).hostname;
+          const allowedHost = new URL(allowedSiteUrl.startsWith('http') ? allowedSiteUrl : `https://${allowedSiteUrl}`).hostname;
+          
+          if (
+            originHost !== allowedHost && 
+            !originHost.endsWith(`.${allowedHost}`) && 
+            originHost !== 'localhost' && 
+            originHost !== '127.0.0.1'
+          ) {
+            return NextResponse.json({ error: 'Origin domain not authorized for this widget' }, { status: 403, headers: CORS_HEADERS });
+          }
+          dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+        } catch (e) {
+          // ignore malformed URLs
+        }
+      } else {
+        dynamicHeaders['Access-Control-Allow-Origin'] = origin;
+      }
+    } else {
+      dynamicHeaders['Access-Control-Allow-Origin'] = '*';
+    }
+
+    // Verify and consume handshake token
+    if (siteId || siteSlug) {
+      const handshakeToken = request.headers.get('x-handshake-token') || body.handshakeToken || '';
+      if (!handshakeToken) {
+        return NextResponse.json({ error: 'Security handshake token required' }, { status: 403, headers: dynamicHeaders });
+      }
+      
+      const handshake = db.prepare(`
+        SELECT token FROM widget_handshakes 
+        WHERE token = ? AND expires_at > datetime('now')
+      `).get(handshakeToken) as { token: string } | undefined;
+
+      if (!handshake) {
+        return NextResponse.json({ error: 'Security handshake expired or invalid. Please retry.' }, { status: 403, headers: dynamicHeaders });
+      }
+
+      // Single-use token: consume it immediately
+      db.prepare('DELETE FROM widget_handshakes WHERE token = ?').run(handshakeToken);
+    }
+
     const {
       unitId, checkIn, checkOut,
       adults = 2, children = 0,
       hasPet = false,
       firstName, lastName, email, phone,
       couponCode, certificateCode, extraCouponCode,
-      siteId,
       currency: clientCurrency,
       utmParams: rawUtmParams,
+      lang: rawLang,
     } = body;
+
+    const lang: string = ['en', 'uk', 'cs', 'de'].includes(rawLang) ? rawLang : 'en';
 
     // Validate & sanitise UTM params — allowlist keys, cap value length
     const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
@@ -59,7 +135,7 @@ export async function createWidgetReservation(request: NextRequest) {
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
       return NextResponse.json({
         error: 'unitId, checkIn, checkOut, firstName, lastName, phone are required',
-      }, { status: 400, headers: CORS_HEADERS });
+      }, { status: 400, headers: dynamicHeaders });
     }
 
     const ciDate = new Date(checkIn);
@@ -364,8 +440,37 @@ export async function createWidgetReservation(request: NextRequest) {
           }
         }
 
-        const rawSubject = widgetConfig.email_received_subject || 'Booking received — {propertyName}';
-        const rawBody = widgetConfig.email_received_body || 'Your booking has been registered. You will receive a payment confirmation once your payment is processed.';
+        // ── Localized email defaults ──────────────────────────────────────
+        const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string }> = {
+          en: {
+            subject: 'Complete your registration — {propertyName}',
+            body: 'Your booking is registered. To secure your dates, please complete your booking on your personal page.',
+            header: 'Complete your registration',
+            btnText: 'Personal page →',
+          },
+          uk: {
+            subject: 'Завершіть реєстрацію — {propertyName}',
+            body: 'Ваше бронювання зареєстроване. Щоб зберегти обрані дати, потрібно завершити бронювання на вашій персональній сторінці.',
+            header: 'Завершіть реєстрацію',
+            btnText: 'Персональна сторінка →',
+          },
+          cs: {
+            subject: 'Dokončete registraci — {propertyName}',
+            body: 'Vaše rezervace je registrována. Pro zachování termínu prosím dokončete rezervaci na vaší osobní stránce.',
+            header: 'Dokončete registraci',
+            btnText: 'Osobní stránka →',
+          },
+          de: {
+            subject: 'Schließen Sie Ihre Registrierung ab — {propertyName}',
+            body: 'Ihre Buchung ist registriert. Um Ihre Termine zu sichern, schließen Sie bitte die Buchung auf Ihrer persönlichen Seite ab.',
+            header: 'Registrierung abschließen',
+            btnText: 'Persönliche Seite →',
+          },
+        };
+        const emailTpl = EMAIL_TEMPLATES[lang] || EMAIL_TEMPLATES.en;
+
+        const rawSubject = widgetConfig.email_received_subject || emailTpl.subject;
+        const rawBody = widgetConfig.email_received_body || emailTpl.body;
 
         const replaceDict: Record<string, string> = {
           propertyName,
@@ -391,14 +496,30 @@ export async function createWidgetReservation(request: NextRequest) {
         const customizedSubject = replacePlaceholders(rawSubject, replaceDict);
         const customizedBody = replacePlaceholders(rawBody, replaceDict);
 
-        await sendEmail({
-          to: email,
-          subject: customizedSubject,
-          html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
+        testEmailStatus = 'scheduled';
+        const delayMs = 10 * 60 * 1000;
+        setTimeout(async () => {
+          try {
+            const currentDb = getDb();
+            const currentRes = currentDb.prepare('SELECT payment_status FROM reservations WHERE id = ?').get(resId) as any;
+            if (!currentRes) {
+              console.log(`[Widget Reserve Delay] Reservation ${resId} not found, skipping email`);
+              return;
+            }
+            if (currentRes.payment_status === 'paid' || currentRes.payment_status === 'prepaid') {
+              console.log(`[Widget Reserve Delay] Reservation ${resId} is already paid (${currentRes.payment_status}), skipping "Complete registration" email`);
+              return;
+            }
+
+            const { sendEmail } = await import('@/lib/email');
+            await sendEmail({
+              to: email,
+              subject: customizedSubject,
+              html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
   <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
-    <div style="font-size:14px;color:#666;margin-bottom:24px;">Booking received</div>
+    <div style="font-size:14px;color:#666;margin-bottom:24px;">${emailTpl.header}</div>
     <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
     <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">${customizedBody}</p>
     <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
@@ -413,21 +534,19 @@ export async function createWidgetReservation(request: NextRequest) {
       <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
     </table>
     <div style="margin-top:28px;text-align:center;">
-      <a href="${primaryUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">View my booking →</a>
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
     </div>
-    ${thankYouUrl ? `
-    <div style="margin-top:16px;text-align:center;border-top:1px solid #eee;padding-top:16px;">
-      <a href="${guestPortalUrl}" style="display:inline-block;background:#fff;color:#2E6B4F;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;border:1.5px solid #2E6B4F;">🏡 Open guest page</a>
-      <p style="font-size:11px;color:#999;margin:8px 0 0;">Available after payment confirmation</p>
-    </div>` : ''}
   </div>
 </body></html>`,
-        });
-        testEmailStatus = 'success';
-        console.log(`[Widget Reserve] Confirmation email sent to ${email} for ${resId}`);
-      } catch (emailErr: any) {
-        testEmailStatus = `failed: ${emailErr.message}`;
-        console.error('[Widget Reserve] Email failed:', emailErr.message);
+            });
+            console.log(`[Widget Reserve Delay] Confirmation email sent to ${email} for ${resId}`);
+          } catch (emailErr: any) {
+            console.error('[Widget Reserve Delay] Email failed:', emailErr.message);
+          }
+        }, delayMs);
+      } catch (err: any) {
+        testEmailStatus = `failed: ${err.message}`;
+        console.error('[Widget Reserve] Setup failed:', err.message);
       }
     }
 
@@ -477,7 +596,7 @@ export async function createWidgetReservation(request: NextRequest) {
       currency: resCurrency,
       thankYouUrl,
       testEmailStatus,
-    }, { status: 201, headers: CORS_HEADERS });
+    }, { status: 201, headers: dynamicHeaders });
   } catch (error: any) {
     const msg = error?.message || String(error);
     console.error('POST /api/booking/reserve error:', msg);

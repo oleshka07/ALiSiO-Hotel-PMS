@@ -24,6 +24,7 @@ export default function BookingWidgetSettingsPage() {
   const [lang, setLang] = useState('uk');
   const [color, setColor] = useState('#1a1a2e');
   const [copied, setCopied] = useState(false);
+  const [embedMode, setEmbedMode] = useState<'native' | 'iframe'>('native');
 
   useEffect(() => {
     fetch('/api/booking-sites')
@@ -66,11 +67,18 @@ export default function BookingWidgetSettingsPage() {
   data-lang="${lang}"
   data-color="${color}"
 ></script>`
-    : `<div id="${containerId}" 
+    : embedMode === 'native'
+    ? `<div id="${containerId}" 
      data-site="${siteSlug}" 
+     data-lang="${lang}"
      ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}>
 </div>
-<script src="${domain}/widget/${scriptFile}"></script>`;
+<script src="${domain}/widget/native-embed.js"></script>`
+    : `<iframe 
+  src="${domain}/w/${siteSlug}?lang=${lang}${selectedUnit ? `&unit=${selectedUnit}` : ''}" 
+  style="width: 100%; min-height: 650px; border: none; border-radius: 12px; overflow: hidden;"
+  allow="payment"
+></iframe>`;
 
   function copyCode() {
     navigator.clipboard.writeText(embedCode).then(() => {
@@ -80,12 +88,27 @@ export default function BookingWidgetSettingsPage() {
   }
 
   // Live preview via iframe (dynamic scripts can't use document.currentScript)
-  const previewSrc = `<!DOCTYPE html>
+  const previewSrc = isService
+    ? `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5}</style>
 </head><body>
-<div id="alisio-${isService ? 'service' : 'booking'}-widget" data-site="${siteSlug}" ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}></div>
-<script src="${domain}/widget/${scriptFile}"></script>
+<div id="alisio-service-widget" data-site="${siteSlug}" ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}></div>
+<script src="${domain}/widget/service-embed.js"></script>
+</body></html>`
+    : embedMode === 'native'
+    ? `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5}</style>
+</head><body>
+<div id="alisio-booking-widget" data-site="${siteSlug}" data-lang="${lang}" ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}></div>
+<script src="${domain}/widget/native-embed.js"></script>
+</body></html>`
+    : `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;padding:0;background:#f5f5f5;height:100vh;overflow:hidden;}</style>
+</head><body>
+<iframe src="${domain}/w/${siteSlug}?lang=${lang}${selectedUnit ? `&unit=${selectedUnit}` : ''}" style="width:100%;height:100%;border:none;" allow="payment"></iframe>
 </body></html>`;
 
   return (
@@ -139,6 +162,57 @@ export default function BookingWidgetSettingsPage() {
             {/* Site selector (only for booking widget) */}
             {!isService && (
               <>
+                {/* Embed Mode Toggle */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Метод інтеграції
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => setEmbedMode('native')}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: embedMode === 'native' ? `2px solid ${color}` : '2px solid var(--border-primary)',
+                        background: embedMode === 'native' ? `${color}15` : 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all .15s',
+                      }}
+                    >
+                      🚀 JS Embed (Новий)
+                      <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        Для Clarity, Pixels, GTM
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmbedMode('iframe')}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: embedMode === 'iframe' ? `2px solid ${color}` : '2px solid var(--border-primary)',
+                        background: embedMode === 'iframe' ? `${color}15` : 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all .15s',
+                      }}
+                    >
+                      🔲 Iframe (Класичний)
+                      <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        Без скриптів на сайті
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
                     Сайт бронювання
