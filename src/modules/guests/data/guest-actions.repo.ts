@@ -55,6 +55,7 @@ export function getReservationForPay(token: string) {
     JOIN guests g ON r.guest_id = g.id
     JOIN units u ON r.unit_id = u.id
     WHERE r.guest_page_token = ?
+      AND r.status IN ('confirmed', 'checked_in')
       AND r.payment_status IN ('paid','prepaid','partial')
   `).get(token) as any;
 }

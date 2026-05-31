@@ -323,7 +323,10 @@ export default function GuestPage() {
   })();
 
   // ─── Service ordering (with Teya payment) ─────
+  const payInProgress = useRef(false);
   const handleOrderService = async (serviceId: string, serviceDates?: string[]) => {
+    if (payInProgress.current) return; // W3: prevent double-click
+    payInProgress.current = true;
     setOrderingService(serviceId);
     try {
       const res = await fetch(`/api/guest/${token}/pay`, {
@@ -346,6 +349,7 @@ export default function GuestPage() {
     } catch (err: any) {
       showToast(err.message || t.orderError, 'error');
     }
+    payInProgress.current = false;
     setOrderingService(null);
   };
 

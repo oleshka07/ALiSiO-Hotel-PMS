@@ -38,6 +38,23 @@ async function handleSinglePay(
   const dates = (serviceDates && serviceDates.length > 0)
     ? serviceDates
     : [reservation.check_in];
+
+  // W5: Validate that service dates fall within the stay window
+  if (reservation.check_in && reservation.check_out && serviceDates && serviceDates.length > 0) {
+    const ci = new Date(reservation.check_in + 'T00:00:00');
+    const co = new Date(reservation.check_out + 'T00:00:00');
+    for (const d of serviceDates) {
+      const dt = new Date(d + 'T00:00:00');
+      // Allow from day after check-in through check-out (breakfast morning)
+      if (dt < ci || dt > co) {
+        return NextResponse.json(
+          { error: `Date ${d} is outside your stay (${reservation.check_in} — ${reservation.check_out})` },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const effectiveQty = Math.max(quantity, dates.length);
   const totalPrice = service.price * effectiveQty;
   const serviceName = service.name_en || service.name;

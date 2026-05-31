@@ -65,6 +65,12 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
     const db = getDb();
     dbForLog = db;
 
+    // Require signature when public key is configured; reject unsigned payloads
+    if (!signature && process.env.TEYA_WEBHOOK_PUBLIC_KEY) {
+      console.error('[Teya Webhook] Missing signature header (public key is configured)');
+      logWebhook(db, 'signature_invalid', { rawPayload: rawBody, errorMessage: 'Missing x-teya-signature header' });
+      return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+    }
     if (signature && !verifyWebhookSignature(rawBody, signature)) {
       console.error('[Teya Webhook] Invalid signature');
       logWebhook(db, 'signature_invalid', { rawPayload: rawBody });

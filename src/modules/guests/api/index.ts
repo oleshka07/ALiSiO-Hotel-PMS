@@ -10,6 +10,7 @@ export { payForBooking } from './pay-booking.handlers';
 export { getChatMessages, sendChatMessage } from './chat.handlers';
 export { translateTexts } from './translate.handlers';
 export { handleCartEvent } from './cart.handlers';
+export { getRegistry, updateRegistryEntry, exportRegistry } from './registry.handlers';
 
 // Domain types
 export type { GuestWithStats, CreateGuestInput, RegisteredGuest } from '../domain/types';
