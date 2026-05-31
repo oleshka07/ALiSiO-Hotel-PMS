@@ -136,6 +136,7 @@ export default function GuestPage() {
     fullName: '', email: '', phone: '', dateOfBirth: '',
     documentType: '', documentNumber: '', nationality: '', address: '',
   });
+  const [consent, setConsent] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
 
   // WhatsApp number
@@ -489,6 +490,7 @@ export default function GuestPage() {
         setRegCurrentGuest(newCount);
         setRegStep(1);
         setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' });
+        setConsent(false);
         showToast(`✅ ${t.guestReg} ${newCount}/${requiredGuests}`);
       }
     } catch { showToast(t.regError, 'error'); }
@@ -703,6 +705,18 @@ export default function GuestPage() {
                       </div>
                     ))}
                   </div>
+                  <div className="gp-field" style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <input 
+                      type="checkbox" 
+                      id="gdpr-consent" 
+                      checked={consent} 
+                      onChange={(e) => setConsent(e.target.checked)} 
+                      style={{ marginTop: '4px', width: '18px', height: '18px' }}
+                    />
+                    <label htmlFor="gdpr-consent" style={{ fontSize: '13px', color: 'var(--gp-sub)', lineHeight: '1.4' }}>
+                      Souhlasím se zpracováním osobních údajů pro účely ubytování, vedení evidenční knihy a plnění zákonných povinností dle <a href="/privacy" target="_blank" style={{ color: 'var(--gp-primary)', textDecoration: 'underline' }}>Zásad ochrany osobních údajů</a>.
+                    </label>
+                  </div>
                   <div className="gp-confirm-success">{t.confirmNotice}</div>
                 </>
               )}
@@ -726,7 +740,7 @@ export default function GuestPage() {
                   {t.continue_}
                 </button>
               ) : (
-                <button className="gp-btn gp-btn-primary" onClick={handleRegSubmit} disabled={regLoading}>
+                <button className="gp-btn gp-btn-primary" onClick={handleRegSubmit} disabled={regLoading || !consent}>
                   {regLoading ? '...' : t.confirmReg}
                 </button>
               )}

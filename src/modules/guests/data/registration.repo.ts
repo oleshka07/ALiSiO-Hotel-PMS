@@ -19,7 +19,7 @@ export function getReservationForRegistration(token: string) {
   `).get(token) as any;
 }
 
-export function saveRegistrations(reservationId: string, organizationId: string, guests: RegisteredGuest[]) {
+export function saveRegistrations(reservationId: string, organizationId: string, guests: RegisteredGuest[], clientIp?: string) {
   const db = getDb();
 
   // Clear both tables for this reservation (idempotent re-submit)
@@ -27,20 +27,25 @@ export function saveRegistrations(reservationId: string, organizationId: string,
   db.prepare('DELETE FROM guest_registrations WHERE reservation_id = ?').run(reservationId);
 
   const insertRg = db.prepare(`
-    INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const findGuest = db.prepare(`SELECT id FROM guests WHERE organization_id = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?) LIMIT 1`);
   const insertGuest = db.prepare(`INSERT INTO guests (organization_id, first_name, last_name, date_of_birth, country, address, document_type, document_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
   const updateGuest = db.prepare(`UPDATE guests SET date_of_birth = COALESCE(?, date_of_birth), country = COALESCE(?, country), address = COALESCE(?, address), document_type = COALESCE(?, document_type), document_number = COALESCE(?, document_number), updated_at = datetime('now') WHERE id = ?`);
 
-  // guest_registrations sync — so dashboard sees the data
+  // guest_registrations sync — so dashboard sees the data, plus GDPR consent tracking
   const insertGr = db.prepare(`
-    INSERT OR IGNORE INTO guest_registrations (id, reservation_id, guest_id, is_primary, registered_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
+    INSERT OR IGNORE INTO guest_registrations (id, reservation_id, guest_id, is_primary, registered_at, consent_given, consent_at, consent_ip)
+    VALUES (?, ?, ?, ?, datetime('now'), 1, datetime('now'), ?)
   `);
 
   db.transaction(() => {
+    // Get reservation nights for fee calculation
+    const reservation = db.prepare('SELECT adults, nights FROM reservations WHERE id = ?').get(reservationId) as any;
+    const nights = reservation?.nights || 0;
+    const needed = reservation?.adults || 1;
+
     let isPrimary = 1;
     for (const guest of guests) {
       if (!guest.firstName || !guest.lastName) throw new Error('firstName and lastName are required');
@@ -57,20 +62,34 @@ export function saveRegistrations(reservationId: string, organizationId: string,
         guestId = newGuest?.id ?? null;
       }
 
+      // Calculate age for fee exemption
+      let feeExempt = 0;
+      let feeAmount = nights * 20; // 20 CZK per night
+      let feeReason: string | null = null;
+      if (guest.dateOfBirth) {
+        const dob = new Date(guest.dateOfBirth);
+        const ageDifMs = Date.now() - dob.getTime();
+        const ageDate = new Date(ageDifMs); 
+        const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+        if (age < 18) {
+          feeExempt = 1;
+          feeAmount = 0;
+          feeReason = 'Dítě do 18 let';
+        }
+      }
+
       // Write to reservation_guests (guest portal view)
-      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId);
+      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason);
 
       // Write to guest_registrations (dashboard view) — syncs data to PMS
       if (guestId) {
         const grId = `gr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        insertGr.run(grId, reservationId, guestId, isPrimary);
+        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp || null);
         isPrimary = 0; // only first guest is primary
       }
     }
 
     // Update reservation registration_status
-    const reservation = db.prepare('SELECT adults FROM reservations WHERE id = ?').get(reservationId) as any;
-    const needed = reservation?.adults || 1;
     const status = guests.length >= needed ? 'registered' : 'not_registered';
     db.prepare("UPDATE reservations SET registration_status = ? WHERE id = ?").run(status, reservationId);
   })();

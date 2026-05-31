@@ -110,7 +110,8 @@ export async function registerGuests(
       return NextResponse.json({ error: 'At least one guest is required' }, { status: 400 });
     }
 
-    const registeredGuests = registrationRepo.saveRegistrations(reservation.id, reservation.organization_id, guests);
+    const clientIp = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    const registeredGuests = registrationRepo.saveRegistrations(reservation.id, reservation.organization_id, guests, clientIp);
 
     // ── Auto-sync to Google Sheets (non-blocking) ─────────────────────────
     syncToGoogleSheets(guests, reservation).catch(() => {});
