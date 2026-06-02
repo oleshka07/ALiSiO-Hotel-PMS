@@ -453,11 +453,22 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
                         onClick={() => setSelectedUnitId(u.id)}
                       >
-                        <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                          <svg viewBox="0 0 54 54">
-                            <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                            <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                          </svg>
+                        <div
+                          className="v3-house-lock-thumb"
+                          style={{
+                            backgroundImage: u.photos?.[0] ? `url(${u.photos[0]})` : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundColor: 'var(--moss)'
+                          }}
+                        >
+                          {!u.photos?.[0] && (
+                            <svg viewBox="0 0 54 54">
+                              <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                              <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                            </svg>
+                          )}
                         </div>
                         <div className="v3-house-lock-info">
                           <div className="v3-house-lock-label">{tName(u, 'typeName', lang)}</div>
