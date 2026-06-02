@@ -91,8 +91,12 @@ export async function listReservations(request: NextRequest) {
 
     const sourceFilter = searchParams.get('source') || '';
     if (sourceFilter) {
-      query += ' AND r.source = ?';
-      params.push(sourceFilter);
+      if (sourceFilter === 'widget') {
+        query += " AND (r.source = 'widget' OR r.source LIKE 'widget:%')";
+      } else {
+        query += ' AND r.source = ?';
+        params.push(sourceFilter);
+      }
     }
 
     // Filter by specific unit (e.g. pool unit for staging strip)

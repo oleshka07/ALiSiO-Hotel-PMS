@@ -25,11 +25,19 @@ export interface UnitResult {
   prices?: { date: string; price: number }[];
 }
 
+export interface ActiveRatePlan {
+  id: string;
+  code?: string;
+  name: string;
+  includedServices?: string[];
+}
+
 export interface AvailabilityResponse {
   checkIn: string;
   checkOut: string;
   nights: number;
   units: UnitResult[];
+  activeRatePlan?: ActiveRatePlan | null;
 }
 
 export interface ReserveResponse {

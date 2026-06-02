@@ -123,6 +123,11 @@ export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCoun
 
 function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: { siteId: string; plan?: RatePlan | null; listings: Listing[]; allPlans: RatePlan[]; onSaved: () => void; onDeleted: () => void }) {
   const isNew = !plan;
+
+  // The standard/default plan — used as the base for all Derived plans
+  const defaultPlan = allPlans.find(p => p.is_default === 1) ?? allPlans[0];
+  const defaultDerivedId = plan?.derived_from_plan_id ?? defaultPlan?.id ?? '';
+
   const [form, setForm] = useState({
     name: plan?.name || '',
     cancellation_policy: plan?.cancellation_policy || 'non_refundable',
@@ -137,7 +142,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
     same_day_cutoff_hour: plan?.same_day_cutoff_hour ?? null,
     pricing_modifier_percent: plan?.pricing_modifier_percent ?? 0,
     pricing_modifier_type: plan?.pricing_modifier_type ?? 'less',
-    derived_from_plan_id: plan?.derived_from_plan_id ?? '',
+    derived_from_plan_id: defaultDerivedId,
     valid_weekdays: plan?.valid_weekdays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
   });
   const [saving, setSaving] = useState(false);
@@ -163,6 +168,8 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
         valid_weekdays: plan.valid_weekdays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
       });
     } else {
+      // New plan: default derived_from_plan_id to the standard/default plan
+      const fallbackPlan = allPlans.find(p => p.is_default === 1) ?? allPlans[0];
       setForm({
         name: '', cancellation_policy: 'non_refundable',
         payment_schedule: [{ percent: 100, trigger: 'at_booking' }],
@@ -172,7 +179,7 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
         valid_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         pricing_modifier_percent: 0,
         pricing_modifier_type: 'less',
-        derived_from_plan_id: '',
+        derived_from_plan_id: fallbackPlan?.id ?? '',
       });
     }
   }, [plan]);
@@ -333,11 +340,11 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Установіть ціни незалежно для цього тарифного плану.</div>
             </div>
           </label>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, border: '1px solid var(--border-primary)', borderRadius: 8, background: form.pricing_mode === 'derived' ? 'var(--surface-secondary)' : 'transparent' }}>
-            <input type="radio" name={`pricing_${isNew ? 'new' : plan?.id}`} value="derived" checked={form.pricing_mode === 'derived'} onChange={() => setForm(f => ({ ...f, pricing_mode: 'derived' }))} style={{ marginTop: 2 }} />
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, border: '1px solid var(--border-primary)', borderRadius: 8, background: form.pricing_mode === 'dependent' ? 'var(--surface-secondary)' : 'transparent' }}>
+            <input type="radio" name={`pricing_${isNew ? 'new' : plan?.id}`} value="dependent" checked={form.pricing_mode === 'dependent'} onChange={() => setForm(f => ({ ...f, pricing_mode: 'dependent' }))} style={{ marginTop: 2 }} />
             <div>
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Ціна цього тарифного плану залежить від цін інших тарифних планів.</div>
-              {form.pricing_mode === 'derived' && (
+              {form.pricing_mode === 'dependent' && (
                 <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14 }}>Ціна становить</span>
                   <input type="number" min="0" max="100" className="form-input" style={{ width: 80, padding: '6px 10px' }} value={form.pricing_modifier_percent} onChange={e => setForm(f => ({ ...f, pricing_modifier_percent: +e.target.value }))} />
@@ -349,10 +356,15 @@ function RatePlanForm({ siteId, plan, listings, allPlans, onSaved, onDeleted }: 
                   <span style={{ fontSize: 14 }}>ніж</span>
                   <select className="form-input" style={{ width: 200, padding: '6px 10px' }} value={form.derived_from_plan_id} onChange={e => setForm(f => ({ ...f, derived_from_plan_id: e.target.value }))}>
                     <option value="" disabled>Оберіть тарифний план</option>
-                    {allPlans.filter(p => p.id !== plan?.id).map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                    {[...allPlans.filter(p => p.id !== plan?.id)]
+                      .sort((a, b) => (b.is_default ?? 0) - (a.is_default ?? 0))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.is_default ? ' (стандарт)' : ''}
+                        </option>
+                      ))}
                   </select>
+
                 </div>
               )}
             </div>

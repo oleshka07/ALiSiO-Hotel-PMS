@@ -9,7 +9,7 @@ import type { BookingLang } from './translations';
 import { useBookingWidget } from './hooks/useBookingWidget';
 
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string; siteSlug?: string; thankYouUrl?: string; design?: DesignConfig; isPreview?: boolean; lang?: BookingLang }) {
-  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
+  const { lang, t, v3t, step, setStep, checkIn, setCheckIn, checkOut, setCheckOut, nights, selectingCheckOut, setSelectingCheckOut, adults, setAdults, kids, setKids, calMonthOffset, setCalMonthOffset, calOpen, setCalOpen, busyDates, partialDates, socialProof, waitlistStatus, joinWaitlist, nextAvailable, availability, loadingAvail, selectedUnitId, setSelectedUnitId, currentImgIndex, setCurrentImgIndex, firstName, setFirstName, lastName, setLastName, email, setEmail, phone, setPhone, submitting, error, reservation, couponCode, setCouponCode, showOffer, setShowOffer, offerApplied, offerError, applyingOffer, handleApplyOffer, extraCouponCode, setExtraCouponCode, showExtraOffer, setShowExtraOffer, extraCouponApplied, extraCouponError, applyingExtraCoupon, handleApplyExtraOffer, siteConfig, siteCurrency, services, loadingServices, selectedServiceIds, setSelectedServiceIds, setAvailability, displayUnits, selectedUnit, totalWithDiscount, totalWithoutDiscount, fetchAvailability, handleDayClick, goToStep, submitBooking, toggleService, startPayment, activeDesign, dynamicStyles, invalidNightsMsg, today, getOccupancyString, activeRatePlan } = useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPreview, initialLang });
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -118,20 +118,12 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
           <div className={`v3-cal-wrap ${calOpen ? 'open' : ''}`}>
             <div className="v3-cal-head">
-              <div className="v3-cal-month">
-                {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString({ uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' }[lang] || 'uk-UA', { month: 'long', year: 'numeric' })}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div className="v3-cal-nav">
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
-                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
-                </div>
-                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </div>
+              <div className="v3-cal-title">{t.selectDates || 'Оберіть дати'}</div>
+              <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             </div>
 
             <div className="v3-cal-months-grid">
@@ -150,7 +142,35 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
                 return (
                   <div key={offset} className="v3-month-section">
-                    <div className="v3-month-divider">{monthName}</div>
+                    <div className="v3-month-header">
+                      <button
+                        type="button"
+                        className="v3-month-nav-btn prev"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCalMonthOffset(o => o - 1);
+                        }}
+                        title={lang === 'uk' ? 'Попередній місяць' : 'Previous month'}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <div className="v3-month-title">{monthName}</div>
+                      <button
+                        type="button"
+                        className="v3-month-nav-btn next"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCalMonthOffset(o => o + 1);
+                        }}
+                        title={lang === 'uk' ? 'Наступний місяць' : 'Next month'}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M6 12L10 8L6 4" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
                     <div className="v3-cal-weekdays">
                       {[...t.dayNamesShort.slice(1), t.dayNamesShort[0]].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
                     </div>
@@ -260,6 +280,22 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           </div>
 
+          {/* Active Rate Plan badge — shown after dates are selected and availability returned */}
+          {activeRatePlan && checkIn && checkOut && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'rgba(47,79,43,0.07)',
+              border: '1px solid rgba(47,79,43,0.2)',
+              borderRadius: 10, padding: '8px 14px',
+              marginBottom: 4, marginTop: 4,
+            }}>
+              <span style={{ fontSize: 15 }}>✦</span>
+              <span style={{ fontSize: 13, color: 'var(--moss)', fontWeight: 600 }}>
+                {activeRatePlan.name}
+              </span>
+            </div>
+          )}
+
           {/* Occupancy notice */}
           {kids > 0 && (
             <div className="v3-occupancy-notice">
@@ -270,8 +306,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
           <div className="v3-offer-section">
             {!offerApplied && (
-              <button className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
-                {showOffer ? '−' : '+'} {t.couponCode} / {t.certificateCode}
+              <button type="button" className="v3-offer-toggle" onClick={() => setShowOffer(!showOffer)}>
+                <span style={{ fontSize: '14px', marginRight: '2px' }}>🏷️</span> {t.couponCode} / {t.certificateCode}
               </button>
             )}
             {offerApplied && (() => {
@@ -312,8 +348,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             {offerApplied?.offerType === 'package' && offerApplied.bundle?.allowed_promo_codes?.length > 0 && (
               <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border-primary)' }}>
                 {!extraCouponApplied && (
-                  <button className="v3-offer-toggle" onClick={() => setShowExtraOffer(!showExtraOffer)}>
-                    {showExtraOffer ? '−' : '+'} {t.couponCode}
+                  <button type="button" className="v3-offer-toggle" onClick={() => setShowExtraOffer(!showExtraOffer)}>
+                    <span style={{ fontSize: '14px', marginRight: '2px' }}>🏷️</span> {t.couponCode}
                   </button>
                 )}
                 {extraCouponApplied && (
@@ -417,11 +453,22 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
                         onClick={() => setSelectedUnitId(u.id)}
                       >
-                        <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                          <svg viewBox="0 0 54 54">
-                            <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                            <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                          </svg>
+                        <div
+                          className="v3-house-lock-thumb"
+                          style={{
+                            backgroundImage: u.photos?.[0] ? `url(${u.photos[0]})` : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundColor: 'var(--moss)'
+                          }}
+                        >
+                          {!u.photos?.[0] && (
+                            <svg viewBox="0 0 54 54">
+                              <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                              <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                            </svg>
+                          )}
                         </div>
                         <div className="v3-house-lock-info">
                           <div className="v3-house-lock-label">{tName(u, 'typeName', lang)}</div>
@@ -741,6 +788,19 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
                 <span>🏷️ {offerApplied.description || t.packagePrefix || 'Пакет'} "{offerApplied.code}"</span>
                 <span className="v3-breakdown-val" style={{ fontWeight: 600 }}>{formatPrice(offerApplied.bundle.price, siteCurrency)}</span>
+              </div>
+            )}
+            {activeRatePlan && !offerApplied && (
+              <div className="v3-breakdown-row" style={{ color: 'var(--moss)' }}>
+                <span>✦ {activeRatePlan.name}</span>
+                <span className="v3-breakdown-val" style={{ fontWeight: 600, fontSize: 12, opacity: 0.8 }}>
+                  {{
+                    uk: 'Ціна за тарифом',
+                    en: 'Plan pricing',
+                    cs: 'Sazba tarifu',
+                    de: 'Tarifpreis'
+                  }[lang] || 'Plan pricing'}
+                </span>
               </div>
             )}
             {offerApplied && offerApplied.offerType !== 'package' && (
