@@ -71,6 +71,18 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     return;
   }
 
+  // --- Booking.com domain-level filter (BEFORE parser) ---
+  // Skip ALL emails from *@*.booking.com domains entirely.
+  // The parser may return EMPTY for some (e.g. QA Glamping property filter),
+  // which would bypass the isBookingCom check below and get AI-classified as guest.
+  const senderDomain = email.from.address.split('@')[1]?.toLowerCase() || '';
+  if (senderDomain.includes('booking.com')) {
+    console.log(`[Email:${email.accountId}] Booking.com domain — skipping (${email.from.address}, subj: ${email.subject?.substring(0, 60)})`);
+    results.booking_com_parsed++;
+    db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'booking_skipped')").run(email.messageId);
+    return;
+  }
+
   const bookingData = parseBookingComEmail(email.textBody, email.from.address, email.subject);
 
   let classification;
