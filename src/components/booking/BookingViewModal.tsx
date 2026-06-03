@@ -784,6 +784,12 @@ export default function BookingViewModal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Receipt size={13} style={{ color: '#22c55e', flexShrink: 0 }} />
                       <span style={{ fontSize: 11, fontWeight: 600, color: '#22c55e' }}>{invoice.invoice_number}</span>
+                      {/* Reconciliation badge — computed from already-loaded data */}
+                      {Math.abs(invoice.amount - (b as any).total_price) <= 1 ? (
+                        <span title="Сума збігається з бронюванням" style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 600 }}>🟢</span>
+                      ) : (
+                        <span title={`Сума фактури ${invoice.amount} ≠ бронювання ${(b as any).total_price}`} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 600 }}>🟡 Розбіжність</span>
+                      )}
                       <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px' }}
                         onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')}>👁</button>
                       <button className="btn btn-sm btn-ghost" style={{ fontSize: 10, padding: '2px 6px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 3 }}

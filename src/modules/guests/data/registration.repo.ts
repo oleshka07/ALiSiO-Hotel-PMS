@@ -96,3 +96,39 @@ export function saveRegistrations(reservationId: string, organizationId: string,
 
   return db.prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at').all(reservationId);
 }
+// ── GDPR Data Retention ───────────────────────────────────────────────────
+
+export function anonymizeOldRegistrations(monthsToKeep = 6): number {
+  try {
+    const db = getDb();
+    
+    // Find all registrations where the associated reservation check_out is older than X months
+    // and the data is not already anonymized
+    const stmt = db.prepare(`
+      UPDATE guest_registrations
+      SET 
+        first_name = 'Anonymized',
+        last_name = 'Anonymized',
+        date_of_birth = NULL,
+        document_number = NULL,
+        document_type = NULL,
+        nationality = NULL,
+        address = NULL,
+        email = NULL,
+        phone = NULL
+      WHERE id IN (
+        SELECT gr.id
+        FROM guest_registrations gr
+        JOIN reservations r ON gr.reservation_id = r.id
+        WHERE r.check_out < date('now', '-' || ? || ' months')
+          AND gr.first_name != 'Anonymized'
+      )
+    `);
+    
+    const info = stmt.run(monthsToKeep);
+    return info.changes;
+  } catch (error) {
+    console.error('Failed to anonymize old registrations:', error);
+    return 0;
+  }
+}

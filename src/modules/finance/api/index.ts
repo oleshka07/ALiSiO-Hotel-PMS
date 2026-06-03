@@ -128,6 +128,10 @@ export {
 import { reissueInvoiceHandler as _reissueInvoiceHandler } from './invoices.handlers';
 export const reissueInvoiceHandler = withPermission('manage_finance_settings', _reissueInvoiceHandler);
 
+// ─── Invoice Reconciliation Journal ───────────────────────────
+// Read-only. No permission guard — same level as listInvoices.
+export { reconciliationHandler } from './reconciliation.handlers';
+
 // ─── Accounts (PR #1) ─────────────────────────────────────────
 export { listAccounts } from './accounts.handlers';
 import {

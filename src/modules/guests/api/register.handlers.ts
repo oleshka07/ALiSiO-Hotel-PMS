@@ -110,14 +110,34 @@ export async function registerGuests(
       return NextResponse.json({ error: 'At least one guest is required' }, { status: 400 });
     }
 
+    const { z } = require('zod');
+    const guestSchema = z.object({
+      firstName: z.string().min(1).max(100),
+      lastName: z.string().min(1).max(100),
+      dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+      documentType: z.enum(['id_card', 'passport', 'driving_license', 'other', '']).nullable().optional(),
+      documentNumber: z.string().max(50).nullable().optional(),
+      nationality: z.string().max(50).nullable().optional(),
+      address: z.string().max(255).nullable().optional(),
+    });
+
+    const parsedGuests = [];
+    for (const g of guests) {
+      const result = guestSchema.safeParse(g);
+      if (!result.success) {
+        return NextResponse.json({ error: `Validation failed: ${result.error.issues[0].message}` }, { status: 400 });
+      }
+      parsedGuests.push(result.data);
+    }
+
     const clientIp = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
-    const registeredGuests = registrationRepo.saveRegistrations(reservation.id, reservation.organization_id, guests, clientIp);
+    const registeredGuests = registrationRepo.saveRegistrations(reservation.id, reservation.organization_id, parsedGuests, clientIp);
 
     // ── Auto-sync to Google Sheets (non-blocking) ─────────────────────────
-    syncToGoogleSheets(guests, reservation).catch(() => {});
+    syncToGoogleSheets(parsedGuests, reservation).catch(() => {});
 
     // ── Alert if critical fields are missing ──────────────────────────────
-    alertMissingFields(guests, reservation).catch(() => {});
+    alertMissingFields(parsedGuests, reservation).catch(() => {});
 
     try {
       const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

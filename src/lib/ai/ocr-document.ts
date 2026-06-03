@@ -1,4 +1,7 @@
 import OpenAI from 'openai';
+import { spawn } from 'child_process';
+import path from 'path';
+import { parseMrz } from './mrz-parser';
 
 export interface OcrResult {
   firstName: string;
@@ -12,9 +15,6 @@ export interface OcrResult {
   confidence: number; // 0-100
 }
 
-// Lazy singleton — instantiated on first call so `next build` (which loads
-// every server module during "Collecting page data") does not crash when
-// OPENAI_API_KEY is absent in the build environment.
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) {
@@ -44,7 +44,60 @@ Rules:
 - confidence: 90+ if you can clearly read all fields, 50-89 if partially readable, below 50 if very unclear
 - If the image is not a document, return confidence: 0 with empty strings`;
 
+async function runLocalTesseract(imageUrl: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const cwd = process.cwd();
+      const scriptPath = `${cwd}/scripts/run-tesseract.js`;
+      
+      // Prevent Turbopack from tracing spawn arguments
+      const runCmd = eval('require("child_process").spawn');
+      const child = runCmd('node', [scriptPath]);
+      let stdout = '';
+
+      child.stdout.on('data', (data) => { stdout += data.toString(); });
+      child.stderr.on('data', (data) => { console.error('[Tesseract STDERR]', data.toString()); });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          console.error('[Tesseract] exited with code', code);
+          return resolve(null);
+        }
+        try {
+          const result = JSON.parse(stdout);
+          if (result.success) return resolve(result.text);
+          console.error('[Tesseract JSON Error]', result.error);
+          return resolve(null);
+        } catch {
+          return resolve(null);
+        }
+      });
+
+      child.stdin.write(imageUrl);
+      child.stdin.end();
+    } catch (e) {
+      console.error('[Tesseract Run Error]', e);
+      resolve(null);
+    }
+  });
+}
+
 export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
+  console.log('[OCR] Starting local Tesseract OCR...');
+  const text = await runLocalTesseract(imageUrl);
+  
+  if (text) {
+    const mrzData = parseMrz(text);
+    if (mrzData && mrzData.firstName && mrzData.lastName && mrzData.firstName !== 'Unknown') {
+      console.log('[OCR] Successfully parsed MRZ from local OCR.');
+      return mrzData as OcrResult;
+    }
+    console.log('[OCR] MRZ parse failed or missing fields. Falling back to OpenAI...');
+  } else {
+    console.log('[OCR] Local OCR failed entirely. Falling back to OpenAI...');
+  }
+
+  // Fallback to OpenAI
   const response = await getClient().chat.completions.create({
     model: 'gpt-4o',
     max_tokens: 800,
@@ -62,9 +115,6 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
   });
 
   const raw = response.choices[0]?.message?.content?.trim() || '{}';
-
-  // response_format=json_object guarantees pure JSON, but stay defensive in case
-  // the model wraps it in markdown fences on edge inputs.
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
 
   let parsed: Record<string, unknown>;
@@ -85,7 +135,7 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
       ? (docType as OcrResult['documentType'])
       : 'other';
 
-  console.log(`[OCR] Extracted: ${firstName} ${lastName} | confidence: ${parsed.confidence} | doc: ${documentType}`);
+  console.log(`[OCR] Fallback Extracted: ${firstName} ${lastName} | confidence: ${parsed.confidence} | doc: ${documentType}`);
   return {
     firstName,
     lastName,
