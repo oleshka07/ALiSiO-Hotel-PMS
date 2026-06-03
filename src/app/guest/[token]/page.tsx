@@ -599,7 +599,12 @@ export default function GuestPage() {
         <FarBeforeScreen
           data={data} t={t} lang={lang} dLeft={dLeft}
           isRegistered={isRegistered}
-          onRegisterClick={() => setShowReg(true)}
+          onRegisterClick={() => {
+            const rc = data?.registeredGuests?.length || 0;
+            setRegCurrentGuest(rc);
+            setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' });
+            setShowReg(true);
+          }}
           checkInTime={r?.check_in_time}
           checkOutTime={r?.check_out_time}
         />
@@ -626,7 +631,7 @@ export default function GuestPage() {
                   <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
                   <div className="gp-field">
                     <div className="gp-field-label">{t.fullName} *</div>
-                    <input className="gp-field-input" value={regData.fullName} autoComplete="name"
+                    <input className="gp-field-input" value={regData.fullName} autoComplete="off"
                       onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
                   </div>
                   <div className="gp-field">
@@ -846,7 +851,7 @@ export default function GuestPage() {
                   <div className="gp-action-desc">{registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}</div>
                 </div>
               </div>
-              <button className="gp-btn gp-btn-primary" onClick={() => { setRegCurrentGuest(registeredCount); setShowReg(true); }}>
+              <button className="gp-btn gp-btn-primary" onClick={() => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }}>
                 {registeredCount > 0 ? `${t.startReg} (${registeredCount + 1}/${requiredGuests})` : t.startReg}
               </button>
             </div>
@@ -874,7 +879,7 @@ export default function GuestPage() {
                 <ListRow icon={isRegistered ? '✅' : '⚠️'} label={t.guestReg}
                   value={isRegistered ? t.done : `${registeredCount}/${requiredGuests}`}
                   valueClass={isRegistered ? '' : 'required'}
-                  onClick={isRegistered ? null : () => { setRegCurrentGuest(registeredCount); setShowReg(true); }} />
+                  onClick={isRegistered ? null : () => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }} />
                 <ListRow icon={isRegistered ? '🔑' : '🔒'} label={t.entryInstructions}
                   value={isRegistered ? '' : formatDateLocalized(r.check_in, lang)}
                   onClick={isRegistered ? () => setSheet('entry') : () => setSheet('reg-required')}
@@ -1397,7 +1402,7 @@ export default function GuestPage() {
           <div style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 20 }}>
             {registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}
           </div>
-          <button className="gp-btn gp-btn-primary" onClick={() => { setSheet(null); setRegCurrentGuest(registeredCount); setShowReg(true); }}>
+          <button className="gp-btn gp-btn-primary" onClick={() => { setSheet(null); setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }}>
             {t.startReg}
           </button>
         </div>
@@ -1478,7 +1483,7 @@ export default function GuestPage() {
                 <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>{t.step1Title}</h2>
                 <div className="gp-field">
                   <div className="gp-field-label">{t.fullName} *</div>
-                  <input className="gp-field-input" value={regData.fullName} autoComplete="name"
+                  <input className="gp-field-input" value={regData.fullName} autoComplete="off"
                     onChange={e => setRegData(d => ({ ...d, fullName: e.target.value }))} />
                 </div>
                 <div className="gp-field">

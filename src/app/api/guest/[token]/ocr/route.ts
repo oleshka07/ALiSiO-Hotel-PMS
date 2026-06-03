@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { ocrDocument } from '@/lib/ai/ocr-document';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(
   request: Request,
@@ -9,8 +10,19 @@ export async function POST(
   const { token } = await params;
   if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 });
 
+  const rl = checkRateLimit(token, 'ocr', 5, 10); // 5 requests per 10 minutes max
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Too many OCR attempts. Please try again later.' }, { status: 429 });
+  }
+
   try {
-    const { image } = await request.json();
+    const bodyStr = await request.text();
+    // Prevent gigabyte payload attacks (limit to 10MB)
+    if (bodyStr.length > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Image too large (max 10MB)' }, { status: 413 });
+    }
+
+    const { image } = JSON.parse(bodyStr);
     if (!image) return NextResponse.json({ error: 'Missing image' }, { status: 400 });
 
     // Pass the full data URL (data:image/...;base64,...) to OCR
