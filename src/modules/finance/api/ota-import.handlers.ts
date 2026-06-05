@@ -256,18 +256,50 @@ function parseBookingPayoutCsv(content: string, db: any): OtaPreviewRow[] {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Account resolver (same logic as teya-reconcile-engine)
+// Account resolver — OTA-aware
 // ─────────────────────────────────────────────────────────────────
 
-function defaultBankAccount(db: any, orgId: string, currency: string): string | null {
-  const row = db.prepare(`
+/**
+ * Resolve the best account_to_id for an OTA income operation.
+ * Priority:
+ *  1. Named OTA clearing account matching the source (e.g. "Airbnb (EUR)")
+ *  2. Any active account with the right currency (bank → cash → clearing)
+ */
+function resolveAccountForOta(db: any, orgId: string, source: OtaSource, currency: string): string | null {
+  // 1. Try the well-known OTA clearing account IDs first
+  const knownIds: Record<string, string> = {
+    'airbnb_EUR':      'acct_clr_airbnb__eur_',
+    'airbnb_CZK':      'acct_clr_airbnb__eur_',   // fallback: airbnb always EUR
+    'booking_com_EUR': 'acct_clr_booking_com__eur_',
+    'booking_com_CZK': 'acct_clr_booking_com__czk_',
+  };
+  const knownId = knownIds[`${source}_${currency}`];
+  if (knownId) {
+    const row = db.prepare(
+      'SELECT id FROM finance_accounts WHERE id = ? AND is_active = 1 LIMIT 1'
+    ).get(knownId) as { id: string } | undefined;
+    if (row) return row.id;
+  }
+
+  // 2. Find by name pattern matching OTA source
+  const nameLike = source === 'airbnb' ? '%Airbnb%' : '%Booking%';
+  const byName = db.prepare(`
     SELECT id FROM finance_accounts
     WHERE organization_id = ? AND currency = ? AND is_active = 1
-      AND type IN ('bank', 'cash')
-    ORDER BY (type = 'bank') DESC, sort_order ASC, created_at ASC
+      AND (name LIKE ? OR type = 'clearing')
+    ORDER BY (name LIKE ?) DESC, (type = 'bank') DESC, sort_order ASC
+    LIMIT 1
+  `).get(orgId, currency, nameLike, nameLike) as { id: string } | undefined;
+  if (byName) return byName.id;
+
+  // 3. Any active account with the right currency (any type)
+  const fallback = db.prepare(`
+    SELECT id FROM finance_accounts
+    WHERE organization_id = ? AND currency = ? AND is_active = 1
+    ORDER BY (type = 'bank') DESC, (type = 'cash') DESC, sort_order ASC, created_at ASC
     LIMIT 1
   `).get(orgId, currency) as { id: string } | undefined;
-  return row?.id ?? null;
+  return fallback?.id ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -372,10 +404,10 @@ export async function confirmOtaImport(request: NextRequest): Promise<NextRespon
 
       if (dup) { skipped++; continue; }
 
-      const accountId = defaultBankAccount(db, orgId, row.currency);
+      const accountId = resolveAccountForOta(db, orgId, row.source, row.currency);
       if (!accountId) {
         errors++;
-        errorDetails.push(`Немає банківського рахунку у валюті ${row.currency} (${row.source_ref}). Додайте рахунок у /finance/settings.`);
+        errorDetails.push(`Немає рахунку у валюті ${row.currency} для ${row.source} (${row.source_ref}). Перевір /finance/settings → Рахунки.`);
         continue;
       }
 

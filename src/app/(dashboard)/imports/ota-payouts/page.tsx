@@ -317,14 +317,29 @@ export default function OtaPayoutsPage() {
       {/* Result */}
       {result && (
         <div style={{ marginTop: 24, padding: 24, background: 'var(--surface-elevated)', borderRadius: 10 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>✅ Імпорт завершено</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+            {result.created > 0 ? '✅ Імпорт завершено' : result.errors > 0 ? '❌ Імпорт не вдався' : '⚪ Нічого нового'}
+          </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
             <StatCard label="Додано" value={result.created} color="#22c55e" />
             <StatCard label="Дублікати" value={result.skipped} color="#6b7280" />
             <StatCard label="Помилок" value={result.errors} color="#ef4444" />
           </div>
 
-          {result.errorDetails.length > 0 && (
+          {/* Prominent error block when nothing was created */}
+          {result.created === 0 && result.errors > 0 && (
+            <div style={{ padding: '14px 18px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
+                Жодна операція не була збережена. Причина:
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#ef4444' }}>
+                {result.errorDetails.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                {result.errorDetails.length > 5 && <li>…і ще {result.errorDetails.length - 5} помилок</li>}
+              </ul>
+            </div>
+          )}
+
+          {result.errorDetails.length > 0 && result.created > 0 && (
             <details style={{ marginBottom: 16 }}>
               <summary style={{ cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>
                 Деталі помилок ({result.errorDetails.length})
