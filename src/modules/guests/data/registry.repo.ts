@@ -120,11 +120,11 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
   return getDb().prepare(query).all(...params) as RegistryEntry[];
 }
 
-export function getRegistrySummary(month: string): RegistrySummary {
-  const monthStart = `${month}-01`;
-  const monthEnd = nextMonth(month);
+export function getRegistrySummary(filters: { month: string; propertyId?: string }): RegistrySummary {
+  const monthStart = `${filters.month}-01`;
+  const monthEnd = nextMonth(filters.month);
 
-  const row = getDb().prepare(`
+  let query = `
     SELECT
       COUNT(*) as totalGuests,
       SUM(CASE WHEN rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END) as foreigners,
@@ -135,7 +135,15 @@ export function getRegistrySummary(month: string): RegistrySummary {
     FROM reservation_guests rg
     JOIN reservations r ON rg.reservation_id = r.id
     WHERE r.check_in >= ? AND r.check_in < ?
-  `).get(monthStart, monthEnd) as any;
+  `;
+  const params: (string | number)[] = [monthStart, monthEnd];
+
+  if (filters.propertyId) {
+    query += ' AND r.property_id = ?';
+    params.push(filters.propertyId);
+  }
+
+  const row = getDb().prepare(query).get(...params) as any;
 
   return {
     totalGuests: row?.totalGuests ?? 0,
@@ -169,14 +177,14 @@ export function unmarkPoliceReported(id: string): void {
   `).run(id);
 }
 
-export function updateFee(id: string, feeAmount: number, feeExempt: boolean, feeExemptReason?: string): void {
+export function updateFee(id: string, data: { feeAmount: number; feeExempt: boolean; feeExemptReason?: string }): void {
   getDb().prepare(`
     UPDATE reservation_guests
     SET fee_amount = ?,
         fee_exempt = ?,
         fee_exempt_reason = ?
     WHERE id = ?
-  `).run(feeAmount, feeExempt ? 1 : 0, feeExemptReason ?? null, id);
+  `).run(data.feeAmount, data.feeExempt ? 1 : 0, data.feeExemptReason ?? null, id);
 }
 
 export function calculateFees(month: string, feePerNight: number): number {

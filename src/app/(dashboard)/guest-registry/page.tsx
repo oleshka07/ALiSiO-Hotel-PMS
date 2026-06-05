@@ -92,8 +92,8 @@ export default function GuestRegistryPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ month });
-      if (foreignersOnly) params.set('foreignersOnly', '1');
-      if (unregisteredOnly) params.set('unregisteredOnly', '1');
+      if (foreignersOnly) params.set('foreignersOnly', 'true');
+      if (unregisteredOnly) params.set('unregisteredOnly', 'true');
       if (search) params.set('search', search);
 
       const res = await fetch(`/api/guest-registry?${params}`);
@@ -101,6 +101,9 @@ export default function GuestRegistryPage() {
         const data = await res.json();
         setEntries(data.entries || []);
         setSummary(data.summary || null);
+      } else {
+        const errText = await res.text();
+        console.error('[GuestRegistry] API error:', res.status, errText);
       }
     } catch (e) {
       console.error('[GuestRegistry] fetch error:', e);
@@ -145,7 +148,7 @@ export default function GuestRegistryPage() {
         <div className="registry-header-left">
           <ClipboardList size={28} className="registry-header-icon" />
           <div>
-            <h1>Evidenční kniha</h1>
+            <h1>Evidenční a domovní kniha (Ubytovací kniha)</h1>
             <p className="registry-subtitle">Kniha ubytovaných hostů</p>
           </div>
         </div>
@@ -242,6 +245,7 @@ export default function GuestRegistryPage() {
               <th>Příjezd</th>
               <th>Odjezd</th>
               <th>Noci</th>
+              <th>Účel</th>
               <th>Poplatek</th>
               <th></th>
             </tr>
@@ -299,6 +303,7 @@ export default function GuestRegistryPage() {
                     <span>{e.fee_amount ? `${e.fee_amount} CZK` : '—'}</span>
                   )}
                 </td>
+                <td>{e.purpose_of_stay || '—'}</td>
                 <td>
                   <button className="detail-btn" onClick={() => setSelectedEntry(e)} title="Detail">
                     <Eye size={14} />
