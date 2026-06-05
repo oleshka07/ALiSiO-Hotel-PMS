@@ -134,7 +134,7 @@ export default function GuestPage() {
   const [regCurrentGuest, setRegCurrentGuest] = useState(0); // 0-indexed: which guest is being registered
   const [regData, setRegData] = useState({
     fullName: '', email: '', phone: '', dateOfBirth: '',
-    documentType: '', documentNumber: '', nationality: '', address: '',
+    documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: ''
   });
   const [consent, setConsent] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
@@ -489,7 +489,7 @@ export default function GuestPage() {
         // More guests to register — reset form for next guest
         setRegCurrentGuest(newCount);
         setRegStep(1);
-        setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' });
+        setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: '' });
         setConsent(false);
         showToast(`✅ ${t.guestReg} ${newCount}/${requiredGuests}`);
       }
@@ -602,7 +602,7 @@ export default function GuestPage() {
           onRegisterClick={() => {
             const rc = data?.registeredGuests?.length || 0;
             setRegCurrentGuest(rc);
-            setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' });
+            setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: '' });
             setShowReg(true);
           }}
           checkInTime={r?.check_in_time}
@@ -851,7 +851,7 @@ export default function GuestPage() {
                   <div className="gp-action-desc">{registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}</div>
                 </div>
               </div>
-              <button className="gp-btn gp-btn-primary" onClick={() => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }}>
+              <button className="gp-btn gp-btn-primary" onClick={() => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: '' }); setShowReg(true); }}>
                 {registeredCount > 0 ? `${t.startReg} (${registeredCount + 1}/${requiredGuests})` : t.startReg}
               </button>
             </div>
@@ -879,7 +879,7 @@ export default function GuestPage() {
                 <ListRow icon={isRegistered ? '✅' : '⚠️'} label={t.guestReg}
                   value={isRegistered ? t.done : `${registeredCount}/${requiredGuests}`}
                   valueClass={isRegistered ? '' : 'required'}
-                  onClick={isRegistered ? null : () => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }} />
+                  onClick={isRegistered ? null : () => { setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: '' }); setShowReg(true); }} />
                 <ListRow icon={isRegistered ? '🔑' : '🔒'} label={t.entryInstructions}
                   value={isRegistered ? '' : formatDateLocalized(r.check_in, lang)}
                   onClick={isRegistered ? () => setSheet('entry') : () => setSheet('reg-required')}
@@ -1402,7 +1402,7 @@ export default function GuestPage() {
           <div style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 20 }}>
             {registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}
           </div>
-          <button className="gp-btn gp-btn-primary" onClick={() => { setSheet(null); setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' }); setShowReg(true); }}>
+          <button className="gp-btn gp-btn-primary" onClick={() => { setSheet(null); setRegCurrentGuest(registeredCount); setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '', purposeOfStay: 'Tourism', visaNumber: '' }); setShowReg(true); }}>
             {t.startReg}
           </button>
         </div>

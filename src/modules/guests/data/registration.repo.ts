@@ -27,8 +27,8 @@ export function saveRegistrations(reservationId: string, organizationId: string,
   db.prepare('DELETE FROM guest_registrations WHERE reservation_id = ?').run(reservationId);
 
   const insertRg = db.prepare(`
-    INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const findGuest = db.prepare(`SELECT id FROM guests WHERE organization_id = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?) LIMIT 1`);
   const insertGuest = db.prepare(`INSERT INTO guests (organization_id, first_name, last_name, date_of_birth, country, address, document_type, document_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -36,8 +36,8 @@ export function saveRegistrations(reservationId: string, organizationId: string,
 
   // guest_registrations sync — so dashboard sees the data, plus GDPR consent tracking
   const insertGr = db.prepare(`
-    INSERT OR IGNORE INTO guest_registrations (id, reservation_id, guest_id, is_primary, registered_at, consent_given, consent_at, consent_ip)
-    VALUES (?, ?, ?, ?, datetime('now'), 1, datetime('now'), ?)
+    INSERT OR IGNORE INTO guest_registrations (id, reservation_id, guest_id, is_primary, registered_at, consent_given, consent_at, consent_ip, purpose_of_stay, visa_number)
+    VALUES (?, ?, ?, ?, datetime('now'), 1, datetime('now'), ?, ?, ?)
   `);
 
   db.transaction(() => {
@@ -79,12 +79,12 @@ export function saveRegistrations(reservationId: string, organizationId: string,
       }
 
       // Write to reservation_guests (guest portal view)
-      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason);
+      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
 
       // Write to guest_registrations (dashboard view) — syncs data to PMS
       if (guestId) {
-        const grId = `gr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp || null);
+        const grId = crypto.randomUUID();
+        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
         isPrimary = 0; // only first guest is primary
       }
     }

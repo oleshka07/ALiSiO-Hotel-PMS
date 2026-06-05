@@ -119,6 +119,8 @@ export async function registerGuests(
       documentNumber: z.string().max(50).nullable().optional(),
       nationality: z.string().max(50).nullable().optional(),
       address: z.string().max(255).nullable().optional(),
+      purposeOfStay: z.string().max(100).nullable().optional(),
+      visaNumber: z.string().max(50).nullable().optional(),
     });
 
     const parsedGuests = [];

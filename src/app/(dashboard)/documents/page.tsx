@@ -114,6 +114,26 @@ const METHOD_LABELS: Record<string, string> = {
   invoice:          '📄 Фактура',
 };
 
+const SOURCE_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+  airbnb:      { label: 'Airbnb',      color: '#FF5A5F', bg: 'rgba(255,90,95,0.12)' },
+  booking_com: { label: 'Booking.com', color: '#003580', bg: 'rgba(0,53,128,0.12)'  },
+  teia:        { label: 'Teya',        color: '#7c3aed', bg: 'rgba(124,58,237,0.1)' },
+  teya_sync:   { label: 'Teya sync',   color: '#7c3aed', bg: 'rgba(124,58,237,0.1)' },
+};
+
+/** For OTA rows without linked reservation, extract guest name from comment */
+function extractDisplayName(row: ReconRow): string {
+  if (row.invoice_company_name) return row.invoice_company_name;
+  if (row.guest_name && row.guest_name.trim()) return row.guest_name.trim();
+  // Parse from OTA comment: "Airbnb: Guest Name 2026-05-31–..."
+  if (row.comment) {
+    const m = row.comment.match(/^(?:Airbnb|Booking\.com):\s*([^\d,]+?)(?:\s+\d{4}-|,|$)/);
+    if (m?.[1]?.trim()) return m[1].trim();
+    return row.comment.split(':').slice(1).join(':').split(',')[0].trim() || row.comment;
+  }
+  return '—';
+}
+
 // ─── Reconciliation Status Badge ─────────────────────────────────────────────
 
 function ReconBadge({ status }: { status: ReconStatus }) {
@@ -535,8 +555,13 @@ export default function DocumentsPage() {
                   </thead>
                   <tbody>
                     {reconRows.map((row) => {
-                      const displayName = row.invoice_company_name || row.guest_name || '—';
-                      const method = METHOD_LABELS[row.method || ''] || row.method || '—';
+                      const displayName = extractDisplayName(row);
+                      // For OTA rows, show sub-source (airbnb/booking_com) badge in method column
+                      const srcBadge = row.source ? SOURCE_BADGE[row.source] : null;
+                      const isOtaImport = row.method === 'booking_platform' && srcBadge;
+                      const methodLabel = isOtaImport
+                        ? <span style={{ padding: '1px 7px', borderRadius: 10, background: srcBadge!.bg, color: srcBadge!.color, fontWeight: 600, fontSize: 11 }}>{srcBadge!.label}</span>
+                        : (METHOD_LABELS[row.method || ''] || row.method || '—');
                       return (
                         <tr key={row.op_id}>
                           {/* Date */}
@@ -546,18 +571,31 @@ export default function DocumentsPage() {
 
                           {/* Guest / Company */}
                           <td>
-                            <span style={{ fontWeight: 500 }}>{displayName}</span>
-                            {row.comment && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 500 }}>{displayName}</span>
+                              {srcBadge && !row.guest_name && (
+                                <span style={{ padding: '1px 5px', borderRadius: 8, background: srcBadge.bg, color: srcBadge.color, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                                  {srcBadge.label}
+                                </span>
+                              )}
+                            </div>
+                            {row.comment && !isOtaImport && (
                               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}
                                 title={row.comment}>
-                                {row.comment.length > 40 ? row.comment.slice(0, 40) + '…' : row.comment}
+                                {row.comment.length > 45 ? row.comment.slice(0, 45) + '…' : row.comment}
+                              </div>
+                            )}
+                            {isOtaImport && row.comment && (
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }} title={row.comment}>
+                                {/* Show listing/dates part after the guest name */}
+                                {row.comment.replace(/^(?:Airbnb|Booking\.com):[^,]+/, '').replace(/^,\s*/, '').slice(0, 50)}
                               </div>
                             )}
                           </td>
 
                           {/* Unit */}
                           <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                            {row.unit_name || '—'}
+                            {row.unit_name || (isOtaImport ? <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>OTA</span> : '—')}
                           </td>
 
                           {/* Amount */}
@@ -573,7 +611,7 @@ export default function DocumentsPage() {
                           </td>
 
                           {/* Method */}
-                          <td style={{ fontSize: 13 }}>{method}</td>
+                          <td style={{ fontSize: 13 }}>{methodLabel}</td>
 
                           {/* Reconciliation status */}
                           <td><ReconBadge status={row.recon_status} /></td>

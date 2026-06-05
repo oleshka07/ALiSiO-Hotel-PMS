@@ -127,6 +127,8 @@ export interface Translations {
   documentNumber: string;
   nationality: string;
   permanentAddress: string;
+  purposeOfStay: string;
+  visaNumber: string;
   guest: string;
   // Step 3
   step3Title: string;
@@ -239,7 +241,7 @@ const translations: Record<Lang, Translations> = {
     step2Title: 'ID Document', step2Why: 'Required by Czech law for all accommodation guests',
     securityNotice: '🔒 Your data is stored securely and used only for mandatory guest registration',
     documentType: 'Document type', selectDoc: 'Select...', passportDoc: 'Passport', idCardDoc: 'National ID', drivingLicenseDoc: 'Driving licence',
-    documentNumber: 'Document number', nationality: 'Nationality', permanentAddress: 'Permanent address', guest: 'Guest',
+    documentNumber: 'Document number', nationality: 'Nationality', permanentAddress: 'Permanent address', purposeOfStay: 'Purpose of stay', visaNumber: 'Visa number (if applicable)', guest: 'Guest',
     step3Title: 'Confirm', confirmNotice: '✅ That\'s it! After confirming, you\'ll receive check-in instructions.',
     feedbackTitle: '💚 How was your stay?', feedbackQuestion: 'What\'s the one thing you\'ll remember?',
     feedbackPlaceholder: 'The campfire under the stars...', send: 'Send',
@@ -312,7 +314,7 @@ const translations: Record<Lang, Translations> = {
     step2Title: 'Ausweis', step2Why: 'Gesetzlich vorgeschrieben für alle Unterkunftsgäste in Tschechien',
     securityNotice: '🔒 Ihre Daten werden sicher gespeichert und nur für die Pflichtregistrierung verwendet',
     documentType: 'Dokumenttyp', selectDoc: 'Auswählen...', passportDoc: 'Reisepass', idCardDoc: 'Personalausweis', drivingLicenseDoc: 'Führerschein',
-    documentNumber: 'Dokumentnummer', nationality: 'Nationalität', permanentAddress: 'Ständige Adresse', guest: 'Gast',
+    documentNumber: 'Dokumentnummer', nationality: 'Nationalität', permanentAddress: 'Ständige Adresse', purposeOfStay: 'Reisezweck', visaNumber: 'Visumnummer (falls zutreffend)', guest: 'Gast',
     step3Title: 'Bestätigen', confirmNotice: '✅ Das war\'s! Nach der Bestätigung erhalten Sie die Check-in-Anweisungen.',
     feedbackTitle: '💚 Wie war Ihr Aufenthalt?', feedbackQuestion: 'Was werden Sie am meisten in Erinnerung behalten?',
     feedbackPlaceholder: 'Das Lagerfeuer unter den Sternen...', send: 'Senden',
@@ -385,7 +387,7 @@ const translations: Record<Lang, Translations> = {
     step2Title: 'Doklad totožnosti', step2Why: 'Vyžadováno českým zákonem pro všechny ubytované hosty',
     securityNotice: '🔒 Vaše data jsou uložena bezpečně a použita pouze pro povinnou registraci',
     documentType: 'Typ dokladu', selectDoc: 'Vyberte...', passportDoc: 'Cestovní pas', idCardDoc: 'Občanský průkaz', drivingLicenseDoc: 'Řidičský průkaz',
-    documentNumber: 'Číslo dokladu', nationality: 'Národnost', permanentAddress: 'Trvalé bydliště', guest: 'Host',
+    documentNumber: 'Číslo dokladu', nationality: 'Národnost', permanentAddress: 'Trvalé bydliště', purposeOfStay: 'Účel pobytu', visaNumber: 'Číslo víza (pokud se vás týká)', guest: 'Host',
     step3Title: 'Potvrzení', confirmNotice: '✅ To je vše! Po potvrzení obdržíte pokyny k check-inu.',
     feedbackTitle: '💚 Jak se vám líbilo?', feedbackQuestion: 'Na co budete nejvíc vzpomínat?',
     feedbackPlaceholder: 'Oheň pod hvězdami...', send: 'Odeslat',
@@ -458,7 +460,7 @@ const translations: Record<Lang, Translations> = {
     step2Title: 'Документ', step2Why: 'Вимагається чеським законодавством для всіх гостей',
     securityNotice: '🔒 Ваші дані зберігаються безпечно і використовуються лише для обов\'язкової реєстрації',
     documentType: 'Тип документа', selectDoc: 'Оберіть...', passportDoc: 'Паспорт', idCardDoc: 'ID-картка', drivingLicenseDoc: 'Водійське посвідчення',
-    documentNumber: 'Номер документа', nationality: 'Громадянство', permanentAddress: 'Адреса проживання', guest: 'Гість',
+    documentNumber: 'Номер документа', nationality: 'Громадянство', permanentAddress: 'Адреса проживання', purposeOfStay: 'Мета поїздки', visaNumber: 'Номер візи (якщо є)', guest: 'Гість',
     step3Title: 'Підтвердження', confirmNotice: '✅ Це все! Після підтвердження ви отримаєте інструкції для заїзду.',
     feedbackTitle: '💚 Як вам сподобалося?', feedbackQuestion: 'Що запам\'яталось найбільше?',
     feedbackPlaceholder: 'Вогнище під зірками...', send: 'Надіслати',

@@ -35,4 +35,6 @@ export interface RegisteredGuest {
   nationality?: string;
   documentType?: string;
   documentNumber?: string;
+  purposeOfStay?: string;
+  visaNumber?: string;
 }
