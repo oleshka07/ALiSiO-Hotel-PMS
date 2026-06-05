@@ -370,16 +370,31 @@ Respond ONLY with valid JSON:
    Helpers — extract text from raw email source
    ──────────────────────────────────────────────────────── */
 function extractTextFromSource(source: string): string {
-  const textMatch = source.match(/Content-Type:\s*text\/plain[^]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\.\r?\n|$)/i);
-  if (textMatch?.[1]) {
-    return decodeEmailBody(textMatch[1].trim());
+  // Try text/plain first
+  const textMatch = source.match(/Content-Type:\s*text\/plain[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
+  if (textMatch) {
+    const headerBlock = textMatch[0];
+    const charset = extractCharset(headerBlock);
+    const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
+    const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
+    const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
+    const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
+    return decodeEmailBody(rawBody.trim(), charset);
   }
 
-  const htmlMatch = source.match(/Content-Type:\s*text\/html[^]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\.\r?\n|$)/i);
-  if (htmlMatch?.[1]) {
-    return decodeEmailBody(htmlMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+  // Fallback: try text/html → strip tags
+  const htmlMatch = source.match(/Content-Type:\s*text\/html[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
+  if (htmlMatch) {
+    const headerBlock = htmlMatch[0];
+    const charset = extractCharset(headerBlock);
+    const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
+    const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
+    const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
+    const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
+    return decodeEmailBody(rawBody.trim(), charset).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  // Last resort: skip headers
   const headerEnd = source.indexOf('\r\n\r\n');
   if (headerEnd > 0) {
     return source.substring(headerEnd + 4, headerEnd + 2000).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -389,20 +404,66 @@ function extractTextFromSource(source: string): string {
 }
 
 function extractHtmlFromSource(source: string): string {
-  const htmlMatch = source.match(/Content-Type:\s*text\/html[^]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\.\r?\n|$)/i);
-  return htmlMatch?.[1] ? decodeEmailBody(htmlMatch[1].trim()) : '';
+  const htmlMatch = source.match(/Content-Type:\s*text\/html[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
+  if (!htmlMatch) return '';
+  const headerBlock = htmlMatch[0];
+  const charset = extractCharset(headerBlock);
+  const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
+  const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
+  const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
+  const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
+  return decodeEmailBody(rawBody.trim(), charset);
 }
 
-function decodeEmailBody(body: string): string {
+/** Extract charset from Content-Type header (e.g. charset="utf-8" or charset=iso-8859-2) */
+function extractCharset(contentTypeHeader: string): string {
+  const match = contentTypeHeader.match(/charset\s*=\s*"?([^";\s]+)"?/i);
+  return match?.[1]?.toLowerCase() || 'utf-8';
+}
+
+/**
+ * Decode email body from Quoted-Printable or Base64 encoding.
+ * Properly handles UTF-8 multi-byte sequences by decoding to Buffer first.
+ */
+function decodeEmailBody(body: string, charset: string = 'utf-8'): string {
+  // Quoted-Printable decode → collect raw bytes, then decode with correct charset
   if (body.includes('=\r\n') || body.includes('=\n') || body.includes('=3D')) {
-    body = body
-      .replace(/=\r?\n/g, '')
-      .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    // Remove soft line breaks
+    body = body.replace(/=\r?\n/g, '');
+    // Decode QP hex sequences to byte array
+    const bytes: number[] = [];
+    let i = 0;
+    while (i < body.length) {
+      if (body[i] === '=' && i + 2 < body.length && /[0-9A-Fa-f]{2}/.test(body.substring(i + 1, i + 3))) {
+        bytes.push(parseInt(body.substring(i + 1, i + 3), 16));
+        i += 3;
+      } else {
+        bytes.push(body.charCodeAt(i));
+        i++;
+      }
+    }
+    const buf = Buffer.from(bytes);
+    // Decode with detected charset (utf-8, iso-8859-1, iso-8859-2, windows-1250, etc.)
+    try {
+      const decoder = new TextDecoder(charset === 'utf-8' ? 'utf-8' : charset);
+      return decoder.decode(buf);
+    } catch {
+      return buf.toString('utf-8');
+    }
   }
+
+  // Base64 decode
   if (/^[A-Za-z0-9+/=\r\n]+$/.test(body.replace(/\s/g, '')) && body.length > 20) {
     try {
-      return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf-8');
+      const buf = Buffer.from(body.replace(/\s/g, ''), 'base64');
+      try {
+        const decoder = new TextDecoder(charset === 'utf-8' ? 'utf-8' : charset);
+        return decoder.decode(buf);
+      } catch {
+        return buf.toString('utf-8');
+      }
     } catch { /* not base64 */ }
   }
+
   return body;
 }
