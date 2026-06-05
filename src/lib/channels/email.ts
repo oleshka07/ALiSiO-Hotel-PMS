@@ -367,34 +367,62 @@ Respond ONLY with valid JSON:
 }
 
 /* ────────────────────────────────────────────────────────
-   Helpers — extract text from raw email source
+   Helpers — extract text from raw email source (MIME-aware)
    ──────────────────────────────────────────────────────── */
+
+/** Parse a MIME part: extract headers (charset, CTE) and body after the blank line */
+function extractMimePart(source: string, contentType: 'text/plain' | 'text/html'): { body: string; charset: string; encoding: string } | null {
+  // Find the Content-Type header for this type
+  const ctRegex = new RegExp(`Content-Type:\\s*${contentType.replace('/', '\\/')}[^\\r\\n]*(?:\\r?\\n[ \\t]+[^\\r\\n]*)*`, 'i');
+  const ctMatch = source.match(ctRegex);
+  if (!ctMatch) return null;
+
+  const ctHeader = ctMatch[0];
+  const ctPos = source.indexOf(ctHeader);
+
+  // Extract charset from Content-Type
+  const charsetMatch = ctHeader.match(/charset\s*=\s*"?([^";\s]+)"?/i);
+  const charset = charsetMatch?.[1]?.toLowerCase() || 'utf-8';
+
+  // From the Content-Type position, find the blank line that separates MIME headers from body.
+  // MIME part headers may include Content-Transfer-Encoding, Content-Disposition, etc.
+  const afterCt = source.substring(ctPos);
+  const blankLineIdx = afterCt.search(/\r?\n\r?\n/);
+  if (blankLineIdx < 0) return null;
+
+  // Read all MIME part headers (from Content-Type to blank line)
+  const mimeHeaders = afterCt.substring(0, blankLineIdx);
+
+  // Extract Content-Transfer-Encoding
+  const cteMatch = mimeHeaders.match(/Content-Transfer-Encoding:\s*(\S+)/i);
+  const encoding = cteMatch?.[1]?.toLowerCase() || '7bit';
+
+  // Body starts after the blank line
+  const bodyStartOffset = blankLineIdx + (afterCt[blankLineIdx] === '\r' ? 4 : 2);
+  const bodyRaw = afterCt.substring(bodyStartOffset);
+
+  // Find end of this MIME part (next boundary or end of source)
+  const boundaryEnd = bodyRaw.search(/\r?\n--/);
+  const body = boundaryEnd > 0 ? bodyRaw.substring(0, boundaryEnd) : bodyRaw;
+
+  return { body, charset, encoding };
+}
+
 function extractTextFromSource(source: string): string {
   // Try text/plain first
-  const textMatch = source.match(/Content-Type:\s*text\/plain[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
-  if (textMatch) {
-    const headerBlock = textMatch[0];
-    const charset = extractCharset(headerBlock);
-    const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
-    const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
-    const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
-    const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
-    return decodeEmailBody(rawBody.trim(), charset);
+  const textPart = extractMimePart(source, 'text/plain');
+  if (textPart) {
+    return decodeMimeBody(textPart.body, textPart.encoding, textPart.charset);
   }
 
   // Fallback: try text/html → strip tags
-  const htmlMatch = source.match(/Content-Type:\s*text\/html[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
-  if (htmlMatch) {
-    const headerBlock = htmlMatch[0];
-    const charset = extractCharset(headerBlock);
-    const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
-    const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
-    const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
-    const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
-    return decodeEmailBody(rawBody.trim(), charset).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const htmlPart = extractMimePart(source, 'text/html');
+  if (htmlPart) {
+    const decoded = decodeMimeBody(htmlPart.body, htmlPart.encoding, htmlPart.charset);
+    return decoded.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  // Last resort: skip headers
+  // Last resort: skip top-level headers, take raw body
   const headerEnd = source.indexOf('\r\n\r\n');
   if (headerEnd > 0) {
     return source.substring(headerEnd + 4, headerEnd + 2000).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -404,66 +432,54 @@ function extractTextFromSource(source: string): string {
 }
 
 function extractHtmlFromSource(source: string): string {
-  const htmlMatch = source.match(/Content-Type:\s*text\/html[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/i);
-  if (!htmlMatch) return '';
-  const headerBlock = htmlMatch[0];
-  const charset = extractCharset(headerBlock);
-  const bodyStart = source.indexOf(headerBlock) + headerBlock.length;
-  const bodyAfterHeader = source.substring(bodyStart).replace(/^\r?\n/, '');
-  const bodyEnd = bodyAfterHeader.search(/\r?\n--|\r?\n\.\r?\n/);
-  const rawBody = bodyEnd > 0 ? bodyAfterHeader.substring(0, bodyEnd) : bodyAfterHeader;
-  return decodeEmailBody(rawBody.trim(), charset);
-}
-
-/** Extract charset from Content-Type header (e.g. charset="utf-8" or charset=iso-8859-2) */
-function extractCharset(contentTypeHeader: string): string {
-  const match = contentTypeHeader.match(/charset\s*=\s*"?([^";\s]+)"?/i);
-  return match?.[1]?.toLowerCase() || 'utf-8';
+  const htmlPart = extractMimePart(source, 'text/html');
+  if (!htmlPart) return '';
+  return decodeMimeBody(htmlPart.body, htmlPart.encoding, htmlPart.charset);
 }
 
 /**
- * Decode email body from Quoted-Printable or Base64 encoding.
- * Properly handles UTF-8 multi-byte sequences by decoding to Buffer first.
+ * Decode MIME body based on Content-Transfer-Encoding and charset.
+ * Supports: base64, quoted-printable, 7bit/8bit (passthrough).
  */
-function decodeEmailBody(body: string, charset: string = 'utf-8'): string {
-  // Quoted-Printable decode → collect raw bytes, then decode with correct charset
-  if (body.includes('=\r\n') || body.includes('=\n') || body.includes('=3D')) {
-    // Remove soft line breaks
-    body = body.replace(/=\r?\n/g, '');
-    // Decode QP hex sequences to byte array
+function decodeMimeBody(body: string, encoding: string, charset: string = 'utf-8'): string {
+  if (encoding === 'base64') {
+    try {
+      const cleaned = body.replace(/\s/g, '');
+      const buf = Buffer.from(cleaned, 'base64');
+      return decodeBuffer(buf, charset);
+    } catch {
+      return body; // fallback: return raw
+    }
+  }
+
+  if (encoding === 'quoted-printable') {
+    // Remove soft line breaks, then decode hex sequences to bytes
+    const unfolded = body.replace(/=\r?\n/g, '');
     const bytes: number[] = [];
     let i = 0;
-    while (i < body.length) {
-      if (body[i] === '=' && i + 2 < body.length && /[0-9A-Fa-f]{2}/.test(body.substring(i + 1, i + 3))) {
-        bytes.push(parseInt(body.substring(i + 1, i + 3), 16));
+    while (i < unfolded.length) {
+      if (unfolded[i] === '=' && i + 2 < unfolded.length && /[0-9A-Fa-f]{2}/.test(unfolded.substring(i + 1, i + 3))) {
+        bytes.push(parseInt(unfolded.substring(i + 1, i + 3), 16));
         i += 3;
       } else {
-        bytes.push(body.charCodeAt(i));
+        bytes.push(unfolded.charCodeAt(i));
         i++;
       }
     }
-    const buf = Buffer.from(bytes);
-    // Decode with detected charset (utf-8, iso-8859-1, iso-8859-2, windows-1250, etc.)
-    try {
-      const decoder = new TextDecoder(charset === 'utf-8' ? 'utf-8' : charset);
-      return decoder.decode(buf);
-    } catch {
-      return buf.toString('utf-8');
-    }
+    return decodeBuffer(Buffer.from(bytes), charset);
   }
 
-  // Base64 decode
-  if (/^[A-Za-z0-9+/=\r\n]+$/.test(body.replace(/\s/g, '')) && body.length > 20) {
-    try {
-      const buf = Buffer.from(body.replace(/\s/g, ''), 'base64');
-      try {
-        const decoder = new TextDecoder(charset === 'utf-8' ? 'utf-8' : charset);
-        return decoder.decode(buf);
-      } catch {
-        return buf.toString('utf-8');
-      }
-    } catch { /* not base64 */ }
-  }
-
+  // 7bit, 8bit, binary — return as-is
   return body;
+}
+
+/** Decode a Buffer using the specified charset (utf-8, iso-8859-2, windows-1250, etc.) */
+function decodeBuffer(buf: Buffer, charset: string): string {
+  try {
+    const decoder = new TextDecoder(charset);
+    return decoder.decode(buf);
+  } catch {
+    // Fallback to utf-8 if charset is not recognized
+    return buf.toString('utf-8');
+  }
 }
