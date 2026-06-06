@@ -344,6 +344,9 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       }
     }
 
+    // Ensure guest appears in Evidenční kniha (registry)
+    ensureRegistryEntry(db, existing.id, guestId, res, nights);
+
     result.updated++;
 
   } else {
@@ -418,9 +421,78 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
     });
 
     result.created++;
+
+    // Ensure guest appears in Evidenční kniha (registry)
+    ensureRegistryEntry(db, newId, guestId, res, nights);
   }
 
   result.synced++;
+}
+
+// ─── Auto-create registry entry for Hostex guests ─────────
+//
+// Czech law requires ALL guests to be registered in the Evidenční kniha.
+// When Hostex syncs a reservation, we create a minimal entry in
+// reservation_guests so the guest is visible in the registry.
+// If the guest later fills the portal form, saveRegistrations() will
+// DELETE + re-INSERT with full details (idempotent re-submit).
+
+function ensureRegistryEntry(
+  db: any,
+  reservationId: string,
+  guestId: string,
+  res: HostexReservation,
+  nights: number,
+) {
+  try {
+    // Skip if guest portal already populated this reservation
+    const existing = db.prepare(
+      'SELECT id FROM reservation_guests WHERE reservation_id = ?'
+    ).get(reservationId);
+    if (existing) return;
+
+    // Get guest name from the guests table
+    const guest = db.prepare('SELECT first_name, last_name, country, date_of_birth FROM guests WHERE id = ?').get(guestId) as any;
+    if (!guest) return;
+
+    const firstName = guest.first_name || '';
+    const lastName = guest.last_name || '';
+    if (!firstName && !lastName) return;
+
+    // Calculate fee: 20 CZK per night, exempt if under 18
+    let feeAmount = nights * 20;
+    let feeExempt = 0;
+    let feeReason: string | null = null;
+    if (guest.date_of_birth) {
+      try {
+        const dob = new Date(guest.date_of_birth);
+        const ageDiffMs = Date.now() - dob.getTime();
+        const ageDate = new Date(ageDiffMs);
+        const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+        if (age < 18) {
+          feeExempt = 1;
+          feeAmount = 0;
+          feeReason = 'Dítě do 18 let';
+        }
+      } catch { /* ignore */ }
+    }
+
+    db.prepare(`
+      INSERT INTO reservation_guests (
+        reservation_id, first_name, last_name, nationality, guest_id,
+        fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay,
+        date_of_birth
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Tourism', ?)
+    `).run(
+      reservationId, firstName, lastName,
+      guest.country || null, guestId,
+      feeAmount, feeExempt, feeReason,
+      guest.date_of_birth || null,
+    );
+  } catch (e: any) {
+    // Don't let registry errors break Hostex sync
+    console.warn(`[Hostex] ensureRegistryEntry error for ${reservationId}:`, e.message);
+  }
 }
 
 // ─── Process blocked date (owner closure in Hostex) ────────
