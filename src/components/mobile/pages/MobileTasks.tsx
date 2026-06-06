@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Search, RefreshCw, Plus, X, Check, Calendar, Flag, Tag,
   User, FolderOpen, Loader2, Paperclip, Image, Trash2,
-  CheckSquare, Clock, AlertTriangle, Send,
+  CheckSquare, Clock, AlertTriangle, Send, Building2,
 } from 'lucide-react';
 
 /* ================================================================
@@ -35,6 +35,8 @@ interface Task {
   tags?: TaskTag[];
   subtask_count?: number;
   subtask_done_count?: number;
+  property_id?: string | null;
+  property_name?: string | null;
 }
 
 interface TaskProject {
@@ -43,6 +45,7 @@ interface TaskProject {
 }
 
 interface AppUser { id: string; full_name: string; }
+interface Property { id: string; name: string; }
 
 /* ================================================================
    Constants
@@ -97,12 +100,13 @@ function initials(name: string): string {
    Task Detail Bottom Sheet
    ================================================================ */
 function TaskSheet({
-  task, projects, tags, users, onClose, onUpdated, onDeleted, onSaved,
+  task, projects, tags, users, properties, onClose, onUpdated, onDeleted, onSaved,
 }: {
   task: Task;
   projects: TaskProject[];
   tags: TaskTag[];
   users: AppUser[];
+  properties: Property[];
   onClose: () => void;
   onUpdated: () => void;
   onDeleted: () => void;
@@ -117,6 +121,7 @@ function TaskSheet({
     due_time: task.due_time || '',
     project_id: task.project_id || '',
     assignee_id: task.assignee_id || '',
+    property_id: task.property_id || '',
   });
   const [taskTags, setTaskTags] = useState<string[]>(task.tags?.map(t => t.id) || []);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
@@ -351,6 +356,17 @@ function TaskSheet({
             >
               <option value="">Inbox</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.icon} {p.name}</option>)}
+            </select>
+          )}
+          {fieldRow(<Building2 size={14} />, "Об'єкт",
+            <select
+              className="form-select"
+              value={form.property_id}
+              onChange={e => setForm(f => ({ ...f, property_id: e.target.value }))}
+              style={{ fontSize: 13, padding: '6px 8px' }}
+            >
+              <option value="">Не вибрано</option>
+              {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
 
@@ -612,6 +628,7 @@ export default function MobileTasks() {
   const [projects, setProjects] = useState<TaskProject[]>([]);
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -634,11 +651,14 @@ export default function MobileTasks() {
         fetch('/api/tasks/projects'),
         fetch('/api/tasks/tags'),
         fetch('/api/users'),
+        fetch('/api/properties'),
       ]);
       if (tRes.ok) { const d = await tRes.json(); setTasks(Array.isArray(d) ? d : d.tasks || []); }
       if (pRes.ok) { const d = await pRes.json(); setProjects(Array.isArray(d) ? d : []); }
       if (tgRes.ok) { const d = await tgRes.json(); setTags(Array.isArray(d) ? d : []); }
       if (uRes.ok) { const d = await uRes.json(); setUsers(Array.isArray(d) ? d : d.users || []); }
+      const prRes = await fetch('/api/properties'); // properties fetched separately
+      if (prRes.ok) { const d = await prRes.json(); setProperties(Array.isArray(d) ? d : d.properties || []); }
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [projectFilter, search]);
@@ -952,6 +972,7 @@ export default function MobileTasks() {
           projects={projects}
           tags={tags}
           users={users}
+          properties={properties}
           onClose={() => setViewTask(null)}
           onUpdated={() => { setViewTask(null); fetchData(); }}
           onDeleted={() => { setViewTask(null); fetchData(); }}

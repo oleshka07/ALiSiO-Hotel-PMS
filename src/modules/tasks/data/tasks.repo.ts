@@ -248,9 +248,14 @@ export function deleteTask(id: string): { ok: boolean } {
   const db = getDb();
 
   // Clean up attachment files from disk before cascade delete removes DB rows
-  const attachments = db.prepare(
-    'SELECT url FROM task_attachments WHERE task_id = ?'
-  ).all(id) as { url: string }[];
+  // Include attachments from subtasks (which will be cascade-deleted)
+  const attachments = db.prepare(`
+    SELECT url FROM task_attachments WHERE task_id = ?
+    UNION ALL
+    SELECT a.url FROM task_attachments a
+    JOIN tasks t ON a.task_id = t.id
+    WHERE t.parent_id = ?
+  `).all(id, id) as { url: string }[];
 
   const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'tasks');
   for (const att of attachments) {
