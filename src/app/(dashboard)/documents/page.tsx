@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
@@ -153,7 +154,16 @@ function ReconBadge({ status }: { status: ReconStatus }) {
 
 export default function DocumentsPage() {
   const onMenuClick = useMobileMenu();
-  const [activeTab, setActiveTab] = useState<'invoices' | 'reconciliation'>('invoices');
+  const searchParams = useSearchParams();
+
+  // Read initial values from URL params (?tab=reconciliation&month=2026-05)
+  const urlTab = searchParams.get('tab');
+  const urlMonth = searchParams.get('month');
+  const validMonth = (m: string | null) => m && /^\d{4}-\d{2}$/.test(m) ? m : null;
+
+  const [activeTab, setActiveTab] = useState<'invoices' | 'reconciliation'>(
+    urlTab === 'reconciliation' ? 'reconciliation' : 'invoices'
+  );
 
   // ── Invoices tab state ────────────────────────────────────────
   const [invoices, setInvoices]   = useState<Invoice[]>([]);
@@ -161,7 +171,8 @@ export default function DocumentsPage() {
   const [invError, setInvError]   = useState<string | null>(null);
 
   // ── Reconciliation tab state ──────────────────────────────────
-  const [month, setMonth]           = useState(currentMonth());
+  const [month, setMonth]           = useState(validMonth(urlMonth) || currentMonth());
+
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [reconRows, setReconRows]   = useState<ReconRow[]>([]);
@@ -534,9 +545,25 @@ export default function DocumentsPage() {
                     ? 'Транзакцій за цей місяць ще немає'
                     : 'Немає результатів за вибраними фільтрами'}
                 </div>
-                <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>
                   Транзакції з'являються коли в системі є вхідні операції (income) зі статусом completed.
                 </div>
+                {statusFilter === 'all' && methodFilter === 'all' && (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Перевір інші місяці:</span>
+                    {[1, 2, 3].map(offset => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() - offset);
+                      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                      return (
+                        <button key={m} onClick={() => setMonth(m)}
+                          style={{ padding: '4px 10px', borderRadius: 6, background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer' }}>
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="table-wrapper">

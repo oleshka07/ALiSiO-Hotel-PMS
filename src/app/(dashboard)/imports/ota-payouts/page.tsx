@@ -350,17 +350,28 @@ export default function OtaPayoutsPage() {
             </details>
           )}
 
-          {result.created > 0 && (
-            <div style={{ padding: '14px 18px', background: 'rgba(79,110,247,0.08)', border: '1px solid rgba(79,110,247,0.2)', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 20 }}>📊</span>
-              <div>
-                <b>{result.created} операцій</b> з'явилися в Журналі звірки.
+          {result.created > 0 && (() => {
+            // Find the earliest month from the imported rows to link there
+            const months = preview?.rows
+              ? [...new Set(preview.rows.filter(r => r.action === 'create' && r.paid_at).map(r => r.paid_at.slice(0, 7)))]
+                  .sort()
+              : [];
+            // If operations span multiple months, default to earliest
+            const journalMonth = months[0] || new Date().toISOString().slice(0, 7);
+            const journalUrl = `/documents?tab=reconciliation&month=${journalMonth}`;
+            return (
+              <div style={{ padding: '14px 18px', background: 'rgba(79,110,247,0.08)', border: '1px solid rgba(79,110,247,0.2)', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 20 }}>📊</span>
+                <div>
+                  <b>{result.created} операцій</b> з'явилися в Журналі звірки за <b>{journalMonth}</b>.
+                  {months.length > 1 && <span style={{ color: 'var(--text-tertiary)' }}> (і ще {months.slice(1).join(', ')})</span>}
+                </div>
+                <a href={journalUrl} style={{ padding: '6px 14px', background: '#4f6ef7', color: '#fff', borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: 'none', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                  → Відкрити Журнал
+                </a>
               </div>
-              <a href="/documents" style={{ padding: '6px 14px', background: '#4f6ef7', color: '#fff', borderRadius: 6, fontSize: 12, fontWeight: 700, textDecoration: 'none', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-                → Журнал звірки
-              </a>
-            </div>
-          )}
+            );
+          })()}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button onClick={reset} style={{ padding: '8px 18px', background: '#4f6ef7', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
