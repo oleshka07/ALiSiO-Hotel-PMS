@@ -578,15 +578,17 @@
 
 .inbox-msg {
   display: flex;
-  max-width: 75%;
+  max-width: 72%;
 }
 
 .inbox-msg-in {
   align-self: flex-start;
+  margin-right: auto;
 }
 
 .inbox-msg-out {
   align-self: flex-end;
+  margin-left: auto;
 }
 
 .inbox-msg-bubble {
@@ -602,12 +604,18 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-bottom-left-radius: 4px;
+  color: var(--text-primary);
 }
 
 .inbox-msg-out .inbox-msg-bubble {
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(79, 70, 229, 0.18));
+  border: 1px solid rgba(99, 102, 241, 0.25);
   border-bottom-right-radius: 4px;
+  color: var(--text-primary);
+}
+
+.inbox-msg-out .inbox-msg-meta {
+  justify-content: flex-end;
 }
 
 .inbox-msg-content {
