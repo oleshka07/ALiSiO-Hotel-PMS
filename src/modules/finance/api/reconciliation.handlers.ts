@@ -25,7 +25,9 @@ export interface ReconRow {
   reservation_id: string | null;
   comment: string | null;
   guest_name: string | null;
+  guest_email: string | null;
   invoice_company_name: string | null;
+  invoice_company_email: string | null;
   unit_name: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
@@ -74,7 +76,9 @@ export async function reconciliationHandler(
         fo.comment,
         TRIM(COALESCE(g.first_name, '') || ' ' || COALESCE(g.last_name, ''))
                                                    AS guest_name,
+        g.email                                    AS guest_email,
         r.invoice_company_name,
+        r.invoice_company_email,
         u.name                                     AS unit_name,
         i.id                                       AS invoice_id,
         i.invoice_number,

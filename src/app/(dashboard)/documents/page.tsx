@@ -8,7 +8,7 @@ import {
   FileText, Download, Eye, RefreshCw, Receipt,
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
-  XCircle, AlertTriangle, Banknote, Plus,
+  XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,7 +39,9 @@ interface ReconRow {
   reservation_id: string | null;
   comment: string | null;
   guest_name: string | null;
+  guest_email: string | null;
   invoice_company_name: string | null;
+  invoice_company_email: string | null;
   unit_name: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
@@ -180,6 +182,56 @@ export default function DocumentsPage() {
   const [reconLoading, setReconLoading] = useState(false);
   const [reconError, setReconError] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
+
+  // ── Email popover state ───────────────────────────────────────
+  const [emailPopover, setEmailPopover] = useState<{
+    invoiceId: string;
+    invoiceNumber: string;
+    defaultEmail: string;
+  } | null>(null);
+  const [emailTo, setEmailTo]         = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailToast, setEmailToast]   = useState<string | null>(null);
+
+  // ── ISDOC download ────────────────────────────────────────────
+  const downloadIsdoc = useCallback((invoiceId: string, invoiceNumber: string) => {
+    const a = document.createElement('a');
+    a.href = `/api/invoices/${invoiceId}/isdoc`;
+    a.download = `faktura-${invoiceNumber}.isdoc`;
+    a.click();
+  }, []);
+
+  // ── Open email popover ────────────────────────────────────────
+  const openEmailPopover = useCallback((row: ReconRow) => {
+    if (!row.invoice_id || !row.invoice_number) return;
+    const defaultEmail = row.invoice_company_email || row.guest_email || '';
+    setEmailTo(defaultEmail);
+    setEmailPopover({ invoiceId: row.invoice_id, invoiceNumber: row.invoice_number, defaultEmail });
+  }, []);
+
+  // ── Send invoice email ────────────────────────────────────────
+  const sendInvoiceEmail = useCallback(async () => {
+    if (!emailPopover || !emailTo.trim()) return;
+    setEmailSending(true);
+    try {
+      const res = await fetch(`/api/invoices/${emailPopover.invoiceId}/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: emailTo.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setEmailPopover(null);
+      setEmailToast(`✅ Надіслано на ${data.to}`);
+      setTimeout(() => setEmailToast(null), 4000);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setEmailToast(`❌ Помилка: ${msg}`);
+      setTimeout(() => setEmailToast(null), 5000);
+    } finally {
+      setEmailSending(false);
+    }
+  }, [emailPopover, emailTo]);
 
   // ── Fetch invoices ────────────────────────────────────────────
   const fetchInvoices = useCallback(async () => {
@@ -436,6 +488,9 @@ export default function DocumentsPage() {
             {/* ─── Month Navigator ──────────────────────────────── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="btn btn-ghost btn-sm btn-icon" title="Оновити" onClick={fetchRecon}>
+                  <RefreshCw size={14} className={reconLoading ? 'spin' : ''} />
+                </button>
                 <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setMonth(prevMonth(month))}>
                   <ChevronLeft size={16} />
                 </button>
@@ -484,6 +539,22 @@ export default function DocumentsPage() {
                   <option value="booking_platform">🏨 Платформа</option>
                   <option value="cash">💵 Готівка</option>
                 </select>
+
+                {/* ISDOC ZIP export */}
+                <a
+                  href={`/api/accounting/isdoc-batch?month=${month}`}
+                  download={`isdoc-${month}.zip`}
+                  title={`Завантажити всі ISDOC за ${month}`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '5px 12px', borderRadius: 7,
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+                    textDecoration: 'none', whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Package size={13} /> ISDOC ZIP
+                </a>
               </div>
             </div>
 
@@ -656,7 +727,7 @@ export default function DocumentsPage() {
 
                           {/* Actions */}
                           <td>
-                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                               {row.invoice_id && (
                                 <>
                                   <button
@@ -673,6 +744,22 @@ export default function DocumentsPage() {
                                   >
                                     <Download size={13} />
                                   </button>
+                                  <button
+                                    className="btn btn-sm btn-ghost btn-icon"
+                                    title="Завантажити ISDOC"
+                                    onClick={() => downloadIsdoc(row.invoice_id!, row.invoice_number!)}
+                                  >
+                                    <FileCode size={13} />
+                                  </button>
+                                  {(row.guest_email || row.invoice_company_email) && (
+                                    <button
+                                      className="btn btn-sm btn-ghost btn-icon"
+                                      title={`Надіслати фактуру на email`}
+                                      onClick={() => openEmailPopover(row)}
+                                    >
+                                      <Mail size={13} />
+                                    </button>
+                                  )}
                                 </>
                               )}
                               {row.recon_status === 'missing' && row.reservation_id && (
@@ -717,6 +804,76 @@ export default function DocumentsPage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 1s linear infinite; }
       `}</style>
+
+      {/* ── Email Popover ────────────────────────────────────────── */}
+      {emailPopover && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }} onClick={(e) => { if (e.target === e.currentTarget) setEmailPopover(null); }}>
+          <div style={{
+            background: 'var(--surface-elevated)', borderRadius: 12, padding: 28,
+            width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <Mail size={20} style={{ color: '#4f6ef7' }} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Надіслати фактуру</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{emailPopover.invoiceNumber}</div>
+              </div>
+            </div>
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Email отримувача</label>
+            <input
+              type="email"
+              className="form-input"
+              value={emailTo}
+              onChange={e => setEmailTo(e.target.value)}
+              placeholder="guest@example.com"
+              style={{ width: '100%', marginBottom: 20 }}
+              onKeyDown={e => { if (e.key === 'Enter') sendInvoiceEmail(); }}
+              autoFocus
+            />
+
+            {emailPopover.defaultEmail && emailTo !== emailPopover.defaultEmail && (
+              <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                Стандартний email гостя:{' '}
+                <button onClick={() => setEmailTo(emailPopover.defaultEmail)}
+                  style={{ background: 'none', border: 'none', color: '#4f6ef7', cursor: 'pointer', fontSize: 12, textDecoration: 'underline', padding: 0 }}>
+                  {emailPopover.defaultEmail}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setEmailPopover(null)}>Скасувати</button>
+              <button
+                className="btn btn-primary"
+                disabled={!emailTo.trim() || emailSending}
+                onClick={sendInvoiceEmail}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {emailSending ? <RefreshCw size={14} className="spin" /> : <Mail size={14} />}
+                {emailSending ? 'Надсилаємо…' : 'Надіслати'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast notification ────────────────────────────────── */}
+      {emailToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 2000,
+          padding: '12px 20px', borderRadius: 10,
+          background: emailToast.startsWith('✅') ? '#1a2e1a' : '#2e1a1a',
+          border: `1px solid ${emailToast.startsWith('✅') ? '#22c55e' : '#ef4444'}`,
+          color: '#fff', fontSize: 14, fontWeight: 600,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          {emailToast}
+        </div>
+      )}
     </>
   );
 }
