@@ -97,7 +97,7 @@ export async function exportRegistry(request: NextRequest): Promise<NextResponse
       e.document_type, e.document_number, e.address, e.purpose_of_stay,
       e.check_in, e.check_out, e.nights, e.unit_name,
       e.fee_amount, e.fee_exempt ? 'Ano' : 'Ne', e.fee_exempt_reason,
-      e.police_reported ? 'Ano' : 'Ne', e.police_ref,
+      e.police_reported ? 'Ano' : 'Ne', e.police_report_ref,
     ].map(escCsv).join(','));
 
     const csv = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');

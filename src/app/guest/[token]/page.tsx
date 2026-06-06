@@ -465,6 +465,8 @@ export default function GuestPage() {
         dateOfBirth: g.date_of_birth, address: g.address,
         nationality: g.nationality, documentType: g.document_type,
         documentNumber: g.document_number,
+        purposeOfStay: g.purpose_of_stay || 'Tourism',
+        visaNumber: g.visa_number || '',
       }));
       const allGuests = [...existingGuests, {
         firstName, lastName,
@@ -472,6 +474,8 @@ export default function GuestPage() {
         nationality: regData.nationality,
         documentType: regData.documentType,
         documentNumber: regData.documentNumber,
+        purposeOfStay: regData.purposeOfStay || 'Tourism',
+        visaNumber: regData.visaNumber || '',
       }];
       const res = await fetch(`/api/guest/${token}/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

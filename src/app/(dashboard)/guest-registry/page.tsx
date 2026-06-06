@@ -252,9 +252,9 @@ export default function GuestRegistryPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} className="registry-empty">Načítání...</td></tr>
+              <tr><td colSpan={12} className="registry-empty">Načítání...</td></tr>
             ) : entries.length === 0 ? (
-              <tr><td colSpan={11} className="registry-empty">Žádní hosté v tomto měsíci</td></tr>
+              <tr><td colSpan={12} className="registry-empty">Žádní hosté v tomto měsíci</td></tr>
             ) : entries.map((e) => (
               <tr
                 key={e.id}
@@ -296,6 +296,7 @@ export default function GuestRegistryPage() {
                 <td>{formatDate(e.check_in)}</td>
                 <td>{formatDate(e.check_out)}</td>
                 <td className="td-center">{e.nights}</td>
+                <td>{e.purpose_of_stay || '—'}</td>
                 <td className="td-fee">
                   {e.fee_exempt ? (
                     <span className="fee-exempt" title={e.fee_exempt_reason || 'Osvobozeno'}>0 CZK</span>
@@ -303,7 +304,6 @@ export default function GuestRegistryPage() {
                     <span>{e.fee_amount ? `${e.fee_amount} CZK` : '—'}</span>
                   )}
                 </td>
-                <td>{e.purpose_of_stay || '—'}</td>
                 <td>
                   <button className="detail-btn" onClick={() => setSelectedEntry(e)} title="Detail">
                     <Eye size={14} />
