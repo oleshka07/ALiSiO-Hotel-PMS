@@ -278,13 +278,14 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
     // ═══════════════════════════════════════════════════════════════
     const TABLE_TOP = SEC2_TOP + SEC2_H + 10;
 
-    // Column positions
+    // Column positions — all coordinates are absolute (ML = left margin = 40)
+    // Total width W = 515, right edge at ML+W = 555
     const C = {
-      desc:  { x: ML,          w: 240 },
-      qty:   { x: ML + 240,    w: 36  },
-      price: { x: ML + 276,    w: 80  },
-      disc:  { x: ML + 356,    w: 60  },
-      total: { x: ML + 416,    w: W - 376 },
+      desc:  { x: ML,          w: 210 },  // 40→250
+      qty:   { x: ML + 210,    w: 36  },  // 250→286
+      price: { x: ML + 246,    w: 90  },  // 286→376
+      disc:  { x: ML + 336,    w: 70  },  // 376→446
+      total: { x: ML + 406,    w: W - 406 }, // 446→555 (right margin)
     };
 
     // Table header bg
