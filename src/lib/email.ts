@@ -32,9 +32,14 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  attachments?: Array<{
+    filename:    string;
+    content:     Buffer;
+    contentType: string;
+  }>;
 }
 
-export async function sendEmail({ to, subject, html, text }: SendEmailOptions): Promise<void> {
+export async function sendEmail({ to, subject, html, text, attachments }: SendEmailOptions): Promise<void> {
   const t = getTransporter();
   await t.sendMail({
     from: `"Kemp Carlsbad" <${process.env.EMAIL_CZ_USER || 'kemp-carlsbad@email.cz'}>`,
@@ -42,6 +47,7 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
     subject,
     html,
     text: text || html.replace(/<[^>]+>/g, ''),
+    attachments,
   });
   console.log(`[Email] Sent to ${to}: ${subject}`);
 }

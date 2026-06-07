@@ -9,6 +9,7 @@ import {
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
   XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
+  Sparkles, Send, Building2, FileDown, Loader2,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -194,6 +195,99 @@ export default function DocumentsPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailToast, setEmailToast]   = useState<string | null>(null);
 
+  // ── Custom Invoice Modal state ────────────────────────────────
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customForm, setCustomForm] = useState({
+    description:   'Krátkodobé ubytování',
+    descCustom:    '',
+    amount:        '',
+    currency:      'CZK',
+    dueDate:       '',
+    paymentMethod: 'Příkazem',
+    buyerName:     '',
+    buyerIco:      '',
+    buyerDic:      '',
+    buyerAddress:  '',
+    buyerCity:     '',
+    emailTo:       '',
+    showBuyer:     false,
+  });
+  const [customGenerating, setCustomGenerating] = useState(false);
+  const [customToast,      setCustomToast]      = useState<string | null>(null);
+
+  const DESCRIPTION_PRESETS = [
+    'Krátkodobé ubytování',
+    'Záloha na ubytování',
+    'Dlouhodobý pronájem',
+    'Ubytování skupiny',
+    'Wellness & doplňkové služby',
+    'Jiné (zadat ručně)',
+  ];
+
+  const handleGenerateCustom = async (emailAfter: boolean) => {
+    const desc = customForm.description === 'Jiné (zadat ručně)'
+      ? customForm.descCustom.trim()
+      : customForm.description;
+    const amt = parseFloat(customForm.amount);
+    if (!desc) { setCustomToast('❌ Вкажіть опис фактури'); return; }
+    if (!amt || amt <= 0) { setCustomToast('❌ Вкажіть суму'); return; }
+    if (emailAfter && !customForm.emailTo.trim()) {
+      setCustomToast('❌ Вкажіть email для відправки'); return;
+    }
+    setCustomGenerating(true);
+    setCustomToast(null);
+    try {
+      const today = new Date();
+      const defDue = customForm.dueDate || (() => {
+        const d = new Date(); d.setDate(d.getDate() + 14);
+        return d.toISOString().slice(0, 10);
+      })();
+      const body: Record<string, unknown> = {
+        description:   desc,
+        amount:        amt,
+        currency:      customForm.currency,
+        dueDate:       defDue,
+        paymentMethod: customForm.paymentMethod,
+        action:        emailAfter ? 'pdf' : 'pdf',
+      };
+      if (customForm.showBuyer) {
+        if (customForm.buyerName)    body.buyerName    = customForm.buyerName;
+        if (customForm.buyerIco)     body.buyerIco     = customForm.buyerIco;
+        if (customForm.buyerDic)     body.buyerDic     = customForm.buyerDic;
+        if (customForm.buyerAddress) body.buyerAddress = customForm.buyerAddress;
+        if (customForm.buyerCity)    body.buyerCity    = customForm.buyerCity;
+      }
+      if (emailAfter && customForm.emailTo.trim()) body.emailTo = customForm.emailTo.trim();
+      const res = await fetch('/api/invoices/custom', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed');
+      }
+      // Download PDF from response
+      const blob = await res.blob();
+      const invoiceNum = res.headers.get('X-Invoice-Number') || 'faktura';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `faktura-${invoiceNum}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      setCustomToast(emailAfter
+        ? `✅ PDF збережено і надіслано на ${customForm.emailTo}`
+        : '✅ PDF згенеровано і завантажено');
+      // Refresh invoice list after short delay
+      setTimeout(() => { fetchInvoices(); fetchRecon(); }, 1000);
+      setTimeout(() => setShowCustomModal(false), 2500);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCustomToast(`❌ Помилка: ${msg}`);
+    } finally {
+      setCustomGenerating(false);
+    }
+  };
+
   // ── ISDOC download ────────────────────────────────────────────
   const downloadIsdoc = useCallback((invoiceId: string, invoiceNumber: string) => {
     const a = document.createElement('a');
@@ -308,14 +402,23 @@ export default function DocumentsPage() {
             <h2 className="page-title">Документи</h2>
             <div className="page-subtitle">Інвойси та бухгалтерська звірка транзакцій</div>
           </div>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={activeTab === 'invoices' ? fetchInvoices : fetchRecon}
-            disabled={activeTab === 'invoices' ? invLoading : reconLoading}
-          >
-            <RefreshCw size={14} className={(activeTab === 'invoices' ? invLoading : reconLoading) ? 'spin' : ''} />
-            Оновити
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowCustomModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Sparkles size={14} /> Вільна фактура
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={activeTab === 'invoices' ? fetchInvoices : fetchRecon}
+              disabled={activeTab === 'invoices' ? invLoading : reconLoading}
+            >
+              <RefreshCw size={14} className={(activeTab === 'invoices' ? invLoading : reconLoading) ? 'spin' : ''} />
+              Оновити
+            </button>
+          </div>
         </div>
 
         {/* ─── Tab Bar ──────────────────────────────────────────── */}
@@ -914,6 +1017,208 @@ export default function DocumentsPage() {
           {emailToast}
         </div>
       )}
+
+        {/* ════════════════ MODAL: ВІЛЬНА ФАКТУРА ════════════════ */}
+        {showCustomModal && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 3000,
+            background: 'rgba(0,0,0,0.65)', display: 'flex',
+            alignItems: 'flex-start', justifyContent: 'center',
+            padding: '24px 16px', overflowY: 'auto',
+          }} onClick={e => { if (e.target === e.currentTarget) setShowCustomModal(false); }}>
+            <div style={{
+              background: 'var(--surface-elevated)', borderRadius: 16, width: '100%', maxWidth: 700,
+              boxShadow: '0 24px 80px rgba(0,0,0,0.5)', border: '1px solid var(--border)', overflow: 'hidden',
+            }}>
+              <div style={{
+                background: 'linear-gradient(135deg,#1a1d2e 0%,#252842 100%)',
+                padding: '20px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 17 }}>✦ Kemp Carlsbad s.r.o.</div>
+                  <div style={{ color: '#6ee7b7', fontSize: 12, marginTop: 2 }}>Нова вільна фактура</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>FAKTURA</div>
+                  <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 2 }}>Номер буде призначено автоматично</div>
+                </div>
+                <button onClick={() => setShowCustomModal(false)} style={{
+                  background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8,
+                  color: '#fff', cursor: 'pointer', padding: '6px 10px', marginLeft: 16,
+                }}>✕</button>
+              </div>
+              <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Dodavatel / Odběratel preview */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+                  padding: '14px 16px', background: 'var(--surface)',
+                  borderRadius: 10, border: '1px solid var(--border)', fontSize: 12,
+                }}>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginBottom: 4 }}>Dodavatel</div>
+                    <div style={{ fontWeight: 700 }}>Kemp Carlsbad s.r.o.</div>
+                    <div style={{ color: 'var(--text-secondary)' }}>Chebská 38/5, 360 06 Karlovy Vary</div>
+                    <div style={{ color: 'var(--text-secondary)' }}>IČO: 23430567 · kemp-carlsbad@email.cz</div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginBottom: 4 }}>Odběratel</div>
+                    {customForm.showBuyer && customForm.buyerName
+                      ? <>
+                          <div style={{ fontWeight: 600 }}>{customForm.buyerName}</div>
+                          {customForm.buyerIco && <div style={{ color: 'var(--text-secondary)' }}>IČO: {customForm.buyerIco}</div>}
+                          {customForm.buyerCity && <div style={{ color: 'var(--text-secondary)' }}>{customForm.buyerCity}</div>}
+                        </>
+                      : <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>— (анонімна фактура)</div>
+                    }
+                  </div>
+                </div>
+                {/* Description */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Призначення фактури *</label>
+                  <select className="form-select" value={customForm.description}
+                    onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
+                    style={{ width: '100%', marginBottom: 8 }}>
+                    {DESCRIPTION_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {customForm.description === 'Jiné (zadat ručně)' && (
+                    <input type="text" className="form-input" placeholder="Введіть опис фактури..."
+                      value={customForm.descCustom}
+                      onChange={e => setCustomForm(f => ({ ...f, descCustom: e.target.value }))}
+                      style={{ width: '100%' }} />
+                  )}
+                </div>
+                {/* Amount + Currency + Payment */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Сума *</label>
+                    <input type="number" min="0" step="0.01" className="form-input" placeholder="0.00"
+                      value={customForm.amount}
+                      onChange={e => setCustomForm(f => ({ ...f, amount: e.target.value }))}
+                      style={{ width: '100%', fontSize: 18, fontWeight: 700 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Валюта</label>
+                    <select className="form-select" value={customForm.currency}
+                      onChange={e => setCustomForm(f => ({ ...f, currency: e.target.value }))}>
+                      <option>CZK</option><option>EUR</option><option>USD</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Форма оплати</label>
+                    <select className="form-select" value={customForm.paymentMethod}
+                      onChange={e => setCustomForm(f => ({ ...f, paymentMethod: e.target.value }))}>
+                      <option>Příkazem</option><option>Hotovost</option><option>Kartou</option><option>Online</option>
+                    </select>
+                  </div>
+                </div>
+                {/* Dates */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Дата виставлення</label>
+                    <input type="date" className="form-input" value={new Date().toISOString().slice(0, 10)}
+                      readOnly style={{ width: '100%', opacity: 0.7 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>Термін оплати</label>
+                    <input type="date" className="form-input"
+                      value={customForm.dueDate || (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10); })()}
+                      onChange={e => setCustomForm(f => ({ ...f, dueDate: e.target.value }))}
+                      style={{ width: '100%' }} />
+                  </div>
+                </div>
+                {/* Buyer optional */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                  <button onClick={() => setCustomForm(f => ({ ...f, showBuyer: !f.showBuyer }))}
+                    style={{
+                      width: '100%', padding: '10px 14px', background: 'var(--surface)',
+                      border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                      fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)',
+                    }}>
+                    <Building2 size={14} />
+                    {customForm.showBuyer ? '▼' : '▶'} Вказати отримувача (Odběratel) — опціонально
+                  </button>
+                  {customForm.showBuyer && (
+                    <div style={{ padding: '12px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {([
+                        ['buyerName', 'Назва / ПІБ', '1 / span 2'],
+                        ['buyerIco', 'IČO', ''],
+                        ['buyerDic', 'DIČ', ''],
+                        ['buyerAddress', 'Адреса', '1 / span 2'],
+                        ['buyerCity', 'Місто / PSČ', '1 / span 2'],
+                      ] as [keyof typeof customForm, string, string][]).map(([field, label, span]) => (
+                        <div key={field} style={span ? { gridColumn: span } : {}}>
+                          <label style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4, display: 'block' }}>{label}</label>
+                          <input type="text" className="form-input"
+                            value={customForm[field] as string}
+                            onChange={e => setCustomForm(f => ({ ...f, [field]: e.target.value }))}
+                            style={{ width: '100%', fontSize: 13 }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Email */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>
+                    <Mail size={12} style={{ marginRight: 5, verticalAlign: 'middle' }} />
+                    Надіслати PDF на email (необов'язково)
+                  </label>
+                  <input type="email" className="form-input" placeholder="guest@example.com"
+                    value={customForm.emailTo}
+                    onChange={e => setCustomForm(f => ({ ...f, emailTo: e.target.value }))}
+                    style={{ width: '100%' }} />
+                </div>
+                {/* Amount preview */}
+                {customForm.amount && parseFloat(customForm.amount) > 0 && (
+                  <div style={{
+                    padding: '12px 16px', borderRadius: 8,
+                    background: 'rgba(110,231,183,0.08)', border: '1px solid rgba(110,231,183,0.25)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: '60%' }}>
+                      {customForm.description === 'Jiné (zadat ručně)' ? customForm.descCustom : customForm.description}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#6ee7b7' }}>
+                      {new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))} {customForm.currency}
+                    </div>
+                  </div>
+                )}
+                {/* Toast */}
+                {customToast && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    background: customToast.startsWith('✅') ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                    border: `1px solid ${customToast.startsWith('✅') ? '#22c55e' : '#ef4444'}`,
+                    color: customToast.startsWith('✅') ? '#22c55e' : '#ef4444',
+                  }}>{customToast}</div>
+                )}
+                {/* Buttons */}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
+                  <button className="btn btn-ghost" onClick={() => setShowCustomModal(false)} disabled={customGenerating}>Скасувати</button>
+                  <button className="btn btn-secondary" onClick={() => handleGenerateCustom(false)} disabled={customGenerating}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {customGenerating ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}
+                    Згенерувати PDF
+                  </button>
+                  <button className="btn btn-primary" onClick={() => handleGenerateCustom(true)}
+                    disabled={customGenerating || !customForm.emailTo.trim()}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {customGenerating ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                    PDF + Надіслати
+                  </button>
+                </div>
+              </div>
+              <div style={{
+                padding: '10px 28px', background: 'var(--surface)',
+                borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-tertiary)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <CheckCircle size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
+                Фактура збережеться в системі та потрапить до ISDOC-виписки для бухгалтера
+              </div>
+            </div>
+          </div>
+        )}
     </>
   );
 }
