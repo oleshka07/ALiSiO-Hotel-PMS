@@ -53,18 +53,16 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Build buyer from company override or guest data
-    const buyerName = data.invoice_company_name
-      || `${data.guest_first_name || ''} ${data.guest_last_name || ''}`.trim()
-      || undefined;
-
-    const buyer = buyerName ? {
-      name:    buyerName,
+    // Build buyer from company override ONLY.
+    // Personal guests are invoiced anonymously (no name in Odběratel),
+    // consistent with the HTML invoice template.
+    const buyer = data.invoice_company_name?.trim() ? {
+      name:    data.invoice_company_name,
       ico:     data.invoice_company_ico  || undefined,
       dic:     data.invoice_company_dic  || undefined,
-      street:  data.invoice_company_address || data.guest_address || undefined,
-      city:    data.invoice_company_city    || data.guest_city    || undefined,
-      country: data.invoice_company_country || data.guest_country || undefined,
+      street:  data.invoice_company_address || undefined,
+      city:    data.invoice_company_city    || undefined,
+      country: data.invoice_company_country || undefined,
     } : undefined;
 
     // Description line

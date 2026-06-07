@@ -177,6 +177,7 @@ export default function DocumentsPage() {
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<string>('all');
+  const [nameFilter, setNameFilter]     = useState<string>('');
   const [reconRows, setReconRows]   = useState<ReconRow[]>([]);
   const [reconSummary, setReconSummary] = useState<ReconSummary | null>(null);
   const [reconLoading, setReconLoading] = useState(false);
@@ -511,8 +512,38 @@ export default function DocumentsPage() {
                 )}
               </div>
 
-              {/* Filter row */}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {/* Search by name + filters row */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+
+                {/* Name search */}
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <User size={13} style={{
+                    position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)',
+                    color: 'var(--text-tertiary)', pointerEvents: 'none',
+                  }} />
+                  <input
+                    type="text"
+                    placeholder="Пошук за іменем..."
+                    value={nameFilter}
+                    onChange={e => setNameFilter(e.target.value)}
+                    style={{
+                      paddingLeft: 28, paddingRight: nameFilter ? 28 : 10,
+                      height: 34, fontSize: 13, borderRadius: 7,
+                      border: '1px solid var(--border)', background: 'var(--surface)',
+                      color: 'var(--text-primary)', width: 200, outline: 'none',
+                    }}
+                  />
+                  {nameFilter && (
+                    <button onClick={() => setNameFilter('')} style={{
+                      position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+                      color: 'var(--text-tertiary)', display: 'flex',
+                    }}>
+                      <XCircle size={13} />
+                    </button>
+                  )}
+                </div>
+
                 <Filter size={14} style={{ color: 'var(--text-tertiary)' }} />
                 <select
                   className="form-select"
@@ -652,7 +683,16 @@ export default function DocumentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {reconRows.map((row) => {
+                    {reconRows
+                      .filter(row => {
+                        if (!nameFilter.trim()) return true;
+                        const q = nameFilter.toLowerCase();
+                        const name = (row.guest_name || '').toLowerCase();
+                        const company = (row.invoice_company_name || '').toLowerCase();
+                        const comment = (row.comment || '').toLowerCase();
+                        return name.includes(q) || company.includes(q) || comment.includes(q);
+                      })
+                      .map((row) => {
                       const displayName = extractDisplayName(row);
                       // For OTA rows, show sub-source (airbnb/booking_com) badge in method column
                       const srcBadge = row.source ? SOURCE_BADGE[row.source] : null;

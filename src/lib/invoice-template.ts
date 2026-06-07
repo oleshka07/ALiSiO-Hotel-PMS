@@ -124,6 +124,9 @@ export function renderInvoiceHtml(data: InvoiceData): string {
 
   // Buyer (Odberatel) — when invoice_company_name is set, render company
   // identity per § 29 Zákona č. 235/2004 Sb. (IČO required, DIČ optional).
+  // For personal guests (no company) we intentionally leave the Odběratel block
+  // blank — Czech law does not require buyer identification for non-VAT entities
+  // on invoices under 15 000 CZK, and the operator prefers anonymous invoices.
   const isCompanyInvoice = !!(data.invoice_company_name && data.invoice_company_name.trim());
   let buyerLabel: string;
   let buyerHtml: string;
@@ -141,13 +144,11 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       data.invoice_company_email ? data.invoice_company_email : null,
     ].filter(Boolean).join('<br>');
   } else {
-    buyerLabel = 'Odběratel (host)';
-    buyerHtml = [
-      `<strong>${guestName}</strong>`,
-      guestAddressLines.length > 0 ? guestAddressLines.join('<br>') : '<span style="color:#9ca3af">Adresa neuvedena</span>',
-      data.guest_email ? data.guest_email : null,
-    ].filter(Boolean).join('<br>');
+    // Anonymous invoice — no buyer name
+    buyerLabel = 'Odběratel';
+    buyerHtml = `<span style="color:#9ca3af;font-style:italic;">—</span>`;
   }
+
 
   return `<!DOCTYPE html>
 <html lang="cs">
