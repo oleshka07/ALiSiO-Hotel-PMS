@@ -12,26 +12,35 @@ import path from 'path';
 import fs from 'fs';
 
 // ─── Font resolution ─────────────────────────────────────────────────────────
-// Look for bundled DejaVu fonts; fall back to system paths on Linux.
 function resolveFont(name: 'regular' | 'bold'): string {
   const filename = name === 'bold' ? 'DejaVuSans-Bold.ttf' : 'DejaVuSans.ttf';
   const candidates = [
-    // Bundled in project (committed to repo or placed on server)
+    // Project fonts dir (placed manually on server, not in git)
     path.join(process.cwd(), 'src', 'assets', 'fonts', filename),
-    // System paths (Ubuntu/Debian)
+    // Relative to this compiled file (__dirname) for Next.js bundled routes
+    path.join(__dirname, '..', '..', '..', '..', 'src', 'assets', 'fonts', filename),
+    path.join(__dirname, '..', '..', '..', 'assets', 'fonts', filename),
+    // System fonts (Ubuntu/Debian)
     path.join('/usr/share/fonts/truetype/dejavu', filename),
     path.join('/usr/share/fonts/dejavu', filename),
+    // Absolute fallback using known server path
+    `/root/projects/alisio-pms/src/assets/fonts/${filename}`,
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    try {
+      if (fs.existsSync(p)) {
+        console.log(`[InvoicePDF] Using font (${name}): ${p}`);
+        return p;
+      }
+    } catch { /* ignore */ }
   }
-  // If no TTF found, return empty string — PDFKit will use built-in Helvetica
-  console.warn(`[InvoicePDF] DejaVu font not found for ${name} — Czech chars may be garbled!`);
+  console.warn(`[InvoicePDF] ⚠ DejaVu font not found for "${name}" — Czech chars will be garbled!`);
   return '';
 }
 
 const FONT_REG  = resolveFont('regular');
 const FONT_BOLD = resolveFont('bold');
+
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const SUPPLIER = {
