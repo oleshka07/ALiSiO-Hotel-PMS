@@ -11,11 +11,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   // Exclude native Node.js modules from client-side bundling.
-  // pdfjs-dist is loaded transitively by pdf-parse and ships its
-  // workerSrc via dynamic import.meta.url. When Next bundles it, the
-  // resolved path doesn't match the actual file in node_modules and
-  // we get «Cannot find module pdf.worker.mjs» at runtime on prod.
-  serverExternalPackages: ['better-sqlite3', 'imapflow', 'nodemailer', 'pdfkit', 'pdf-parse', 'pdfjs-dist'],
+  // NOTE: pdfjs-dist is intentionally NOT listed here — it is an ESM module
+  // that cannot be externalized by Turbopack (Next.js 16 default bundler).
+  // Listing it causes "client reference manifest does not exist" build failures.
+  serverExternalPackages: ['better-sqlite3', 'imapflow', 'nodemailer', 'pdfkit', 'pdf-parse'],
   // Allow build to succeed during modular architecture migration
   // Remove once all modules are fully migrated and TS errors resolved
   typescript: { ignoreBuildErrors: true },
