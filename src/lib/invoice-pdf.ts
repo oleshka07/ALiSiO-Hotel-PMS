@@ -1,25 +1,52 @@
 /**
- * ALiSiO PMS — PDF Invoice Generator (PDFKit)
+ * ALiSiO PMS — PDF Invoice Generator (PDFKit + DejaVu fonts)
  *
- * Generates a Czech-law-compliant Faktura in PDF format using PDFKit.
- * Layout matches Kemp Carlsbad's POHODA-style invoice template.
+ * Generates a Czech-law-compliant Faktura in PDF format using PDFKit
+ * with DejaVu Sans fonts for proper Czech diacritic support (á,č,ě,í,ř,š,ž,ý,ů,ú,ď,ť,ň).
+ *
+ * Layout matches POHODA-style invoice (Faktura_260100002.pdf reference).
  * Kemp Carlsbad s.r.o. is a NON-VAT payer (neplátce DPH).
  */
 import PDFDocument from 'pdfkit';
+import path from 'path';
+import fs from 'fs';
 
+// ─── Font resolution ─────────────────────────────────────────────────────────
+// Look for bundled DejaVu fonts; fall back to system paths on Linux.
+function resolveFont(name: 'regular' | 'bold'): string {
+  const filename = name === 'bold' ? 'DejaVuSans-Bold.ttf' : 'DejaVuSans.ttf';
+  const candidates = [
+    // Bundled in project (committed to repo or placed on server)
+    path.join(process.cwd(), 'src', 'assets', 'fonts', filename),
+    // System paths (Ubuntu/Debian)
+    path.join('/usr/share/fonts/truetype/dejavu', filename),
+    path.join('/usr/share/fonts/dejavu', filename),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  // If no TTF found, return empty string — PDFKit will use built-in Helvetica
+  console.warn(`[InvoicePDF] DejaVu font not found for ${name} — Czech chars may be garbled!`);
+  return '';
+}
+
+const FONT_REG  = resolveFont('regular');
+const FONT_BOLD = resolveFont('bold');
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 const SUPPLIER = {
-  name:    'Kemp Carlsbad s.r.o.',
-  street:  'Chebská 38/5',
-  city:    '360 06 Karlovy Vary',
-  ico:     '23430567',
-  dic:     'CZ23430567',
-  phone:   '723 565 616',
-  email:   'kemp-carlsbad@email.cz',
-  court:   'Krajský soud v Plzni, oddíl C 46931',
+  name:   'Kemp Carlsbad s.r.o.',
+  street: 'Chebská 38/5',
+  city:   '360 06 Karlovy Vary',
+  ico:    '23430567',
+  dic:    'CZ23430567',
+  phone:  '723565616',
+  email:  'kemp-carlsbad@email.cz',
+  court:  'Krajský soud v Plzni, oddíl C 46931',
 };
 
 const BANK = {
-  name:    process.env.BANK_NAME    || 'Komerční banka, a.s.',
+  name:    process.env.BANK_NAME    || 'Komerční banka',
   account: process.env.BANK_ACCOUNT || '131-3569410227',
   code:    process.env.BANK_CODE    || '0100',
   iban:    process.env.BANK_IBAN    || 'CZ7001000001313569410227',
@@ -30,8 +57,8 @@ export interface InvoicePdfInput {
   invoiceNumber:   string;
   issueDate:       string;   // YYYY-MM-DD
   dueDate?:        string;   // YYYY-MM-DD
-  paymentMethod?:  string;   // 'Příkazem' | 'Hotovost' | 'Kartou'
-  description:     string;   // main line item description
+  paymentMethod?:  string;
+  description:     string;
   amount:          number;
   currency?:       string;
   buyer?: {
@@ -44,252 +71,330 @@ export interface InvoicePdfInput {
   };
 }
 
-function fmtDate(iso: string): string {
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function fmtDate(iso: string | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
 }
 
 function fmtMoney(n: number, currency = 'CZK'): string {
-  try {
-    return new Intl.NumberFormat('cs-CZ', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(n) + (currency === 'CZK' ? ' Kč' : ` ${currency}`);
-  } catch {
-    return `${n.toFixed(2)} ${currency}`;
-  }
+  const num = new Intl.NumberFormat('cs-CZ', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+  return currency === 'CZK' ? `${num} Kč` : `${num} ${currency}`;
 }
 
-/** Returns a Buffer containing the generated PDF */
+// ─── PDF builder ─────────────────────────────────────────────────────────────
 export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const currency = data.currency || 'CZK';
+    const varSymbol = data.invoiceNumber.replace(/-/g, '');
+    const payMethod = data.paymentMethod || 'Příkazem';
+
     const doc = new PDFDocument({
-      size:    'A4',
-      margins: { top: 36, bottom: 36, left: 50, right: 50 },
+      size: 'A4',
+      margins: { top: 40, bottom: 36, left: 40, right: 40 },
       info: {
         Title:   `Faktura ${data.invoiceNumber}`,
         Author:  SUPPLIER.name,
-        Subject: 'Faktura – krátkodobé ubytování',
+        Subject: 'Faktura – Kemp Carlsbad s.r.o.',
       },
     });
+
+    // Register fonts
+    if (FONT_REG)  doc.registerFont('Regular', FONT_REG);
+    if (FONT_BOLD) doc.registerFont('Bold',    FONT_BOLD);
+
+    const R  = (s: string | number, size?: number) => {
+      if (FONT_REG) doc.font('Regular');
+      else          doc.font('Helvetica');
+      if (size) doc.fontSize(size);
+      return String(s);
+    };
+    const B = (s: string | number, size?: number) => {
+      if (FONT_BOLD) doc.font('Bold');
+      else           doc.font('Helvetica-Bold');
+      if (size) doc.fontSize(size);
+      return String(s);
+    };
 
     const chunks: Buffer[] = [];
     doc.on('data',  (c: Buffer) => chunks.push(c));
     doc.on('end',   () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const W  = doc.page.width  - doc.page.margins.left - doc.page.margins.right; // ~495
-    const L  = doc.page.margins.left;   // 50
-    const R  = doc.page.margins.right;  // 50
-    const currency = data.currency || 'CZK';
-    const variableSymbol = data.invoiceNumber.replace(/-/g, '');
+    const PW = doc.page.width;   // 595
+    const PH = doc.page.height;  // 842
+    const ML = doc.page.margins.left;   // 40
+    const MR = doc.page.margins.right;  // 40
+    const W  = PW - ML - MR;            // 515
+    const colMid = ML + W / 2;          // 297.5
 
-    // ─── HEADER BAR ────────────────────────────────────────────────
-    doc.rect(L - 10, 20, doc.page.width - 20, 50).fill('#1a1d2e');
+    // ═══════════════════════════════════════════════════════════════
+    //  1. HEADER BAR
+    // ═══════════════════════════════════════════════════════════════
+    const HEADER_H = 52;
+    doc.rect(0, 0, PW, HEADER_H).fill('#1a1d2e');
 
-    doc.fillColor('#fff')
-       .font('Helvetica-Bold')
-       .fontSize(18)
-       .text(SUPPLIER.name, L, 32, { width: W / 2, align: 'left' });
+    // Company name
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(18).fillColor('#ffffff')
+       .text(SUPPLIER.name, ML, 14, { width: W * 0.5, align: 'left' });
 
-    doc.fontSize(11)
-       .text(`FAKTURA č. ${data.invoiceNumber}`, L + W / 2, 32, { width: W / 2, align: 'right' });
+    // FAKTURA label + number
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(13).fillColor('#ffffff')
+       .text(`FAKTURA č. ${data.invoiceNumber}`, ML + W * 0.5, 11, { width: W * 0.5, align: 'right' });
 
-    doc.fillColor('#6ee7b7').fontSize(9)
-       .text(`Variabilní symbol: ${variableSymbol}`, L + W / 2, 47, { width: W / 2, align: 'right' });
+    // Variable symbol
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(9).fillColor('#6ee7b7')
+       .text(`Variabilní symbol: ${varSymbol}`, ML + W * 0.5, 30, { width: W * 0.5, align: 'right' });
 
-    // ─── TWO-COLUMN BLOCK (Dodavatel / Odběratel) ──────────────────
-    const colW   = W / 2 - 10;
-    const colR   = L + W / 2 + 10;
-    let   rowY   = 82;
+    // ═══════════════════════════════════════════════════════════════
+    //  2. DODAVATEL / ODBĚRATEL SECTION
+    // ═══════════════════════════════════════════════════════════════
+    const SEC1_TOP  = HEADER_H + 10;
+    const SEC1_H    = 110;
+    const COL_L_W   = W * 0.5 - 5;
+    const COL_R_X   = colMid + 5;
+    const COL_R_W   = W * 0.5 - 5;
 
-    // Dodavatel label
-    doc.fillColor('#6b7280').font('Helvetica').fontSize(7)
-       .text('Dodavatel:', L, rowY);
-    // Odběratel label
-    doc.text('Odběratel:', colR, rowY);
+    // Dodavatel box
+    doc.rect(ML, SEC1_TOP, COL_L_W, SEC1_H).stroke('#d1d5db');
 
-    rowY += 11;
+    // Odběratel box
+    doc.rect(COL_R_X, SEC1_TOP, COL_R_W, SEC1_H).stroke('#d1d5db');
+
     // Dodavatel content
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(9)
-       .text(SUPPLIER.name, L, rowY);
-    // Odběratel name
-    if (data.buyer?.name) {
-      doc.text(data.buyer.name, colR, rowY);
-    }
+    let y = SEC1_TOP + 5;
+    const lx = ML + 6;
+    doc.fillColor('#9ca3af');
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(7).text('Dodavatel:', lx, y);
+    y += 11;
 
-    rowY += 13;
-    doc.font('Helvetica').fontSize(8.5).fillColor('#374151');
-    const supLines = [
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(9).fillColor('#111827').text(SUPPLIER.name, lx, y);
+    y += 12;
+
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(8.5).fillColor('#374151');
+    for (const line of [
       SUPPLIER.street,
       SUPPLIER.city,
       `IČO: ${SUPPLIER.ico}`,
       `DIČ: ${SUPPLIER.dic}`,
       `Mobil: ${SUPPLIER.phone}`,
       `E-mail: ${SUPPLIER.email}`,
-    ];
-    supLines.forEach(line => {
-      doc.text(line, L, rowY);
-      rowY += 11;
-    });
-
-    // Odběratel lines (right col)
-    let buyerY = rowY - supLines.length * 11;
-    if (data.buyer) {
-      const buyerLines: string[] = [];
-      if (data.buyer.address) buyerLines.push(data.buyer.address);
-      if (data.buyer.city)    buyerLines.push(data.buyer.city);
-      if (data.buyer.country) buyerLines.push(data.buyer.country);
-      if (data.buyer.ico)     buyerLines.push(`IČO: ${data.buyer.ico}`);
-      if (data.buyer.dic)     buyerLines.push(`DIČ: ${data.buyer.dic}`);
-      buyerLines.forEach(line => {
-        doc.fillColor('#374151').font('Helvetica').fontSize(8.5)
-           .text(line, colR, buyerY);
-        buyerY += 11;
-      });
-    } else {
-      doc.fillColor('#9ca3af').font('Helvetica-Oblique').fontSize(8.5)
-         .text('—', colR, buyerY);
+    ]) {
+      doc.text(line, lx, y);
+      y += 11;
     }
 
-    // ─── BANK + DATES ──────────────────────────────────────────────
-    const lineY = Math.max(rowY, buyerY) + 6;
-    doc.moveTo(L, lineY).lineTo(L + W, lineY).strokeColor('#e5e7eb').lineWidth(0.5).stroke();
+    // Odběratel content
+    let ry = SEC1_TOP + 5;
+    const rx = COL_R_X + 6;
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(7).fillColor('#9ca3af').text('Odběratel:', rx, ry);
+    ry += 11;
 
-    const bankY = lineY + 8;
-    // Bank block (left)
-    doc.fillColor('#6b7280').font('Helvetica').fontSize(7).text('Banka:', L, bankY);
-    doc.fillColor('#111827').font('Helvetica-Bold').fontSize(8.5)
-       .text(BANK.name, L, bankY + 10);
-    doc.font('Helvetica').fontSize(8).fillColor('#374151');
-    doc.text(`Číslo účtu: ${BANK.account}   Kód banky: ${BANK.code}`, L, bankY + 22);
-    doc.text(`IBAN: ${BANK.iban}`, L, bankY + 33);
-    doc.text(`SWIFT/BIC: ${BANK.bic}`, L, bankY + 44);
+    if (data.buyer?.name) {
+      if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+      doc.fontSize(9).fillColor('#111827').text(data.buyer.name, rx, ry);
+      ry += 12;
+      if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+      doc.fontSize(8.5).fillColor('#374151');
+      if (data.buyer.address) { doc.text(data.buyer.address, rx, ry); ry += 11; }
+      if (data.buyer.city)    { doc.text(data.buyer.city,    rx, ry); ry += 11; }
+      if (data.buyer.ico)     { doc.text(`IČO: ${data.buyer.ico}`, rx, ry); ry += 11; }
+      if (data.buyer.dic)     { doc.text(`DIČ: ${data.buyer.dic}`, rx, ry); ry += 11; }
+    } else {
+      if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+      doc.fontSize(8.5).fillColor('#9ca3af').text('—', rx, ry);
+    }
 
-    // Dates block (right)
-    const datesX = colR;
-    const dateFields: [string, string][] = [
+    // ═══════════════════════════════════════════════════════════════
+    //  3. BANK + DATES SECTION
+    // ═══════════════════════════════════════════════════════════════
+    const SEC2_TOP = SEC1_TOP + SEC1_H + 6;
+    const SEC2_H   = 68;
+
+    // Bank box (left)
+    doc.rect(ML, SEC2_TOP, COL_L_W, SEC2_H).stroke('#d1d5db');
+
+    let by = SEC2_TOP + 5;
+    const bx = ML + 6;
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(7).fillColor('#9ca3af').text('Banka:', bx, by);
+    by += 10;
+
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(8.5).fillColor('#111827').text(BANK.name, bx, by);
+    by += 11;
+
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(8).fillColor('#374151');
+    doc.text(`Číslo účtu: ${BANK.account}   Kód banky: ${BANK.code}`, bx, by); by += 10;
+    doc.text(`IBAN: ${BANK.iban}`, bx, by); by += 10;
+    doc.text(`SWIFT/BIC: ${BANK.bic}`, bx, by); by += 11;
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(7.5).fillColor('#6b7280').text('Firma není plátce DPH.', bx, by);
+
+    // Dates (right side — no box, just info with bold values)
+    const dx = COL_R_X + 6;
+    let   dy = SEC2_TOP + 5;
+    const DATE_LABEL_W = 95;
+    const DATE_VAL_X   = COL_R_X + DATE_LABEL_W + 4;
+
+    const dateRows: [string, string][] = [
       ['Datum vystavení:',  fmtDate(data.issueDate)],
       ['Datum splatnosti:', fmtDate(data.dueDate || data.issueDate)],
-      ['Forma úhrady:',     data.paymentMethod || 'Příkazem'],
+      ['Forma úhrady:',     payMethod],
       ['Konst. symbol:',    '0308'],
     ];
-    let df = bankY;
-    dateFields.forEach(([label, val]) => {
-      doc.fillColor('#6b7280').font('Helvetica').fontSize(7.5).text(label, datesX, df);
-      doc.fillColor('#111827').font('Helvetica-Bold').fontSize(8.5)
-         .text(val, datesX + 90, df);
-      df += 14;
-    });
+    for (const [label, val] of dateRows) {
+      if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+      doc.fontSize(8).fillColor('#6b7280').text(label, dx, dy, { width: DATE_LABEL_W });
+      if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+      doc.fontSize(8.5).fillColor('#111827').text(val, DATE_VAL_X, dy);
+      dy += 15;
+    }
 
-    // "Firma neni platce DPH"
-    doc.fillColor('#6b7280').font('Helvetica-Oblique').fontSize(7.5)
-       .text('Firma není plátce DPH.', L, bankY + 56);
+    // ═══════════════════════════════════════════════════════════════
+    //  4. LINE ITEMS TABLE
+    // ═══════════════════════════════════════════════════════════════
+    const TABLE_TOP = SEC2_TOP + SEC2_H + 10;
 
-    // ─── LINE ITEMS TABLE ──────────────────────────────────────────
-    const tableTop = bankY + 72;
-    const COL = {
-      desc:  { x: L,          w: 240 },
-      qty:   { x: L + 240,    w: 40  },
-      price: { x: L + 280,    w: 85  },
-      disc:  { x: L + 365,    w: 55  },
-      total: { x: L + 420,    w: 75  },
+    // Column positions
+    const C = {
+      desc:  { x: ML,          w: 240 },
+      qty:   { x: ML + 240,    w: 36  },
+      price: { x: ML + 276,    w: 80  },
+      disc:  { x: ML + 356,    w: 60  },
+      total: { x: ML + 416,    w: W - 376 },
     };
 
     // Table header bg
-    doc.rect(L - 4, tableTop - 4, W + 8, 18).fill('#f3f4f6');
-    doc.fillColor('#6b7280').font('Helvetica-Bold').fontSize(7.5);
-    doc.text('Označení dodávky',     COL.desc.x,  tableTop);
-    doc.text('Mn.',                  COL.qty.x,   tableTop);
-    doc.text('J.cena',               COL.price.x, tableTop, { width: COL.price.w, align: 'right' });
-    doc.text('Sleva Kč',             COL.disc.x,  tableTop, { width: COL.disc.w,  align: 'right' });
-    doc.text('Celkem',               COL.total.x, tableTop, { width: COL.total.w, align: 'right' });
+    doc.rect(ML, TABLE_TOP, W, 18).fill('#f3f4f6');
+    doc.rect(ML, TABLE_TOP, W, 18).stroke('#d1d5db');
 
-    // Main row
-    const rowTop = tableTop + 20;
-    doc.fillColor('#111827').font('Helvetica').fontSize(9);
-    doc.text(data.description, COL.desc.x, rowTop, { width: COL.desc.w });
-    doc.text('1',              COL.qty.x,  rowTop);
-    doc.font('Helvetica-Bold')
-       .text(fmtMoney(data.amount, currency), COL.price.x, rowTop, { width: COL.price.w, align: 'right' });
-    doc.font('Helvetica')
-       .text('—',             COL.disc.x,  rowTop, { width: COL.disc.w,  align: 'right' });
-    doc.font('Helvetica-Bold')
-       .text(fmtMoney(data.amount, currency), COL.total.x, rowTop, { width: COL.total.w, align: 'right' });
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(7.5).fillColor('#6b7280');
+    doc.text('Označení dodávky', C.desc.x + 4,  TABLE_TOP + 5);
+    doc.text('Mn.',              C.qty.x + 4,   TABLE_TOP + 5);
+    doc.text('J.cena',           C.price.x,     TABLE_TOP + 5, { width: C.price.w, align: 'right' });
+    doc.text('Sleva Kč',         C.disc.x,      TABLE_TOP + 5, { width: C.disc.w,  align: 'right' });
+    doc.text('Celkem',           C.total.x,     TABLE_TOP + 5, { width: C.total.w, align: 'right' });
 
-    // Divider after rows
-    const afterRows = rowTop + 22;
-    doc.moveTo(L, afterRows).lineTo(L + W, afterRows).strokeColor('#d1d5db').lineWidth(0.5).stroke();
+    // Vertical separators in header
+    for (const cx of [C.qty.x, C.price.x, C.disc.x, C.total.x]) {
+      doc.moveTo(cx, TABLE_TOP).lineTo(cx, TABLE_TOP + 18).stroke('#d1d5db');
+    }
 
-    // ─── TOTALS ────────────────────────────────────────────────────
-    let totY = afterRows + 8;
-    const totLabelX = COL.price.x;
-    const totValX   = COL.total.x;
-    const totW      = COL.total.w;
+    // Row
+    const ROW_TOP = TABLE_TOP + 18;
+    const ROW_H   = 20;
+    doc.rect(ML, ROW_TOP, W, ROW_H).stroke('#e5e7eb');
 
-    const totals: [string, string, boolean][] = [
-      ['Součet položek:',   fmtMoney(data.amount, currency),  false],
-      ['Celkem sleva:',     '—',                               false],
-    ];
-    totals.forEach(([lbl, val, bold]) => {
-      doc.fillColor('#6b7280').font('Helvetica').fontSize(8).text(lbl, totLabelX, totY, { width: 130, align: 'right' });
-      doc.fillColor('#374151').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
-         .text(val, totValX, totY, { width: totW, align: 'right' });
-      totY += 13;
-    });
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(9).fillColor('#111827');
+    doc.text(data.description, C.desc.x + 4, ROW_TOP + 5, { width: C.desc.w - 8 });
+    doc.text('1', C.qty.x + 4, ROW_TOP + 5);
 
-    // CELKEM K UHRADE — big total
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.text(fmtMoney(data.amount, currency), C.price.x, ROW_TOP + 5, { width: C.price.w, align: 'right' });
+
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fillColor('#9ca3af').text('—', C.disc.x, ROW_TOP + 5, { width: C.disc.w, align: 'right' });
+
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fillColor('#111827').text(fmtMoney(data.amount, currency), C.total.x, ROW_TOP + 5, { width: C.total.w, align: 'right' });
+
+    // Bottom border of rows area
+    const AFTER_ROWS = ROW_TOP + ROW_H;
+    doc.moveTo(ML, AFTER_ROWS).lineTo(ML + W, AFTER_ROWS).lineWidth(0.5).stroke('#d1d5db');
+
+    // ═══════════════════════════════════════════════════════════════
+    //  5. TOTALS
+    // ═══════════════════════════════════════════════════════════════
+    let totY = AFTER_ROWS + 8;
+    const TOT_LABEL_X  = C.price.x;
+    const TOT_LABEL_W  = C.price.w + C.disc.w;
+    const TOT_VAL_X    = C.total.x;
+    const TOT_VAL_W    = C.total.w;
+
+    // Součet položek
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(8.5).fillColor('#6b7280')
+       .text('Součet položek:', TOT_LABEL_X, totY, { width: TOT_LABEL_W, align: 'right' });
+    doc.fillColor('#374151')
+       .text(fmtMoney(data.amount, currency), TOT_VAL_X, totY, { width: TOT_VAL_W, align: 'right' });
+    totY += 13;
+
+    // Celkem sleva
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fillColor('#6b7280')
+       .text('Celkem sleva:', TOT_LABEL_X, totY, { width: TOT_LABEL_W, align: 'right' });
+    doc.fillColor('#9ca3af')
+       .text('—', TOT_VAL_X, totY, { width: TOT_VAL_W, align: 'right' });
     totY += 4;
-    doc.rect(totLabelX - 6, totY - 4, W - (totLabelX - L) + 6, 24).fill('#1a1d2e');
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(10)
-       .text('CELKEM K ÚHRADĚ:', totLabelX, totY, { width: 130, align: 'right' });
+
+    // CELKEM K ÚHRADĚ — dark bar
+    const TOTAL_BAR_H = 22;
+    doc.rect(TOT_LABEL_X - 8, totY, W - (TOT_LABEL_X - ML) + 8, TOTAL_BAR_H).fill('#1a1d2e');
+
+    if (FONT_BOLD) doc.font('Bold'); else doc.font('Helvetica-Bold');
+    doc.fontSize(10).fillColor('#ffffff')
+       .text('CELKEM K ÚHRADĚ:', TOT_LABEL_X - 4, totY + 6, { width: TOT_LABEL_W + 4, align: 'right' });
     doc.fillColor('#6ee7b7').fontSize(11)
-       .text(fmtMoney(data.amount, currency), totValX, totY, { width: totW, align: 'right' });
+       .text(fmtMoney(data.amount, currency), TOT_VAL_X, totY + 5, { width: TOT_VAL_W, align: 'right' });
 
-    totY += 30;
+    totY += TOTAL_BAR_H + 14;
 
-    // ─── FOOTER ────────────────────────────────────────────────────
-    doc.fillColor('#9ca3af').font('Helvetica-Oblique').fontSize(8)
-       .text('Nejsme plátci DPH', L, totY);
+    // ═══════════════════════════════════════════════════════════════
+    //  6. FOOTER
+    // ═══════════════════════════════════════════════════════════════
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(8).fillColor('#6b7280')
+       .text('Nejsme plátci DPH', ML, totY);
+    totY += 13;
 
-    totY += 14;
-    doc.fillColor('#6b7280').font('Helvetica').fontSize(7.5)
-       .text(
-         `Vedeno u ${SUPPLIER.court}`,
-         L, totY, { width: W }
-       );
+    doc.fontSize(7.5).fillColor('#9ca3af')
+       .text(`Vedeno u ${SUPPLIER.court}`, ML, totY, { width: W });
+    totY += 11;
 
-    totY += 12;
-    doc.fillColor('#6b7280').font('Helvetica').fontSize(7.5)
-       .text(
-         'Dovolujeme si Vás upozornit, že v případě nedodržení data splatnosti Vám budeme účtovat úrok z prodlení ' +
-         'v dohodnuté, resp. zákonné výši a smluvní pokutu (byla-li sjednána).',
-         L, totY, { width: W }
-       );
+    doc.text(
+      'Dovolujeme si Vás upozornit, že v případě nedodržení data splatnosti Vám budeme účtovat ' +
+      'úrok z prodlení v dohodnuté, resp. zákonné výši a smluvní pokutu (byla-li sjednána).',
+      ML, totY, { width: W }
+    );
+    totY += 28;
 
-    totY += 30;
-    // Sign fields
-    const signFields = [
-      { label: 'Vystavil:', x: L         },
-      { label: 'Razítko:',  x: L + W/2 - 60 },
-      { label: 'Převzal:',  x: L + W - 100  },
+    // Sign lines
+    const signDefs = [
+      { label: 'Vystavil:',  x: ML },
+      { label: 'Razítko:',   x: ML + W / 2 - 50 },
+      { label: 'Převzal:',   x: ML + W - 100 },
     ];
-    signFields.forEach(f => {
-      doc.fillColor('#9ca3af').font('Helvetica').fontSize(7.5)
-         .text(f.label, f.x, totY);
-      doc.moveTo(f.x, totY + 22).lineTo(f.x + 90, totY + 22)
-         .strokeColor('#d1d5db').lineWidth(0.5).stroke();
-    });
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(8).fillColor('#6b7280');
+    for (const { label, x } of signDefs) {
+      doc.text(label, x, totY);
+      doc.moveTo(x, totY + 18).lineTo(x + 90, totY + 18)
+         .lineWidth(0.5).stroke('#d1d5db');
+    }
 
-    // Page bottom strip
-    const pageH = doc.page.height;
-    doc.rect(0, pageH - 22, doc.page.width, 22).fill('#f9fafb');
-    doc.fillColor('#9ca3af').font('Helvetica').fontSize(6.5)
+    // Bottom footer strip
+    doc.rect(0, PH - 20, PW, 20).fill('#f9fafb');
+    if (FONT_REG) doc.font('Regular'); else doc.font('Helvetica');
+    doc.fontSize(6.5).fillColor('#9ca3af')
        .text(
          `${SUPPLIER.name}  ·  ${SUPPLIER.street}, ${SUPPLIER.city}  ·  IČO: ${SUPPLIER.ico}  ·  ${SUPPLIER.email}`,
-         L, pageH - 14, { width: W, align: 'center' }
+         ML, PH - 13, { width: W, align: 'center' }
        );
 
     doc.end();
