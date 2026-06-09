@@ -15,6 +15,11 @@ import {
   Brain,
 } from 'lucide-react';
 import '../crm.css';
+import {
+  STAGE_CONFIG, CHANNEL_ICONS, CHANNEL_LABEL,
+  SOURCE_LABELS, VEHICLE_LABELS, TENT_LABELS,
+  formatTime, formatDateTime, formatNights,
+} from '@/modules/crm/constants';
 
 /* ================================================================
    Types
@@ -130,50 +135,6 @@ interface LeadFull {
 /* ================================================================
    Constants
    ================================================================ */
-const CHANNEL_ICONS: Record<string, string> = {
-  whatsapp: '📱', email: '✉️', phone: '📞', guest_page: '🌐',
-  telegram: '🤖', booking_com: '🅱️', airbnb: '🏡',
-  web_form: '🌍', manual: '✍️',
-};
-
-const STAGE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
-  new: { label: 'Новий', icon: '🆕', color: '#6b7280' },
-  inquiry: { label: 'Запит', icon: '❓', color: '#8b5cf6' },
-  info_needed: { label: 'Уточнення', icon: '📋', color: '#f59e0b' },
-  quote_sent: { label: 'Ціна', icon: '💰', color: '#3b82f6' },
-  negotiation: { label: 'Переговори', icon: '🤝', color: '#ec4899' },
-  deposit_paid: { label: 'Передплата', icon: '💳', color: '#06b6d4' },
-  booked: { label: 'Заброньовано', icon: '✅', color: '#22c55e' },
-  pre_stay: { label: 'До заїзду', icon: '📋', color: '#14b8a6' },
-  check_in: { label: 'Заселення', icon: '🏠', color: '#0ea5e9' },
-  in_stay: { label: 'Перебування', icon: '🛏️', color: '#6366f1' },
-  check_out: { label: 'Виселення', icon: '👋', color: '#a855f7' },
-  post_stay: { label: 'Після', icon: '⭐', color: '#eab308' },
-  lost: { label: 'Втрачено', icon: '❌', color: '#ef4444' },
-  spam: { label: 'Спам', icon: '🚫', color: '#9ca3af' },
-};
-
-const CHANNEL_LABEL: Record<string, string> = {
-  whatsapp: 'WhatsApp', email: 'Email', phone: 'Телефон',
-  guest_page: 'Guest Page', telegram: 'Telegram', manual: 'Вручну',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: 'Вручну', whatsapp: 'WhatsApp', email: 'Email',
-  phone: 'Телефон', booking_com: 'Booking.com', airbnb: 'Airbnb',
-  web_form: 'Сайт', guest_page: 'Guest Page', telegram: 'Telegram',
-};
-
-const VEHICLE_LABELS: Record<string, string> = {
-  car: '🚗 Легковий', caravan: '🚐 Караван', motorhome: '🏕️ Кемпер',
-  minibus: '🚌 Мінібус', motorcycle: '🏍️ Мотоцикл',
-  bicycle: '🚲 Велосипед', none: '🚶 Без транспорту',
-};
-
-const TENT_LABELS: Record<string, string> = {
-  small: 'Маленький', large: 'Великий', none: 'Без намету',
-};
-
 const QUICK_REPLIES = [
   { label: '🙏 Дякуємо за запит', text: 'Дякуємо за ваш запит! Ми перевірили наявність на обрані дати. Ось наша пропозиція:' },
   { label: '📋 Потрібна інформація', text: 'Дякуємо за інтерес! Для підготовки пропозиції нам потрібно уточнити:\n\n1. Дати заїзду та виїзду\n2. Кількість гостей\n3. Тип розміщення\n4. Тип транспорту (якщо кемпінг)' },
@@ -181,35 +142,6 @@ const QUICK_REPLIES = [
   { label: '✅ Підтвердження', text: 'Ваше бронювання підтверджено! Ми надішлемо деталі заїзду ближче до дати прибуття.' },
   { label: '⏰ Нагадування', text: 'Доброго дня! Хотіли нагадати про вашу пропозицію. Чи є якісь запитання?' },
 ];
-
-/* ================================================================
-   Helpers
-   ================================================================ */
-function formatTime(dateStr: string | null): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr.replace(' ', 'T'));
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'щойно';
-  if (mins < 60) return `${mins}хв`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}год`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}д`;
-  return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
-}
-
-function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr.replace(' ', 'T'));
-  return d.toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
-function formatNights(checkIn: string | null, checkOut: string | null): number {
-  if (!checkIn || !checkOut) return 0;
-  const a = new Date(checkIn), b = new Date(checkOut);
-  return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86400000));
-}
 
 /* ================================================================
    LeadDetailPanel — right sidebar

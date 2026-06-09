@@ -33,6 +33,7 @@ import {
   UserPlus,
   Globe,
   CheckSquare,
+  Target,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { NAV_PERMISSION_MAP, ROLE_LABELS, ROLE_COLORS, hasPermission } from '@/lib/permissions';
@@ -70,6 +71,7 @@ const navigation: NavSection[] = [
   {
     title: 'CRM',
     items: [
+      { label: 'Сьогодні', href: '/crm/today', icon: <Target size={20} />, permission: 'nav:crm' },
       { label: 'Inbox', href: '/crm/inbox', icon: <MessageSquare size={20} />, permission: 'nav:crm' },
       { label: 'Pipeline', href: '/crm', icon: <GitBranch size={20} />, permission: 'nav:crm' },
       { label: 'Ліди', href: '/crm/leads', icon: <UserPlus size={20} />, permission: 'nav:crm' },
@@ -191,7 +193,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               {section.items.map((item) => {
                 const isActive =
                   pathname === item.href ||
-                  (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                  (item.href !== '/dashboard' && item.href !== '/crm' && pathname.startsWith(item.href));
                 return (
                   <Link
                     key={item.href}

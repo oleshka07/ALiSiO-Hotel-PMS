@@ -9,45 +9,7 @@ import {
   MessageSquare, ChevronLeft, ChevronRight, User, Truck, Tent,
 } from 'lucide-react';
 import '../crm.css';
-
-/* ================================================================
-   Constants
-   ================================================================ */
-const STAGE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
-  new: { label: 'Новий', icon: '🆕', color: '#6b7280' },
-  inquiry: { label: 'Запит', icon: '❓', color: '#8b5cf6' },
-  info_needed: { label: 'Уточнення', icon: '📋', color: '#f59e0b' },
-  quote_sent: { label: 'Ціна', icon: '💰', color: '#3b82f6' },
-  negotiation: { label: 'Переговори', icon: '🤝', color: '#ec4899' },
-  deposit_paid: { label: 'Передплата', icon: '💳', color: '#06b6d4' },
-  booked: { label: 'Заброньовано', icon: '✅', color: '#22c55e' },
-  pre_stay: { label: 'До заїзду', icon: '📋', color: '#14b8a6' },
-  check_in: { label: 'Заселення', icon: '🏠', color: '#0ea5e9' },
-  in_stay: { label: 'Перебування', icon: '🛏️', color: '#6366f1' },
-  check_out: { label: 'Виселення', icon: '👋', color: '#a855f7' },
-  post_stay: { label: 'Після', icon: '⭐', color: '#eab308' },
-  lost: { label: 'Втрачено', icon: '❌', color: '#ef4444' },
-  spam: { label: 'Спам', icon: '🚫', color: '#9ca3af' },
-};
-
-const CHANNEL_ICONS: Record<string, string> = {
-  whatsapp: '📱', email: '✉️', phone: '📞', guest_page: '🌐',
-  telegram: '🤖', booking_com: '🅱️', airbnb: '🏡',
-  web_form: '🌍', manual: '✍️',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: 'Вручну', whatsapp: 'WhatsApp', email: 'Email',
-  phone: 'Телефон', booking_com: 'Booking.com', airbnb: 'Airbnb',
-  web_form: 'Сайт', guest_page: 'Guest Page', telegram: 'Telegram',
-};
-
-const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
-  urgent: { label: 'Терміновий', color: '#ef4444' },
-  high: { label: 'Високий', color: '#f59e0b' },
-  normal: { label: 'Нормальний', color: '#6b7280' },
-  low: { label: 'Низький', color: '#d1d5db' },
-};
+import { STAGE_CONFIG, CHANNEL_ICONS, SOURCE_LABELS, PRIORITY_LABELS } from '@/modules/crm/constants';
 
 const VEHICLE_ICONS: Record<string, string> = {
   car: '🚗', caravan: '🚐', motorhome: '🏕️', minibus: '🚌',

@@ -9,6 +9,7 @@ import {
   ChevronRight, User, Clock, DollarSign, Truck, Tent,
 } from 'lucide-react';
 import './crm.css';
+import { CHANNEL_ICONS, SOURCE_LABELS } from '@/modules/crm/constants';
 
 /* ================================================================
    Types
@@ -67,32 +68,6 @@ interface PipelineData {
   };
 }
 
-/* ================================================================
-   Channel icons
-   ================================================================ */
-const CHANNEL_ICONS: Record<string, string> = {
-  whatsapp: '📱',
-  email: '✉️',
-  phone: '📞',
-  guest_page: '🌐',
-  telegram: '🤖',
-  booking_com: '🅱️',
-  airbnb: '🏡',
-  web_form: '🌍',
-  manual: '✍️',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  manual: 'Вручну',
-  whatsapp: 'WhatsApp',
-  email: 'Email',
-  phone: 'Телефон',
-  booking_com: 'Booking.com',
-  airbnb: 'Airbnb',
-  web_form: 'Сайт',
-  guest_page: 'Guest Page',
-  telegram: 'Telegram',
-};
 
 const VEHICLE_ICONS: Record<string, string> = {
   car: '🚗',
@@ -330,6 +305,7 @@ export default function CrmPipelinePage() {
   const [showAdd, setShowAdd] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dragLeadId, setDragLeadId] = useState<string | null>(null);
   const onMenuClick = useMobileMenu();
 
   const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
@@ -461,14 +437,36 @@ export default function CrmPipelinePage() {
                       {stageLeads.length}
                     </span>
                   </div>
-                  <div className="kanban-column-body">
+                  <div
+                    className={`kanban-column-body${dragLeadId ? '' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                    onDragLeave={(e) => { e.currentTarget.classList.remove('drag-over'); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('drag-over');
+                      if (dragLeadId) {
+                        const lead = filteredLeads.find(l => l.id === dragLeadId);
+                        if (lead && lead.stage !== stage.id) {
+                          handleStageChange(dragLeadId, stage.id);
+                        }
+                        setDragLeadId(null);
+                      }
+                    }}
+                  >
                     {stageLeads.length === 0 && (
                       <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
                         Немає лідів
                       </div>
                     )}
                     {stageLeads.map(lead => (
-                      <div key={lead.id} className="kanban-card" onClick={() => setSelectedLead(lead)}>
+                      <div
+                        key={lead.id}
+                        className={`kanban-card${dragLeadId === lead.id ? ' dragging' : ''}`}
+                        draggable
+                        onDragStart={() => setDragLeadId(lead.id)}
+                        onDragEnd={() => setDragLeadId(null)}
+                        onClick={() => setSelectedLead(lead)}
+                      >
                         <div className="kanban-card-name">
                           <span className={`priority-dot ${lead.priority}`} />
                           {lead.first_name} {lead.last_name || ''}

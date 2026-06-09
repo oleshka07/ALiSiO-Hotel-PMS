@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { STAGE_CONFIG } from '@/modules/crm/constants';
 import {
   Settings, Bot, Sparkles, Save, Plus, Trash2, X,
   Loader2, ChevronDown, ChevronRight, Edit3, ToggleLeft, ToggleRight,
@@ -48,22 +49,6 @@ interface TrainingRecord {
 /* ================================================================
    Constants
    ================================================================ */
-const STAGE_CONFIG: Record<string, { label: string; icon: string }> = {
-  new: { label: 'Новий', icon: '🆕' },
-  inquiry: { label: 'Запит', icon: '❓' },
-  info_needed: { label: 'Уточнення', icon: '📋' },
-  quote_sent: { label: 'Ціна відправлена', icon: '💰' },
-  negotiation: { label: 'Переговори', icon: '🤝' },
-  deposit_paid: { label: 'Передплата', icon: '💳' },
-  booked: { label: 'Заброньовано', icon: '✅' },
-  pre_stay: { label: 'До заїзду', icon: '📋' },
-  check_in: { label: 'Заселення', icon: '🏠' },
-  in_stay: { label: 'Перебування', icon: '🛏️' },
-  check_out: { label: 'Виселення', icon: '👋' },
-  post_stay: { label: 'Після виїзду', icon: '⭐' },
-  lost: { label: 'Втрачено', icon: '❌' },
-  spam: { label: 'Спам', icon: '🚫' },
-};
 
 const TABS = [
   { id: 'prompts', label: 'AI Промпти', icon: <Bot size={16} /> },

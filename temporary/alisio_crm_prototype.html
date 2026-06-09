@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALiSiO PMS — CRM (Redesign Prototype)</title>
+<!--
+  ============================================================================
+  ALiSiO PMS CRM — інтерактивний прототип редизайну
+  ----------------------------------------------------------------------------
+  Призначення: передача в Antigravity для реалізації поверх наявного стеку
+  (Next.js App Router + SQLite + GPT-4o + Telegram Bot + IMAP/SMTP).
+
+  Це КЛІКАБЕЛЬНИЙ макет, не продакшн-код. Логіка на vanilla JS, дані вшиті.
+  Усе data-driven: STAGES / CHANNELS / LEADS / CONVOS -> render-функції.
+
+  Екрани (вкладки в sidebar -> CRM):
+    1. Сьогодні / Центр дій   (#today)   — нова черга рішень
+    2. Inbox                  (#inbox)   — 3 панелі, real-time, AI-чернетка готова
+    3. Pipeline               (#pipeline)— канбан з drag-and-drop + таблиця
+    4. Ліди                   (#leads)   — таблиця з фільтрами
+    5. AI-Агент               (#agent)   — Persona / Sources / Actions / Guardrails / Performance
+  Оверлеї:
+    - Guest 360   (slide-over праворуч) — єдина картка гостя
+    - Telegram approval (модалка)        — демо trust-layer петлі
+  ============================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0b10;
+    --bg-2:#0d0e15;
+    --panel:#13141c;
+    --panel-2:#171821;
+    --card:#1a1c26;
+    --card-hover:#1f2230;
+    --line:#262835;
+    --line-soft:#1e202b;
+    --txt:#e8eaf0;
+    --txt-2:#9aa0b0;
+    --txt-3:#6b7180;
+    --acc:#7c83ff;
+    --acc-2:#6366f1;
+    --acc-soft:rgba(124,131,255,.14);
+    --green:#22c55e;
+    --amber:#f59e0b;
+    --red:#ef4444;
+    --blue:#3b82f6;
+    --cyan:#06b6d4;
+    --pink:#ec4899;
+    --radius:14px;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --serif:'Instrument Serif',serif;
+    --sans:'Plus Jakarta Sans',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans);
+    background:
+      radial-gradient(900px 600px at 78% -8%, rgba(124,131,255,.07), transparent 60%),
+      var(--bg);
+    color:var(--txt);
+    font-size:14px;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .num{font-family:var(--mono);font-feature-settings:"tnum" 1}
+  .name-serif{font-family:var(--serif);font-style:italic}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#262a39;border-radius:8px}
+  ::-webkit-scrollbar-thumb:hover{background:#323750}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,textarea,select{font-family:inherit}
+
+  /* ---------- App shell ---------- */
+  .app{display:flex;height:100vh;width:100vw}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:248px;flex-shrink:0;background:var(--panel);
+    border-right:1px solid var(--line);display:flex;flex-direction:column;
+    padding:18px 12px;gap:4px;overflow-y:auto;
+  }
+  .brand{display:flex;align-items:center;gap:11px;padding:6px 10px 18px}
+  .brand .logo{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(150deg,#8a90ff,#5b5fe0);
+    display:grid;place-items:center;font-weight:800;font-size:20px;color:#fff;
+    box-shadow:0 6px 18px rgba(99,102,241,.35);
+  }
+  .brand b{font-size:17px;font-weight:800;letter-spacing:.2px}
+  .brand b span{color:var(--acc)}
+  .nav-label{font-size:10.5px;font-weight:700;letter-spacing:1.4px;color:var(--txt-3);
+    text-transform:uppercase;padding:14px 12px 6px}
+  .nav-item{
+    display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;
+    color:var(--txt-2);font-weight:600;font-size:13.5px;transition:.13s;position:relative;
+  }
+  .nav-item:hover{background:var(--panel-2);color:var(--txt)}
+  .nav-item.active{background:var(--acc-soft);color:#cfd2ff}
+  .nav-item.active::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:3px;
+    background:var(--acc);border-radius:0 3px 3px 0}
+  .nav-item .ic{width:19px;text-align:center;font-size:15px;opacity:.95}
+  .nav-item.muted{opacity:.5;cursor:default}
+  .nav-item.muted:hover{background:none;color:var(--txt-2)}
+  .nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:700;
+    min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
+  .nav-badge.soft{background:var(--acc-2)}
+  .sb-user{margin-top:auto;display:flex;align-items:center;gap:10px;padding:11px 10px;border-top:1px solid var(--line)}
+  .sb-user .av{width:34px;height:34px;border-radius:9px;background:#2a2d3c;display:grid;place-items:center;
+    font-weight:700;font-size:13px;color:#cfd2ff}
+  .sb-user small{display:block;color:var(--txt-3);font-size:11.5px}
+
+  /* ---------- Main ---------- */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{height:62px;flex-shrink:0;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:16px;padding:0 22px;background:var(--bg-2)}
+  .topbar h1{font-size:19px;font-weight:800;letter-spacing:.2px}
+  .topbar .sub{color:var(--txt-3);font-size:12.5px;font-weight:500}
+  .search{flex:1;max-width:440px;margin-left:8px;position:relative}
+  .search input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:9px 12px 9px 36px;color:var(--txt);font-size:13px;outline:none;transition:.15s}
+  .search input:focus{border-color:var(--acc-2);box-shadow:0 0 0 3px var(--acc-soft)}
+  .search .si{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--txt-3)}
+  .top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .icon-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+    color:var(--txt-2);background:var(--panel);border:1px solid var(--line);transition:.13s;position:relative}
+  .icon-btn:hover{color:var(--txt);background:var(--panel-2)}
+  .icon-btn .dot{position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .content{flex:1;overflow-y:auto;position:relative}
+
+  .view{display:none;animation:fade .25s ease}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;
+    font-weight:700;font-size:13px;transition:.13s;white-space:nowrap}
+  .btn-pri{background:var(--acc-2);color:#fff}
+  .btn-pri:hover{background:#5457e8;box-shadow:0 5px 16px rgba(99,102,241,.3)}
+  .btn-ghost{background:var(--card);border:1px solid var(--line);color:var(--txt-2)}
+  .btn-ghost:hover{color:var(--txt);border-color:#363a4d}
+  .btn-green{background:rgba(34,197,94,.14);color:#5ee089;border:1px solid rgba(34,197,94,.3)}
+  .btn-green:hover{background:rgba(34,197,94,.22)}
+  .btn-sm{padding:6px 11px;font-size:12px;border-radius:9px}
+  .btn-xl{padding:11px 16px;font-size:13.5px}
+
+  /* ---------- Badges / chips ---------- */
+  .stage{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;
+    font-size:11.5px;font-weight:700;line-height:1}
+  .chan{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--txt-2)}
+  .pri{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+  .pri.low{background:#23262f;color:#8a90a0}
+  .pri.normal{background:#23262f;color:#9aa0b0}
+  .pri.high{background:rgba(245,158,11,.15);color:#f6b545}
+  .pri.urgent{background:rgba(239,68,68,.16);color:#ff7a7a}
+  .unread{background:var(--red);color:#fff;font-size:10.5px;font-weight:700;min-width:18px;height:18px;
+    border-radius:9px;display:inline-grid;place-items:center;padding:0 5px}
+  .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;background:#23262f;color:#9aa0b0}
+
+  /* ============ VIEW: TODAY / ACTION CENTER ============ */
+  .wrap{padding:24px 28px;max-width:1180px}
+  .today-hd{margin-bottom:22px}
+  .today-hd h2{font-size:24px;font-weight:800;letter-spacing:-.3px}
+  .today-hd h2 em{font-family:var(--serif);font-style:italic;color:var(--acc);font-weight:400}
+  .today-hd p{color:var(--txt-3);margin-top:4px;font-size:13.5px}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .kpi .lab{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--txt-3)}
+  .kpi .val{font-family:var(--mono);font-size:27px;font-weight:700;margin-top:9px;letter-spacing:-1px}
+  .kpi .val.red{color:#ff7a7a}.kpi .val.green{color:#5ee089}.kpi .val.acc{color:var(--acc)}
+  .kpi .delta{font-size:11.5px;color:var(--txt-3);margin-top:3px;font-weight:600}
+
+  .queue{display:flex;flex-direction:column;gap:12px}
+  .qgroup{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .qhead{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;transition:.13s}
+  .qhead:hover{background:var(--card-hover)}
+  .qhead .qdot{width:9px;height:9px;border-radius:50%}
+  .qhead .qt{font-weight:700;font-size:14.5px}
+  .qhead .qc{font-family:var(--mono);font-weight:700;background:#23262f;color:var(--txt);
+    padding:1px 9px;border-radius:8px;font-size:12.5px}
+  .qhead .qhint{color:var(--txt-3);font-size:12px;font-weight:500}
+  .qhead .chev{margin-left:auto;color:var(--txt-3);transition:.2s}
+  .qgroup.open .chev{transform:rotate(180deg)}
+  .qbody{display:none;border-top:1px solid var(--line-soft)}
+  .qgroup.open .qbody{display:block}
+  .qrow{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line-soft);transition:.1s}
+  .qrow:last-child{border-bottom:none}
+  .qrow:hover{background:var(--panel-2)}
+  .qrow .av{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;
+    font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+  .qrow .nm{font-weight:700;font-size:13.5px;cursor:pointer}
+  .qrow .nm:hover{color:var(--acc)}
+  .qrow .meta{color:var(--txt-3);font-size:12px;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap}
+  .qrow .ai-pre{flex:1;min-width:0;color:var(--txt-2);font-size:12.5px;font-style:italic;
+    background:var(--acc-soft);border:1px solid rgba(124,131,255,.18);border-radius:9px;
+    padding:7px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qrow .acts{margin-left:auto;display:flex;gap:7px;flex-shrink:0}
+
+  /* ============ VIEW: INBOX ============ */
+  .inbox{display:grid;grid-template-columns:330px 1fr 0;height:calc(100vh - 62px)}
+  .inbox.detail-open{grid-template-columns:330px 1fr 380px}
+  .ib-list{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .ib-list-hd{padding:13px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+  .ib-filter{display:flex;gap:7px}
+  .ib-filter select{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:7px 9px;color:var(--txt-2);font-size:12.5px;outline:none}
+  .ib-scroll{overflow-y:auto;flex:1}
+  .ib-item{display:flex;gap:11px;padding:13px;border-bottom:1px solid var(--line-soft);cursor:pointer;transition:.1s;position:relative}
+  .ib-item:hover{background:var(--panel-2)}
+  .ib-item.active{background:var(--acc-soft)}
+  .ib-item.active::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
+  .ib-item .av{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;
+    font-weight:700;color:#fff;flex-shrink:0;font-size:14px}
+  .ib-item .body{flex:1;min-width:0}
+  .ib-item .top{display:flex;align-items:center;gap:7px}
+  .ib-item .nm{font-weight:700;font-size:13.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ib-item .tm{font-size:11px;color:var(--txt-3);font-family:var(--mono)}
+  .ib-item .prev{color:var(--txt-3);font-size:12.5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ib-item .row2{display:flex;align-items:center;gap:7px;margin-top:7px}
+
+  .ib-chat{display:flex;flex-direction:column;min-width:0;background:var(--bg-2)}
+  .chat-hd{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  .chat-hd .av{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-weight:700;color:#fff}
+  .chat-hd .nm{font-weight:800;font-size:15px}
+  .chat-hd .sub{color:var(--txt-3);font-size:12px;margin-top:2px}
+  .chat-hd .hd-acts{margin-left:auto;display:flex;gap:7px}
+  .chat-msgs{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:14px}
+  .date-sep{text-align:center;color:var(--txt-3);font-size:11.5px;font-weight:600;margin:4px 0}
+  .date-sep span{background:var(--card);padding:3px 12px;border-radius:20px;border:1px solid var(--line-soft)}
+  .msg{max-width:74%;display:flex;flex-direction:column;gap:4px}
+  .msg.in{align-self:flex-start}
+  .msg.out{align-self:flex-end;align-items:flex-end}
+  .msg .bubble{padding:11px 14px;border-radius:14px;font-size:13.5px;line-height:1.5}
+  .msg.in .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg.out .bubble{background:linear-gradient(160deg,#6e72f0,#5457e8);color:#fff;border-bottom-right-radius:4px}
+  .msg .mmeta{font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:7px;padding:0 4px}
+  .ai-pill{font-size:10px;font-weight:700;background:var(--acc-soft);color:#cfd2ff;padding:1px 7px;border-radius:6px}
+  .sys-msg{align-self:center;background:var(--panel-2);color:var(--txt-3);font-size:11.5px;
+    padding:5px 14px;border-radius:20px;border:1px solid var(--line-soft)}
+
+  .composer{border-top:1px solid var(--line);padding:12px 16px;background:var(--panel)}
+  .comp-top{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+  .comp-chan{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:6px 10px;
+    color:var(--txt-2);font-size:12.5px;font-weight:600;outline:none}
+  .qreply{font-size:11.5px;font-weight:600;background:var(--card);border:1px solid var(--line);
+    color:var(--txt-2);padding:5px 10px;border-radius:8px;transition:.1s}
+  .qreply:hover{color:var(--txt);border-color:var(--acc-2)}
+  .ai-draft-banner{display:flex;align-items:center;gap:9px;background:var(--acc-soft);
+    border:1px solid rgba(124,131,255,.25);border-radius:10px;padding:8px 12px;margin-bottom:9px;font-size:12.5px}
+  .ai-draft-banner b{color:#cfd2ff}
+  .comp-input{display:flex;gap:10px;align-items:flex-end}
+  .comp-input textarea{flex:1;background:var(--card);border:1px solid var(--line);border-radius:11px;
+    padding:11px 13px;color:var(--txt);font-size:13.5px;resize:none;height:64px;outline:none;line-height:1.5}
+  .comp-input textarea:focus{border-color:var(--acc-2);box-shadow:0 0 0 3px var(--acc-soft)}
+
+  .ib-empty{display:grid;place-items:center;height:100%;color:var(--txt-3);text-align:center}
+
+  /* ============ VIEW: PIPELINE ============ */
+  .pipe-bar{display:flex;align-items:center;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
+  .toggle{display:flex;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+  .toggle button{padding:7px 14px;border-radius:8px;font-weight:700;font-size:12.5px;color:var(--txt-2)}
+  .toggle button.on{background:var(--acc-2);color:#fff}
+  .pipe-stats{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+  .pstat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:8px 14px}
+  .pstat .l{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt-3)}
+  .pstat .v{font-family:var(--mono);font-size:17px;font-weight:700;margin-top:2px}
+  .pstat .v.red{color:#ff7a7a}.pstat .v.green{color:#5ee089}.pstat .v.acc{color:var(--acc)}
+
+  .kanban{display:flex;gap:14px;padding:20px 24px;overflow-x:auto;height:calc(100vh - 138px)}
+  .kcol{width:286px;flex-shrink:0;display:flex;flex-direction:column;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);max-height:100%}
+  .kcol-hd{padding:13px 14px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line-soft)}
+  .kcol-hd .kdot{width:8px;height:8px;border-radius:50%}
+  .kcol-hd .kt{font-weight:700;font-size:13px}
+  .kcol-hd .kc{margin-left:auto;font-family:var(--mono);font-weight:700;font-size:12px;
+    background:#23262f;padding:1px 9px;border-radius:8px;color:var(--txt-2)}
+  .kcol-body{padding:11px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1;min-height:60px}
+  .kcol-body.drag-over{background:var(--acc-soft);outline:2px dashed rgba(124,131,255,.4);outline-offset:-6px;border-radius:10px}
+  .kcard{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px;cursor:grab;transition:.12s}
+  .kcard:hover{border-color:#363a4d;background:var(--card-hover);transform:translateY(-1px)}
+  .kcard.dragging{opacity:.4}
+  .kcard .ktop{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .kcard .kpri{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .kcard .kname{font-weight:700;font-size:13.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kcard .kcontact{color:var(--txt-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kcard .kmeta{display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap}
+  .kcard .kdates{font-family:var(--mono);font-size:11px;color:var(--txt-2)}
+  .kcard .kval{font-family:var(--mono);font-weight:700;font-size:12.5px;color:#5ee089;margin-left:auto}
+  .kcard .kstale{font-size:10.5px;font-weight:700;color:#f6b545;background:rgba(245,158,11,.13);padding:2px 7px;border-radius:6px}
+
+  /* table */
+  .tablewrap{padding:18px 24px;overflow:auto;height:calc(100vh - 138px)}
+  table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.tbl th{text-align:left;color:var(--txt-3);font-size:10.5px;font-weight:700;letter-spacing:.7px;
+    text-transform:uppercase;padding:11px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg-2)}
+  table.tbl td{padding:13px 12px;border-bottom:1px solid var(--line-soft)}
+  table.tbl tr{transition:.1s}
+  table.tbl tbody tr:hover{background:var(--panel-2);cursor:pointer}
+  table.tbl .t-name{font-weight:700}
+  table.tbl .t-val{font-family:var(--mono);font-weight:700;color:#5ee089}
+
+  /* ============ VIEW: AI AGENT ============ */
+  .agent-wrap{padding:24px 28px;max-width:1100px}
+  .agent-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  .agent-tab{padding:11px 16px;font-weight:700;font-size:13px;color:var(--txt-3);position:relative;transition:.12s}
+  .agent-tab:hover{color:var(--txt-2)}
+  .agent-tab.on{color:var(--txt)}
+  .agent-tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--acc)}
+  .atab-body{display:none}
+  .atab-body.on{display:block;animation:fade .2s}
+  .card-box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px}
+  .card-box h3{font-size:14px;font-weight:800;margin-bottom:4px}
+  .card-box .hint{color:var(--txt-3);font-size:12.5px;margin-bottom:16px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--txt-2);margin-bottom:7px}
+  .field input,.field textarea,.field select{width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px;color:var(--txt);font-size:13px;outline:none}
+  .field textarea{resize:vertical;min-height:90px;font-family:var(--mono);font-size:12.5px;line-height:1.6}
+  .field input:focus,.field textarea:focus{border-color:var(--acc-2);box-shadow:0 0 0 3px var(--acc-soft)}
+  .slider-row{display:flex;align-items:center;gap:14px}
+  .slider-row input[type=range]{flex:1;accent-color:var(--acc-2)}
+  .slider-row .sv{font-family:var(--mono);font-weight:700;color:var(--acc);min-width:34px}
+
+  .act-table{width:100%;border-collapse:collapse}
+  .act-table th{text-align:left;font-size:11px;font-weight:700;color:var(--txt-3);text-transform:uppercase;
+    letter-spacing:.6px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .act-table td{padding:13px 12px;border-bottom:1px solid var(--line-soft);font-size:13px}
+  .act-table .act-name{font-weight:700}
+  .act-table .act-desc{color:var(--txt-3);font-size:12px;margin-top:2px}
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px}
+  .seg button{padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:700;color:var(--txt-3)}
+  .seg button.on-auto{background:rgba(34,197,94,.18);color:#5ee089}
+  .seg button.on-appr{background:rgba(245,158,11,.16);color:#f6b545}
+  .seg button.on-off{background:#2a2d3c;color:var(--txt-2)}
+
+  .src-item{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft)}
+  .src-item:last-child{border:none}
+  .src-item .si-ic{width:38px;height:38px;border-radius:10px;background:var(--panel-2);display:grid;place-items:center;font-size:17px}
+  .src-item .si-t{font-weight:700;font-size:13.5px}
+  .src-item .si-s{color:var(--txt-3);font-size:12px;margin-top:2px}
+  .src-item .si-c{margin-left:auto;font-family:var(--mono);color:var(--txt-2);font-size:12px}
+
+  .guard-item{display:flex;gap:11px;padding:11px 0;align-items:flex-start;border-bottom:1px solid var(--line-soft)}
+  .guard-item:last-child{border:none}
+  .guard-item .gx{color:#ff7a7a;font-weight:800;flex-shrink:0}
+
+  .perf-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+  .perf-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .perf-card .pl{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt-3)}
+  .perf-card .pv{font-family:var(--mono);font-size:28px;font-weight:700;margin-top:9px;letter-spacing:-1px}
+  .perf-card .pv.green{color:#5ee089}.perf-card .pv.acc{color:var(--acc)}
+  .perf-card .pd{font-size:11.5px;color:var(--txt-3);margin-top:4px;font-weight:600}
+  .bar{height:8px;background:var(--panel-2);border-radius:6px;overflow:hidden;margin-top:12px}
+  .bar > div{height:100%;border-radius:6px;background:linear-gradient(90deg,#6e72f0,#22c55e)}
+
+  /* ---------- Guest 360 slide-over ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.2s;z-index:40}
+  .scrim.show{opacity:1;pointer-events:auto}
+  .g360{position:fixed;top:0;right:0;bottom:0;width:600px;max-width:92vw;background:var(--bg-2);
+    border-left:1px solid var(--line);transform:translateX(100%);transition:transform .26s cubic-bezier(.4,0,.2,1);
+    z-index:50;display:flex;flex-direction:column}
+  .g360.show{transform:none}
+  .g360-hd{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
+  .g360-hd .av{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;font-weight:800;color:#fff;font-size:18px}
+  .g360-hd .nm{font-size:19px;font-weight:800}
+  .g360-hd .meta{color:var(--txt-3);font-size:12.5px;margin-top:3px;display:flex;gap:9px;align-items:center}
+  .g360-close{margin-left:auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+    color:var(--txt-3);background:var(--panel)}
+  .g360-close:hover{color:var(--txt);background:var(--panel-2)}
+  .g360-body{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px}
+  .g-sec{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+  .g-sec h4{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--txt-3);margin-bottom:13px;display:flex;align-items:center;gap:8px}
+  .g-ai{background:var(--acc-soft);border:1px solid rgba(124,131,255,.25)}
+  .g-ai h4{color:#cfd2ff}
+  .g-ai p{font-size:13px;line-height:1.55;color:#dfe1f5}
+  .g-summary{font-size:13px;line-height:1.55;color:var(--txt)}
+  .kv{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+  .kv:last-child{border:none}
+  .kv .k{color:var(--txt-3);font-weight:600}
+  .kv .v{font-weight:600;text-align:right}
+  .kv .v.mono{font-family:var(--mono)}
+  .g-timeline{display:flex;flex-direction:column;gap:0}
+  .tl-item{display:flex;gap:12px;padding:9px 0;position:relative}
+  .tl-item .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;border:2px solid var(--bg-2)}
+  .tl-item .tl-line{position:absolute;left:4px;top:14px;bottom:-9px;width:1.5px;background:var(--line)}
+  .tl-item:last-child .tl-line{display:none}
+  .tl-item .tl-c{font-size:12.5px}
+  .tl-item .tl-t{color:var(--txt-3);font-size:11px;font-family:var(--mono);margin-top:2px}
+  .g-actions{position:sticky;bottom:0;background:var(--bg-2);border-top:1px solid var(--line);padding:16px 22px;display:flex;gap:10px;flex-wrap:wrap}
+  .stage-pick{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .stage-pick select{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--txt);font-size:13px;font-weight:600;outline:none}
+
+  /* ---------- Telegram modal ---------- */
+  .tg-modal{position:fixed;inset:0;display:none;place-items:center;z-index:60;background:rgba(0,0,0,.6)}
+  .tg-modal.show{display:grid}
+  .tg-card{width:420px;max-width:92vw;background:#17212b;border-radius:16px;overflow:hidden;
+    box-shadow:0 24px 60px rgba(0,0,0,.5);animation:fade .25s}
+  .tg-top{background:#212d3b;padding:14px 18px;display:flex;align-items:center;gap:11px}
+  .tg-top .tg-av{width:38px;height:38px;border-radius:50%;background:#2b5278;display:grid;place-items:center;font-size:18px}
+  .tg-top b{font-size:14px;color:#fff}
+  .tg-top small{display:block;color:#7d8e9e;font-size:11.5px}
+  .tg-body{padding:16px 18px;color:#e8eef3;font-size:13px;line-height:1.55}
+  .tg-body .tg-l{color:#6fb1e0;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
+  .tg-body .tg-q{background:#1c2733;border-radius:9px;padding:10px 12px}
+  .tg-body .tg-a{background:#243447;border-radius:9px;padding:10px 12px;border-left:3px solid var(--acc)}
+  .tg-btns{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#0e1620}
+  .tg-btns button{background:#17212b;padding:13px;font-weight:700;font-size:13px;color:#6fb1e0;transition:.1s}
+  .tg-btns button:hover{background:#1c2733}
+  .tg-btns button.ok{color:#5ee089}
+  .tg-btns button.no{color:#ff7a7a}
+
+  /* toast */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1f2230;border:1px solid var(--line);color:var(--txt);padding:12px 20px;border-radius:12px;
+    font-weight:600;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:70;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .tg-ic{color:#5ee089;margin-right:7px}
+
+  .fab{position:fixed;bottom:26px;right:26px;width:54px;height:54px;border-radius:50%;
+    background:linear-gradient(150deg,#8a90ff,#5b5fe0);display:grid;place-items:center;font-size:22px;
+    box-shadow:0 10px 28px rgba(99,102,241,.45);z-index:30;transition:.15s}
+  .fab:hover{transform:scale(1.06)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">A</div>
+      <b>ALiSiO <span>PMS</span></b>
+    </div>
+
+    <div class="nav-item muted"><span class="ic">⬆️</span>Імпорт Booking.com</div>
+    <div class="nav-item muted"><span class="ic">🔁</span>Виписки Airbnb/Booking</div>
+    <div class="nav-item muted"><span class="ic">🕘</span>Журнал змін</div>
+
+    <div class="nav-label">CRM</div>
+    <div class="nav-item active" data-view="today"><span class="ic">🎯</span>Сьогодні
+      <span class="nav-badge">11</span></div>
+    <div class="nav-item" data-view="inbox"><span class="ic">💬</span>Inbox
+      <span class="nav-badge" id="sb-unread">9</span></div>
+    <div class="nav-item" data-view="pipeline"><span class="ic">🪜</span>Pipeline</div>
+    <div class="nav-item" data-view="leads"><span class="ic">👤</span>Ліди</div>
+    <div class="nav-item" data-view="agent"><span class="ic">✨</span>AI-Агент</div>
+    <div class="nav-item muted"><span class="ic">⚙️</span>Налаштування</div>
+
+    <div class="nav-label">Управління</div>
+    <div class="nav-item muted"><span class="ic">💲</span>Ціноутворення</div>
+    <div class="nav-item muted"><span class="ic">📊</span>Звіти</div>
+    <div class="nav-item muted"><span class="ic">👥</span>Гості</div>
+    <div class="nav-item muted"><span class="ic">📕</span>Evidenční kniha</div>
+
+    <div class="sb-user">
+      <div class="av">AA</div>
+      <div><b style="font-size:13px">Admin ALiSiO</b><small>Власник</small></div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">Сьогодні</h1>
+        <div class="sub" id="page-sub">Центр дій</div>
+      </div>
+      <div class="search">
+        <span class="si">🔍</span>
+        <input placeholder="Пошук по імені, email, телефону, номеру бронювання...">
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn"><span class="dot"></span>🔔</button>
+        <button class="icon-btn">👤</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============ TODAY / ACTION CENTER ============ -->
+      <section class="view active" id="view-today">
+        <div class="wrap">
+          <div class="today-hd">
+            <h2>Доброго ранку, <em>Олег</em></h2>
+            <p>Субота, 7 червня · 11 речей потребують вашого рішення сьогодні</p>
+          </div>
+
+          <div class="kpi-row">
+            <div class="kpi"><div class="lab">Всього лідів</div><div class="val">134</div><div class="delta">+8 за тиждень</div></div>
+            <div class="kpi"><div class="lab">Без відповіді</div><div class="val red">4</div><div class="delta">найдовше: 3 год</div></div>
+            <div class="kpi"><div class="lab">Активних бронювань</div><div class="val green">2</div><div class="delta">заїзд: завтра</div></div>
+            <div class="kpi"><div class="lab">Загальна вартість</div><div class="val acc">36 848 <span style="font-size:15px;color:var(--txt-3)">CZK</span></div><div class="delta">в роботі</div></div>
+          </div>
+
+          <div class="queue" id="queue"></div>
+        </div>
+      </section>
+
+      <!-- ============ INBOX ============ -->
+      <section class="view" id="view-inbox">
+        <div class="inbox" id="inbox-grid">
+          <div class="ib-list">
+            <div class="ib-list-hd">
+              <div class="ib-filter">
+                <select><option>Всі стадії</option><option>Запит</option><option>Уточнення</option><option>Ціна відправлена</option></select>
+                <select><option>Всі канали</option><option>Email</option><option>WhatsApp</option><option>Telegram</option></select>
+              </div>
+            </div>
+            <div class="ib-scroll" id="ib-list"></div>
+          </div>
+
+          <div class="ib-chat" id="ib-chat">
+            <div class="ib-empty">Оберіть діалог зліва</div>
+          </div>
+
+          <div id="ib-detail" style="overflow:hidden"></div>
+        </div>
+      </section>
+
+      <!-- ============ PIPELINE ============ -->
+      <section class="view" id="view-pipeline">
+        <div class="pipe-bar">
+          <div class="toggle">
+            <button class="on" id="t-kanban" onclick="setPipeView('kanban')">Канбан</button>
+            <button id="t-table" onclick="setPipeView('table')">Таблиця</button>
+          </div>
+          <button class="btn btn-pri btn-sm">+ Новий лід</button>
+          <div class="pipe-stats">
+            <div class="pstat"><div class="l">Лідів</div><div class="v">134</div></div>
+            <div class="pstat"><div class="l">Непрочитані</div><div class="v red">71</div></div>
+            <div class="pstat"><div class="l">Активні</div><div class="v green">2</div></div>
+            <div class="pstat"><div class="l">Вартість</div><div class="v acc">36 848</div></div>
+          </div>
+        </div>
+        <div class="kanban" id="kanban"></div>
+        <div class="tablewrap" id="pipe-table" style="display:none"></div>
+      </section>
+
+      <!-- ============ LEADS ============ -->
+      <section class="view" id="view-leads">
+        <div class="tablewrap" id="leads-table"></div>
+      </section>
+
+      <!-- ============ AI AGENT ============ -->
+      <section class="view" id="view-agent">
+        <div class="agent-wrap">
+          <div class="today-hd" style="margin-bottom:18px">
+            <h2><em>Резеда</em> · AI-агент адміністратора</h2>
+            <p>Конфігурація за моделлю Sources / Actions / Persona / Guardrails. Людина схвалює критичні дії через Telegram.</p>
+          </div>
+
+          <div class="agent-tabs">
+            <div class="agent-tab on" data-atab="persona">Persona</div>
+            <div class="agent-tab" data-atab="sources">Sources</div>
+            <div class="agent-tab" data-atab="actions">Actions</div>
+            <div class="agent-tab" data-atab="guard">Guardrails</div>
+            <div class="agent-tab" data-atab="perf">Performance</div>
+          </div>
+
+          <!-- Persona -->
+          <div class="atab-body on" id="atab-persona">
+            <div class="card-box">
+              <h3>Особистість і тон</h3>
+              <div class="hint">Master-промпт. Внутрішня мова компанії — українська, відповіді гостю автоматично перекладаються на мову гостя.</div>
+              <div class="field"><label>Ім'я агента</label><input value="Резеда (Kemp Carlsbad)"></div>
+              <div class="field"><label>Тон бренду</label>
+                <textarea>Тепла, коротка, гостинна. Звертатись на «Ви». Не використовувати канцелярит. Завжди пропонувати наступний крок (дати / ціну / посилання на бронювання). Мова гостя визначається автоматично: cs, en, de, ru, uk, sk, pl, fr, it, es, nl, hu.</textarea></div>
+              <div class="field"><label>Температура (креативність)</label>
+                <div class="slider-row"><input type="range" min="0" max="1.5" step="0.1" value="0.4" oninput="document.getElementById('temp-v').textContent=this.value"><span class="sv" id="temp-v">0.4</span></div></div>
+              <div class="field"><label>Модель</label>
+                <select><option>gpt-4o</option><option>gpt-4o-mini (швидші відповіді)</option></select></div>
+            </div>
+          </div>
+
+          <!-- Sources -->
+          <div class="atab-body" id="atab-sources">
+            <div class="card-box">
+              <h3>Джерела знань <span style="color:var(--txt-3);font-weight:500;font-size:12px">(vector KB)</span></h3>
+              <div class="hint">Перехід з keyword-matching на embeddings. Кожне схвалене повідомлення staff стає кандидатом у базу знань.</div>
+              <div class="src-item"><div class="si-ic">🏕️</div><div><div class="si-t">Опис юнітів і кемпінгу</div><div class="si-s">Resort (Building F), Hostel (Building D), типи авто, електрика</div></div><div class="si-c">42 записи</div></div>
+              <div class="src-item"><div class="si-ic">💲</div><div><div class="si-t">Прайс і політики</div><div class="si-s">Ціни по сезонах, передплата, скасування, депозит</div></div><div class="si-c">18 записів</div></div>
+              <div class="src-item"><div class="si-ic">📍</div><div><div class="si-t">Логістика і локація</div><div class="si-s">Як доїхати, парковка, Karlovy Vary, активності поруч</div></div><div class="si-c">27 записів</div></div>
+              <div class="src-item"><div class="si-ic">✅</div><div><div class="si-t">Схвалені відповіді staff</div><div class="si-s">З crm_ai_training, авто-поповнення</div></div><div class="si-c">156 записів</div></div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:14px">+ Додати джерело</button>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="atab-body" id="atab-actions">
+            <div class="card-box">
+              <h3>Дозволені дії агента</h3>
+              <div class="hint">Whitelist. Агент НЕ може робити нічого поза цим списком. «Автономно» = робить сам; «Approve» = чекає підтвердження в Telegram.</div>
+              <table class="act-table" id="act-table"></table>
+            </div>
+          </div>
+
+          <!-- Guardrails -->
+          <div class="atab-body" id="atab-guard">
+            <div class="card-box">
+              <h3>Обмеження (Guardrails)</h3>
+              <div class="hint">Жорсткі заборони. Порушення блокується до schema/відправки.</div>
+              <div class="guard-item"><span class="gx">✕</span><div>Не вигадувати ціни поза прайсом. Якщо ціни нема в Sources — ескалація в Telegram.</div></div>
+              <div class="guard-item"><span class="gx">✕</span><div>Не обіцяти конкретний юніт, поки бронювання не створене.</div></div>
+              <div class="guard-item"><span class="gx">✕</span><div>Не давати знижки без Approve власника.</div></div>
+              <div class="guard-item"><span class="gx">✕</span><div>Не надсилати платіжне посилання автономно (тільки через Approve).</div></div>
+              <div class="guard-item"><span class="gx">✕</span><div>Не видаляти лідів і не міняти стадію на «booked» без створеного бронювання.</div></div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:14px">+ Додати обмеження</button>
+            </div>
+          </div>
+
+          <!-- Performance -->
+          <div class="atab-body" id="atab-perf">
+            <div class="perf-row">
+              <div class="perf-card"><div class="pl">Схвалено без правок</div><div class="pv green">82%</div><div class="pd">за 30 днів · 147 чернеток</div></div>
+              <div class="perf-card"><div class="pl">Час 1-ї відповіді</div><div class="pv acc">6 хв</div><div class="pd">було 3 год до AI</div></div>
+              <div class="perf-card"><div class="pl">Діалогів закрив AI</div><div class="pv">63%</div><div class="pd">без втручання людини</div></div>
+              <div class="perf-card"><div class="pl">Конверсія в брон</div><div class="pv green">31%</div><div class="pd">+9% після запуску</div></div>
+            </div>
+            <div class="card-box">
+              <h3>Якість чернеток за тиждень</h3>
+              <div class="hint">Схвалено / відредаговано / відхилено. Ціль — тримати «схвалено без правок» вище 80%.</div>
+              <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--txt-2);margin-top:6px">
+                <span>✅ Схвалено 82%</span><span>✏️ Редаговано 14%</span><span>❌ Відхилено 4%</span></div>
+              <div class="bar"><div style="width:82%"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ GUEST 360 SLIDE-OVER ============ -->
+<div class="scrim" id="scrim" onclick="closeG360()"></div>
+<aside class="g360" id="g360">
+  <div class="g360-hd">
+    <div class="av" id="g-av">GS</div>
+    <div style="flex:1">
+      <div class="nm" id="g-name">Georg Sieben</div>
+      <div class="meta" id="g-meta"></div>
+    </div>
+    <button class="g360-close" onclick="closeG360()">✕</button>
+  </div>
+  <div class="g360-body" id="g360-body"></div>
+  <div class="g-actions" id="g360-actions"></div>
+</aside>
+
+<!-- ============ TELEGRAM APPROVAL MODAL ============ -->
+<div class="tg-modal" id="tg-modal" onclick="if(event.target===this)closeTg()">
+  <div class="tg-card">
+    <div class="tg-top">
+      <div class="tg-av">🤖</div>
+      <div><b>ALiSiO CRM Bot</b><small>чернетка очікує схвалення</small></div>
+    </div>
+    <div class="tg-body" id="tg-body"></div>
+    <div class="tg-btns">
+      <button onclick="tgAction('🌍 Перекладено на мову гостя')">🌍 Translate</button>
+      <button onclick="tgAction('✏️ Режим редагування')">✏️ Edit</button>
+      <button class="ok" onclick="tgAction('✅ Відправлено гостю через SMTP')">✅ Approve</button>
+      <button class="no" onclick="tgAction('❌ Чернетку відхилено')">❌ Reject</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<button class="fab" onclick="openTg(currentLeadId||'georg')" title="Demo: Telegram-петля схвалення">✨</button>
+
+<script>
+/* ============================================================================
+   ДАНІ (вшиті). У продакшні приходять з /api/crm/* (SQLite).
+   ============================================================================ */
+const STAGES = {
+  new:        {n:'Новий',            ic:'🆕', c:'#6b7280'},
+  inquiry:    {n:'Запит',            ic:'❓', c:'#8b5cf6'},
+  info_needed:{n:'Уточнення',        ic:'📋', c:'#f59e0b'},
+  quote_sent: {n:'Ціна відправлена', ic:'💰', c:'#3b82f6'},
+  negotiation:{n:'Переговори',       ic:'🤝', c:'#ec4899'},
+  deposit_paid:{n:'Передплата',      ic:'💳', c:'#06b6d4'},
+  booked:     {n:'Заброньовано',     ic:'✅', c:'#22c55e'},
+  pre_stay:   {n:'До заїзду',        ic:'📋', c:'#14b8a6'},
+  check_in:   {n:'Заселення',        ic:'🏠', c:'#0ea5e9'},
+  in_stay:    {n:'Перебування',      ic:'🛏️', c:'#6366f1'},
+  check_out:  {n:'Виселення',        ic:'👋', c:'#a855f7'},
+  post_stay:  {n:'Після',            ic:'⭐', c:'#eab308'},
+  lost:       {n:'Втрачено',         ic:'❌', c:'#ef4444'},
+  spam:       {n:'Спам',             ic:'🚫', c:'#9ca3af'},
+};
+const KANBAN_STAGES = ['new','inquiry','info_needed','quote_sent','negotiation','deposit_paid','booked','pre_stay'];
+
+const CHAN = {
+  email:    {n:'Email',       ic:'✉️', c:'#3b82f6'},
+  whatsapp: {n:'WhatsApp',    ic:'🟢', c:'#22c55e'},
+  phone:    {n:'Телефон',     ic:'📞', c:'#9aa0b0'},
+  telegram: {n:'Telegram',    ic:'✈️', c:'#06b6d4'},
+  booking_com:{n:'Booking.com',ic:'🅱️', c:'#3b82f6'},
+  airbnb:   {n:'Airbnb',      ic:'🏠', c:'#ec4899'},
+  site:     {n:'Сайт',        ic:'🌐', c:'#22c55e'},
+  widget:   {n:'Widget',      ic:'🪟', c:'#9aa0b0'},
+  unknown:  {n:'unknown',     ic:'❔', c:'#6b7280'},
+};
+
+function pcolor(n){return ['#22c55e','#8b5cf6','#f59e0b','#3b82f6','#ec4899','#06b6d4','#a855f7'][n%7];}
+
+const LEADS = [
+  {id:'georg', fn:'Georg', ln:'Sieben', email:'sieben777@icloud.com', phone:'', chan:'email',
+   stage:'info_needed', pri:'normal', unread:2, lang:'DE', country:'Німеччина',
+   ci:'2027-05-22', co:'2027-05-25', adults:2, children:2, val:0, src:'Email',
+   prev:'Re: Familienferien um Pfingsten 2027', stale:0,
+   ai:'Сім\u2019я 2+2, повторний запит на Трійцю 2027. Питав про наявність. Ціну ще не отримав. Висока ймовірність брону.'},
+  {id:'jana', fn:'Jana', ln:'Oertel', email:'sender@messages.homeaway.com', phone:'', chan:'email',
+   stage:'info_needed', pri:'normal', unread:1, lang:'DE', country:'Німеччина',
+   ci:'', co:'', adults:0, children:0, val:0, src:'Email (HomeAway)', prev:'Inquiry from Georg Sieben: May 5', stale:1,
+   ai:'Запит через HomeAway/Vrbo. Бракує дат і к-сті гостей. Варто уточнити перед ціною.'},
+  {id:'harry', fn:'Harry', ln:'van der Spaa', email:'hspaa57@gmail.com', phone:'', chan:'email',
+   stage:'info_needed', pri:'normal', unread:3, lang:'NL', country:'Нідерланди',
+   ci:'', co:'', adults:0, children:0, val:0, src:'Email', prev:'(no subject)', stale:2,
+   ai:'3 непрочитані. Тема не визначена. Потребує людської уваги — можливо скарга або складний запит.'},
+  {id:'hana', fn:'Hana', ln:'Novotná', email:'HPac@seznam.cz', phone:'', chan:'email',
+   stage:'booked', pri:'normal', unread:1, lang:'CZ', country:'Чехія',
+   ci:'2026-06-14', co:'2026-06-16', adults:2, children:0, val:4200, src:'Email', prev:'Děkuji, potvrzuji', stale:0,
+   ai:'Бронювання підтверджене. 1 непрочитане — ймовірно уточнення деталей заїзду.'},
+  {id:'pascal', fn:'Pascal', ln:'Brandl', email:'weinpasi@gmail.com', phone:'', chan:'email',
+   stage:'info_needed', pri:'normal', unread:0, lang:'DE', country:'Німеччина',
+   ci:'2026-07-05', co:'2026-07-07', adults:2, children:1, val:0, src:'Email', prev:'Re: Reservation 05.07.-07.07.', stale:1,
+   ai:'Уточнює бронювання 5–7 липня. Готовий до ціни.'},
+  {id:'lysann', fn:'Lysann', ln:'Kleinemeier', email:'lysann_roesler@yahoo.de', phone:'', chan:'unknown',
+   stage:'info_needed', pri:'normal', unread:2, lang:'DE', country:'Німеччина',
+   ci:'2026-07-19', co:'2026-07-22', adults:2, children:3, val:0, src:'unknown', prev:'Anfrage Familie', stale:0,
+   ai:'Сім\u2019я 2+3, 19–22 липня. Великий запит — добра можливість для апсейлу.'},
+  {id:'pavla', fn:'Pavla', ln:'Sohrová', email:'zemanova.pavla@centrum.cz', phone:'737 347 010', chan:'site',
+   stage:'info_needed', pri:'normal', unread:0, lang:'CZ', country:'Чехія',
+   ci:'', co:'', adults:0, children:0, val:0, src:'Сайт', prev:'Dotaz z webu', stale:0,
+   ai:'Запит із сайту, є телефон. Можна подзвонити для швидкого закриття.'},
+  {id:'daniel', fn:'Daniel', ln:'Haym', email:'haymberater@gmail.com', phone:'+49 173 254 2402', chan:'widget',
+   stage:'lost', pri:'normal', unread:1, lang:'DE', country:'Німеччина',
+   ci:'2026-06-06', co:'2026-06-07', adults:2, children:0, val:3230, src:'Widget', prev:'Доступність 06.06', stale:0,
+   ai:'Позначено втраченим — дати минули. Можна реактивувати на інші дати.'},
+  {id:'nicole', fn:'Nicole', ln:'Adamková', email:'nicole19997@icloud.com', phone:'702 088 842', chan:'widget',
+   stage:'lost', pri:'normal', unread:0, lang:'CZ', country:'Чехія',
+   ci:'2026-06-06', co:'2026-06-07', adults:2, children:0, val:4566, src:'Widget', prev:'Rezervace 06.06', stale:0,
+   ai:'Втрачено по даті. Кандидат на win-back розсилку.'},
+  {id:'babette', fn:'Babette', ln:'Bootsma', email:'b.bootsma@gmail.com', phone:'+31 616 308 095', chan:'whatsapp',
+   stage:'quote_sent', pri:'high', unread:3, lang:'NL', country:'Нідерланди',
+   ci:'2026-07-22', co:'2026-07-23', adults:2, children:0, val:2890, src:'WhatsApp', prev:'Re: Inquiry from Babette', stale:0,
+   ai:'Ціну надіслано (2 890 CZK), 3 непрочитані — ймовірно готова бронювати. Пріоритет: відповісти першою.'},
+  {id:'simon', fn:'simon', ln:'Conradt', email:'', phone:'+49 176 412 388 68', chan:'whatsapp',
+   stage:'quote_sent', pri:'normal', unread:0, lang:'DE', country:'Німеччина',
+   ci:'', co:'', adults:0, children:0, val:1950, src:'WhatsApp', prev:'Re: Inquiry from simon Conradt', stale:2,
+   ai:'Ціну надіслано, тиша 2 дні. Час на follow-up.'},
+  {id:'andrea', fn:'Andrea', ln:'Fischer', email:'', phone:'+49 176 517 767 66', chan:'whatsapp',
+   stage:'quote_sent', pri:'normal', unread:2, lang:'DE', country:'Німеччина',
+   ci:'2026-05-09', co:'2026-05-10', adults:2, children:0, val:1680, src:'WhatsApp', prev:'Re: Inquiry from Andrea Fischer', stale:0,
+   ai:'Дати минули (травень). Запропонувати перенос або закрити як lost.'},
+  {id:'alexandra', fn:'Alexandra', ln:'Rickert', email:'', phone:'00 49 171 815 6703', chan:'whatsapp',
+   stage:'negotiation', pri:'high', unread:0, lang:'DE', country:'Німеччина',
+   ci:'2026-04-30', co:'2026-05-03', adults:2, children:1, val:5240, src:'WhatsApp', prev:'Re: Inquiry from Alexandra', stale:1,
+   ai:'У переговорах, велике замовлення (5 240 CZK). Просила знижку — рішення за власником.'},
+  {id:'tom', fn:'Tom', ln:'Beckmann', email:'', phone:'+49 152 382 0825', chan:'whatsapp',
+   stage:'negotiation', pri:'normal', unread:0, lang:'DE', country:'Німеччина',
+   ci:'2026-08-15', co:'2026-08-18', adults:2, children:0, val:4100, src:'WhatsApp', prev:'Re: Inquiry', stale:0,
+   ai:'Переговори по серпню. Готовий до платіжного посилання.'},
+  {id:'tadeas', fn:'Tadeáš', ln:'Mojžíš', email:'mpwk.n48s@guest.booking.com', phone:'', chan:'booking_com',
+   stage:'inquiry', pri:'normal', unread:0, lang:'CZ', country:'Чехія',
+   ci:'', co:'', adults:0, children:0, val:0, src:'Booking.com', prev:'We received this message from Tadeáš', stale:0,
+   ai:'Новий запит з Booking.com. Дані бронювання ще парсяться.'},
+  {id:'susann', fn:'Susann', ln:'Auerswald', email:'ua3j.7nqq@guest.booking.com', phone:'', chan:'booking_com',
+   stage:'inquiry', pri:'high', unread:6, lang:'DE', country:'Німеччина',
+   ci:'2026-05-30', co:'2026-05-31', adults:2, children:0, val:0, src:'Booking.com', prev:'We received this message from Susann', stale:0,
+   ai:'6 непрочитаних з Booking.com (#5562201144). Терміново відповісти — гість активний.'},
+  {id:'jan', fn:'Jan', ln:'Jedlička', email:'', phone:'+420 773 770 832', chan:'phone',
+   stage:'inquiry', pri:'normal', unread:1, lang:'CZ', country:'Чехія',
+   ci:'', co:'', adults:0, children:0, val:0, src:'Телефон', prev:'Дзвінок, цікавився кемпінгом', stale:0,
+   ai:'Дзвонив, цікавився місцем для авто. Передзвонити.'},
+  {id:'new1', fn:'Markus', ln:'Lebkowetz', email:'7k.enrb@guest.booking.com', phone:'', chan:'booking_com',
+   stage:'new', pri:'normal', unread:1, lang:'DE', country:'Австрія',
+   ci:'2026-10-08', co:'2026-10-09', adults:2, children:0, val:0, src:'Booking.com', prev:'New inquiry', stale:0,
+   ai:'Свіжий лід, ще не оброблений. Жовтневі дати.'},
+  {id:'new2', fn:'Petra', ln:'Nováková', email:'p.novakova@email.cz', phone:'', chan:'site',
+   stage:'new', pri:'normal', unread:1, lang:'CZ', country:'Чехія',
+   ci:'2026-09-22', co:'2026-09-24', adults:2, children:1, val:0, src:'Сайт', prev:'Dobrý den, máte volno?', stale:0,
+   ai:'Запит із сайту, вересень. Сім\u2019я 2+1.'},
+];
+
+/* розмови (демо) */
+const CONVOS = {
+  georg:[
+    {dir:'in', t:'9 трав, 14:02', name:'Georg Sieben', txt:'Guten Tag, wir möchten gerne um Pfingsten 2027 mit unseren zwei Kindern bei Ihnen Urlaub machen. Haben Sie da noch etwas frei?'},
+    {dir:'sys', txt:'Стадія змінена: Новий → Запит'},
+    {dir:'out', ai:true, t:'9 трав, 14:08', name:'Резеда (AI)', txt:'Guten Tag, Herr Sieben! Vielen Dank für Ihre Anfrage. Zu Pfingsten 2027 haben wir noch Verfügbarkeit. Dürfte ich nach den genauen Daten und der Personenzahl fragen, damit ich Ihnen ein passendes Angebot mache?'},
+    {dir:'in', t:'10 трав, 09:15', name:'Georg Sieben', txt:'Wir wären zu viert, vom 22. bis 25. Mai. Was würde das kosten?'},
+    {dir:'sys', txt:'Стадія змінена: Запит → Уточнення'},
+  ],
+  babette:[
+    {dir:'in', t:'Сьогодні 09:40', name:'Babette Bootsma', txt:'Hi! Is the unit still available for July 22-23 for 2 people?'},
+    {dir:'out', ai:true, t:'Сьогодні 09:46', name:'Резеда (AI)', txt:'Hello Babette! Yes, it is available for July 22-23. For 2 guests the total is 2 890 CZK including the tourist tax. Shall I send you the booking link?'},
+    {dir:'in', t:'Сьогодні 10:55', name:'Babette Bootsma', txt:'Great! Yes please send it.'},
+    {dir:'in', t:'Сьогодні 10:58', name:'Babette Bootsma', txt:'And is parking included?'},
+    {dir:'in', t:'Сьогодні 11:01', name:'Babette Bootsma', txt:'Hello? Still there? :)'},
+  ],
+  susann:[
+    {dir:'in', t:'Вчора 18:20', name:'Susann Auerswald', txt:'We received this message from Susann via Booking.com. Hallo, gibt es einen Stellplatz für unser Wohnmobil am 30.05.?'},
+    {dir:'in', t:'Вчора 18:22', name:'Susann Auerswald', txt:'Es wäre nur für eine Nacht.'},
+  ],
+};
+function getConvo(id){ return CONVOS[id] || [
+  {dir:'in', t:'Нещодавно', name:(LEADS.find(l=>l.id===id)||{}).fn||'Гість', txt:'(історія повідомлень завантажується з crm_messages)'} ]; }
+
+/* ============================================================================
+   НАВІГАЦІЯ
+   ============================================================================ */
+const TITLES={today:['Сьогодні','Центр дій'],inbox:['Inbox','Усі діалоги'],pipeline:['Pipeline','Воронка продажів'],leads:['Ліди','База контактів'],agent:['AI-Агент','Резеда · конфігурація']};
+let currentLeadId=null;
+
+document.querySelectorAll('.nav-item[data-view]').forEach(it=>{
+  it.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    it.classList.add('active');
+    const v=it.dataset.view;
+    document.querySelectorAll('.view').forEach(s=>s.classList.remove('active'));
+    document.getElementById('view-'+v).classList.add('active');
+    document.getElementById('page-title').textContent=TITLES[v][0];
+    document.getElementById('page-sub').textContent=TITLES[v][1];
+    if(v==='inbox'&&!document.querySelector('.ib-item.active')) selectConvo('babette');
+  });
+});
+
+/* ============================================================================
+   TODAY / ACTION CENTER
+   ============================================================================ */
+const QUEUES=[
+  {dot:'#ef4444', t:'Потребує відповіді', hint:'гість спитав, тиша > 2 год', ids:['babette','susann','simon','harry']},
+  {dot:'#f59e0b', t:'AI-чернетки на схвалення', hint:'готові до Approve в Telegram', ids:['georg','pascal','lysann']},
+  {dot:'#22c55e', t:'Заїзди сьогодні та завтра', hint:'підготувати інструкції', ids:['hana']},
+  {dot:'#06b6d4', t:'Чекаємо передплату', hint:'надіслати або нагадати', ids:['alexandra','tom']},
+  {dot:'#eab308', t:'Виїхали — попросити відгук', hint:'post-stay', ids:['nicole']},
+];
+function renderQueue(){
+  const q=document.getElementById('queue');
+  q.innerHTML=QUEUES.map((g,gi)=>{
+    const rows=g.ids.map(id=>{
+      const l=LEADS.find(x=>x.id===id); if(!l)return'';
+      const init=(l.fn[0]+l.ln[0]).toUpperCase();
+      const acts = gi===1
+        ? `<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openTg('${l.id}')">Approve</button>
+           <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openG360('${l.id}')">Відкрити</button>`
+        : `<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();gotoInbox('${l.id}')">Написати</button>
+           <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openG360('${l.id}')">Картка</button>`;
+      return `<div class="qrow">
+        <div class="av" style="background:${pcolor(id.length)}">${init}</div>
+        <div style="min-width:150px">
+          <div class="nm" onclick="openG360('${l.id}')">${l.fn} ${l.ln}</div>
+          <div class="meta"><span class="chan">${CHAN[l.chan].ic} ${CHAN[l.chan].n}</span>${l.unread?`<span class="unread">${l.unread}</span>`:''}</div>
+        </div>
+        <div class="ai-pre" title="${l.ai}">✨ ${l.ai}</div>
+        <div class="acts">${acts}</div>
+      </div>`;
+    }).join('');
+    return `<div class="qgroup ${gi===0?'open':''}">
+      <div class="qhead" onclick="this.parentElement.classList.toggle('open')">
+        <span class="qdot" style="background:${g.dot}"></span>
+        <span class="qt">${g.t}</span>
+        <span class="qc">${g.ids.length}</span>
+        <span class="qhint">${g.hint}</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="qbody">${rows}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================================
+   INBOX
+   ============================================================================ */
+function renderInboxList(){
+  const list=document.getElementById('ib-list');
+  const sorted=[...LEADS].sort((a,b)=>b.unread-a.unread);
+  list.innerHTML=sorted.map(l=>{
+    const init=(l.fn[0]+l.ln[0]).toUpperCase(); const st=STAGES[l.stage];
+    return `<div class="ib-item" data-id="${l.id}" onclick="selectConvo('${l.id}')">
+      <div class="av" style="background:${pcolor(l.id.length)}">${init}</div>
+      <div class="body">
+        <div class="top"><span class="nm">${l.fn} ${l.ln}</span><span class="tm">${l.unread?'09:46':'вчора'}</span></div>
+        <div class="prev">${l.prev}</div>
+        <div class="row2">
+          <span class="stage" style="background:${st.c}22;color:${st.c}">${st.ic} ${st.n}</span>
+          <span class="chan">${CHAN[l.chan].ic}</span>
+          ${l.unread?`<span class="unread" style="margin-left:auto">${l.unread}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function selectConvo(id){
+  currentLeadId=id;
+  document.querySelectorAll('.ib-item').forEach(i=>i.classList.toggle('active',i.dataset.id===id));
+  const l=LEADS.find(x=>x.id===id); const st=STAGES[l.stage];
+  const msgs=getConvo(id);
+  const chat=document.getElementById('ib-chat');
+  const hasDraft = id==='babette'||id==='georg'||id==='susann';
+  const draftText = id==='babette'
+    ? 'Hi Babette! Yes, parking is included free of charge. Here is your booking link: kemp-carlsbad.cz/book/QA-2207 — it holds the unit for 30 minutes. Let me know if you need anything else!'
+    : id==='susann'
+    ? 'Hallo Susann! Ja, für den 30.05. haben wir einen Stellplatz für Ihr Wohnmobil frei. Eine Nacht kostet 690 CZK inkl. Strom. Soll ich Ihnen den Buchungslink senden?'
+    : 'Guten Tag, Herr Sieben! Für 4 Personen vom 22.–25. Mai 2027 läge der Preis bei 6 450 CZK für 3 Nächte. Soll ich die Buchung für Sie reservieren?';
+
+  chat.innerHTML=`
+    <div class="chat-hd">
+      <div class="av" style="background:${pcolor(l.id.length)}">${(l.fn[0]+l.ln[0]).toUpperCase()}</div>
+      <div>
+        <div class="nm">${l.fn} ${l.ln}</div>
+        <div class="sub">${CHAN[l.chan].ic} ${CHAN[l.chan].n} · ${l.lang} · <span style="color:${st.c}">${st.ic} ${st.n}</span></div>
+      </div>
+      <div class="hd-acts">
+        <button class="btn btn-ghost btn-sm" onclick="toast('✨ AI-підсумок діалогу згенеровано')">Підсумувати</button>
+        <button class="btn btn-ghost btn-sm" onclick="toast('🌍 Перекладено')">Перекласти</button>
+        <button class="btn btn-ghost btn-sm" onclick="openG360('${l.id}')">Картка 360</button>
+      </div>
+    </div>
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="date-sep"><span>Розмова</span></div>
+      ${msgs.map(m=>{
+        if(m.dir==='sys')return `<div class="sys-msg">${m.txt}</div>`;
+        return `<div class="msg ${m.dir}">
+          <div class="bubble">${m.txt}</div>
+          <div class="mmeta">${m.ai?'<span class="ai-pill">✨ AI</span>':''}${m.name||''} · ${m.t||''}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="composer">
+      ${hasDraft?`<div class="ai-draft-banner">✨ <b>AI вже підготував чернетку</b> — перевірте і натисніть Approve, або відредагуйте.</div>`:''}
+      <div class="comp-top">
+        <select class="comp-chan"><option>${CHAN[l.chan].ic} ${CHAN[l.chan].n}</option><option>✉️ Email</option><option>✈️ Telegram</option></select>
+        <button class="qreply" onclick="qr(this)">Дякуємо за запит</button>
+        <button class="qreply" onclick="qr(this)">Надсилаю ціну</button>
+        <button class="qreply" onclick="qr(this)">Посилання на бронювання</button>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toast('✨ Генерую нову чернетку...')">✨ AI Suggest</button>
+      </div>
+      <div class="comp-input">
+        <textarea id="comp-ta">${hasDraft?draftText:''}</textarea>
+        <button class="btn btn-pri btn-xl" onclick="sendMsg()">${hasDraft?'Approve & Send':'Надіслати'}</button>
+      </div>
+    </div>`;
+  document.getElementById('ib-detail').innerHTML='';
+  document.getElementById('inbox-grid').classList.remove('detail-open');
+  setTimeout(()=>{const m=document.getElementById('chat-msgs');if(m)m.scrollTop=m.scrollHeight;},50);
+}
+function qr(b){const ta=document.getElementById('comp-ta');ta.value=b.textContent;ta.focus();}
+function sendMsg(){
+  const ta=document.getElementById('comp-ta');
+  if(!ta.value.trim()){toast('Порожнє повідомлення');return;}
+  const wrap=document.getElementById('chat-msgs');
+  const div=document.createElement('div');div.className='msg out';
+  div.innerHTML=`<div class="bubble">${ta.value}</div><div class="mmeta"><span class="ai-pill">✨ AI</span>Резеда · щойно</div>`;
+  wrap.appendChild(div);wrap.scrollTop=wrap.scrollHeight;
+  document.querySelector('.ai-draft-banner')?.remove();
+  ta.value='';toast('✅ Відправлено · збережено в тренувальні дані');
+}
+function gotoInbox(id){
+  document.querySelector('.nav-item[data-view="inbox"]').click();
+  selectConvo(id);
+}
+
+/* ============================================================================
+   PIPELINE — KANBAN з DRAG & DROP
+   ============================================================================ */
+function renderKanban(){
+  const k=document.getElementById('kanban');
+  k.innerHTML=KANBAN_STAGES.map(sid=>{
+    const st=STAGES[sid];
+    const cards=LEADS.filter(l=>l.stage===sid);
+    return `<div class="kcol" data-stage="${sid}">
+      <div class="kcol-hd"><span class="kdot" style="background:${st.c}"></span>
+        <span class="kt">${st.ic} ${st.n}</span><span class="kc">${cards.length}</span></div>
+      <div class="kcol-body" data-stage="${sid}"
+           ondragover="kOver(event)" ondragleave="kLeave(event)" ondrop="kDrop(event,'${sid}')">
+        ${cards.map(cardHTML).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  bindDrag();
+}
+function cardHTML(l){
+  const init=(l.fn[0]+l.ln[0]).toUpperCase();
+  const dates=l.ci?`📅 ${l.ci.slice(5)} → ${l.co.slice(5)}`:'';
+  const stale=l.stale>=2?`<span class="kstale">${l.stale}д без руху</span>`:'';
+  return `<div class="kcard" draggable="true" data-id="${l.id}" onclick="openG360('${l.id}')">
+    <div class="ktop"><span class="kpri" style="background:${l.pri==='high'?'#f59e0b':l.pri==='urgent'?'#ef4444':'#3a3d4d'}"></span>
+      <span class="kname">${l.fn} ${l.ln}</span>${l.unread?`<span class="unread">${l.unread}</span>`:''}</div>
+    <div class="kcontact">${l.email||l.phone||'—'}</div>
+    <div class="kmeta">
+      <span class="chan">${CHAN[l.chan].ic} ${CHAN[l.chan].n}</span>
+      ${stale}
+      ${l.val?`<span class="kval">${l.val.toLocaleString('uk').replace(/,/g,' ')} CZK</span>`:''}
+    </div>
+    ${dates?`<div class="kdates" style="margin-top:7px">${dates}</div>`:''}
+  </div>`;
+}
+let dragId=null;
+function bindDrag(){
+  document.querySelectorAll('.kcard').forEach(c=>{
+    c.addEventListener('dragstart',e=>{dragId=c.dataset.id;c.classList.add('dragging');});
+    c.addEventListener('dragend',()=>{dragId=null;document.querySelectorAll('.kcard').forEach(x=>x.classList.remove('dragging'));});
+  });
+}
+function kOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function kLeave(e){e.currentTarget.classList.remove('drag-over');}
+function kDrop(e,sid){
+  e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  if(!dragId)return;
+  const l=LEADS.find(x=>x.id===dragId);
+  if(l.stage!==sid){
+    const from=STAGES[l.stage].n; l.stage=sid;
+    renderKanban();
+    toast(`✅ ${l.fn} ${l.ln}: ${from} → ${STAGES[sid].n} · збережено в історію`);
+  }
+}
+function setPipeView(v){
+  document.getElementById('t-kanban').classList.toggle('on',v==='kanban');
+  document.getElementById('t-table').classList.toggle('on',v==='table');
+  document.getElementById('kanban').style.display=v==='kanban'?'flex':'none';
+  document.getElementById('pipe-table').style.display=v==='table'?'block':'none';
+  if(v==='table')renderTable('pipe-table');
+}
+
+/* ============================================================================
+   TABLES (Pipeline table + Leads)
+   ============================================================================ */
+function renderTable(elId){
+  const el=document.getElementById(elId);
+  el.innerHTML=`<table class="tbl"><thead><tr>
+    <th>Ім'я</th><th>Контакт</th><th>Етап</th><th>Пріоритет</th><th>Джерело</th><th>Дати</th><th>Гості</th><th>Вартість</th><th>Повід.</th>
+    </tr></thead><tbody>${LEADS.map(l=>{
+      const st=STAGES[l.stage];
+      const guests=l.adults?`${l.adults} дор.${l.children?' +'+l.children+' діт.':''}`:'—';
+      return `<tr onclick="openG360('${l.id}')">
+        <td class="t-name">${l.fn} ${l.ln}</td>
+        <td style="color:var(--txt-2);font-size:12px">${l.email||l.phone||'—'}</td>
+        <td><span class="stage" style="background:${st.c}22;color:${st.c}">${st.ic} ${st.n}</span></td>
+        <td><span class="pri ${l.pri}">${({low:'Низький',normal:'Нормальний',high:'Високий',urgent:'Терміновий'})[l.pri]}</span></td>
+        <td><span class="chan">${CHAN[l.chan].ic} ${CHAN[l.chan].n}</span></td>
+        <td class="num" style="font-size:12px">${l.ci?l.ci+' → '+l.co:'—'}</td>
+        <td style="font-size:12px">${guests}</td>
+        <td class="t-val">${l.val?l.val.toLocaleString('uk').replace(/,/g,' ')+' CZK':'—'}</td>
+        <td>${l.unread?`<span class="unread">${l.unread}</span>`:'—'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+/* ============================================================================
+   AI AGENT — actions table + tabs
+   ============================================================================ */
+const ACTIONS=[
+  {n:'Відповісти на FAQ',d:'ціни, правила, локація, наявність',mode:'auto'},
+  {n:'Заповнити поля картки з листа',d:'дати, к-сть гостей, тип авто для кемпінгу',mode:'auto'},
+  {n:'Змінити стадію за правилом',d:'guest_message → inquiry тощо',mode:'auto'},
+  {n:'Запропонувати дати / ціну',d:'формує оффер з прайсу',mode:'appr'},
+  {n:'Надіслати платіжне посилання',d:'Teya / посилання на бронювання',mode:'appr'},
+  {n:'Створити бронювання',d:'конвертація ліда + вибір юніта',mode:'appr'},
+  {n:'Надати знижку',d:'будь-яка знижка від прайсу',mode:'off'},
+];
+function renderActions(){
+  const t=document.getElementById('act-table');
+  t.innerHTML=`<tr><th>Дія</th><th style="text-align:right">Режим</th></tr>`+ACTIONS.map((a,i)=>`
+    <tr><td><div class="act-name">${a.n}</div><div class="act-desc">${a.d}</div></td>
+    <td style="text-align:right"><span class="seg">
+      <button class="${a.mode==='auto'?'on-auto':''}" onclick="setMode(${i},'auto')">Автономно</button>
+      <button class="${a.mode==='appr'?'on-appr':''}" onclick="setMode(${i},'appr')">Approve</button>
+      <button class="${a.mode==='off'?'on-off':''}" onclick="setMode(${i},'off')">Вимк.</button>
+    </span></td></tr>`).join('');
+}
+function setMode(i,m){ACTIONS[i].mode=m;renderActions();toast(`Дія «${ACTIONS[i].n}» → ${({auto:'Автономно',appr:'Approve',off:'Вимкнено'})[m]}`);}
+document.querySelectorAll('.agent-tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.agent-tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.atab-body').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('atab-'+t.dataset.atab).classList.add('on');
+  });
+});
+
+/* ============================================================================
+   GUEST 360
+   ============================================================================ */
+function openG360(id){
+  currentLeadId=id;
+  const l=LEADS.find(x=>x.id===id); if(!l)return;
+  const st=STAGES[l.stage];
+  document.getElementById('g-av').textContent=(l.fn[0]+l.ln[0]).toUpperCase();
+  document.getElementById('g-av').style.background=pcolor(l.id.length);
+  document.getElementById('g-name').textContent=`${l.fn} ${l.ln}`;
+  document.getElementById('g-meta').innerHTML=`<span class="stage" style="background:${st.c}22;color:${st.c}">${st.ic} ${st.n}</span> · ${l.country} · ${l.lang}`;
+
+  const guests=l.adults?`${l.adults} дор.${l.children?' + '+l.children+' діт.':''}`:'—';
+  const nights=(l.ci&&l.co)?((new Date(l.co)-new Date(l.ci))/86400000):0;
+  const msgs=getConvo(id);
+
+  document.getElementById('g360-body').innerHTML=`
+    <div class="g-sec g-ai">
+      <h4>✨ AI · профіль ліда</h4>
+      <p>${l.ai}</p>
+    </div>
+
+    <div class="g-sec">
+      <h4>✨ Підсумок діалогу <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:3px 9px" onclick="toast('Оновлюю підсумок...')">оновити</button></h4>
+      <p class="g-summary">${
+        id==='babette'?'Гостя питала наявність 22–23 липня на 2 осіб. Ціну (2 890 CZK) надіслано. Зараз чекає посилання на бронювання і питає про парковку. Три непрочитані — готова бронювати.'
+        : id==='georg'?'Сім\u2019я з 4 осіб хоче 22–25 травня 2027 (Трійця). Наявність є. Запитали ціну — потрібно надіслати оффер на 3 ночі.'
+        : 'Контакт у роботі. Натисніть «оновити», щоб AI згенерував підсумок з історії повідомлень.'
+      }</p>
+    </div>
+
+    <div class="g-sec">
+      <h4>📇 Контакти і джерело</h4>
+      <div class="kv"><span class="k">Email</span><span class="v">${l.email||'—'}</span></div>
+      <div class="kv"><span class="k">Телефон</span><span class="v mono">${l.phone||'—'}</span></div>
+      <div class="kv"><span class="k">Канал</span><span class="v">${CHAN[l.chan].ic} ${CHAN[l.chan].n}</span></div>
+      <div class="kv"><span class="k">Мова</span><span class="v">${l.lang}</span></div>
+      <div style="margin-top:11px;display:flex;gap:7px;flex-wrap:wrap"><span class="tag">${l.country}</span><span class="tag">${l.src}</span>${l.children?'<span class="tag">сім\u2019я з дітьми</span>':''}</div>
+    </div>
+
+    <div class="g-sec">
+      <h4>📅 Бронювання</h4>
+      <div class="kv"><span class="k">Заїзд → виїзд</span><span class="v mono">${l.ci?l.ci+' → '+l.co:'не вказано'}</span></div>
+      <div class="kv"><span class="k">Ночей</span><span class="v mono">${nights||'—'}</span></div>
+      <div class="kv"><span class="k">Гості</span><span class="v">${guests}</span></div>
+      <div class="kv"><span class="k">Вартість</span><span class="v mono" style="color:#5ee089">${l.val?l.val.toLocaleString('uk').replace(/,/g,' ')+' CZK':'—'}</span></div>
+    </div>
+
+    <div class="g-sec">
+      <h4>🕓 Таймлайн</h4>
+      <div class="g-timeline">
+        ${msgs.slice().reverse().map(m=>{
+          const dot = m.dir==='sys'?'#6b7280':m.dir==='out'?'#7c83ff':'#22c55e';
+          const c = m.dir==='sys'?m.txt:(m.dir==='out'?'Ми: ':'Гість: ')+ (m.txt.length>70?m.txt.slice(0,70)+'…':m.txt);
+          return `<div class="tl-item"><span class="tl-dot" style="background:${dot}"></span><span class="tl-line"></span>
+            <div><div class="tl-c">${m.ai?'<span class="ai-pill">✨ AI</span> ':''}${c}</div><div class="tl-t">${m.t||''}</div></div></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  // контекстні дії за стадією
+  let acts='';
+  if(l.stage==='inquiry'||l.stage==='info_needed') acts=`<button class="btn btn-pri" onclick="openTg('${id}')">✨ Надіслати ціну</button><button class="btn btn-ghost" onclick="gotoInbox('${id}')">Відкрити діалог</button>`;
+  else if(l.stage==='quote_sent') acts=`<button class="btn btn-pri" onclick="openTg('${id}')">Надіслати посилання</button><button class="btn btn-ghost" onclick="toast('🔔 Нагадування заплановано')">Нагадати</button>`;
+  else if(l.stage==='negotiation') acts=`<button class="btn btn-pri" onclick="openTg('${id}')">Запросити передплату</button><button class="btn btn-ghost" onclick="toast('Запит знижки → власнику')">Знижка</button>`;
+  else if(l.stage==='deposit_paid'||l.stage==='booked') acts=`<button class="btn btn-pri" onclick="toast('Бронювання відкрито')">Відкрити бронювання</button><button class="btn btn-ghost" onclick="toast('📩 Інструкції заїзду надіслано')">Інструкції</button>`;
+  else acts=`<button class="btn btn-pri" onclick="gotoInbox('${id}')">Написати</button>`;
+
+  const opts=Object.keys(STAGES).map(s=>`<option value="${s}" ${s===l.stage?'selected':''}>${STAGES[s].ic} ${STAGES[s].n}</option>`).join('');
+  document.getElementById('g360-actions').innerHTML=`
+    <div class="stage-pick"><select onchange="changeStage('${id}',this.value)">${opts}</select></div>
+    ${acts}`;
+
+  document.getElementById('scrim').classList.add('show');
+  document.getElementById('g360').classList.add('show');
+}
+function closeG360(){document.getElementById('scrim').classList.remove('show');document.getElementById('g360').classList.remove('show');}
+function changeStage(id,s){const l=LEADS.find(x=>x.id===id);const from=STAGES[l.stage].n;l.stage=s;toast(`Стадія: ${from} → ${STAGES[s].n}`);if(document.getElementById('view-pipeline').classList.contains('active'))renderKanban();openG360(id);}
+
+/* ============================================================================
+   TELEGRAM APPROVAL MODAL
+   ============================================================================ */
+function openTg(id){
+  const l=LEADS.find(x=>x.id===id)||LEADS[0];
+  const draft = id==='babette'?'Hi Babette! Parking is included free of charge. Booking link: kemp-carlsbad.cz/book/QA-2207 (holds the unit 30 min).'
+    : id==='georg'?'Für 4 Personen, 22.–25.05.2027: 6 450 CZK / 3 Nächte. Soll ich reservieren?'
+    : 'Чернетка відповіді українською (внутрішня мова), буде перекладена на мову гостя при Approve.';
+  document.getElementById('tg-body').innerHTML=`
+    📧 Новий запит від <b>${l.fn} ${l.ln}</b><br>
+    📋 Тема: ${l.prev}<br>🌐 Мова: ${l.lang.toLowerCase()}
+    <div class="tg-l">Запит гостя</div>
+    <div class="tg-q">${(getConvo(id).filter(m=>m.dir==='in').slice(-1)[0]||{}).txt||l.prev}</div>
+    <div class="tg-l">Відповідь AI</div>
+    <div class="tg-a">${draft}</div>`;
+  document.getElementById('tg-modal').classList.add('show');
+}
+function closeTg(){document.getElementById('tg-modal').classList.remove('show');}
+function tgAction(msg){closeTg();toast(msg);}
+
+/* ============================================================================
+   TOAST + INIT
+   ============================================================================ */
+let toastT;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.innerHTML=`<span class="tg-ic">●</span>${msg}`;el.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+renderQueue();
+renderInboxList();
+renderKanban();
+renderTable('leads-table');
+renderActions();
+</script>
+</body>
+</html>
