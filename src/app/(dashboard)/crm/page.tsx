@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import './crm.css';
 import { CHANNEL_ICONS, SOURCE_LABELS } from '@/modules/crm/constants';
+import Guest360 from '@/modules/crm/components/Guest360';
 
 /* ================================================================
    Types
@@ -606,149 +607,12 @@ export default function CrmPipelinePage() {
           </div>
         )}
 
-        {/* ═══════ LEAD DETAIL DRAWER ═══════ */}
-        {selectedLead && (
-          <>
-            <div className="lead-drawer-overlay" onClick={() => setSelectedLead(null)} />
-            <div className="lead-drawer">
-              <div className="lead-drawer-header">
-                <div>
-                  <h3 style={{ fontSize: 18, fontWeight: 700 }}>
-                    {selectedLead.first_name} {selectedLead.last_name || ''}
-                  </h3>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                    {data?.stages.find(s => s.id === selectedLead.stage)?.icon}{' '}
-                    {data?.stages.find(s => s.id === selectedLead.stage)?.label}
-                  </div>
-                </div>
-                <button className="btn btn-ghost btn-icon" onClick={() => setSelectedLead(null)}>
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="lead-drawer-body">
-                {/* Contact */}
-                <div className="lead-drawer-section">
-                  <div className="lead-drawer-section-title"><User size={12} /> Контакт</div>
-                  <div className="lead-info-grid">
-                    {selectedLead.email && (
-                      <div className="lead-info-item">
-                        <div className="lead-info-label">Email</div>
-                        <div className="lead-info-value">{selectedLead.email}</div>
-                      </div>
-                    )}
-                    {selectedLead.phone && (
-                      <div className="lead-info-item">
-                        <div className="lead-info-label">Телефон</div>
-                        <div className="lead-info-value">{selectedLead.phone}</div>
-                      </div>
-                    )}
-                    {selectedLead.whatsapp && selectedLead.whatsapp !== selectedLead.phone && (
-                      <div className="lead-info-item">
-                        <div className="lead-info-label">WhatsApp</div>
-                        <div className="lead-info-value">{selectedLead.whatsapp}</div>
-                      </div>
-                    )}
-                    <div className="lead-info-item">
-                      <div className="lead-info-label">Джерело</div>
-                      <div className="lead-info-value">{CHANNEL_ICONS[selectedLead.source]} {SOURCE_LABELS[selectedLead.source] || selectedLead.source}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Booking details */}
-                {(selectedLead.check_in_date || selectedLead.adults > 0) && (
-                  <div className="lead-drawer-section">
-                    <div className="lead-drawer-section-title"><Calendar size={12} /> Деталі</div>
-                    <div className="lead-info-grid">
-                      {selectedLead.check_in_date && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Дати</div>
-                          <div className="lead-info-value">{selectedLead.check_in_date} → {selectedLead.check_out_date}</div>
-                        </div>
-                      )}
-                      {selectedLead.adults > 0 && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Гості</div>
-                          <div className="lead-info-value">{selectedLead.adults} дор. {selectedLead.children > 0 ? `+ ${selectedLead.children} діт.` : ''}</div>
-                        </div>
-                      )}
-                      {selectedLead.estimated_value > 0 && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Вартість</div>
-                          <div className="lead-info-value" style={{ color: 'var(--accent-success)' }}>
-                            {selectedLead.estimated_value.toLocaleString()} {selectedLead.currency}
-                          </div>
-                        </div>
-                      )}
-                      {selectedLead.external_booking_id && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Зовнішній ID</div>
-                          <div className="lead-info-value" style={{ fontFamily: 'monospace' }}>
-                            {selectedLead.external_booking_id}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Camping */}
-                {(selectedLead.camping_vehicle_type || selectedLead.camping_tent_type) && (
-                  <div className="lead-drawer-section">
-                    <div className="lead-drawer-section-title"><Truck size={12} /> Кемпінг</div>
-                    <div className="lead-info-grid">
-                      {selectedLead.camping_vehicle_type && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Транспорт</div>
-                          <div className="lead-info-value">{VEHICLE_ICONS[selectedLead.camping_vehicle_type]} {selectedLead.camping_vehicle_type}</div>
-                        </div>
-                      )}
-                      {selectedLead.camping_tent_type && (
-                        <div className="lead-info-item">
-                          <div className="lead-info-label">Намет</div>
-                          <div className="lead-info-value">{selectedLead.camping_tent_type}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Stage change */}
-                <div className="lead-drawer-section">
-                  <div className="lead-drawer-section-title"><ChevronRight size={12} /> Змінити етап</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {data?.stages.map(stage => (
-                      <button
-                        key={stage.id}
-                        className={`btn btn-sm ${selectedLead.stage === stage.id ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{
-                          fontSize: 11,
-                          opacity: selectedLead.stage === stage.id ? 1 : 0.8,
-                          borderColor: selectedLead.stage === stage.id ? stage.color : undefined,
-                          background: selectedLead.stage === stage.id ? stage.color : undefined,
-                        }}
-                        disabled={selectedLead.stage === stage.id}
-                        onClick={() => {
-                          handleStageChange(selectedLead.id, stage.id);
-                          setSelectedLead({ ...selectedLead, stage: stage.id });
-                        }}
-                      >
-                        {stage.icon} {stage.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{ marginTop: 20, display: 'flex', gap: 8 }}>
-                  <a href={`/crm/inbox?lead=${selectedLead.id}`} className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                    <MessageSquare size={14} /> Відкрити діалог
-                  </a>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+        {/* ═══════ GUEST 360 SLIDE-OVER ═══════ */}
+        <Guest360
+          leadId={selectedLead?.id || null}
+          onClose={() => setSelectedLead(null)}
+          onStageChanged={fetchData}
+        />
 
         <AddLeadModal open={showAdd} onClose={() => setShowAdd(false)} onCreated={fetchData} />
       </div>
