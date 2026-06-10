@@ -7,10 +7,8 @@ import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Search, X, Loader2, Send, Phone, Mail, Calendar,
-  MessageSquare, User, Clock, ChevronRight,
-  ArrowLeft, Hash, Globe, Bot,
-  Smartphone, Truck, Tent, DollarSign, ExternalLink,
-  Users, Zap, FileText,
+  MessageSquare, User, Clock,
+  ArrowLeft, Bot,
   Sparkles, PanelRightOpen, PanelRightClose,
   Brain,
 } from 'lucide-react';
@@ -18,8 +16,9 @@ import '../crm.css';
 import {
   STAGE_CONFIG, CHANNEL_ICONS, CHANNEL_LABEL,
   SOURCE_LABELS, VEHICLE_LABELS, TENT_LABELS,
-  formatTime, formatDateTime, formatNights,
+  formatTime, formatDateTime,
 } from '@/modules/crm/constants';
+import Guest360 from '@/modules/crm/components/Guest360';
 
 /* ================================================================
    Types
@@ -143,188 +142,6 @@ const QUICK_REPLIES = [
   { label: '⏰ Нагадування', text: 'Доброго дня! Хотіли нагадати про вашу пропозицію. Чи є якісь запитання?' },
 ];
 
-/* ================================================================
-   LeadDetailPanel — right sidebar
-   ================================================================ */
-function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
-  leadId: string; onClose: () => void; onStageChanged: () => void;
-}) {
-  const [lead, setLead] = useState<LeadFull | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [changingStage, setChangingStage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/crm/leads/${leadId}`);
-        if (res.ok) setLead(await res.json());
-      } catch (err: any) { console.error('Помилка завантаження деталей ліда:', err); showError(err.message || 'Помилка завантаження деталей ліда'); }
-      setLoading(false);
-    })();
-  }, [leadId]);
-
-  const handleStageChange = async (newStage: string) => {
-    if (!lead || lead.stage === newStage) return;
-    setChangingStage(true);
-    try {
-      await fetch(`/api/crm/leads/${leadId}/stage`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stage: newStage, trigger: 'manual' }),
-      });
-      setLead(prev => prev ? { ...prev, stage: newStage } : null);
-      onStageChanged();
-    } catch (err: any) { console.error('Помилка зміни етапу:', err); showError(err.message || 'Помилка зміни етапу'); }
-    setChangingStage(false);
-  };
-
-  if (loading) return (
-    <div className="inbox-detail-panel">
-      <div className="inbox-detail-header">
-        <span style={{ fontSize: 14, fontWeight: 700 }}>Деталі</span>
-        <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X size={16} /></button>
-      </div>
-      <div style={{ padding: 32, textAlign: 'center' }}>
-        <Loader2 size={20} className="animate-pulse" style={{ display: 'inline-block', color: 'var(--text-tertiary)' }} />
-      </div>
-    </div>
-  );
-
-  if (!lead) return null;
-
-  const nights = formatNights(lead.check_in_date, lead.check_out_date);
-  const stg = STAGE_CONFIG[lead.stage];
-
-  return (
-    <div className="inbox-detail-panel">
-      {error && (
-        <div style={{position:'fixed',top:20,right:20,background:'#ef4444',color:'white',padding:'12px 20px',borderRadius:8,zIndex:9999,maxWidth:400,boxShadow:'0 4px 12px rgba(0,0,0,0.15)',cursor:'pointer'}} onClick={() => setError(null)}>
-          ⚠️ {error}
-        </div>
-      )}
-      <div className="inbox-detail-header">
-        <span style={{ fontSize: 14, fontWeight: 700 }}>Деталі ліда</span>
-        <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X size={16} /></button>
-      </div>
-      <div className="inbox-detail-body">
-        {/* Avatar + name */}
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div className="inbox-detail-avatar">{lead.first_name[0]}{lead.last_name?.[0] || ''}</div>
-          <div style={{ fontWeight: 700, fontSize: 16, marginTop: 8 }}>{lead.first_name} {lead.last_name || ''}</div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: `${stg?.color || '#6b7280'}15`, color: stg?.color || '#6b7280' }}>
-              {stg?.icon} {stg?.label}
-            </span>
-          </div>
-        </div>
-
-        {/* Contact */}
-        <div className="inbox-detail-section">
-          <div className="inbox-detail-section-title"><User size={12} /> Контакт</div>
-          {lead.phone && <div className="inbox-detail-row"><Phone size={12} /><span>{lead.phone}</span></div>}
-          {lead.email && <div className="inbox-detail-row"><Mail size={12} /><span>{lead.email}</span></div>}
-          {lead.whatsapp && lead.whatsapp !== lead.phone && <div className="inbox-detail-row"><Smartphone size={12} /><span>WA: {lead.whatsapp}</span></div>}
-          <div className="inbox-detail-row"><Globe size={12} /><span>{CHANNEL_ICONS[lead.source]} {SOURCE_LABELS[lead.source] || lead.source}</span></div>
-        </div>
-
-        {/* Booking */}
-        {(lead.check_in_date || lead.estimated_value > 0) && (
-          <div className="inbox-detail-section">
-            <div className="inbox-detail-section-title"><Calendar size={12} /> Бронювання</div>
-            {lead.check_in_date && <div className="inbox-detail-row"><Calendar size={12} /><span>{lead.check_in_date} → {lead.check_out_date || '?'}</span>{nights > 0 && <span className="inbox-detail-tag">{nights} ноч.</span>}</div>}
-            {lead.adults > 0 && <div className="inbox-detail-row"><Users size={12} /><span>{lead.adults} дор.{lead.children > 0 ? ` + ${lead.children} діт.` : ''}</span></div>}
-            {lead.estimated_value > 0 && <div className="inbox-detail-row"><DollarSign size={12} /><span style={{ fontWeight: 700, color: 'var(--accent-success)' }}>{lead.estimated_value.toLocaleString()} {lead.currency || 'CZK'}</span></div>}
-            {lead.external_booking_id && <div className="inbox-detail-row"><Hash size={12} /><span style={{ fontFamily: 'monospace', color: '#3b82f6' }}>{lead.external_booking_id}</span></div>}
-          </div>
-        )}
-
-        {/* Camping */}
-        {(lead.camping_vehicle_type || lead.camping_tent_type) && (
-          <div className="inbox-detail-section">
-            <div className="inbox-detail-section-title"><Tent size={12} /> Кемпінг</div>
-            {lead.camping_vehicle_type && <div className="inbox-detail-row"><Truck size={12} /><span>{VEHICLE_LABELS[lead.camping_vehicle_type] || lead.camping_vehicle_type}</span></div>}
-            {lead.camping_tent_type && <div className="inbox-detail-row"><Tent size={12} /><span>Намет: {TENT_LABELS[lead.camping_tent_type] || lead.camping_tent_type}</span></div>}
-            {lead.camping_electricity === 1 && <div className="inbox-detail-row"><Zap size={12} /><span>⚡ Електрика</span></div>}
-          </div>
-        )}
-
-        {/* Notes */}
-        {lead.notes && (
-          <div className="inbox-detail-section">
-            <div className="inbox-detail-section-title"><FileText size={12} /> Нотатки</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>{lead.notes}</div>
-          </div>
-        )}
-
-        {/* Booking Action */}
-        <div className="inbox-detail-section">
-          <div className="inbox-detail-section-title"><Calendar size={12} /> Бронювання</div>
-          {lead.reservation_id ? (
-            <a href={`/bookings?highlight=${lead.reservation_id}`}
-              className="btn btn-sm" style={{ width: '100%', justifyContent: 'center', gap: 6, background: 'var(--accent-success)', color: '#fff', fontWeight: 600 }}>
-              <ExternalLink size={13} /> Відкрити бронювання
-            </a>
-          ) : (
-            <button className="btn btn-sm" style={{ width: '100%', justifyContent: 'center', gap: 6, background: 'var(--accent-primary)', color: '#fff', fontWeight: 600 }}
-              onClick={() => {
-                const params = new URLSearchParams();
-                params.set('new', '1');
-                params.set('firstName', lead.first_name);
-                if (lead.last_name) params.set('lastName', lead.last_name);
-                if (lead.email) params.set('email', lead.email);
-                if (lead.phone) params.set('phone', lead.phone);
-                if (lead.check_in_date) params.set('checkIn', lead.check_in_date);
-                if (lead.check_out_date) params.set('checkOut', lead.check_out_date);
-                if (lead.adults > 0) params.set('adults', String(lead.adults));
-                if (lead.children > 0) params.set('children', String(lead.children));
-                params.set('crmLeadId', lead.id);
-                params.set('source', lead.source || 'direct');
-                window.open(`/bookings?${params.toString()}`, '_blank');
-              }}>
-              <Calendar size={13} /> Створити бронювання
-            </button>
-          )}
-        </div>
-
-        {/* Stage change */}
-        <div className="inbox-detail-section">
-          <div className="inbox-detail-section-title"><ChevronRight size={12} /> Змінити етап</div>
-          <div className="inbox-detail-stages">
-            {Object.entries(STAGE_CONFIG).map(([key, conf]) => (
-              <button key={key} className={`inbox-detail-stage-btn ${lead.stage === key ? 'active' : ''}`}
-                style={{ borderColor: lead.stage === key ? conf.color : undefined, background: lead.stage === key ? `${conf.color}20` : undefined, color: lead.stage === key ? conf.color : undefined }}
-                disabled={lead.stage === key || changingStage} onClick={() => handleStageChange(key)}>
-                {conf.icon} {conf.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Stage History */}
-        {lead.stageHistory?.length > 0 && (
-          <div className="inbox-detail-section">
-            <div className="inbox-detail-section-title"><Clock size={12} /> Історія</div>
-            <div className="stage-timeline">
-              {lead.stageHistory.slice(0, 8).map(h => (
-                <div key={h.id} className="stage-timeline-item">
-                  <div className="stage-timeline-content">
-                    {h.from_stage ? <span>{STAGE_CONFIG[h.from_stage]?.icon} {STAGE_CONFIG[h.from_stage]?.label} → {STAGE_CONFIG[h.to_stage]?.icon} {STAGE_CONFIG[h.to_stage]?.label}</span>
-                      : <span>{STAGE_CONFIG[h.to_stage]?.icon} {STAGE_CONFIG[h.to_stage]?.label}</span>}
-                  </div>
-                  <div className="stage-timeline-date">{formatDateTime(h.created_at)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ================================================================
    Main Page
@@ -709,8 +526,11 @@ export default function CrmInboxPage() {
 
                 {/* Detail Panel */}
                 {showDetailPanel && selectedLeadId && (
-                  <LeadDetailPanel leadId={selectedLeadId} onClose={() => setShowDetailPanel(false)}
-                    onStageChanged={() => { if (selectedLeadId) fetchConversation(selectedLeadId); }} />
+                  <div className="inbox-detail-panel">
+                    <Guest360 leadId={selectedLeadId} onClose={() => setShowDetailPanel(false)}
+                      onStageChanged={() => { if (selectedLeadId) fetchConversation(selectedLeadId); }}
+                      variant="inline" />
+                  </div>
                 )}
               </div>
             </>
