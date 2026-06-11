@@ -196,10 +196,5 @@ jobs:
 
             # Post-deploy: cash routing audit (one-time diagnostic — remove after review)
             echo "[audit] Running cash routing audit..."
-            CRON_SEC=$(grep ^CRON_SECRET .env | cut -d= -f2)
-            curl -fsS -H "X-Cron-Secret: $CRON_SEC" "http://localhost:3001/api/finance/audit-cash-routing?days=21" > /tmp/cash-audit-result.json 2>&1 || echo "[audit] curl failed (service may still be starting)"
-            if [ -f /tmp/cash-audit-result.json ]; then
-              echo "[audit] Result saved to /tmp/cash-audit-result.json"
-              cat /tmp/cash-audit-result.json | head -c 5000
-            fi
+            node scripts/audit-cash-ops.js 2>&1 || echo "[audit] audit script failed (non-fatal)"
 
