@@ -456,35 +456,38 @@ function runMigrations(database: any) {
     if (!userCols2.some((c: any) => c.name === 'default_cash_account_id')) {
       database.exec("ALTER TABLE app_users ADD COLUMN default_cash_account_id TEXT REFERENCES finance_accounts(id)");
       console.log('[DB] Added default_cash_account_id to app_users');
+    }
 
-      // Backfill: match user full_name to known cash account names.
-      // PIN mapping: Андрій → 'Андріїв cash', Олег → 'Олег наличные',
-      // Наталія → 'Каса Кемпінг і проживання', Антон → 'Антон Готівка'
-      const NAME_TO_ACCOUNT: Record<string, string> = {
-        'Андрій': 'Андріїв cash',
-        'Андрей': 'Андріїв cash',
-        'Andrii': 'Андріїв cash',
-        'Олег':  'Олег наличные',
-        'Oleg':  'Олег наличные',
-        'Наталія': 'Каса Кемпінг і проживання',
-        'Наташа': 'Каса Кемпінг і проживання',
-        'Natasha': 'Каса Кемпінг і проживання',
-        'Антон': 'Антон Готівка',
-        'Anton': 'Антон Готівка',
-      };
-      const users = database.prepare('SELECT id, full_name, organization_id FROM app_users').all() as any[];
-      for (const u of users) {
-        for (const [namePart, acctName] of Object.entries(NAME_TO_ACCOUNT)) {
-          if (u.full_name && u.full_name.includes(namePart)) {
-            const acct = database.prepare(
-              "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
-            ).get(u.organization_id, acctName) as any;
-            if (acct) {
-              database.prepare('UPDATE app_users SET default_cash_account_id = ? WHERE id = ?').run(acct.id, u.id);
-              console.log(`[DB] Mapped ${u.full_name} → ${acctName} (${acct.id})`);
-            }
-            break;
+    // Backfill: runs every startup for users with NULL default_cash_account_id.
+    // Safe to re-run — only updates rows where the column is still NULL.
+    const NAME_TO_ACCOUNT: Record<string, string> = {
+      'Андрій': 'Андріїв cash',
+      'Андрей': 'Андріїв cash',
+      'Andrii': 'Андріїв cash',
+      'Andrey': 'Андріїв cash',
+      'Олег':  'Олег наличные',
+      'Oleg':  'Олег наличные',
+      'Наталія': 'Каса Кемпінг і проживання',
+      'Наташа': 'Каса Кемпінг і проживання',
+      'Natasha': 'Каса Кемпінг і проживання',
+      'Nataly': 'Каса Кемпінг і проживання',
+      'Антон': 'Антон Готівка',
+      'Anton': 'Антон Готівка',
+    };
+    const usersToBackfill = database.prepare(
+      'SELECT id, full_name, organization_id FROM app_users WHERE default_cash_account_id IS NULL'
+    ).all() as any[];
+    for (const u of usersToBackfill) {
+      for (const [namePart, acctName] of Object.entries(NAME_TO_ACCOUNT)) {
+        if (u.full_name && u.full_name.includes(namePart)) {
+          const acct = database.prepare(
+            "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
+          ).get(u.organization_id, acctName) as any;
+          if (acct) {
+            database.prepare('UPDATE app_users SET default_cash_account_id = ? WHERE id = ?').run(acct.id, u.id);
+            console.log(`[DB] Mapped ${u.full_name} → ${acctName} (${acct.id})`);
           }
+          break;
         }
       }
     }

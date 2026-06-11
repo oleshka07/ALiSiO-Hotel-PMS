@@ -194,6 +194,12 @@ jobs:
               node remove-terminal-ops.js --apply 2>&1 || true
             fi
 
+            # One-time: fix Andrey's misrouted cash operations (remove after verified)
+            if [ -f fix-andrey-cash-ops.js ]; then
+              echo "[fix] Fixing Andrey misrouted cash operations..."
+              node fix-andrey-cash-ops.js --apply 2>&1 || echo "[fix] fix-andrey-cash-ops.js returned non-zero (non-fatal)"
+            fi
+
             # Post-deploy: cash routing audit (one-time diagnostic — remove after review)
             echo "[audit] Running cash routing audit..."
             node scripts/audit-cash-ops.js 2>&1 || echo "[audit] audit script failed (non-fatal)"
