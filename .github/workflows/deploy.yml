@@ -193,3 +193,12 @@ jobs:
               echo "[cleanup] Removing terminal fin_operations..."
               node remove-terminal-ops.js --apply 2>&1 || true
             fi
+
+            # Post-deploy: cash routing audit (one-time diagnostic — remove after review)
+            echo "[audit] Running cash routing audit..."
+            curl -fsS "http://localhost:3001/api/finance/audit-cash-routing?days=21" > /tmp/cash-audit-result.json 2>&1 || echo "[audit] curl failed (service may still be starting)"
+            if [ -f /tmp/cash-audit-result.json ]; then
+              echo "[audit] Result saved to /tmp/cash-audit-result.json"
+              cat /tmp/cash-audit-result.json | head -c 5000
+            fi
+
