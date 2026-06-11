@@ -194,6 +194,12 @@ jobs:
               node remove-terminal-ops.js --apply 2>&1 || true
             fi
 
+            # One-time: backfill default_cash_account_id for production users
+            if [ -f fix-user-cash-accounts.js ]; then
+              echo "[fix] Backfilling user cash accounts..."
+              node fix-user-cash-accounts.js --apply 2>&1 || echo "[fix] backfill failed (non-fatal)"
+            fi
+
             # One-time: fix Andrey's misrouted cash operations (remove after verified)
             if [ -f fix-andrey-cash-ops.js ]; then
               echo "[fix] Fixing Andrey misrouted cash operations..."
