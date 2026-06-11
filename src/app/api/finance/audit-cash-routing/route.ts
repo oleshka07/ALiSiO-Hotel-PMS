@@ -8,6 +8,16 @@ import { getDb } from '@core/db';
  * highlighting misrouted ones.
  */
 export async function GET(request: Request): Promise<NextResponse> {
+  // Allow access via cron secret (same as other internal endpoints)
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const provided = request.headers.get('x-cron-secret')
+      || new URL(request.url).searchParams.get('secret');
+    if (provided !== cronSecret) {
+      return NextResponse.json({ error: 'Unauthorized — session required' }, { status: 401 });
+    }
+  }
+
   const { searchParams } = new URL(request.url);
   const days = Math.min(Number(searchParams.get('days') || '14'), 60);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
