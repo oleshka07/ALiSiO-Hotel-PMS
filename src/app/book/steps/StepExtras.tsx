@@ -36,7 +36,10 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
       .then(r => r.json())
       .then(data => {
         // Use only PMS services — prices come from DB, never hardcoded
-        const svcs = (data.services || []).filter((s: Service) => s.category !== 'other');
+        const HIDDEN_SERVICES = ['svc_sauna', 'svc_tub']; // temporarily hidden
+        const svcs = (data.services || []).filter(
+          (s: Service) => s.category !== 'other' && !HIDDEN_SERVICES.includes(s.id)
+        );
         setServices(svcs);
       })
       .catch(() => setServices([]))

@@ -245,10 +245,24 @@ export default function BookingWizard() {
   const goBack = () => { const idx = STEP_ORDER.indexOf(step); if (idx > 0) setStep(STEP_ORDER[idx - 1]); };
   const progressPct = ((STEP_ORDER.indexOf(step)) / (STEP_ORDER.length - 1)) * 100;
 
+  // ─── UTM collector — reads from sessionStorage (set by kemp-carlsbad.cz) ──
+  const getUtmParams = () => {
+    const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid'];
+    const utm: Record<string, string> = {};
+    // 1. sessionStorage (set by kv.kemp-carlsbad.cz before redirect)
+    keys.forEach(k => { const v = sessionStorage.getItem(k); if (v) utm[k] = v; });
+    // 2. current URL params (if Alisio opened with ?utm_source=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    keys.forEach(k => { const v = urlParams.get(k); if (v) utm[k] = v; });
+    return utm;
+  };
+
   // ─── Create draft helper ──────────────────────────
   const createDraft = async (contact: { name: string; email: string; phone: string }) => {
     const extrasTotal = state.extras.reduce((s, e) => s + e.price, 0);
     const grandTotal = state.total + extrasTotal;
+    const siteId = new URLSearchParams(window.location.search).get('site_id') || 'kemp-carlsbad';
+    const utmParams = getUtmParams();
     const res = await fetch('/api/booking/drafts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -258,6 +272,12 @@ export default function BookingWizard() {
         extras: state.extras, guest_name: contact.name,
         guest_email: contact.email, guest_phone: contact.phone,
         total_price: grandTotal, deposit_amount: grandTotal,
+        // ── Attribution ──
+        source: 'kv.kemp-carlsbad.cz',
+        source_url: document.referrer || window.location.href,
+        site_id: siteId,
+        booked_at: new Date().toISOString(),
+        utm_params: Object.keys(utmParams).length > 0 ? utmParams : undefined,
       }),
     });
     const draft = await res.json();

@@ -10,7 +10,7 @@ interface Props {
 
 const TYPES: { type: AccommodationType; emoji: string; name: string; desc: string; price: string }[] = [
   { type: 'camping', emoji: '⛺', name: 'Camping', desc: 'Tent, caravan, motorhome', price: 'from 100 Kč / night' },
-  { type: 'glamping', emoji: '🌲', name: 'Glamping Houses', desc: 'Tiny House or Barn House', price: 'from 3 900 Kč / night' },
+  // { type: 'glamping', emoji: '🌲', name: 'Glamping Houses', desc: 'Tiny House or Barn House', price: 'from 3 900 Kč / night' },
   { type: 'buildings', emoji: '🏠', name: 'Buildings (Groups)', desc: 'Budova D or Budova F', price: 'from 390 Kč / bed / night' },
 ];
 
