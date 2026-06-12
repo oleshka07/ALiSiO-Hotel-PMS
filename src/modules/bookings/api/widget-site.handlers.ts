@@ -65,6 +65,18 @@ export async function getWidgetSiteConfig(req: NextRequest) {
       hasPayment,
       maxAdults,
       maxChildren,
+      // Analytics fields — read from widget_config JSON, no DB migration needed
+      ...(() => {
+        try {
+          const cfg = JSON.parse(site.widget_config || '{}');
+          return {
+            fbPixelId: cfg.fb_pixel_id || null,
+            ga4Id: cfg.ga4_id || null,
+            tiktokPixelId: cfg.tiktok_pixel_id || null,
+            returnUrl: cfg.return_url || cfg.thank_you_url || null,
+          };
+        } catch { return { fbPixelId: null, ga4Id: null, tiktokPixelId: null, returnUrl: null }; }
+      })(),
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/booking/site-config error:', error?.message || error);

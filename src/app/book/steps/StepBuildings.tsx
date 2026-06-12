@@ -5,7 +5,23 @@ import { type BuildingType, type BookingMode, type PriceItem, calcBuildingPrice,
 
 interface Props {
   prices: PriceItem[];
-  onNext: (data: { building: BuildingType; mode: BookingMode; adults: number; children: number; checkIn: string; checkOut: string; sleepingBag: boolean; total: number; deposit: number }) => void;
+  onNext: (data: {
+    building: BuildingType;
+    mode: BookingMode;
+    adults: number;
+    children: number;
+    checkIn: string;
+    checkOut: string;
+    sleepingBag: boolean;
+    total: number;
+    deposit: number;
+    accommodationSubtotal?: number | null;
+    sleepingBagDiscount?: number | null;
+    touristTax?: number | null;
+    taxRate?: number | null;
+    nights?: number | null;
+    kauce?: number | null;
+  }) => void;
 }
 
 const BUILDINGS: { id: BuildingType; name: string; beds: number; rate: string }[] = [
@@ -230,7 +246,17 @@ export default function StepBuildings({ prices, onNext }: Props) {
           )}
 
           <button className="kc-btn kc-btn-primary" disabled={!checkIn || !checkOut || pricing?.hasHolidayNonShared}
-            onClick={() => building && checkIn && checkOut && pricing && onNext({ building, mode, adults, children, checkIn, checkOut, sleepingBag, total: pricing.total, deposit: pricing.deposit })} type="button">
+          onClick={() => building && checkIn && checkOut && pricing && onNext({
+            building, mode, adults, children, checkIn, checkOut, sleepingBag,
+            total: pricing.total, deposit: pricing.deposit,
+            accommodationSubtotal: pricing.accommodationSubtotal,
+            sleepingBagDiscount: pricing.sleepingBagDiscount,
+            touristTax: pricing.touristTax,
+            taxRate: pricing.taxRate,
+            nights: pricing.nights,
+            kauce: pricing.kauce,
+          })} type="button">
+
             Continue →
           </button>
         </>
