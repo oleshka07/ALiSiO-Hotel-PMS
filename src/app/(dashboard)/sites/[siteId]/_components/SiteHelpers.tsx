@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
 import {
-  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, PartyPopper, Inbox, Mail,
+  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, BarChart2, Inbox, Mail,
 } from 'lucide-react';
 
 export const TABS = [
@@ -11,7 +11,7 @@ export const TABS = [
   { id: 'services',   label: 'Сервіси',           icon: <Sparkles size={16} /> },
   { id: 'design',     label: 'Дизайн',            icon: <Palette size={16} /> },
   { id: 'widget',     label: 'Віджет пошуку',     icon: <Code2 size={16} /> },
-  { id: 'thank-you',  label: 'Сторінка подяки',   icon: <PartyPopper size={16} /> },
+  { id: 'thank-you',  label: 'Конверсії',           icon: <BarChart2 size={16} /> },
   { id: 'payments',   label: 'Платежі',            icon: <CreditCard size={16} /> },
   { id: 'rate-plans', label: 'Тарифні плани',     icon: <Tag size={16} /> },
   { id: 'coupons',    label: 'Промокоди',          icon: <Percent size={16} /> },

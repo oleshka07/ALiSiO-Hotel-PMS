@@ -5,7 +5,18 @@ import { type GlampingUnit, type PriceItem, calcGlampingPrice, formatPrice, fmtD
 
 interface Props {
   prices: PriceItem[];
-  onNext: (data: { unit: GlampingUnit; checkIn: string; checkOut: string; adults: number; total: number; deposit: number }) => void;
+  onNext: (data: {
+    unit: GlampingUnit;
+    checkIn: string;
+    checkOut: string;
+    adults: number;
+    total: number;
+    deposit: number;
+    breakdown: { date: string; type: string; price: number }[];
+    touristTax: number;
+    taxRate: number;
+    nights: number;
+  }) => void;
 }
 
 const UNITS: { id: GlampingUnit; name: string; emoji: string; maxGuests: number; std: number; hol: number }[] = [
@@ -165,7 +176,14 @@ export default function StepGlamping({ prices, onNext }: Props) {
       <button
         className="kc-btn kc-btn-primary"
         disabled={!unit || !checkIn || !checkOut}
-        onClick={() => unit && checkIn && checkOut && pricing && onNext({ unit, checkIn, checkOut, adults, total: pricing.total, deposit: pricing.deposit })}
+        onClick={() => unit && checkIn && checkOut && pricing && onNext({
+          unit, checkIn, checkOut, adults,
+          total: pricing.total, deposit: pricing.deposit,
+          breakdown: pricing.breakdown,
+          touristTax: pricing.touristTax,
+          taxRate: pricing.taxRate,
+          nights: pricing.nights,
+        })}
         type="button"
       >
         Continue →

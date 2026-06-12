@@ -43,6 +43,11 @@ export interface WidgetConfig {
   email_confirmed_body?: string;
   email_unpaid_subject?: string;
   email_unpaid_body?: string;
+  // Analytics — stored in widget_config JSON, no DB migration needed
+  fb_pixel_id?: string;
+  ga4_id?: string;
+  tiktok_pixel_id?: string;
+  return_url?: string;
 }
 
 export interface Listing {

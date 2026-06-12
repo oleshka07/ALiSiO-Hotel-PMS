@@ -11,6 +11,40 @@ import StepSuccess from './steps/StepSuccess';
 import PriceListPopup from './components/PriceListPopup';
 import { getNightDates, loadPriceList, type PriceItem } from './lib/pricing';
 
+// ─── Analytics helpers (injected dynamically per site_id config) ──────────────
+function injectFbPixel(pixelId: string) {
+  if (typeof window === 'undefined' || (window as any).fbq) return;
+  const s = document.createElement('script');
+  s.innerHTML = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){
+n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;
+s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','${pixelId}');fbq('track','PageView');`;
+  document.head.appendChild(s);
+}
+
+function injectGa4(ga4Id: string) {
+  if (typeof window === 'undefined') return;
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = `https://www.googletagmanager.com/gtag/js?id=${ga4Id}`;
+  document.head.appendChild(s);
+  const w = window as any;
+  w.dataLayer = w.dataLayer || [];
+  w.gtag = function() { w.dataLayer.push(arguments); };
+  w.gtag('js', new Date());
+  w.gtag('config', ga4Id);
+}
+
+function injectTiktokPixel(pixelId: string) {
+  if (typeof window === 'undefined' || (window as any).ttq) return;
+  const s = document.createElement('script');
+  s.innerHTML = `!function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=['page','track','identify','instances','debug','on','off','once','ready','alias','group','enableCookie','disableCookie'],ttq.setAndDequeue=function(e){ttq[e]=function(){ttq.instance(ttq._i[0]).then(function(i){i[e].apply(i,arguments)})}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDequeue(ttq.methods[i]);ttq.load=function(e,n){var i='https://analytics.tiktok.com/i18n/pixel/events.js',r=document.createElement('script');r.type='text/javascript',r.async=!0,r.src=i;var s=document.getElementsByTagName('script')[0];s.parentNode.insertBefore(r,s),ttq._i=ttq._i||{},ttq._i[e]=[],ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};for(var a=function(e){return function(){ttq.instance(e).then(function(t){t[e].apply(t,arguments)})}},o=0;o<ttq.methods.length;o++)ttq[ttq.methods[o]]=a(ttq.methods[o])},ttq.load('${pixelId}'),ttq.page()}(window,document,'ttq');`;
+  document.head.appendChild(s);
+}
+
 type Step = 'landing' | 'accommodation' | 'extras' | 'summary' | 'success';
 
 interface BookingState {
@@ -69,6 +103,12 @@ export default function BookingWizard() {
   const [showResume, setShowResume] = useState(false);
   const [showPriceList, setShowPriceList] = useState(false);
   const [prices, setPrices] = useState<PriceItem[]>([]);
+  const [siteConfig, setSiteConfig] = useState<{
+    fbPixelId?: string | null;
+    ga4Id?: string | null;
+    tiktokPixelId?: string | null;
+    returnUrl?: string | null;
+  } | null>(null);
 
   // Cache Teya session so "Pay online" + "Show QR" + "Pay via admin" reuse
   // the same draft + checkout instead of creating duplicates. Also persisted
@@ -105,6 +145,22 @@ export default function BookingWizard() {
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw-book.js').catch(() => {});
   }, []);
 
+  // Load analytics config by ?site_id= — graceful: booking works without it
+  useEffect(() => {
+    const siteId = new URLSearchParams(window.location.search).get('site_id');
+    if (!siteId) return;
+    fetch(`/api/booking/site-config?slug=${encodeURIComponent(siteId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        setSiteConfig({ fbPixelId: data.fbPixelId, ga4Id: data.ga4Id, tiktokPixelId: data.tiktokPixelId, returnUrl: data.returnUrl });
+        if (data.fbPixelId) injectFbPixel(data.fbPixelId);
+        if (data.ga4Id) injectGa4(data.ga4Id);
+        if (data.tiktokPixelId) injectTiktokPixel(data.tiktokPixelId);
+      })
+      .catch(() => {});
+  }, []);
+
   // Restore draft
   useEffect(() => {
     try {
@@ -123,10 +179,7 @@ export default function BookingWizard() {
     }
   }, [state, step]);
 
-  // Check payment return URL params. `payment_status` is the authoritative
-  // value set by the widget-payment-return webhook (success | cancel | failed).
-  // `payment` is a legacy param still present in URLs from in-flight pre-fix
-  // Teya sessions; read it as a fallback so those returns don't hang.
+  // Check payment return URL params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get('payment_status') || params.get('payment');
@@ -146,6 +199,39 @@ export default function BookingWizard() {
       window.history.replaceState({}, '', '/book');
     }
   }, []);
+
+  // Fire Purchase events + redirect to client domain on success
+  useEffect(() => {
+    if (paymentStatus !== 'success' || !siteConfig) return;
+    const total = state.total + state.extras.reduce((s, e) => s + e.price, 0);
+    const eventId = `booking_${reservationId || Date.now()}`;
+    // Meta Pixel — Signal 1
+    const fbq = (window as any).fbq;
+    if (typeof fbq === 'function' && siteConfig.fbPixelId) {
+      fbq('track', 'Purchase', { value: total, currency: 'CZK' }, { eventID: eventId });
+    }
+    // GA4
+    const gtag = (window as any).gtag;
+    if (typeof gtag === 'function' && siteConfig.ga4Id) {
+      gtag('event', 'purchase', { transaction_id: reservationId, value: total, currency: 'CZK' });
+    }
+    // TikTok Pixel
+    const ttq = (window as any).ttq;
+    if (typeof ttq?.track === 'function' && siteConfig.tiktokPixelId) {
+      ttq.track('CompletePayment', { value: total, currency: 'CZK', content_id: reservationId || eventId });
+    }
+    if (siteConfig.returnUrl) {
+      try {
+        const url = new URL(siteConfig.returnUrl);
+        url.searchParams.set('payment_status', 'success');
+        url.searchParams.set('amount', String(total));
+        url.searchParams.set('currency', 'CZK');
+        if (reservationId) url.searchParams.set('reservation_id', reservationId);
+        url.searchParams.set('event_id', eventId);
+        setTimeout(() => { window.location.href = url.toString(); }, 800);
+      } catch { /* invalid URL — stay on page */ }
+    }
+  }, [paymentStatus, siteConfig]);
 
   const resetAll = useCallback(() => {
     setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
@@ -185,10 +271,10 @@ export default function BookingWizard() {
     const { draft, grandTotal } = await createDraft(contact);
     const pmsResId = draft.reservation_id || draft.id;
     const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
-    // `payment_status` is set by the webhook (success | cancel | failed); do
-    // not hardcode it here, otherwise cancel/failed returns would also show
-    // the success screen.
-    const returnPath = `/book?reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
+    // Preserve ?site_id= so analytics config reloads after Teya redirect
+    const siteId = new URLSearchParams(window.location.search).get('site_id') || '';
+    const siteParam = siteId ? `&site_id=${encodeURIComponent(siteId)}` : '';
+    const returnPath = `/book?reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}${siteParam}`;
     const checkoutRes = await fetch('/api/booking/checkout-session', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

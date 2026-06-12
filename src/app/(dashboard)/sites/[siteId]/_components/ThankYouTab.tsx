@@ -1,14 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Check, Save, PartyPopper, ExternalLink, Info } from 'lucide-react';
+import { Loader2, Check, Save, BarChart2, ExternalLink, Info } from 'lucide-react';
 import type { Site, WidgetConfig } from '../_types';
 
 export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfig) => void }) {
   const [cfg, setCfg] = useState<WidgetConfig>(site.widget_config || {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+
+  // return_url і thank_you_url — одне і те саме поле, синхронізуємо
+  const returnUrl = cfg.return_url || cfg.thank_you_url || '';
+
+  const setReturnUrl = (val: string) =>
+    setCfg(c => ({ ...c, return_url: val || undefined, thank_you_url: val || undefined }));
 
   const save = async () => {
     setSaving(true);
@@ -23,79 +28,61 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
     onUpdate(cfg);
   };
 
+  const bookingUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://alisio.swipescape.eu'}/book?site_id=${site.slug}`;
+
   return (
     <div style={{ maxWidth: 640 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12,
-          background: 'rgba(34,197,94,0.12)', color: '#22c55e',
+          background: 'rgba(79,110,247,0.12)', color: 'var(--accent-primary)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <PartyPopper size={22} />
+          <BarChart2 size={22} />
         </div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 16 }}>Сторінка подяки</div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Конверсії та аналітика</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-            Після успішної оплати гість буде перенаправлений на цю сторінку
+            Pixel і редирект після успішної оплати
           </div>
         </div>
       </div>
 
       {/* How it works */}
-      {!showSplash ? (
-        <div style={{
-          fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28,
-          padding: '10px 14px', background: 'rgba(59,130,246,0.06)',
-          borderRadius: 12, border: '1px solid rgba(59,130,246,0.15)',
-          display: 'flex', alignItems: 'center', gap: 8, maxWidth: 640
-        }}>
-          <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, flex: 1 }}>Як це працює</span>
-          <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Детальніше">
-            <Info size={16} />
-          </button>
+      <div style={{
+        background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.2)',
+        borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13,
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Info size={15} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>Як це працює</span>
         </div>
-      ) : (
-        <div style={{
-          background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.2)',
-          borderRadius: 12, padding: '14px 16px', marginBottom: 28, fontSize: 13,
-          display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 640
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-            <span style={{ fontWeight: 600, flex: 1, color: 'var(--accent-primary)' }}>Як це працює</span>
-            <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }} title="Приховати">
-              <Info size={16} />
-            </button>
-          </div>
-          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: 'var(--text-secondary)' }}>
-            <li>Гість завершує бронювання і оплачує через Teya</li>
-            <li>Система підтверджує оплату і надсилає email-підтвердження</li>
-            <li>Гість автоматично переходить на URL нижче</li>
-          </ol>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-            Застосовується до всіх об&apos;єктів сайту <strong>{site.name}</strong>. Якщо порожньо — гість залишається на сторінці підтвердження.
-          </div>
-        </div>
-      )}
+        <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9, color: 'var(--text-secondary)' }}>
+          <li>Гість відкриває <code>/book?site_id={site.slug}</code> і Pixel ініціалізується</li>
+          <li>Оплачує через Teya → система підтверджує і надсилає email</li>
+          <li>Pixel стріляє <code>Purchase</code> і гість переходить на ваш сайт</li>
+          <li>На вашій сторінці підтвердження Pixel стріляє ще раз — Meta дедуплікує</li>
+        </ol>
+      </div>
 
-      {/* URL field */}
+      {/* ─── Return URL ─────────────────────────── */}
       <div className="form-group" style={{ marginBottom: 20 }}>
         <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>
-          URL сторінки подяки
+          Сторінка підтвердження (Return URL)
         </label>
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <input
             className="form-input"
-            placeholder="https://yoursite.com/thank-you"
-            value={cfg.thank_you_url || ''}
-            onChange={e => setCfg(c => ({ ...c, thank_you_url: e.target.value }))}
+            placeholder="https://yoursite.com/booking-success"
+            value={returnUrl}
+            onChange={e => setReturnUrl(e.target.value)}
             style={{ flex: 1 }}
           />
-          {cfg.thank_you_url && (
+          {returnUrl && (
             <a
-              href={cfg.thank_you_url}
+              href={returnUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-ghost btn-icon"
@@ -106,19 +93,74 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
           )}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
-          Має бути повний URL з https://
+          Повний URL з https:// — гість потрапить сюди після оплати. На цій сторінці спрацює ваш Pixel з правильного домену.
         </div>
       </div>
 
+      {/* ─── Meta Pixel ─────────────────────────── */}
+      <div className="form-group" style={{ marginBottom: 20 }}>
+        <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>
+          Meta Pixel ID
+        </label>
+        <input
+          className="form-input"
+          placeholder="993619213466456"
+          value={cfg.fb_pixel_id || ''}
+          onChange={e => setCfg(c => ({ ...c, fb_pixel_id: e.target.value.trim() || undefined }))}
+        />
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+          Meta Business Manager → Events Manager → Pixel → Налаштування
+        </div>
+      </div>
+
+      {/* ─── GA4 ────────────────────────────────── */}
+      <div className="form-group" style={{ marginBottom: 20 }}>
+        <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>
+          GA4 Measurement ID
+        </label>
+        <input
+          className="form-input"
+          placeholder="G-XXXXXXXXXX"
+          value={cfg.ga4_id || ''}
+          onChange={e => setCfg(c => ({ ...c, ga4_id: e.target.value.trim() || undefined }))}
+        />
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+          Google Analytics → Admin → Data Streams → Measurement ID
+        </div>
+      </div>
+
+      {/* ─── TikTok Pixel ───────────────────────── */}
+      <div className="form-group" style={{ marginBottom: 24 }}>
+        <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>
+          TikTok Pixel ID
+        </label>
+        <input
+          className="form-input"
+          placeholder="CXXXXXXXXXXXXXXXXX"
+          value={cfg.tiktok_pixel_id || ''}
+          onChange={e => setCfg(c => ({ ...c, tiktok_pixel_id: e.target.value.trim() || undefined }))}
+        />
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+          TikTok Ads Manager → Assets → Events → Web Events → Pixel ID
+        </div>
+      </div>
+
+
       {/* Preview */}
-      {cfg.thank_you_url && (
+      {(cfg.fb_pixel_id || cfg.ga4_id) && returnUrl && (
         <div style={{
           background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-          borderRadius: 10, padding: '12px 14px', marginBottom: 24, fontSize: 13,
+          borderRadius: 10, padding: '12px 14px', marginBottom: 24, fontSize: 12,
+          color: 'var(--text-secondary)', lineHeight: 1.8,
         }}>
-          <span style={{ color: 'var(--text-secondary)' }}>Після оплати → </span>
-          <span style={{ color: '#22c55e', fontWeight: 600, wordBreak: 'break-all' }}>
-            {cfg.thank_you_url}
+          ✅ <strong>URL кнопки для вашого сайту:</strong>
+          <br />
+          <code style={{ wordBreak: 'break-all', color: 'var(--accent-primary)', fontSize: 12 }}>
+            {bookingUrl}
+          </code>
+          <br />
+          <span style={{ marginTop: 4, display: 'block' }}>
+            Після оплати → <strong style={{ color: '#22c55e' }}>{returnUrl}</strong>
           </span>
         </div>
       )}
