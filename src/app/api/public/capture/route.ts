@@ -5,7 +5,8 @@
  * Intentionally kept simple: no external deps, synchronous SQLite.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb } from '@core/db';
+import { executeCreateLead, executeCreateMessage } from '@crm';
 
 // Honeypot field name injected by collector.js — bots fill it, humans don't.
 const HONEYPOT_FIELD = '_hp_trap';
@@ -126,16 +127,13 @@ export async function POST(req: NextRequest) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(siteId, scriptId, fullName, email, phone, message, sourceUrl, rawData);
 
+  let outLeadId: string | undefined;
+  let outConvId: string | undefined;
+
   // ── Also create a CRM lead so the submission appears in CRM → Leads ──
   try {
     const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as any;
     if (org) {
-      const crypto = await import('crypto');
-      const leadId = crypto.randomBytes(8).toString('hex');
-      const convId = crypto.randomBytes(8).toString('hex');
-      const histId = crypto.randomBytes(8).toString('hex');
-      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
       // Parse name into first/last
       const nameParts = (fullName ?? '').trim().split(/\s+/);
       const firstName = nameParts[0] || email?.split('@')[0] || phone || 'Гість';
@@ -145,25 +143,21 @@ export async function POST(req: NextRequest) {
       const siteName = (db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any)?.name ?? '';
       const notesText = message ? `Повідомлення: ${message}${siteName ? `\n\nДжерело: ${siteName}` : ''}` : (siteName ? `Джерело: ${siteName}` : null);
 
-      db.prepare(`
-        INSERT INTO crm_leads (
-          id, organization_id, first_name, last_name, email, phone,
-          source, stage, priority, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'web_form', 'new', 'normal', ?, ?, ?)
-      `).run(leadId, org.id, firstName, lastName, email ?? null, phone ?? null, notesText, now, now);
+      const leadData = {
+        firstName,
+        lastName,
+        email: email ?? undefined,
+        phone: phone ?? undefined,
+        source: 'web_form',
+        notes: notesText,
+        skipDedup: true // We insert web leads unconditionally to avoid blocking public form
+      };
 
-      db.prepare(`
-        INSERT INTO crm_stage_history (id, lead_id, from_stage, to_stage, trigger, notes, created_at)
-        VALUES (?, ?, NULL, 'new', 'auto', 'Заявка з сайту', ?)
-      `).run(histId, leadId, now);
-
-      db.prepare(`
-        INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'active', ?, ?)
-      `).run(convId, leadId, `${firstName}${lastName ? ' ' + lastName : ''} — web form`, now, now);
+      const { lead, conversationId } = executeCreateLead(db, leadData);
+      outLeadId = lead.id;
+      outConvId = conversationId;
 
       // ── Add first message so the dialog is not empty ──
-      const msgId = crypto.randomBytes(8).toString('hex');
       const lines: string[] = [];
       if (fullName) lines.push(`👤 Ім'я: ${fullName}`);
       if (email) lines.push(`✉️ Email: ${email}`);
@@ -173,10 +167,14 @@ export async function POST(req: NextRequest) {
       if (siteName) lines.push(`🌍 Сайт: ${siteName}`);
       const msgContent = lines.join('\n') || 'Заявка з сайту (без деталей)';
 
-      db.prepare(`
-        INSERT INTO crm_messages (id, conversation_id, channel_type, direction, sender_type, sender_name, content, content_type, status, created_at)
-        VALUES (?, ?, 'web_form', 'inbound', 'guest', ?, ?, 'text', 'delivered', ?)
-      `).run(msgId, convId, firstName, msgContent, now);
+      await executeCreateMessage(db, conversationId, {
+        channelType: 'web_form',
+        direction: 'inbound',
+        senderType: 'guest',
+        senderName: firstName,
+        content: msgContent,
+        contentType: 'text'
+      });
     }
   } catch (crmErr: any) {
     console.error('[capture] CRM lead creation failed:', crmErr?.message);
@@ -184,7 +182,7 @@ export async function POST(req: NextRequest) {
   }
 
   const headers = new Headers({ 'Access-Control-Allow-Origin': origin || '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
-  return NextResponse.json({ ok: true }, { headers });
+  return NextResponse.json({ ok: true, leadId: outLeadId, conversationId: outConvId }, { headers });
 }
 
 // Handle CORS preflight
