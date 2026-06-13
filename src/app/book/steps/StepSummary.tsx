@@ -35,7 +35,7 @@ export default function StepSummary({
   const grandTotal = total + extrasTotal;
   const phoneDigits = phone.replace(/\D/g, '');
   const emailValid = email.trim() === '' || (email.includes('@') && email.includes('.'));
-  const valid = name.trim().length >= 2 && phoneDigits.length >= 6 && emailValid;
+  const valid = name.trim().length >= 2 && emailValid;
 
   const handleQrClick = async () => {
     setQrLoading(true);
