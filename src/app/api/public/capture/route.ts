@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
       if (siteName) lines.push(`🌍 Сайт: ${siteName}`);
       const msgContent = lines.join('\n') || 'Заявка з сайту (без деталей)';
 
-      await executeCreateMessage(db, conversationId, {
+      const createdMessage = await executeCreateMessage(db, conversationId, {
         channelType: 'web_form',
         direction: 'inbound',
         senderType: 'guest',
@@ -175,6 +175,24 @@ export async function POST(req: NextRequest) {
         content: msgContent,
         contentType: 'text'
       });
+
+      // ── Trigger AI Auto-Response ──
+      if (email && process.env.OPENAI_API_KEY) {
+        // We import dynamically to avoid slowing down the synchronous DB response
+        import('@/lib/ai/auto-response').then(({ generateAutoResponse }) => {
+          generateAutoResponse({
+            messageId: createdMessage.id,
+            conversationId,
+            leadId: lead.id,
+            accountId: 'web_form',
+            guestName: fullName || firstName,
+            guestEmail: email,
+            subject: 'Заявка з сайту / Форма зворотного зв\'язку',
+            content: msgContent,
+            language: 'uk', // Base language, AI translation prompt handles the rest
+          }).catch(err => console.error('[capture] AutoResponse error:', err.message));
+        });
+      }
     }
   } catch (crmErr: any) {
     console.error('[capture] CRM lead creation failed:', crmErr?.message);
