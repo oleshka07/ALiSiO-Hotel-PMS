@@ -302,6 +302,10 @@ export default function StepSuccess({
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
   const [currentGuest, setCurrentGuest] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
+  // Accumulate ALL document URLs across ALL guests — send one batch at the end.
+  // This fixes the bug where each guest's upload wiped the previous guests'
+  // registrations (saveRegistrations does DELETE-then-INSERT).
+  const [allDocUrls, setAllDocUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [registeredNames, setRegisteredNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -344,13 +348,11 @@ export default function StepSuccess({
         const uploadRes = await fetch('/api/file-upload', { method: 'POST', body: formData });
         if (!uploadRes.ok) {
           const txt = await uploadRes.text().catch(() => '');
-          // Try to parse JSON error, otherwise surface status + truncated body
           let detail = '';
           try {
             const j = JSON.parse(txt);
             detail = j?.error || txt;
           } catch {
-            // nginx 413 returns HTML — show just the status code
             detail = `HTTP ${uploadRes.status}${uploadRes.status === 413 ? ' (file too large)' : ''}`;
           }
           throw new Error(detail);
@@ -359,10 +361,21 @@ export default function StepSuccess({
         if (!uploadData.url) throw new Error(uploadData.error || 'upload returned no URL');
         uploadedUrls.push(uploadData.url);
       }
-      if (uploadedUrls.length > 0) {
+
+      // Accumulate URLs — do NOT call register-guest yet.
+      // We send ONE batch request only when ALL guests have uploaded their docs.
+      // This prevents saveRegistrations from wiping earlier guests on each call.
+      const nextAllUrls = [...allDocUrls, ...uploadedUrls];
+      setAllDocUrls(nextAllUrls);
+
+      const nextGuest = currentGuest + 1;
+      const isLastGuest = nextGuest >= adults;
+
+      if (isLastGuest) {
+        // All guests uploaded — send one batch with ALL document URLs
         const regRes = await fetch('/api/booking/register-guest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
+          body: JSON.stringify({ reservation_id: reservationId, document_urls: nextAllUrls }),
         });
         const regData = await regRes.json().catch(() => ({}));
         if (!regRes.ok) {
@@ -371,12 +384,14 @@ export default function StepSuccess({
         if (regData.ocr_results) {
           const names = (regData.ocr_results as { firstName: string; lastName: string }[])
             .map(r => `${r.firstName} ${r.lastName}`.trim()).filter(Boolean);
-          setRegisteredNames(prev => [...prev, ...names]);
+          setRegisteredNames(names);
         }
+        setRegStep('done');
+      } else {
+        // More guests to scan — just move to next
+        setCurrentGuest(nextGuest);
+        setPhotos([]);
       }
-      const nextGuest = currentGuest + 1;
-      if (nextGuest < adults) { setCurrentGuest(nextGuest); setPhotos([]); }
-      else setRegStep('done');
     } catch (err) {
       const msg = (err as Error)?.message || 'unknown';
       console.error('[Registration]', err);
