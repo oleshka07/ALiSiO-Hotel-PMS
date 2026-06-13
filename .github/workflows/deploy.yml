@@ -210,3 +210,7 @@ jobs:
             echo "[audit] Running cash routing audit..."
             node scripts/audit-cash-ops.js 2>&1 || echo "[audit] audit script failed (non-fatal)"
 
+            # One-time: diagnose ~1.2M balance issue
+            echo "[diag] Running balance diagnosis..."
+            node scripts/diagnose-balance.js 2>&1 || echo "[diag] diagnosis failed (non-fatal)"
+
