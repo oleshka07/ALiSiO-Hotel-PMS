@@ -218,12 +218,12 @@ export async function createLead(request: NextRequest) {
         duplicateType: error.duplicateType,
         duplicateData: error.duplicateData,
         message: error.duplicateType === 'lead'
-          ? \`Лід вже існує: \${error.duplicateData.first_name} \${error.duplicateData.last_name || ''}\`
+          ? `Лід вже існує: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
           : error.duplicateType === 'guest'
-          ? \`Гість знайдений: \${error.duplicateData.first_name} \${error.duplicateData.last_name || ''}\`
+          ? `Гість знайдений: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
           : error.duplicateType === 'reservation'
-          ? \`Бронювання знайдено: \${error.duplicateData.first_name} \${error.duplicateData.last_name || ''}\`
-          : \`Знайдено \${error.duplicateData.length} можливих збігів за прізвищем\`,
+          ? `Бронювання знайдено: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
+          : `Знайдено ${error.duplicateData.length} можливих збігів за прізвищем`,
       }, { status: 409 });
     }
     if (error.message === "Ім'я обов'язкове") {
