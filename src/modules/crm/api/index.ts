@@ -1,9 +1,9 @@
-export { listLeads, createLead } from './leads.handlers';
+export { listLeads, createLead, executeCreateLead } from './leads.handlers';
 export { getPipeline, CRM_STAGES } from './pipeline.handlers';
 export { getLead, updateLead, deleteLead } from './lead.handlers';
 export { changeLeadStage } from './lead-stage.handlers';
 export { getConversation } from './conversation.handlers';
-export { sendMessage } from './conversation-messages.handlers';
+export { sendMessage, executeCreateMessage } from './conversation-messages.handlers';
 export { checkDedup } from './dedup.handlers';
 export { createLeadFromBot } from './lead-from-bot.handlers';
 export { suggestAiReply } from './ai-suggest.handlers';
