@@ -45,11 +45,13 @@
     data.siteId = SITE_ID;
     data._hp_trap = ''; // empty = human
     data.sourceUrl = window.location.href;
-    fetch(ENDPOINT, {
+    return fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
       keepalive: true,
+    }).then(function (res) {
+      return res.json();
     }).catch(function () { /* silent */ });
   }
 

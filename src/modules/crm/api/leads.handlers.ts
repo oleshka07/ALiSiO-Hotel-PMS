@@ -124,96 +124,111 @@ export async function listLeads(request: NextRequest) {
   }
 }
 
+export function executeCreateLead(db: any, body: any) {
+  const {
+    firstName, lastName, email, phone, whatsapp,
+    source = 'manual', channelId, externalBookingId,
+    checkInDate, checkOutDate, adults, children,
+    unitTypePreference, estimatedValue,
+    campingChildrenJson, campingVehicleType, campingTentType,
+    campingElectricity, campingPetsJson,
+    priority = 'normal', assignedTo, notes, tags,
+    skipDedup = false,
+  } = body;
+
+  if (!firstName) {
+    throw new Error("Ім'я обов'язкове");
+  }
+
+  if (!skipDedup) {
+    const dup = findDuplicate(db, { email, phone, whatsapp, lastName, externalBookingId });
+    if (dup) {
+      const error: any = new Error('Duplicate found');
+      error.isDuplicate = true;
+      error.duplicateType = dup.type;
+      error.duplicateData = dup.data;
+      throw error;
+    }
+  }
+
+  const org = db.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
+  if (!org) throw new Error('Organization not found');
+
+  const id = crypto.randomBytes(8).toString('hex');
+  const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+  db.prepare(`
+    INSERT INTO crm_leads (
+      id, organization_id, first_name, last_name, email, phone, whatsapp,
+      source, channel_id, external_booking_id,
+      stage, priority, assigned_to,
+      check_in_date, check_out_date, adults, children,
+      unit_type_preference, estimated_value,
+      camping_children_json, camping_vehicle_type, camping_tent_type,
+      camping_electricity, camping_pets_json,
+      notes, tags, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      'new', ?, ?,
+      ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?,
+      ?, ?,
+      ?, ?, ?, ?
+    )
+  `).run(
+    id, org.id, firstName, lastName || null, email || null, phone || null, whatsapp || null,
+    source, channelId || null, externalBookingId || null,
+    priority, assignedTo || null,
+    checkInDate || null, checkOutDate || null, adults || 0, children || 0,
+    unitTypePreference || null, estimatedValue || 0,
+    campingChildrenJson || null, campingVehicleType || null, campingTentType || null,
+    campingElectricity || 0, campingPetsJson || null,
+    notes || null, tags || null, now, now
+  );
+
+  const histId = crypto.randomBytes(8).toString('hex');
+  db.prepare(`
+    INSERT INTO crm_stage_history (id, lead_id, from_stage, to_stage, trigger, notes, created_at)
+    VALUES (?, ?, NULL, 'new', 'manual', 'Лід створено', ?)
+  `).run(histId, id, now);
+
+  const convId = crypto.randomBytes(8).toString('hex');
+  db.prepare(`
+    INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at)
+    VALUES (?, ?, ?, 'active', ?, ?)
+  `).run(convId, id, `${firstName} ${lastName || ''} — ${source}`.trim(), now, now);
+
+  const lead = db.prepare('SELECT * FROM crm_leads WHERE id = ?').get(id);
+  return { lead, conversationId: convId };
+}
+
 export async function createLead(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-
-    const {
-      firstName, lastName, email, phone, whatsapp,
-      source = 'manual', channelId, externalBookingId,
-      checkInDate, checkOutDate, adults, children,
-      unitTypePreference, estimatedValue,
-      campingChildrenJson, campingVehicleType, campingTentType,
-      campingElectricity, campingPetsJson,
-      priority = 'normal', assignedTo, notes, tags,
-      skipDedup = false,
-    } = body;
-
-    if (!firstName) {
-      return NextResponse.json({ error: "Ім'я обов'язкове" }, { status: 400 });
-    }
-
-    if (!skipDedup) {
-      const dup = findDuplicate(db, { email, phone, whatsapp, lastName, externalBookingId });
-      if (dup) {
-        return NextResponse.json({
-          duplicate: true,
-          duplicateType: dup.type,
-          duplicateData: dup.data,
-          message: dup.type === 'lead'
-            ? `Лід вже існує: ${dup.data.first_name} ${dup.data.last_name || ''}`
-            : dup.type === 'guest'
-            ? `Гість знайдений: ${dup.data.first_name} ${dup.data.last_name || ''}`
-            : dup.type === 'reservation'
-            ? `Бронювання знайдено: ${dup.data.first_name} ${dup.data.last_name || ''}`
-            : `Знайдено ${dup.data.length} можливих збігів за прізвищем`,
-        }, { status: 409 });
-      }
-    }
-
-    const org = db.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
-    if (!org) return NextResponse.json({ error: 'Organization not found' }, { status: 500 });
-
-    const id = crypto.randomBytes(8).toString('hex');
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    db.prepare(`
-      INSERT INTO crm_leads (
-        id, organization_id, first_name, last_name, email, phone, whatsapp,
-        source, channel_id, external_booking_id,
-        stage, priority, assigned_to,
-        check_in_date, check_out_date, adults, children,
-        unit_type_preference, estimated_value,
-        camping_children_json, camping_vehicle_type, camping_tent_type,
-        camping_electricity, camping_pets_json,
-        notes, tags, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        'new', ?, ?,
-        ?, ?, ?, ?,
-        ?, ?,
-        ?, ?, ?,
-        ?, ?,
-        ?, ?, ?, ?
-      )
-    `).run(
-      id, org.id, firstName, lastName || null, email || null, phone || null, whatsapp || null,
-      source, channelId || null, externalBookingId || null,
-      priority, assignedTo || null,
-      checkInDate || null, checkOutDate || null, adults || 0, children || 0,
-      unitTypePreference || null, estimatedValue || 0,
-      campingChildrenJson || null, campingVehicleType || null, campingTentType || null,
-      campingElectricity || 0, campingPetsJson || null,
-      notes || null, tags || null, now, now
-    );
-
-    const histId = crypto.randomBytes(8).toString('hex');
-    db.prepare(`
-      INSERT INTO crm_stage_history (id, lead_id, from_stage, to_stage, trigger, notes, created_at)
-      VALUES (?, ?, NULL, 'new', 'manual', 'Лід створено', ?)
-    `).run(histId, id, now);
-
-    const convId = crypto.randomBytes(8).toString('hex');
-    db.prepare(`
-      INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at)
-      VALUES (?, ?, ?, 'active', ?, ?)
-    `).run(convId, id, `${firstName} ${lastName || ''} — ${source}`, now, now);
-
-    const lead = db.prepare('SELECT * FROM crm_leads WHERE id = ?').get(id);
-    return NextResponse.json(lead, { status: 201 });
+    
+    const result = executeCreateLead(db, body);
+    return NextResponse.json(result.lead, { status: 201 });
   } catch (error: any) {
+    if (error.isDuplicate) {
+      return NextResponse.json({
+        duplicate: true,
+        duplicateType: error.duplicateType,
+        duplicateData: error.duplicateData,
+        message: error.duplicateType === 'lead'
+          ? `Лід вже існує: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
+          : error.duplicateType === 'guest'
+          ? `Гість знайдений: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
+          : error.duplicateType === 'reservation'
+          ? `Бронювання знайдено: ${error.duplicateData.first_name} ${error.duplicateData.last_name || ''}`
+          : `Знайдено ${error.duplicateData.length} можливих збігів за прізвищем`,
+      }, { status: 409 });
+    }
+    if (error.message === "Ім'я обов'язкове") {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error('[CRM Leads POST]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

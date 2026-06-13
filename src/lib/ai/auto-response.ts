@@ -146,7 +146,7 @@ export async function generateAutoResponse(opts: {
     );
 
     // Send to Telegram for approval
-    const accountLabel = opts.accountId === 'gmail' ? 'Gmail' : 'Email.cz';
+    const accountLabel = opts.accountId === 'gmail' ? 'Gmail' : opts.accountId === 'web_form' ? '🌐 Форма на сайті' : 'Email.cz';
     const confidenceLabel = confidence === 'unknown' ? '⚠️ НЕСТАНДАРТНЕ ПИТАННЯ — перевірте відповідь!' 
       : confidence === 'uncertain' ? '🔶 Часткова відповідність — рекомендую перевірити'
       : '';
