@@ -1,43 +1,29 @@
-var db = require(process.cwd() + '/node_modules/better-sqlite3')('data/alisio.db');
+const db = require('better-sqlite3')('./data/alisio.db');
 
-console.log('=== DB INTEGRITY ===');
-console.log('INTEGRITY:', db.pragma('integrity_check'));
-console.log('FK VIOLATIONS:', db.pragma('foreign_key_check').length);
+// booking_drafts schema + all entries
+console.log('=== BOOKING_DRAFTS schema ===');
+const bd = db.prepare("PRAGMA table_info(booking_drafts)").all();
+console.log(bd.map(c => c.name).join(', '));
+console.log('\n=== ALL BOOKING_DRAFTS ===');
+const drafts = db.prepare("SELECT * FROM booking_drafts ORDER BY created_at DESC LIMIT 20").all();
+console.log(JSON.stringify(drafts, null, 2));
+console.log(`Total: ${drafts.length}`);
 
-console.log('\n=== STALE ORDERS ===');
-var p = db.prepare("SELECT COUNT(*) as c FROM service_orders WHERE payment_status='pending' AND created_at < datetime('now','-24 hours')").get();
-console.log('STALE PENDING ORDERS (>24h):', p.c);
-var p2 = db.prepare("SELECT COUNT(*) as c FROM service_orders WHERE payment_status='pending'").get();
-console.log('ALL PENDING ORDERS:', p2.c);
+// early_bookings 
+console.log('\n=== EARLY_BOOKINGS schema ===');
+const eb = db.prepare("PRAGMA table_info(early_bookings)").all();
+console.log(eb.map(c => c.name).join(', '));
+const ebAll = db.prepare("SELECT * FROM early_bookings ORDER BY created_at DESC LIMIT 10").all();
+console.log(JSON.stringify(ebAll, null, 2));
 
-// List stale orders
-var stale = db.prepare(`
-  SELECT so.id, so.service_id, so.total_price, so.created_at, so.service_date,
-         ads.name_en, g.first_name, g.last_name
-  FROM service_orders so
-  JOIN additional_services ads ON so.service_id = ads.id
-  LEFT JOIN reservations r ON so.reservation_id = r.id
-  LEFT JOIN guests g ON r.guest_id = g.id
-  WHERE so.payment_status = 'pending' AND so.created_at < datetime('now', '-24 hours')
-  ORDER BY so.created_at DESC LIMIT 20
-`).all();
-stale.forEach(function(s) {
-  console.log(' ', s.id, '|', s.name_en, '|', s.first_name, s.last_name, '| created:', s.created_at, '| price:', s.total_price);
+// Full text search across all CRM leads  
+console.log('\n=== ALL CRM LEADS ===');
+const allLeads = db.prepare("SELECT id, first_name, last_name, email, phone, source, stage, check_in_date, check_out_date, estimated_value, created_at FROM crm_leads ORDER BY created_at DESC").all();
+allLeads.forEach(l => {
+  console.log(`${l.created_at} | ${l.first_name} ${l.last_name} | ${l.email || '-'} | ${l.source} | ${l.stage} | ${l.check_in_date || '-'} → ${l.check_out_date || '-'} | ${l.estimated_value}`);
 });
 
-console.log('\n=== PAYMENT STATUS DISTRIBUTION ===');
-var dist = db.prepare("SELECT payment_status, COUNT(*) as c FROM service_orders GROUP BY payment_status").all();
-dist.forEach(function(d) { console.log(' ', d.payment_status, ':', d.c); });
-
-console.log('\n=== RESERVATIONS WITHOUT GUEST TOKEN ===');
-var noToken = db.prepare("SELECT COUNT(*) as c FROM reservations WHERE guest_page_token IS NULL AND status IN ('confirmed','checked_in')").get();
-console.log('Missing tokens:', noToken.c);
-
-console.log('\n=== RECENT UNCAUGHT ERRORS (tasks FK) ===');
-var fk = db.pragma('foreign_key_check');
-if (fk.length > 0) {
-  console.log('FK violations found:');
-  fk.slice(0, 10).forEach(function(v) { console.log('  table:', v.table, '| rowid:', v.rowid, '| parent:', v.parent, '| fkid:', v.fkid); });
-} else {
-  console.log('No FK violations');
-}
+// All guests with stipek/daniel recently
+console.log('\n=== GUESTS search ===');
+const guests = db.prepare("SELECT * FROM guests WHERE LOWER(first_name||last_name) LIKE '%tipek%' OR LOWER(first_name||last_name) LIKE '%daniel%st%'").all();
+console.log(JSON.stringify(guests, null, 2));
