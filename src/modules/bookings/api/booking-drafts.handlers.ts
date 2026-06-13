@@ -69,24 +69,19 @@ export async function createBookingDraft(req: Request) {
     }
 
     let guestId: string | null = null;
-    const existingGuest = body.guest_email
-      ? (db.prepare(`SELECT id FROM guests WHERE organization_id = ? AND email = ? LIMIT 1`).get(property.organization_id, body.guest_email) as any)
-      : null;
 
-    if (existingGuest) {
-      guestId = existingGuest.id;
-      // Update phone if provided
-      if (body.guest_phone) {
-        db.prepare(`UPDATE guests SET phone = COALESCE(phone, ?), updated_at = datetime('now') WHERE id = ?`)
-          .run(body.guest_phone, guestId);
-      }
-    } else {
-      guestId = genId('g');
-      db.prepare(`
-        INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, source, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'widget_kemp', datetime('now'))
-      `).run(guestId, property.organization_id, firstName, lastName, body.guest_email || null, body.guest_phone || null);
-    }
+    // ⚠️ Widget bookings ALWAYS create a new guest record.
+    // We intentionally do NOT look up by email here — reusing an existing
+    // guest by email caused one person's name (e.g. "Lukeš Jaroslav") to
+    // appear on completely different guests' bookings whenever the same
+    // e-mail was entered for multiple people.
+    // A staff member can later merge duplicate guest profiles in the PMS.
+    guestId = genId('g');
+    db.prepare(`
+      INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, source, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'widget_kemp', datetime('now'))
+    `).run(guestId, property.organization_id, firstName, lastName, body.guest_email || null, body.guest_phone || null);
+
 
     // 3. Find a suitable unit
     const accommodationType: string = body.accommodation_type || 'camping';
