@@ -100,6 +100,24 @@ function getTagsFor(db: any, operationId: string): string[] {
   return rows.map((r) => r.name);
 }
 
+/** Batch-fetch tags for multiple operations in one query. */
+function getBatchTags(db: any, operationIds: string[]): Record<string, string[]> {
+  if (operationIds.length === 0) return {};
+  const ph = operationIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT ot.operation_id, t.name FROM fin_operation_tags ot
+    JOIN finance_tags t ON t.id = ot.tag_id
+    WHERE ot.operation_id IN (${ph})
+    ORDER BY t.sort_order, t.name
+  `).all(...operationIds) as { operation_id: string; name: string }[];
+  const map: Record<string, string[]> = {};
+  for (const r of rows) {
+    if (!map[r.operation_id]) map[r.operation_id] = [];
+    map[r.operation_id].push(r.name);
+  }
+  return map;
+}
+
 function enrichOperation(db: any, row: any): any {
   if (!row) return row;
   return { ...row, tags: getTagsFor(db, row.id) };
@@ -182,8 +200,49 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       LIMIT ? OFFSET ?
     `).all(...params, pageSize, (page - 1) * pageSize) as any[];
 
-    const items = rows.map((r) => enrichOperation(db, r));
-    return NextResponse.json({ items, total: totalRow.n, page, pageSize });
+    const tagMap = getBatchTags(db, rows.map((r: any) => r.id));
+    const items = rows.map((r: any) => ({ ...r, tags: tagMap[r.id] || [] }));
+
+    // Running balance: when a single account is selected, compute cumulative
+    // balance so the operator sees the account state after each transaction
+    // (like Finmap's "Рахунок/залишок" column).
+    let runningBalanceItems = items;
+    if (accountIds.length === 1) {
+      const acctId = accountIds[0];
+      const acct = db.prepare('SELECT initial_balance, currency FROM finance_accounts WHERE id = ?').get(acctId) as any;
+      if (acct) {
+        // Opening balance = initial + all ops before the `from` date
+        const openingRow = db.prepare(`
+          SELECT COALESCE(SUM(
+            CASE
+              WHEN account_to_id = ? THEN amount
+              WHEN account_from_id = ? THEN -amount
+              ELSE 0
+            END
+          ), 0) AS total
+          FROM fin_operations
+          WHERE (account_to_id = ? OR account_from_id = ?)
+            AND status = 'completed'
+            ${from ? "AND paid_at < ?" : ''}
+        `).get(
+          ...[acctId, acctId, acctId, acctId, ...(from ? [from] : [])]
+        ) as any;
+        const opening = Number(acct.initial_balance || 0) + Number(openingRow.total);
+
+        // Items are in DESC order (newest first). Reverse to compute running balance ASC,
+        // then reverse back.
+        const reversed = [...items].reverse();
+        let running = opening;
+        for (const item of reversed) {
+          if (item.account_to_id === acctId) running += item.amount;
+          else if (item.account_from_id === acctId) running -= item.amount;
+          (item as any).running_balance = +running.toFixed(2);
+        }
+        runningBalanceItems = reversed.reverse();
+      }
+    }
+
+    return NextResponse.json({ items: runningBalanceItems, total: totalRow.n, page, pageSize });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

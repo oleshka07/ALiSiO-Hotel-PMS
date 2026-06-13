@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X, History } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
@@ -35,6 +35,7 @@ interface Operation {
   tags: string[];
   suggested_recurring_id: string | null;
   suggested_recurring_name: string | null;
+  running_balance?: number | null;
 }
 
 interface Account { id: string; name: string; color: string; balance: number; currency: string }
@@ -56,14 +57,20 @@ export default function OperationsPage() {
   const [modalType, setModalType] = useState<OpType | null>(null);
   const [editOp, setEditOp] = useState<Operation | null>(null);
 
-  // Default window: 01.01.2025 → end of current month. The fiscal-year-
-  // since start lets the operator see the full historic context without
-  // hunting for older operations; they can narrow it later if needed.
+  // Default window: current month. Narrower default = faster initial load.
   const today = new Date();
-  const [from, setFrom] = useState('2025-01-01');
+  const [from, setFrom] = useState(new Date(today.getFullYear(), today.getMonth(), 1).toISOString().substring(0, 10));
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
+  // Debounced search: actual API query only fires after 300ms idle.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [search]);
   // Multi-select account filter — toggled from the sidebar by clicking
   // an account row. Empty set = no filter. Not persisted; resets on
   // reload so the operator gets the full view back by default.
@@ -80,7 +87,7 @@ export default function OperationsPage() {
     setLoading(true);
     const params = new URLSearchParams({ from, to, pageSize: '500' });
     if (filterType) params.set('op_type', filterType);
-    if (search.trim()) params.set('search', search.trim());
+    if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
     if (selectedAccountIds.size > 0) params.set('account_id', [...selectedAccountIds].join(','));
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
@@ -100,7 +107,7 @@ export default function OperationsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [from, to, filterType, search, selectedAccountIds]);
+  }, [from, to, filterType, debouncedSearch, selectedAccountIds]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -129,9 +136,22 @@ export default function OperationsPage() {
   useEffect(() => { fetchLookups(); }, [fetchLookups]);
 
   // PATCH a single field on the operation (used by inline pickers).
-  // Updates the local row optimistically + refetches on failure.
+  // Updates the local row optimistically; only re-fetches on failure.
   async function patchOperation(opId: string, patch: Partial<Operation> & { category_id?: string | null; project_id?: string | null; counterparty_id?: string | null }) {
-    setOps((prev) => prev.map((o) => (o.id === opId ? { ...o, ...patch } as Operation : o)));
+    // Optimistic: enrich with display names from lookup data
+    const enriched: Record<string, any> = { ...patch };
+    if ('category_id' in patch) {
+      const cat = categories.find((c) => c.id === patch.category_id);
+      enriched.category_name = cat?.name || null;
+      enriched.category_icon = cat?.icon || null;
+    }
+    if ('project_id' in patch) {
+      enriched.project_name = projects.find((p) => p.id === patch.project_id)?.name || null;
+    }
+    if ('counterparty_id' in patch) {
+      enriched.counterparty_name = counterparties.find((c) => c.id === patch.counterparty_id)?.name || null;
+    }
+    setOps((prev) => prev.map((o) => (o.id === opId ? { ...o, ...enriched } as Operation : o)));
     try {
       const res = await fetch(`/api/finance/operations/${opId}`, {
         method: 'PATCH',
@@ -139,11 +159,10 @@ export default function OperationsPage() {
         body: JSON.stringify(patch),
       });
       if (!res.ok) throw new Error('PATCH failed');
-      // Refetch in background to pull joined names back from the server.
-      fetchOps();
+      // No full re-fetch — optimistic update is sufficient for inline fields
     } catch (e) {
       console.error('inline patch error', e);
-      fetchOps();
+      fetchOps(); // re-fetch only on failure to restore correct state
     }
   }
 
@@ -325,6 +344,7 @@ export default function OperationsPage() {
                     <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
                     <SortableTh label="Рахунок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
+                    {selectedAccountIds.size === 1 && <th style={{ ...th, textAlign: 'right' }}>Залишок</th>}
                     <SortableTh label="Контрагент" sortKey="counterparty" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Категорія" sortKey="category" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Проєкт" sortKey="project" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
@@ -363,6 +383,11 @@ export default function OperationsPage() {
                         <td style={td}>
                           {isTransfer ? `${o.account_from_name} → ${o.account_to_name}` : (o.account_from_name || o.account_to_name || '—')}
                         </td>
+                        {selectedAccountIds.size === 1 && (
+                          <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 12 }}>
+                            {o.running_balance != null ? formatMoney(o.running_balance, o.currency) : '—'}
+                          </td>
+                        )}
                         <td style={td}>
                           <InlinePicker
                             value={o.counterparty_id}
