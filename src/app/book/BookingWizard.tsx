@@ -89,6 +89,16 @@ function getGuestsLabel(state: BookingState): string {
   return s;
 }
 
+const getUtmParams = () => {
+  if (typeof window === 'undefined') return {};
+  const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid'];
+  const utm: Record<string, string> = {};
+  keys.forEach(k => { const v = sessionStorage.getItem(k); if (v) utm[k] = v; });
+  const urlParams = new URLSearchParams(window.location.search);
+  keys.forEach(k => { const v = urlParams.get(k); if (v) utm[k] = v; });
+  return utm;
+};
+
 export default function BookingWizard() {
   const [step, setStep] = useState<Step>('landing');
   const [state, setState] = useState<BookingState>({
@@ -139,6 +149,45 @@ export default function BookingWizard() {
 
   // Load price list from API
   useEffect(() => { loadPriceList().then(setPrices).catch(() => {}); }, []);
+
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    let id = sessionStorage.getItem('alisio_sid');
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+      sessionStorage.setItem('alisio_sid', id);
+    }
+    return id;
+  });
+
+  const sendWidgetEvent = useCallback((eventType: string, extra: Record<string, any> = {}) => {
+    if (typeof window === 'undefined') return;
+    const siteId = new URLSearchParams(window.location.search).get('site_id');
+    if (!siteId) return;
+    fetch('/api/widget/event', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteId, sessionId, eventType, page: '/book',
+        utmParams: getUtmParams(), ...extra
+      }),
+      keepalive: true
+    }).catch(() => {});
+  }, [sessionId]);
+
+  const hasSentOpened = useRef(false);
+  useEffect(() => {
+    if (!hasSentOpened.current) { hasSentOpened.current = true; sendWidgetEvent('widget_opened'); }
+  }, [sendWidgetEvent]);
+
+  const lastTrackedStep = useRef<Step | null>(null);
+  useEffect(() => {
+    if (lastTrackedStep.current === step) return;
+    sendWidgetEvent(`widget_step_${step}`);
+    if (step === 'success' && paymentStatus === 'success') {
+      sendWidgetEvent('complete', { reservationId });
+    }
+    lastTrackedStep.current = step;
+  }, [step, paymentStatus, reservationId, sendWidgetEvent]);
 
   // SW registration
   useEffect(() => {
@@ -202,7 +251,7 @@ export default function BookingWizard() {
 
   // Fire Purchase events + redirect to client domain on success
   useEffect(() => {
-    if (paymentStatus !== 'success' || !siteConfig) return;
+    if (!['success', 'admin_pending', 'terminal_pending'].includes(paymentStatus) || !siteConfig) return;
     const total = state.total + state.extras.reduce((s, e) => s + e.price, 0);
     const eventId = `booking_${reservationId || Date.now()}`;
     // Meta Pixel — Signal 1
@@ -246,16 +295,7 @@ export default function BookingWizard() {
   const progressPct = ((STEP_ORDER.indexOf(step)) / (STEP_ORDER.length - 1)) * 100;
 
   // ─── UTM collector — reads from sessionStorage (set by kemp-carlsbad.cz) ──
-  const getUtmParams = () => {
-    const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid'];
-    const utm: Record<string, string> = {};
-    // 1. sessionStorage (set by kv.kemp-carlsbad.cz before redirect)
-    keys.forEach(k => { const v = sessionStorage.getItem(k); if (v) utm[k] = v; });
-    // 2. current URL params (if Alisio opened with ?utm_source=...)
-    const urlParams = new URLSearchParams(window.location.search);
-    keys.forEach(k => { const v = urlParams.get(k); if (v) utm[k] = v; });
-    return utm;
-  };
+  // (Moved outside the component)
 
   // ─── Create draft helper ──────────────────────────
   const createDraft = async (contact: { name: string; email: string; phone: string }) => {
@@ -273,7 +313,7 @@ export default function BookingWizard() {
         guest_email: contact.email, guest_phone: contact.phone,
         total_price: grandTotal, deposit_amount: grandTotal,
         // ── Attribution ──
-        source: 'kv.kemp-carlsbad.cz',
+        source: `widget:${siteId}`,
         source_url: document.referrer || window.location.href,
         site_id: siteId,
         booked_at: new Date().toISOString(),
