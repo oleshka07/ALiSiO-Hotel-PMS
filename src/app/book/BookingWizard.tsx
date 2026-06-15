@@ -299,7 +299,7 @@ export default function BookingWizard() {
         setTimeout(() => { window.location.href = url.toString(); }, 800);
       } catch { /* invalid URL — stay on page */ }
     }
-  }, [paymentStatus, siteConfig, state]);
+  }, [paymentStatus, siteConfig, state, guestPageToken, reservationId]);
 
   const resetAll = useCallback(() => {
     setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
