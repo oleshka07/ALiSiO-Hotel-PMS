@@ -282,6 +282,13 @@ export async function getAnalyticsGeo(
     languages.sort((a, b) => b.bookings - a.bookings || b.sessions - a.sessions);
 
     // 2. Country analytics
+    const countrySessions = db.prepare(`
+      SELECT country as country_code, COUNT(DISTINCT session_id) as sessions
+      FROM widget_events
+      WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND country IS NOT NULL
+      GROUP BY country
+    `).all(siteId, fromTime, toTime) as any[];
+
     let countrySql = `
       SELECT 
         country_code, 
@@ -298,13 +305,30 @@ export async function getAnalyticsGeo(
       countrySql += ' AND created_at >= ? AND created_at <= ?';
       countryParams.push(fromTime, toTime);
     }
-    countrySql += ' GROUP BY country_code ORDER BY bookings DESC';
+    countrySql += ' GROUP BY country_code';
 
-    const countries = db.prepare(countrySql).all(...countryParams) as any[];
-    const formattedCountries = countries.map(c => ({
+    const countryBookings = db.prepare(countrySql).all(...countryParams) as any[];
+
+    // Merge countries
+    const countryMap = new Map<string, { country_code: string; sessions: number; bookings: number; revenue: number }>();
+    for (const r of countrySessions) {
+      countryMap.set(r.country_code, { country_code: r.country_code, sessions: r.sessions, bookings: 0, revenue: 0 });
+    }
+    for (const r of countryBookings) {
+      const existing = countryMap.get(r.country_code);
+      if (existing) {
+        existing.bookings = r.bookings;
+        existing.revenue = r.revenue;
+      } else {
+        countryMap.set(r.country_code, { country_code: r.country_code, sessions: 0, bookings: r.bookings, revenue: r.revenue });
+      }
+    }
+    const formattedCountries = Array.from(countryMap.values()).map(c => ({
       ...c,
-      revenue: Math.round(c.revenue)
+      revenue: Math.round(c.revenue),
+      conversion: c.sessions > 0 ? Math.round((c.bookings / c.sessions) * 100 * 100) / 100 : 0
     }));
+    formattedCountries.sort((a, b) => b.bookings - a.bookings || b.sessions - a.sessions);
 
     return NextResponse.json({ languages, countries: formattedCountries });
   } catch (error: any) {

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
 import {
   Loader2,
   RefreshCw,
@@ -658,7 +659,42 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
 
               {/* SECTION: GEOGRAPHY */}
               {activeSection === 'geo' && data.languages && data.countries && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {/* Map Component */}
+                  <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Карта відвідувань (Сесії)</h4>
+                    <div style={{ height: 400, background: 'var(--bg-tertiary)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                      <ComposableMap projectionConfig={{ scale: 140 }}>
+                        <ZoomableGroup center={[0, 20]} zoom={1} minZoom={1} maxZoom={5}>
+                          <Geographies geography="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json">
+                            {({ geographies }: { geographies: any[] }) =>
+                              geographies.map((geo: any) => {
+                                const d = data.countries.find((s: any) => s.country_code === geo.id || (geo.properties && s.country_code === geo.properties.iso_a2));
+                                const sessions = d ? d.sessions : 0;
+                                const isTarget = sessions > 0;
+                                return (
+                                  <Geography
+                                    key={geo.rsmKey}
+                                    geography={geo}
+                                    fill={isTarget ? `rgba(79, 110, 247, ${Math.min(1, 0.2 + (sessions / 100))})` : "var(--bg-secondary)"}
+                                    stroke="var(--border-primary)"
+                                    strokeWidth={0.5}
+                                    style={{
+                                      default: { outline: "none" },
+                                      hover: { fill: "var(--accent-primary)", outline: "none", cursor: "pointer" },
+                                      pressed: { outline: "none" },
+                                    }}
+                                  />
+                                );
+                              })
+                            }
+                          </Geographies>
+                        </ZoomableGroup>
+                      </ComposableMap>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
                   {/* Languages Column */}
                   <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Мовні преференції</h4>
@@ -700,26 +736,35 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                         <thead>
                           <tr>
                             <th>Країна</th>
+                            <th style={{ textAlign: 'right' }}>Сесії</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>Конверсія %</th>
                           </tr>
                         </thead>
                         <tbody>
                           {data.countries.length === 0 ? (
                             <tr>
-                              <td colSpan={3} style={{ textAlign: 'center', padding: 12, color: 'var(--text-tertiary)' }}>Немає даних</td>
+                              <td colSpan={5} style={{ textAlign: 'center', padding: 12, color: 'var(--text-tertiary)' }}>Немає даних</td>
                             </tr>
                           ) : (
                             data.countries.map((item: any, idx: number) => (
                               <tr key={idx}>
                                 <td style={{ fontWeight: 600 }}>{item.country_code || 'Невідомо'}</td>
+                                <td style={{ textAlign: 'right' }}>{item.sessions}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
+                                    {item.conversion}%
+                                  </span>
+                                </td>
                               </tr>
                             ))
                           )}
                         </tbody>
                       </table>
+                    </div>
                     </div>
                   </div>
                 </div>

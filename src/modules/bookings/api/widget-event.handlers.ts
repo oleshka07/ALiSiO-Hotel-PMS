@@ -38,6 +38,9 @@ export async function trackWidgetEvent(request: NextRequest) {
     const utm_medium = body.utm_medium || utmParams.utm_medium || null;
     const utm_campaign = body.utm_campaign || utmParams.utm_campaign || null;
 
+    // Get country from headers (Vercel or Cloudflare)
+    const country = request.headers.get('x-vercel-ip-country') || request.headers.get('cf-ipcountry') || null;
+
     if (!site_id) {
       return NextResponse.json({ error: 'Missing site_id' }, { status: 400, headers });
     }
@@ -68,8 +71,8 @@ export async function trackWidgetEvent(request: NextRequest) {
     db.prepare(`
       INSERT INTO widget_events (
         site_id, session_id, event_type, step, page,
-        utm_source, utm_medium, utm_campaign, lang, reservation_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        utm_source, utm_medium, utm_campaign, lang, reservation_id, country
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       site.id,
       session_id || null,
@@ -80,7 +83,8 @@ export async function trackWidgetEvent(request: NextRequest) {
       utm_medium || null,
       utm_campaign || null,
       lang || null,
-      reservation_id || null
+      reservation_id || null,
+      country
     );
 
     return NextResponse.json({ success: true }, { status: 200, headers });
