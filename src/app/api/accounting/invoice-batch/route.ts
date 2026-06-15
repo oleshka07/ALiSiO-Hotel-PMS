@@ -361,6 +361,7 @@ export interface BatchInvoiceResult {
   invoice_number: string;
   guest_name: string;
   needs_guest_name: boolean;  // true = amount ≥ 10 000, buyer name must be filled in
+  is_credit_note: boolean;    // true = REFUND / storno faktura
   description: string;
   amount: number;
   currency: string;
