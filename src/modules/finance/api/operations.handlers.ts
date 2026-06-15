@@ -203,46 +203,63 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const tagMap = getBatchTags(db, rows.map((r: any) => r.id));
     const items = rows.map((r: any) => ({ ...r, tags: tagMap[r.id] || [] }));
 
-    // Running balance: when a single account is selected, compute cumulative
-    // balance so the operator sees the account state after each transaction
-    // (like Finmap's "Рахунок/залишок" column).
-    let runningBalanceItems = items;
-    if (accountIds.length === 1) {
-      const acctId = accountIds[0];
-      const acct = db.prepare('SELECT initial_balance, currency FROM finance_accounts WHERE id = ?').get(acctId) as any;
-      if (acct) {
-        // Opening balance = initial + all ops before the `from` date
-        const openingRow = db.prepare(`
-          SELECT COALESCE(SUM(
-            CASE
-              WHEN account_to_id = ? THEN amount
-              WHEN account_from_id = ? THEN -amount
-              ELSE 0
-            END
-          ), 0) AS total
-          FROM fin_operations
-          WHERE (account_to_id = ? OR account_from_id = ?)
-            AND status = 'completed'
-            ${from ? "AND paid_at < ?" : ''}
-        `).get(
-          ...[acctId, acctId, acctId, acctId, ...(from ? [from] : [])]
-        ) as any;
-        const opening = Number(acct.initial_balance || 0) + Number(openingRow.total);
-
-        // Items are in DESC order (newest first). Reverse to compute running balance ASC,
-        // then reverse back.
-        const reversed = [...items].reverse();
-        let running = opening;
-        for (const item of reversed) {
-          if (item.account_to_id === acctId) running += item.amount;
-          else if (item.account_from_id === acctId) running -= item.amount;
-          (item as any).running_balance = +running.toFixed(2);
-        }
-        runningBalanceItems = reversed.reverse();
-      }
+    // Running balance per account: for every operation, compute the account
+    // balance AFTER that transaction — like Finmap's "Рахунок/залишок" column.
+    // Works for all operations regardless of account filter.
+    const allAccountIds = new Set<string>();
+    for (const item of items) {
+      if (item.account_to_id) allAccountIds.add(item.account_to_id);
+      if (item.account_from_id) allAccountIds.add(item.account_from_id);
     }
 
-    return NextResponse.json({ items: runningBalanceItems, total: totalRow.n, page, pageSize });
+    if (allAccountIds.size > 0) {
+      // Fetch initial balances for all involved accounts
+      const acctPh = [...allAccountIds].map(() => '?').join(',');
+      const acctRows = db.prepare(
+        `SELECT id, initial_balance FROM finance_accounts WHERE id IN (${acctPh})`
+      ).all(...allAccountIds) as any[];
+      const initialMap: Record<string, number> = {};
+      for (const a of acctRows) initialMap[a.id] = Number(a.initial_balance || 0);
+
+      // Opening balance per account = initial + all completed ops BEFORE the date window
+      if (from) {
+        const openingRows = db.prepare(`
+          SELECT
+            acct_id,
+            COALESCE(SUM(signed), 0) AS total
+          FROM (
+            SELECT account_to_id AS acct_id, amount AS signed
+            FROM fin_operations
+            WHERE account_to_id IN (${acctPh}) AND status = 'completed' AND paid_at < ?
+            UNION ALL
+            SELECT account_from_id AS acct_id, -amount AS signed
+            FROM fin_operations
+            WHERE account_from_id IN (${acctPh}) AND status = 'completed' AND paid_at < ?
+          )
+          GROUP BY acct_id
+        `).all(...allAccountIds, from, ...allAccountIds, from) as any[];
+        for (const r of openingRows) {
+          initialMap[r.acct_id] = (initialMap[r.acct_id] || 0) + Number(r.total);
+        }
+      }
+
+      // Walk items oldest-first, accumulating running balance per account
+      const running: Record<string, number> = { ...initialMap };
+      const reversed = [...items].reverse();
+      for (const item of reversed) {
+        if (item.account_to_id) {
+          running[item.account_to_id] = (running[item.account_to_id] || 0) + item.amount;
+          item.balance_after_to = +running[item.account_to_id].toFixed(2);
+        }
+        if (item.account_from_id) {
+          running[item.account_from_id] = (running[item.account_from_id] || 0) - item.amount;
+          item.balance_after_from = +running[item.account_from_id].toFixed(2);
+        }
+      }
+      reversed.reverse(); // back to DESC order
+    }
+
+    return NextResponse.json({ items, total: totalRow.n, page, pageSize });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

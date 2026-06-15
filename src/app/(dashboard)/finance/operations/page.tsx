@@ -35,7 +35,8 @@ interface Operation {
   tags: string[];
   suggested_recurring_id: string | null;
   suggested_recurring_name: string | null;
-  running_balance?: number | null;
+  balance_after_to?: number | null;
+  balance_after_from?: number | null;
 }
 
 interface Account { id: string; name: string; color: string; balance: number; currency: string }
@@ -343,8 +344,7 @@ export default function OperationsPage() {
                   <tr style={{ background: 'var(--bg-secondary)' }}>
                     <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
-                    <SortableTh label="Рахунок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
-                    {selectedAccountIds.size === 1 && <th style={{ ...th, textAlign: 'right' }}>Залишок</th>}
+                    <SortableTh label="Рахунок / залишок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Контрагент" sortKey="counterparty" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Категорія" sortKey="category" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Проєкт" sortKey="project" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
@@ -381,13 +381,26 @@ export default function OperationsPage() {
                           {sign} {Math.abs(o.amount).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {o.currency}
                         </td>
                         <td style={td}>
-                          {isTransfer ? `${o.account_from_name} → ${o.account_to_name}` : (o.account_from_name || o.account_to_name || '—')}
+                          {isTransfer ? (
+                            <>
+                              <div>{o.account_from_name} → {o.account_to_name}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
+                                {o.balance_after_from != null && <span>{formatMoney(o.balance_after_from, o.currency)}</span>}
+                                {o.balance_after_from != null && o.balance_after_to != null && <span> → </span>}
+                                {o.balance_after_to != null && <span>{formatMoney(o.balance_after_to, o.currency)}</span>}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div>{o.account_from_name || o.account_to_name || '—'}</div>
+                              {(o.balance_after_to != null || o.balance_after_from != null) && (
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
+                                  {formatMoney((o.balance_after_to ?? o.balance_after_from)!, o.currency)}
+                                </div>
+                              )}
+                            </>
+                          )}
                         </td>
-                        {selectedAccountIds.size === 1 && (
-                          <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 12 }}>
-                            {o.running_balance != null ? formatMoney(o.running_balance, o.currency) : '—'}
-                          </td>
-                        )}
                         <td style={td}>
                           <InlinePicker
                             value={o.counterparty_id}
