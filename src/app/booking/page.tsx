@@ -534,6 +534,15 @@ export default function BookingPage() {
     setError(null);
     try {
       const currentSiteId = siteId || '';
+      
+      const params = new URLSearchParams(window.location.search);
+      const utmParams: Record<string, string> = {};
+      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'ttclid'].forEach(key => {
+        const val = params.get(key);
+        if (val) utmParams[key] = val;
+      });
+      const widgetSessionId = params.get('widget_session_id') || (typeof window !== 'undefined' ? window.sessionStorage.getItem('alisio_sid') : undefined);
+
       const res = await fetch(`${API_BASE}/api/booking/reserve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -551,6 +560,9 @@ export default function BookingPage() {
           couponCode: offerApplied || undefined,
           certificateCode: certInput || undefined,
           siteId: currentSiteId || undefined,
+          utmParams,
+          lang,
+          widgetSessionId: widgetSessionId || undefined,
         }),
       });
       if (!res.ok) {

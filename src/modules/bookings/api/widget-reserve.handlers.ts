@@ -383,14 +383,41 @@ export async function createWidgetReservation(request: NextRequest) {
       guestPageToken = Math.random().toString(36).slice(2, 14);
     }
 
+    const utmSource = utmParams['utm_source'] || null;
+    const utmMedium = utmParams['utm_medium'] || null;
+    const utmCampaign = utmParams['utm_campaign'] || null;
+    const utmContent = utmParams['utm_content'] || null;
+    const utmTerm = utmParams['utm_term'] || null;
+    
+    const session_id_to_store = body.widget_session_id || body.widgetSessionId || null;
+    let countryCode = request.headers.get('cf-ipcountry') || request.headers.get('x-vercel-ip-country') || null;
+    if (countryCode && typeof countryCode === 'string') {
+      countryCode = countryCode.toUpperCase().slice(0, 2);
+    }
+
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, currency, payment_id, promotions_applied, guest_page_token)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (
+        id, property_id, unit_id, guest_id, check_in, check_out,
+        nights, adults, children, status, payment_status, source,
+        total_price, currency, payment_id, promotions_applied, guest_page_token,
+        utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+        booking_lang, country_code, widget_session_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      resStatus, payStatus, siteName, finalPrice, resCurrency, null, JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
-      guestPageToken
+      resStatus, payStatus, siteName, finalPrice, resCurrency, null,
+      JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
+      guestPageToken,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      utmTerm,
+      lang,
+      countryCode,
+      session_id_to_store
     );
 
     // --- Emit event for CRM and other modules ---

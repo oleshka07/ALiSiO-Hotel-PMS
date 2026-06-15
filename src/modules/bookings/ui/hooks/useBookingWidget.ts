@@ -66,6 +66,76 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [resolvedUtmParams, setResolvedUtmParams] = useState<Record<string, string>>({});
   const [activeRatePlan, setActiveRatePlan] = useState<ActiveRatePlan | null>(null);
   const [conversationId, setConversationId] = useState<string>('');
+  
+  const resolvedSiteId = siteId || siteConfig?.id || '';
+
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const key = 'alisio_sid';
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  });
+
+  const sendWidgetEvent = useCallback((eventType: string, extra: Record<string, any> = {}) => {
+    if (isPreview || !resolvedSiteId) return;
+    const url = `${API_BASE}/api/widget/event`;
+    const payload = {
+      siteId: resolvedSiteId,
+      sessionId,
+      eventType,
+      page: '/booking',
+      utmParams: resolvedUtmParams,
+      lang,
+      ...extra
+    };
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(e => console.error('[WidgetEvent] Failed to send event:', e));
+  }, [resolvedSiteId, sessionId, resolvedUtmParams, lang, isPreview]);
+
+  const hasSentOpened = useRef(false);
+  useEffect(() => {
+    if (resolvedSiteId && !hasSentOpened.current) {
+      hasSentOpened.current = true;
+      sendWidgetEvent('widget_opened');
+    }
+  }, [resolvedSiteId, sendWidgetEvent]);
+
+  const lastTrackedStep = useRef<number | null>(null);
+  useEffect(() => {
+    if (!resolvedSiteId) return;
+    if (lastTrackedStep.current === step) return;
+    if (step >= 1 && step <= 5) {
+      sendWidgetEvent(`widget_step_${step}`);
+    } else if (step === 6) {
+      sendWidgetEvent('complete', { reservationId: reservation?.reservationId });
+    }
+    lastTrackedStep.current = step;
+  }, [step, resolvedSiteId, sendWidgetEvent, reservation]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleBeforeUnload = () => {
+      if (step < 6 && resolvedSiteId) {
+        sendWidgetEvent('abandon');
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [step, resolvedSiteId, sendWidgetEvent]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
@@ -287,8 +357,6 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (typeof window !== 'undefined' && window.parent !== window) setTimeout(() => window.parent.postMessage({source:'alisio-widget',event:'resize',height:document.body.scrollHeight},'*'), 100);
   };
 
-  const resolvedSiteId = siteId || siteConfig?.id || '';
-
   const handleApplyOffer = useCallback(async (codeToApply?: string | React.MouseEvent) => {
     const code = (typeof codeToApply === 'string' ? codeToApply : couponCode).trim().toUpperCase(); if (!code) return;
     const sId = siteId || siteConfig?.id || siteSlug || ''; setApplyingOffer(true); setOfferError('');
@@ -360,6 +428,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
           handshakeToken,
           conversationId,
           lang,
+          widget_session_id: sessionId,
         }) 
       });
       if (res.ok) { 

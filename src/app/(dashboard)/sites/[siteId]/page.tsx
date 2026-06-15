@@ -6,6 +6,7 @@ import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { Globe, ArrowLeft, Loader2 } from 'lucide-react';
 import { TABS } from './_components/SiteHelpers';
+import { AnalyticsTab } from './_components/AnalyticsTab';
 import { ListingsTab }   from './_components/ListingsTab';
 import { ServicesTab }   from './_components/ServicesTab';
 import { DesignTab }     from './_components/DesignTab';
@@ -42,9 +43,9 @@ export default function SiteDetailPage() {
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const p = new URLSearchParams(window.location.search);
-      return p.get('tab') || 'listings';
+      return p.get('tab') || 'analytics';
     }
-    return 'listings';
+    return 'analytics';
   });
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
@@ -151,6 +152,7 @@ export default function SiteDetailPage() {
         </div>
 
         {/* Tab content */}
+        {activeTab === 'analytics'   && <AnalyticsTab siteId={siteId} siteCurrency={site?.currency || 'CZK'} />}
         {activeTab === 'listings'    && <ListingsTab siteId={siteId} siteSlug={site.slug} siteCurrency={site.currency} />}
         {activeTab === 'services'    && <ServicesTab siteId={siteId} siteCurrency={site.currency} />}
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, design_config: cfg } : s)} />}
