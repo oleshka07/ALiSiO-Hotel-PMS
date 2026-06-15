@@ -55,6 +55,14 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 | `getWidgetServicesOptions()` | CORS preflight |
 | `getWidgetCalendar(req)` | Календар доступності (публічний); підтримує `siteSlug`, `siteId`, `unitId`, `propertyId` |
 | `getWidgetCalendarOptions()` | CORS preflight |
+| `trackWidgetEvent(req)` | Збереження події трекінгу віджета/сайту |
+| `trackWidgetEventOptions()` | CORS preflight |
+| `getAnalyticsOverview(req, ctx)` | Аналітичний огляд (KPI + порівняння періодів) |
+| `getAnalyticsTraffic(req, ctx)` | Аналітика джерел трафіку (UTM sources) |
+| `getAnalyticsGeo(req, ctx)` | Географічна аналітика (мови та країни) |
+| `getAnalyticsListings(req, ctx)` | Аналітика за типами розміщення та категоріями |
+| `getAnalyticsCampaigns(req, ctx)` | Детальна аналітика UTM кампаній |
+| `getAnalyticsFunnel(req, ctx)` | Воронка конверсій (відвідування -> оплата) |
 
 ## Залежності
 
@@ -76,7 +84,23 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 
 ## Схема даних
 
-**Таблиці:** `reservations`, `reservation_activity`, `reservation_registrations`, `group_bookings`, `group_booking_guests`, `booking_sources`, `additional_services`, `availability_blocks`, `service_orders`, `booking_service_orders`, `booking_sites`, `site_listings`
+**Таблиці:** `reservations`, `reservation_activity`, `reservation_registrations`, `group_bookings`, `group_booking_guests`, `booking_sources`, `additional_services`, `availability_blocks`, `service_orders`, `booking_service_orders`, `booking_sites`, `site_listings`, `widget_events`
+
+**Нові поля reservations:**
+- `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` — UTM-параметри
+- `booking_lang` — мова бронювання
+- `country_code` — країна гостя (cf-ipcountry)
+- `widget_session_id` — унікальний ID сесії віджета
+
+**Таблиця widget_events:**
+- `id` — первинний ключ
+- `site_id` — ID партнерського сайту
+- `session_id` — ID сесії відвідувача
+- `event_type` — тип події (`page_view`, `widget_opened`, `widget_step_1..5`, `abandon`, `complete`)
+- `page` — відносна адреса сторінки (наприклад, `/`, `/booking`)
+- `utm_source`, `utm_medium`, `utm_campaign` — мітки
+- `lang` — мова
+- `created_at` — дата та час події
 
 ## Структура файлів
 
@@ -106,6 +130,8 @@ bookings/
     widget-services.handlers.ts
     widget-calendar-public.handlers.ts
     widget-site.handlers.ts
+    widget-event.handlers.ts             ← трекінг подій віджета
+    site-analytics.handlers.ts           ← розрахунок аналітики
   ui/
     BookingV2.tsx                       ← embed iframe widget component
     booking-v2.css                      ← widget styles + themes

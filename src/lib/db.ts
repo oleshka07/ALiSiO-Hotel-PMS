@@ -4612,6 +4612,65 @@ function runMigrations(database: any) {
   try { database.exec("ALTER TABLE guest_registrations ADD COLUMN purpose_of_stay TEXT"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE guest_registrations ADD COLUMN visa_number TEXT"); } catch { /* already exists */ }
 
+  // --- Migration: add new columns to reservations for Analytics ---
+  try {
+    const resCols = database.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];
+    const colNames = resCols.map((c: any) => c.name);
+    if (!colNames.includes('utm_source')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN utm_source TEXT");
+    }
+    if (!colNames.includes('utm_medium')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN utm_medium TEXT");
+    }
+    if (!colNames.includes('utm_campaign')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN utm_campaign TEXT");
+    }
+    if (!colNames.includes('utm_content')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN utm_content TEXT");
+    }
+    if (!colNames.includes('utm_term')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN utm_term TEXT");
+    }
+    if (!colNames.includes('booking_lang')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN booking_lang TEXT");
+    }
+    if (!colNames.includes('country_code')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN country_code TEXT");
+    }
+    if (!colNames.includes('widget_session_id')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN widget_session_id TEXT");
+    }
+    console.log('[DB] Added Analytics columns to reservations table');
+  } catch (e: any) {
+    console.log('[DB] reservations analytics columns migration note:', e.message);
+  }
+
+  // --- Migration: create widget_events table for tracking ---
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS widget_events (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+        site_id TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+        session_id TEXT,
+        event_type TEXT NOT NULL,
+        step INTEGER,
+        page TEXT,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT,
+        lang TEXT,
+        reservation_id TEXT,
+        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      );
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_we_site ON widget_events(site_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_we_type ON widget_events(event_type)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_we_date ON widget_events(created_at)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_we_session ON widget_events(session_id)');
+    console.log('[DB] Created widget_events table and indexes');
+  } catch (e: any) {
+    console.log('[DB] widget_events migration note:', e.message);
+  }
 }
 
 

@@ -65,6 +65,77 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
   const [resolvedUtmParams, setResolvedUtmParams] = useState<Record<string, string>>({});
   const [activeRatePlan, setActiveRatePlan] = useState<ActiveRatePlan | null>(null);
+  const [conversationId, setConversationId] = useState<string>('');
+  
+  const resolvedSiteId = siteId || siteConfig?.id || '';
+
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const key = 'alisio_sid';
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  });
+
+  const sendWidgetEvent = useCallback((eventType: string, extra: Record<string, any> = {}) => {
+    if (isPreview || !resolvedSiteId) return;
+    const url = `${API_BASE}/api/widget/event`;
+    const payload = {
+      siteId: resolvedSiteId,
+      sessionId,
+      eventType,
+      page: '/booking',
+      utmParams: resolvedUtmParams,
+      lang,
+      ...extra
+    };
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(e => console.error('[WidgetEvent] Failed to send event:', e));
+  }, [resolvedSiteId, sessionId, resolvedUtmParams, lang, isPreview]);
+
+  const hasSentOpened = useRef(false);
+  useEffect(() => {
+    if (resolvedSiteId && !hasSentOpened.current) {
+      hasSentOpened.current = true;
+      sendWidgetEvent('widget_opened');
+    }
+  }, [resolvedSiteId, sendWidgetEvent]);
+
+  const lastTrackedStep = useRef<number | null>(null);
+  useEffect(() => {
+    if (!resolvedSiteId) return;
+    if (lastTrackedStep.current === step) return;
+    if (step >= 1 && step <= 5) {
+      sendWidgetEvent(`widget_step_${step}`);
+    } else if (step === 6) {
+      sendWidgetEvent('complete', { reservationId: reservation?.reservationId });
+    }
+    lastTrackedStep.current = step;
+  }, [step, resolvedSiteId, sendWidgetEvent, reservation]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleBeforeUnload = () => {
+      if (step < 6 && resolvedSiteId) {
+        sendWidgetEvent('abandon');
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [step, resolvedSiteId, sendWidgetEvent]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
@@ -123,7 +194,29 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (urlAdults) setAdults(parseInt(urlAdults,10)||2); if (urlKids) setKids(parseInt(urlKids,10)||0);
     const urlOffer = params.get('offer') || params.get('couponCode') || params.get('couponcode'); if (urlOffer) { setCouponCode(urlOffer); setShowOffer(true); }
     const urlBundle = params.get('bundle') || params.get('bundleId'); if (urlBundle) { setCouponCode(urlBundle); setIsHiddenBundle(true); setShowOffer(true); }
-    const saved = localStorage.getItem('alisio_guest_data'); if (saved) { try { const g = JSON.parse(saved); setFirstName(g.firstName||''); setLastName(g.lastName||''); setEmail(g.email||''); setPhone(g.phone||''); } catch {} }
+    const cId = params.get('conversation_id'); if (cId) setConversationId(cId);
+    const urlFirstName = params.get('firstName');
+    const urlLastName = params.get('lastName');
+    const urlName = params.get('contact_name') || params.get('name');
+    const urlEmail = params.get('contact_email') || params.get('email');
+    const urlPhone = params.get('contact_phone') || params.get('phone');
+
+    let fName = urlFirstName || '';
+    let lName = urlLastName || '';
+    if (urlName && !fName && !lName) {
+      const parts = urlName.trim().split(' ');
+      fName = parts[0] || '';
+      lName = parts.slice(1).join(' ') || '';
+    }
+
+    let savedData: any = {};
+    const saved = localStorage.getItem('alisio_guest_data'); 
+    if (saved) { try { savedData = JSON.parse(saved); } catch {} }
+
+    setFirstName(fName || savedData.firstName || '');
+    setLastName(lName || savedData.lastName || '');
+    setEmail(urlEmail || savedData.email || '');
+    setPhone(urlPhone || savedData.phone || '');
     const v = Math.floor(Math.random()*6)+3; const hours = Math.floor(Math.random()*12)+1;
     setSocialProof({ viewers: v, lastBooking: hours < 5 ? `${hours} ${hours===1 ? v3t.agoHour : v3t.agoHours}` : `45 ${v3t.agoMinutes}` });
   }, []);
@@ -140,7 +233,16 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         window.parent.postMessage({ source: 'alisio-widget', event: 'purchase', reservationId: rId, value: val, currency: 'CZK', eventId }, '*');
       }
       if (siteThankYouUrl) {
-        const timer = setTimeout(() => { const sep = siteThankYouUrl.includes('?') ? '&' : '?'; const rId2 = reservation?.reservationId || ''; const rid2Suffix = rId2 ? ('&reservation_id=' + encodeURIComponent(rId2)) : ''; const url = siteThankYouUrl + sep + 'payment_status=success' + rid2Suffix; if (window.parent !== window) { window.parent.location.href = url; } else { window.location.href = url; } }, 5000);
+        const timer = setTimeout(() => { 
+          const sep = siteThankYouUrl.includes('?') ? '&' : '?'; 
+          const rId2 = reservation?.reservationId || ''; 
+          const rid2Suffix = rId2 ? ('&reservation_id=' + encodeURIComponent(rId2)) : ''; 
+          const checkinParam = checkIn ? `&checkin=${encodeURIComponent(checkIn)}` : '';
+          const checkoutParam = checkOut ? `&checkout=${encodeURIComponent(checkOut)}` : '';
+          const amountParam = reservation?.totalPrice !== undefined ? `&amount=${reservation.totalPrice}` : '';
+          const url = siteThankYouUrl + sep + 'payment_status=success' + rid2Suffix + checkinParam + checkoutParam + amountParam; 
+          if (window.parent !== window) { window.parent.location.href = url; } else { window.location.href = url; } 
+        }, 5000);
         return () => clearTimeout(timer);
       }
     }
@@ -255,8 +357,6 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (typeof window !== 'undefined' && window.parent !== window) setTimeout(() => window.parent.postMessage({source:'alisio-widget',event:'resize',height:document.body.scrollHeight},'*'), 100);
   };
 
-  const resolvedSiteId = siteId || siteConfig?.id || '';
-
   const handleApplyOffer = useCallback(async (codeToApply?: string | React.MouseEvent) => {
     const code = (typeof codeToApply === 'string' ? codeToApply : couponCode).trim().toUpperCase(); if (!code) return;
     const sId = siteId || siteConfig?.id || siteSlug || ''; setApplyingOffer(true); setOfferError('');
@@ -326,7 +426,9 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
           currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', 
           utmParams,
           handshakeToken,
+          conversationId,
           lang,
+          widget_session_id: sessionId,
         }) 
       });
       if (res.ok) { 
@@ -390,7 +492,10 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         try { retPath = (window.top as any).location.href.split('?')[0]; } catch { retPath = window.location.href.split('?')[0]; }
       }
       const sep = retPath.includes('?') ? '&' : '?';
-      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success`;
+      const checkinParam = checkIn ? `&checkin=${encodeURIComponent(checkIn)}` : '';
+      const checkoutParam = checkOut ? `&checkout=${encodeURIComponent(checkOut)}` : '';
+      const amountParam = reservation.totalPrice !== undefined ? `&amount=${reservation.totalPrice}` : '';
+      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success${checkinParam}${checkoutParam}${amountParam}`;
 
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }

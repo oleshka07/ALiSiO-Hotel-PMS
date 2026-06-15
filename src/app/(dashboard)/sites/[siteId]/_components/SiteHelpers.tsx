@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
 import {
-  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, BarChart2, Inbox, Mail,
+  LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent, Package, BarChart2, Inbox, Mail, PieChart,
 } from 'lucide-react';
 
 export const TABS = [
+  { id: 'analytics',   label: 'Аналітика',          icon: <PieChart size={16} /> },
   { id: 'listings',    label: 'Оголошення',       icon: <LayoutList size={16} /> },
   { id: 'services',   label: 'Сервіси',           icon: <Sparkles size={16} /> },
   { id: 'design',     label: 'Дизайн',            icon: <Palette size={16} /> },
