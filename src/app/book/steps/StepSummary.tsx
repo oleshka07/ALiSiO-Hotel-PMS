@@ -31,6 +31,28 @@ export default function StepSummary({
   const [qrSession, setQrSession] = useState<{ url: string; reservationId: string } | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const urlName = params.get('contact_name') || params.get('name') || '';
+    const urlEmail = params.get('contact_email') || params.get('email') || '';
+    const urlPhone = params.get('contact_phone') || params.get('phone') || '';
+    
+    let savedData: any = {};
+    try {
+      const saved = localStorage.getItem('alisio_guest_data'); 
+      if (saved) savedData = JSON.parse(saved);
+    } catch {}
+
+    const defaultName = urlName || savedData.name || savedData.firstName || '';
+    const defaultEmail = urlEmail || savedData.email || '';
+    const defaultPhone = urlPhone || savedData.phone || '';
+
+    setName(prev => prev || defaultName);
+    setEmail(prev => prev || defaultEmail);
+    setPhone(prev => prev || defaultPhone);
+  }, []);
+
   const extrasTotal = extras.reduce((s, e) => s + e.price, 0);
   const grandTotal = total + extrasTotal;
   const phoneDigits = phone.replace(/\D/g, '');
