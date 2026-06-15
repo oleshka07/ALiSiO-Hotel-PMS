@@ -4671,6 +4671,17 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.log('[DB] widget_events migration note:', e.message);
   }
+
+  // --- Migration: add country to widget_events ---
+  try {
+    const weCols = database.prepare("PRAGMA table_info(widget_events)").all() as { name: string }[];
+    if (!weCols.some((c: any) => c.name === 'country')) {
+      database.exec("ALTER TABLE widget_events ADD COLUMN country TEXT");
+      console.log('[DB] Added country to widget_events');
+    }
+  } catch (e: any) {
+    console.log('[DB] country migration note:', e.message);
+  }
 }
 
 

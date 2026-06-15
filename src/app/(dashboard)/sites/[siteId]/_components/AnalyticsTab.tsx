@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Chart } from "react-google-charts";
 import {
   Loader2,
   RefreshCw,
@@ -658,7 +659,30 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
 
               {/* SECTION: GEOGRAPHY */}
               {activeSection === 'geo' && data.languages && data.countries && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {/* Map Component */}
+                  <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Карта відвідувань (Сесії)</h4>
+                    <div style={{ height: 400, background: 'var(--bg-tertiary)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                      <Chart
+                        chartType="GeoChart"
+                        width="100%"
+                        height="400px"
+                        data={[
+                          ["Країна", "Сесії"],
+                          ...data.countries.map((c: any) => [c.country_code || "Unknown", c.sessions])
+                        ]}
+                        options={{
+                          colorAxis: { colors: ['#e0e7ff', '#4f6ef7'] },
+                          backgroundColor: 'transparent',
+                          datalessRegionColor: 'var(--bg-secondary)',
+                          defaultColor: 'var(--bg-secondary)',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
                   {/* Languages Column */}
                   <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Мовні преференції</h4>
@@ -700,26 +724,35 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                         <thead>
                           <tr>
                             <th>Країна</th>
+                            <th style={{ textAlign: 'right' }}>Сесії</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>Конверсія %</th>
                           </tr>
                         </thead>
                         <tbody>
                           {data.countries.length === 0 ? (
                             <tr>
-                              <td colSpan={3} style={{ textAlign: 'center', padding: 12, color: 'var(--text-tertiary)' }}>Немає даних</td>
+                              <td colSpan={5} style={{ textAlign: 'center', padding: 12, color: 'var(--text-tertiary)' }}>Немає даних</td>
                             </tr>
                           ) : (
                             data.countries.map((item: any, idx: number) => (
                               <tr key={idx}>
                                 <td style={{ fontWeight: 600 }}>{item.country_code || 'Невідомо'}</td>
+                                <td style={{ textAlign: 'right' }}>{item.sessions}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
+                                    {item.conversion}%
+                                  </span>
+                                </td>
                               </tr>
                             ))
                           )}
                         </tbody>
                       </table>
+                    </div>
                     </div>
                   </div>
                 </div>
