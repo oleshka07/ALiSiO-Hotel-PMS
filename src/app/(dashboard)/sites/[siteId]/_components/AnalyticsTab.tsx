@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
+import { Chart } from "react-google-charts";
 import {
   Loader2,
   RefreshCw,
@@ -664,33 +664,21 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                   <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Карта відвідувань (Сесії)</h4>
                     <div style={{ height: 400, background: 'var(--bg-tertiary)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
-                      <ComposableMap projectionConfig={{ scale: 140 }}>
-                        <ZoomableGroup center={[0, 20]} zoom={1} minZoom={1} maxZoom={5}>
-                          <Geographies geography="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json">
-                            {({ geographies }: { geographies: any[] }) =>
-                              geographies.map((geo: any) => {
-                                const d = data.countries.find((s: any) => s.country_code === geo.id || (geo.properties && s.country_code === geo.properties.iso_a2));
-                                const sessions = d ? d.sessions : 0;
-                                const isTarget = sessions > 0;
-                                return (
-                                  <Geography
-                                    key={geo.rsmKey}
-                                    geography={geo}
-                                    fill={isTarget ? `rgba(79, 110, 247, ${Math.min(1, 0.2 + (sessions / 100))})` : "var(--bg-secondary)"}
-                                    stroke="var(--border-primary)"
-                                    strokeWidth={0.5}
-                                    style={{
-                                      default: { outline: "none" },
-                                      hover: { fill: "var(--accent-primary)", outline: "none", cursor: "pointer" },
-                                      pressed: { outline: "none" },
-                                    }}
-                                  />
-                                );
-                              })
-                            }
-                          </Geographies>
-                        </ZoomableGroup>
-                      </ComposableMap>
+                      <Chart
+                        chartType="GeoChart"
+                        width="100%"
+                        height="400px"
+                        data={[
+                          ["Країна", "Сесії"],
+                          ...data.countries.map((c: any) => [c.country_code || "Unknown", c.sessions])
+                        ]}
+                        options={{
+                          colorAxis: { colors: ['#e0e7ff', '#4f6ef7'] },
+                          backgroundColor: 'transparent',
+                          datalessRegionColor: 'var(--bg-secondary)',
+                          defaultColor: 'var(--bg-secondary)',
+                        }}
+                      />
                     </div>
                   </div>
 
