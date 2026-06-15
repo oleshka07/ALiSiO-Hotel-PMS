@@ -34,6 +34,7 @@ interface StmtInvoice {
   invoice_number: string;
   guest_name: string;
   needs_guest_name: boolean;
+  is_credit_note: boolean;
   description: string;
   amount: number;
   currency: string;
@@ -719,9 +720,15 @@ export default function DocumentsPage() {
                     </thead>
                     <tbody>
                       {stmtResult.map((inv) => (
-                        <tr key={inv.source_ref} style={inv.needs_guest_name ? { background: 'rgba(245,158,11,0.05)' } : undefined}>
+                        <tr key={inv.source_ref} style={
+                          inv.is_credit_note
+                            ? { background: 'rgba(220,38,38,0.04)' }
+                            : inv.needs_guest_name
+                              ? { background: 'rgba(245,158,11,0.05)' }
+                              : undefined
+                        }>
                           <td>
-                            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: 'var(--accent-primary)' }}>
+                            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: inv.is_credit_note ? '#dc2626' : 'var(--accent-primary)' }}>
                               {inv.invoice_number}
                             </code>
                           </td>
@@ -729,20 +736,22 @@ export default function DocumentsPage() {
                             <div style={{ fontWeight: 500, fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
                               {inv.needs_guest_name && <AlertTriangle size={12} color="#f59e0b" />}
                               {inv.needs_guest_name
-                                ? <em style={{ color: '#f59e0b', fontStyle: 'normal' }}>DOPLNIT JMÉNO</em>
+                                ? <em style={{ color: '#f59e0b', fontStyle: 'normal' }}>DOPLNIT JM&#201;NO</em>
                                 : (inv.guest_name || '—')
                               }
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv.description}</div>
                           </td>
                           <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{formatDate(inv.date)}</td>
-                          <td><span style={{ fontWeight: 700, fontSize: 14 }}>{formatAmount(inv.amount, inv.currency)}</span></td>
+                          <td><span style={{ fontWeight: 700, fontSize: 14, color: inv.is_credit_note ? '#dc2626' : undefined }}>{formatAmount(inv.amount, inv.currency)}</span></td>
                           <td>
-                            {inv.needs_guest_name
-                              ? <span className="badge" style={{ background: 'rgba(245,158,11,0.15)', color: '#b45309', fontSize: 10 }}>⚠ Ім&apos;я</span>
-                              : inv.created
-                                ? <span className="badge badge-success">✓ Нова</span>
-                                : <span className="badge" style={{ background: 'rgba(156,163,175,0.15)', color: '#9ca3af' }}>Існуюча</span>
+                            {inv.is_credit_note
+                              ? <span className="badge" style={{ background: 'rgba(220,38,38,0.12)', color: '#dc2626', fontSize: 10 }}>↩ Storno</span>
+                              : inv.needs_guest_name
+                                ? <span className="badge" style={{ background: 'rgba(245,158,11,0.15)', color: '#b45309', fontSize: 10 }}>⚠ Im&apos;ya</span>
+                                : inv.created
+                                  ? <span className="badge badge-success">✓ Нова</span>
+                                  : <span className="badge" style={{ background: 'rgba(156,163,175,0.15)', color: '#9ca3af' }}>Існуюча</span>
                             }
                           </td>
                           <td>

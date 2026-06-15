@@ -126,7 +126,7 @@ function getInvoiceForIsdoc(db: any, id: string) {
       i.amount, i.currency, i.status, i.reservation_id,
       i.custom_buyer_name, i.custom_buyer_ico, i.custom_buyer_dic,
       i.custom_buyer_address, i.custom_buyer_city, i.custom_buyer_country,
-      i.custom_description, i.is_custom,
+      i.custom_description, i.is_custom, i.is_credit_note, i.notes,
       r.check_in, r.check_out, r.nights, r.adults, r.children,
       u.name as unit_name, u.code as unit_code,
       g.first_name as guest_first_name, g.last_name as guest_last_name,
@@ -150,7 +150,7 @@ function getInvoiceForPdf(db: any, id: string) {
   return db.prepare(`
     SELECT
       i.id, i.invoice_number, i.issued_at, i.due_date,
-      i.amount, i.currency, i.is_custom,
+      i.amount, i.currency, i.is_custom, i.is_credit_note, i.notes,
       i.custom_buyer_name, i.custom_buyer_ico, i.custom_buyer_dic,
       i.custom_buyer_address, i.custom_buyer_city, i.custom_buyer_country,
       i.custom_description,
@@ -194,6 +194,12 @@ function buildIsdocBytes(row: any): Uint8Array {
     }
   }
 
+  const isCreditNote = row.is_credit_note === 1;
+  // Extract source ref from notes field (format: 'teya:teya_2026-05-31_...')
+  const originalDocRef = isCreditNote && row.notes
+    ? (row.notes as string).replace(/^[^:]+:/, '')
+    : undefined;
+
   const xml = generateIsdocXml({
     invoiceNumber:  row.invoice_number,
     issueDate:      (row.issued_at || new Date().toISOString()).slice(0, 10),
@@ -204,6 +210,8 @@ function buildIsdocBytes(row: any): Uint8Array {
     buyer,
     paymentMethod:  row.payment_method || undefined,
     paymentDueDate: (row.due_date || '').slice(0, 10) || undefined,
+    documentType:   isCreditNote ? 2 : 1,
+    originalDocRef,
   });
   return new TextEncoder().encode(xml);
 }
@@ -232,6 +240,8 @@ async function buildPdfBytes(row: any): Promise<Uint8Array> {
     }
   }
 
+  const isCreditNote = row.is_credit_note === 1;
+
   const buf = await generateInvoicePdf({
     invoiceNumber:  row.invoice_number as string,
     issueDate:      (row.issued_at as string).slice(0, 10),
@@ -241,6 +251,7 @@ async function buildPdfBytes(row: any): Promise<Uint8Array> {
     amount:         row.amount as number,
     currency:       (row.currency as string) || 'CZK',
     buyer,
+    isCreditNote,
   });
   return new Uint8Array(buf);
 }

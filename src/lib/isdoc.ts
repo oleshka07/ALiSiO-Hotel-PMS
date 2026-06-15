@@ -63,7 +63,7 @@ export interface IsdocInput {
   description: string;
   /**
    * Total amount (brutto = netto for neplátce DPH).
-   * Should be in `currency`.
+   * For credit notes (storno) this should be NEGATIVE.
    */
   amount: number;
   currency: string;
@@ -75,6 +75,17 @@ export interface IsdocInput {
   paymentDueDate?: string;
   /** Note printed in the <Note> field */
   note?: string;
+  /**
+   * ISDOC DocumentType:
+   *   1 = Faktura (regular invoice, default)
+   *   2 = Opravný doklad / Storno (credit note)
+   */
+  documentType?: 1 | 2;
+  /**
+   * Reference to original document — REQUIRED by ISDOC schema when documentType=2.
+   * Use the source_ref or original invoice number.
+   */
+  originalDocRef?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -114,12 +125,19 @@ export function generateIsdocXml(input: IsdocInput): string {
     paymentMethod,
     paymentDueDate = issueDate,
     note,
+    documentType = 1,
+    originalDocRef,
   } = input;
+
+  const isCreditNote = documentType === 2;
 
   // ISDOC ID: strip dashes from invoice number → "2026001"
   const isdocId = invoiceNumber.replace(/-/g, '');
-  const amountStr = fmt(amount);
-  const payCode = PAYMENT_CODE[paymentMethod || ''] || '42';
+  // For credit notes amounts are negative — show absolute value in payment block
+  const absAmount  = Math.abs(amount);
+  const amountStr  = fmt(absAmount);   // PaymentMeans uses positive
+  const signedStr  = fmt(amount);      // line item uses signed (negative)
+  const payCode    = PAYMENT_CODE[paymentMethod || ''] || '42';
 
   // ─── Buyer party block ───────────────────────────────────────────
   const buyerBlock = buyer ? `
@@ -181,18 +199,28 @@ export function generateIsdocXml(input: IsdocInput): string {
     </Payment>
   </PaymentMeans>`;
 
-  // ─── Full XML ────────────────────────────────────────────────────
+  // ─── OriginalDocumentReference block (required for credit notes) ─────────
+  const originalDocBlock = isCreditNote && originalDocRef ? `
+  <OriginalDocumentReference>
+    <ID>${esc(originalDocRef)}</ID>
+  </OriginalDocumentReference>` : '';
+
+  // ─── Full XML ────────────────────────────────────────────────
+  const noteText = isCreditNote
+    ? (note || `Storno platby – vrácení: ${description}`)
+    : (note || `Fakturujeme Vám: ${description}`);
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.2">
-  <DocumentType>1</DocumentType>
+  <DocumentType>${documentType}</DocumentType>
   <ID>${esc(isdocId)}</ID>
   <UUID>${uuid()}</UUID>
   <IssuingSystem>ALiSiO PMS</IssuingSystem>
   <IssueDate>${issueDate}</IssueDate>
   <TaxPointDate>${taxPointDate}</TaxPointDate>
   <VATApplicable>false</VATApplicable>
-  <ElectronicPossibilityAgreementReference/>
-  <Note>${esc(note || `Fakturujeme Vám: ${description}`)}</Note>
+  <ElectronicPossibilityAgreementReference/>${originalDocBlock}
+  <Note>${esc(noteText)}</Note>
   <LocalCurrencyCode>${esc(currency)}</LocalCurrencyCode>
   <CurrRate>1</CurrRate>
   <RefCurrRate>1</RefCurrRate>
@@ -228,11 +256,11 @@ export function generateIsdocXml(input: IsdocInput): string {
     <InvoiceLine>
       <ID>${uuid()}</ID>
       <InvoicedQuantity>1</InvoicedQuantity>
-      <LineExtensionAmount>${amountStr}</LineExtensionAmount>
-      <LineExtensionAmountTaxInclusive>${amountStr}</LineExtensionAmountTaxInclusive>
+      <LineExtensionAmount>${signedStr}</LineExtensionAmount>
+      <LineExtensionAmountTaxInclusive>${signedStr}</LineExtensionAmountTaxInclusive>
       <LineExtensionTaxAmount>0.00</LineExtensionTaxAmount>
-      <UnitPrice>${amountStr}</UnitPrice>
-      <UnitPriceTaxInclusive>${amountStr}</UnitPriceTaxInclusive>
+      <UnitPrice>${signedStr}</UnitPrice>
+      <UnitPriceTaxInclusive>${signedStr}</UnitPriceTaxInclusive>
       <ClassifiedTaxCategory>
         <Percent>0</Percent>
         <VATCalculationMethod>0</VATCalculationMethod>
@@ -245,15 +273,15 @@ export function generateIsdocXml(input: IsdocInput): string {
   </InvoiceLines>
   <TaxTotal>
     <TaxSubTotal>
-      <TaxableAmount>${amountStr}</TaxableAmount>
+      <TaxableAmount>${signedStr}</TaxableAmount>
       <TaxAmount>0.00</TaxAmount>
-      <TaxInclusiveAmount>${amountStr}</TaxInclusiveAmount>
+      <TaxInclusiveAmount>${signedStr}</TaxInclusiveAmount>
       <AlreadyClaimedTaxableAmount>0.00</AlreadyClaimedTaxableAmount>
       <AlreadyClaimedTaxAmount>0.00</AlreadyClaimedTaxAmount>
       <AlreadyClaimedTaxInclusiveAmount>0.00</AlreadyClaimedTaxInclusiveAmount>
-      <DifferenceTaxableAmount>${amountStr}</DifferenceTaxableAmount>
+      <DifferenceTaxableAmount>${signedStr}</DifferenceTaxableAmount>
       <DifferenceTaxAmount>0.00</DifferenceTaxAmount>
-      <DifferenceTaxInclusiveAmount>${amountStr}</DifferenceTaxInclusiveAmount>
+      <DifferenceTaxInclusiveAmount>${signedStr}</DifferenceTaxInclusiveAmount>
       <TaxCategory>
         <Percent>0</Percent>
         <VATApplicable>false</VATApplicable>
@@ -263,8 +291,8 @@ export function generateIsdocXml(input: IsdocInput): string {
     <TaxAmount>0.00</TaxAmount>
   </TaxTotal>
   <LegalMonetaryTotal>
-    <TaxExclusiveAmount>${amountStr}</TaxExclusiveAmount>
-    <TaxInclusiveAmount>${amountStr}</TaxInclusiveAmount>
+    <TaxExclusiveAmount>${signedStr}</TaxExclusiveAmount>
+    <TaxInclusiveAmount>${signedStr}</TaxInclusiveAmount>
     <AlreadyClaimedTaxExclusiveAmount>0.00</AlreadyClaimedTaxExclusiveAmount>
     <AlreadyClaimedTaxInclusiveAmount>0.00</AlreadyClaimedTaxInclusiveAmount>
     <DifferenceTaxExclusiveAmount>${amountStr}</DifferenceTaxExclusiveAmount>

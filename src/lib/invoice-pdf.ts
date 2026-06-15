@@ -94,9 +94,13 @@ export interface InvoicePdfInput {
   dueDate?:       string;   // YYYY-MM-DD
   paymentMethod?: string;
   description:    string;   // used as single item description if no items[]
-  amount:         number;   // total amount
+  amount:         number;   // total amount (negative for credit notes)
   currency?:      string;
   items?:         InvoiceItem[];  // optional multi-item list
+  /** True when this is a storno/credit note (REFUND transaction) */
+  isCreditNote?:  boolean;
+  /** Reference to the original transaction (shown in note/header for credit notes) */
+  originalInvoiceRef?: string;
   buyer?: {
     name?:    string;
     ico?:     string;
@@ -138,6 +142,7 @@ function textHeight(doc: PDFKit.PDFDocument, text: string, width: number, fontSi
 // ─── PDF builder ──────────────────────────────────────────────────────────────
 export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const isCreditNote = data.isCreditNote === true;
     const currency     = data.currency     || 'CZK';
     const payMethod    = data.paymentMethod || 'Příkazem';
     const varSymbol    = data.invoiceNumber.replace(/-/g, '');
@@ -149,14 +154,16 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
       ? data.items
       : [{ description: data.description, quantity: 1, total: data.amount }];
 
+    const docTitle = isCreditNote ? `Storno faktura ${data.invoiceNumber}` : `Faktura ${data.invoiceNumber}`;
+
     const doc = new PDFDocument({
       size: [PW, PH],
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
       info: {
-        Title:   `Faktura ${data.invoiceNumber}`,
+        Title:   docTitle,
         Author:  SUPPLIER.name,
         Creator: 'ALiSiO PMS',
-        Subject: 'Faktura',
+        Subject: isCreditNote ? 'Storno faktura' : 'Faktura',
       },
     });
 
@@ -199,8 +206,13 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
     B(13).fillColor(BLACK)
       .text(SUPPLIER.name, ML, HDR_Y, { lineBreak: false });
 
-    B(13).fillColor(BLUE)
-      .text(`FAKTURA č. ${data.invoiceNumber}`, ML, HDR_Y, {
+    // STORNO FAKTURA shown in red; regular FAKTURA in BLUE
+    const headingColor = isCreditNote ? '#c62828' : BLUE;
+    const headingText  = isCreditNote
+      ? `STORNO FAKTURA č. ${data.invoiceNumber}`
+      : `FAKTURA č. ${data.invoiceNumber}`;
+    B(13).fillColor(headingColor)
+      .text(headingText, ML, HDR_Y, {
         width: CR - ML, align: 'right', lineBreak: false,
       });
 

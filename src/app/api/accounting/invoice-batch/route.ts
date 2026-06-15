@@ -100,11 +100,12 @@ export interface BatchRow {
   source_ref: string;
   guest_name: string;
   needs_guest_name?: boolean; // true → amount ≥ 10 000 CZK, buyer name unknown
+  is_credit_note?: boolean;   // true → REFUND/storno transaction
   listing: string;
   check_in: string;
   check_out: string;
   description: string;
-  amount: number;
+  amount: number;             // negative for credit notes
   currency: string;
   date: string;
   op_type: 'income' | 'expense';
@@ -287,9 +288,10 @@ function parseTeya(csv: string): BatchRow[] {
     const status = (cols[iStatus] ?? '').trim().toUpperCase();
     const type   = (cols[iType]   ?? '').trim().toUpperCase();
 
-    // Only SUCCEEDED payments — skip FAILED, PENDING, REVERSED, REFUND
+    // Only SUCCEEDED payments — skip FAILED, PENDING, REVERSED
     if (status !== 'SUCCEEDED') continue;
-    if (type === 'REFUND') continue;
+    // REFUND rows become credit notes (storno faktury) — do NOT skip them
+    const isCreditNote = type === 'REFUND';
 
     const sales = parseNum(cols[iSales] ?? '0');
     if (sales <= 0) continue;
@@ -301,11 +303,12 @@ function parseTeya(csv: string): BatchRow[] {
     const date    = teyaDate(rawDate);
 
     // Unique ref: date + device + store + sales + counter (for same-day duplicates)
-    const refBase = `teya_${date}_${devId || store}_${sales}`;
+    // Credit notes get an extra '_REFUND' suffix for deduplication
+    const refBase = `teya_${date}_${devId || store}_${sales}${isCreditNote ? '_REFUND' : ''}`;
     refCounts[refBase] = (refCounts[refBase] ?? 0) + 1;
     const ref = refCounts[refBase] > 1 ? `${refBase}_${refCounts[refBase]}` : refBase;
 
-    // Payment purpose (description for invoice)
+    // Payment purpose — credit notes prefix with "Storno – "
     const purpose = teyaPurpose(sales);
 
     // Guest name logic
@@ -417,33 +420,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       db.prepare(`
         INSERT INTO invoices
           (id, invoice_number, issued_at, due_date, amount, currency, status, notes, is_custom,
-           custom_buyer_name, custom_description)
-        VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, 1, ?, ?)
+           custom_buyer_name, custom_description, is_credit_note)
+        VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, 1, ?, ?, ?)
       `).run(
         invId, invNum, today, due,
         row.amount, row.currency,
         noteKey,
         buyerName,
         row.description,
+        row.is_credit_note ? 1 : 0,
       );
 
       return { id: invId, number: invNum, created: true };
     });
 
     for (const row of rows) {
-      if (row.op_type !== 'income') continue; // skip expenses/refunds
+      // Process both income rows AND credit notes (refunds)
+      if (row.op_type !== 'income' && !row.is_credit_note) continue;
       try {
         const { id, number, created } = createInvoice(row) as { id: string; number: string; created: boolean };
         results.push({
-          source_ref:      row.source_ref,
-          invoice_id:      id,
-          invoice_number:  number,
-          guest_name:      row.guest_name,
+          source_ref:       row.source_ref,
+          invoice_id:       id,
+          invoice_number:   number,
+          guest_name:       row.guest_name,
           needs_guest_name: row.needs_guest_name ?? false,
-          description:     row.description,
-          amount:          row.amount,
-          currency:        row.currency,
-          date:            row.date,
+          is_credit_note:   row.is_credit_note ?? false,
+          description:      row.description,
+          amount:           row.amount,
+          currency:         row.currency,
+          date:             row.date,
           created,
         });
       } catch (e: any) {
