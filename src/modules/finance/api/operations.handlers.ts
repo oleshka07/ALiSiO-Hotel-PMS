@@ -203,60 +203,55 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const tagMap = getBatchTags(db, rows.map((r: any) => r.id));
     const items = rows.map((r: any) => ({ ...r, tags: tagMap[r.id] || [] }));
 
-    // Running balance per account: for every operation, compute the account
-    // balance AFTER that transaction — like Finmap's "Рахунок/залишок" column.
-    // Works for all operations regardless of account filter.
+    // Running balance per account: for every visible operation, show the
+    // account balance AFTER that transaction — like Finmap's "Рахунок/залишок".
+    // We query ALL operations per account (not just visible ones) to ensure
+    // correctness regardless of pagination, date filters, or op_type filters.
     const allAccountIds = new Set<string>();
     for (const item of items) {
       if (item.account_to_id) allAccountIds.add(item.account_to_id);
       if (item.account_from_id) allAccountIds.add(item.account_from_id);
     }
 
-    if (allAccountIds.size > 0) {
-      // Fetch initial balances for all involved accounts
-      const acctPh = [...allAccountIds].map(() => '?').join(',');
-      const acctRows = db.prepare(
-        `SELECT id, initial_balance FROM finance_accounts WHERE id IN (${acctPh})`
-      ).all(...allAccountIds) as any[];
-      const initialMap: Record<string, number> = {};
-      for (const a of acctRows) initialMap[a.id] = Number(a.initial_balance || 0);
+    // Build a set of visible operation IDs for fast lookup
+    const visibleIds = new Set(items.map((i: any) => i.id));
 
-      // Opening balance per account = initial + all completed ops BEFORE the date window
-      if (from) {
-        const openingRows = db.prepare(`
-          SELECT
-            acct_id,
-            COALESCE(SUM(signed), 0) AS total
-          FROM (
-            SELECT account_to_id AS acct_id, amount AS signed
-            FROM fin_operations
-            WHERE account_to_id IN (${acctPh}) AND status = 'completed' AND paid_at < ?
-            UNION ALL
-            SELECT account_from_id AS acct_id, -amount AS signed
-            FROM fin_operations
-            WHERE account_from_id IN (${acctPh}) AND status = 'completed' AND paid_at < ?
-          )
-          GROUP BY acct_id
-        `).all(...allAccountIds, from, ...allAccountIds, from) as any[];
-        for (const r of openingRows) {
-          initialMap[r.acct_id] = (initialMap[r.acct_id] || 0) + Number(r.total);
+    for (const acctId of allAccountIds) {
+      const acct = db.prepare(
+        'SELECT initial_balance FROM finance_accounts WHERE id = ?'
+      ).get(acctId) as any;
+      if (!acct) continue;
+
+      // Get ALL operations touching this account, in chronological order
+      const allOps = db.prepare(`
+        SELECT id, account_to_id, account_from_id, amount
+        FROM fin_operations
+        WHERE (account_to_id = ? OR account_from_id = ?)
+          AND status = 'completed'
+        ORDER BY paid_at ASC, created_at ASC
+      `).all(acctId, acctId) as any[];
+
+      // Walk through ALL ops computing cumulative balance
+      let running = Number(acct.initial_balance || 0);
+      const balanceMap: Record<string, number> = {};
+      for (const op of allOps) {
+        if (op.account_to_id === acctId) running += op.amount;
+        if (op.account_from_id === acctId) running -= op.amount;
+        // Only store for operations that are in the visible result set
+        if (visibleIds.has(op.id)) {
+          balanceMap[op.id] = +running.toFixed(2);
         }
       }
 
-      // Walk items oldest-first, accumulating running balance per account
-      const running: Record<string, number> = { ...initialMap };
-      const reversed = [...items].reverse();
-      for (const item of reversed) {
-        if (item.account_to_id) {
-          running[item.account_to_id] = (running[item.account_to_id] || 0) + item.amount;
-          item.balance_after_to = +running[item.account_to_id].toFixed(2);
+      // Attach to visible items
+      for (const item of items) {
+        if (item.account_to_id === acctId && balanceMap[item.id] != null) {
+          item.balance_after_to = balanceMap[item.id];
         }
-        if (item.account_from_id) {
-          running[item.account_from_id] = (running[item.account_from_id] || 0) - item.amount;
-          item.balance_after_from = +running[item.account_from_id].toFixed(2);
+        if (item.account_from_id === acctId && balanceMap[item.id] != null) {
+          item.balance_after_from = balanceMap[item.id];
         }
       }
-      reversed.reverse(); // back to DESC order
     }
 
     return NextResponse.json({ items, total: totalRow.n, page, pageSize });
