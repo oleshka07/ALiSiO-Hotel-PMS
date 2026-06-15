@@ -114,6 +114,7 @@ export default function BookingWizard() {
   const [showPriceList, setShowPriceList] = useState(false);
   const [prices, setPrices] = useState<PriceItem[]>([]);
   const [siteConfig, setSiteConfig] = useState<{
+    id: string;
     fbPixelId?: string | null;
     ga4Id?: string | null;
     tiktokPixelId?: string | null;
@@ -161,18 +162,16 @@ export default function BookingWizard() {
   });
 
   const sendWidgetEvent = useCallback((eventType: string, extra: Record<string, any> = {}) => {
-    if (typeof window === 'undefined') return;
-    const siteId = new URLSearchParams(window.location.search).get('site_id');
-    if (!siteId) return;
+    if (typeof window === 'undefined' || !siteConfig?.id) return;
     fetch('/api/widget/event', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        siteId, sessionId, eventType, page: '/book',
+        siteId: siteConfig.id, sessionId, eventType, page: '/book',
         utmParams: getUtmParams(), ...extra
       }),
       keepalive: true
     }).catch(() => {});
-  }, [sessionId]);
+  }, [sessionId, siteConfig?.id]);
 
   const hasSentOpened = useRef(false);
   useEffect(() => {
@@ -202,7 +201,7 @@ export default function BookingWizard() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return;
-        setSiteConfig({ fbPixelId: data.fbPixelId, ga4Id: data.ga4Id, tiktokPixelId: data.tiktokPixelId, returnUrl: data.returnUrl });
+        setSiteConfig({ id: data.id, fbPixelId: data.fbPixelId, ga4Id: data.ga4Id, tiktokPixelId: data.tiktokPixelId, returnUrl: data.returnUrl });
         if (data.fbPixelId) injectFbPixel(data.fbPixelId);
         if (data.ga4Id) injectGa4(data.ga4Id);
         if (data.tiktokPixelId) injectTiktokPixel(data.tiktokPixelId);
@@ -277,10 +276,19 @@ export default function BookingWizard() {
         url.searchParams.set('currency', 'CZK');
         if (reservationId) url.searchParams.set('reservation_id', reservationId);
         url.searchParams.set('event_id', eventId);
+        
+        if (state.checkIn) url.searchParams.set('checkin', state.checkIn);
+        if (state.checkOut) url.searchParams.set('checkout', state.checkOut);
+        if (state.accommodationType) url.searchParams.set('type', state.accommodationType);
+        if (state.accommodationData) url.searchParams.set('options', JSON.stringify(state.accommodationData));
+        if (state.contact?.name) url.searchParams.set('name', state.contact.name);
+        if (state.contact?.phone) url.searchParams.set('phone', encodeURIComponent(state.contact.phone));
+        if (state.contact?.email) url.searchParams.set('email', state.contact.email);
+
         setTimeout(() => { window.location.href = url.toString(); }, 800);
       } catch { /* invalid URL — stay on page */ }
     }
-  }, [paymentStatus, siteConfig]);
+  }, [paymentStatus, siteConfig, state]);
 
   const resetAll = useCallback(() => {
     setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
@@ -301,8 +309,9 @@ export default function BookingWizard() {
   const createDraft = async (contact: { name: string; email: string; phone: string }) => {
     const extrasTotal = state.extras.reduce((s, e) => s + e.price, 0);
     const grandTotal = state.total + extrasTotal;
-    const siteId = new URLSearchParams(window.location.search).get('site_id') || 'kemp-carlsbad';
     const utmParams = getUtmParams();
+    const resolvedSiteId = siteConfig?.id || new URLSearchParams(window.location.search).get('site_id') || 'kemp-carlsbad';
+    
     const res = await fetch('/api/booking/drafts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -313,9 +322,9 @@ export default function BookingWizard() {
         guest_email: contact.email, guest_phone: contact.phone,
         total_price: grandTotal, deposit_amount: grandTotal,
         // ── Attribution ──
-        source: `widget:${siteId}`,
+        source: `widget:${resolvedSiteId}`,
         source_url: document.referrer || window.location.href,
-        site_id: siteId,
+        site_id: resolvedSiteId,
         booked_at: new Date().toISOString(),
         utm_params: Object.keys(utmParams).length > 0 ? utmParams : undefined,
       }),
