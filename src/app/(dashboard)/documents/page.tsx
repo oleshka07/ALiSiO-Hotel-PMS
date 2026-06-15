@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -494,136 +494,188 @@ export default function DocumentsPage() {
           ))}
         </div>
 
-        {/* ════════════════════════════════════════════════════════
-            TAB: INVOICES
-        ════════════════════════════════════════════════════════ */}
-        {activeTab === 'invoices' && (
-          <>
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
-              <div className="card" style={{ padding: '16px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(79,110,247,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Receipt size={18} color="var(--accent-primary)" />
+        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            TAB: INVOICES â€” All invoices with search + source filter
+        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {activeTab === 'invoices' && (() => {
+          // Source badge config
+          const sourceConfig: Record<string, { label: string; color: string; bg: string }> = {
+            airbnb:  { label: 'Airbnb',  color: '#e61e4d', bg: 'rgba(230,30,77,0.1)'   },
+            booking: { label: 'Booking', color: '#003580', bg: 'rgba(0,53,128,0.1)'     },
+            teya:    { label: 'Teya',    color: '#00a699', bg: 'rgba(0,166,153,0.1)'    },
+            manual:  { label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
+            pms:     { label: 'PMS',     color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
+          };
+          const sourcePills = [
+            { id: 'all',     label: 'Ð£ÑÑ–'     },
+            { id: 'airbnb',  label: 'Airbnb'  },
+            { id: 'booking', label: 'Booking' },
+            { id: 'teya',    label: 'Teya'    },
+            { id: 'manual',  label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ'  },
+            { id: 'pms',     label: 'PMS'     },
+          ] as const;
+          return (
+            <>
+              {/* Stats row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
+                <div className="card" style={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(79,110,247,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Receipt size={18} color="var(--accent-primary)" />
+                    </div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Ð’ÑÑŒÐ¾Ð³Ð¾ Ñ„Ð°ÐºÑ‚ÑƒÑ€</span>
                   </div>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Всього інвойсів</span>
+                  <div style={{ fontSize: 28, fontWeight: 700 }}>{allInvoices.length}</div>
                 </div>
-                <div style={{ fontSize: 28, fontWeight: 700 }}>{invoices.length}</div>
-              </div>
-              <div className="card" style={{ padding: '16px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CheckCircle size={18} color="var(--accent-success)" />
+                <div className="card" style={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(230,30,77,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Banknote size={18} color="#e61e4d" />
+                    </div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Airbnb + Booking + Teya</span>
                   </div>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Виставлено</span>
-                </div>
-                <div style={{ fontSize: 28, fontWeight: 700 }}>{invoices.filter(i => i.status === 'issued').length}</div>
-              </div>
-              <div className="card" style={{ padding: '16px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(79,110,247,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <FileText size={18} color="var(--accent-primary)" />
+                  <div style={{ fontSize: 28, fontWeight: 700 }}>
+                    {allInvoices.filter(i => ['airbnb','booking','teya'].includes(i.source)).length}
                   </div>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Сума (поточний рік)</span>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>
-                  {formatAmount(invoices.filter(i => i.issued_at?.startsWith(new Date().getFullYear().toString()) && i.status === 'issued').reduce((s, i) => s + i.amount, 0))}
+                <div className="card" style={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(220,38,38,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileText size={18} color="#dc2626" />
+                    </div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Storno / Refund</span>
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#dc2626' }}>
+                    {allInvoices.filter(i => i.is_credit_note).length}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Info banner */}
-            <div style={{ background: 'rgba(79,110,247,0.08)', border: '1px solid rgba(79,110,247,0.2)', borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, fontSize: 13, color: 'var(--text-secondary)' }}>
-              <AlertCircle size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-              <span>
-                Інвойси (Faktury) генеруються <strong>автоматично</strong> після позначення бронювання як{' '}
-                <strong>«Оплачено»</strong>. Kemp Carlsbad s.r.o. — <strong>neplátce DPH</strong>.
-                Для збереження PDF — відкрийте інвойс та натисніть «Stáhnout PDF / Tisk» у браузері.
-              </span>
-            </div>
-
-            {/* Invoices Table */}
-            {invLoading ? (
-              <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                <RefreshCw size={24} className="spin" style={{ marginBottom: 12 }} />
-                <div>Завантаження документів...</div>
-              </div>
-            ) : invError ? (
-              <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--accent-danger)' }}>
-                <AlertCircle size={24} style={{ marginBottom: 8 }} /><div>{invError}</div>
-              </div>
-            ) : invoices.length === 0 ? (
-              <div className="card" style={{ padding: 56, textAlign: 'center' }}>
-                <Receipt size={40} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Документів ще немає</div>
-                <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                  Інвойс буде створено автоматично, коли бронювання буде позначено як оплачене.
+              {/* Search + filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 180 }}>
+                  <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
+                  <input
+                    type="text"
+                    placeholder="ÐŸÐ¾ÑˆÑƒÐº: Ñ–Ð¼'Ñ, Ð½Ð¾Ð¼ÐµÑ€ Ñ„Ð°ÐºÑ‚ÑƒÑ€Ð¸, ÑÑƒÐ¼Ð°â€¦"
+                    value={invSearch}
+                    onChange={e => setInvSearch(e.target.value)}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      paddingLeft: 32, paddingRight: invSearch ? 28 : 10,
+                      paddingTop: 7, paddingBottom: 7,
+                      border: '1.5px solid var(--border-primary)',
+                      borderRadius: 8, fontSize: 13,
+                      background: 'var(--surface)', color: 'var(--text-primary)',
+                      outline: 'none',
+                    }}
+                  />
+                  {invSearch && (
+                    <button onClick={() => setInvSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, display: 'flex' }}>
+                      <XCircle size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className="table-wrapper">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Номер</th>
-                      <th>Гість</th>
-                      <th>Об&apos;єкт</th>
-                      <th>Сума</th>
-                      <th>Дата виставлення</th>
-                      <th>Термін оплати</th>
-                      <th>Статус</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoices.map((inv) => (
-                      <tr key={inv.id}>
-                        <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <FileText size={14} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-                            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: 'var(--accent-primary)' }}>
-                              {inv.invoice_number}
-                            </code>
-                          </span>
-                        </td>
-                        <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <User size={13} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-                            <span style={{ fontWeight: 500 }}>{inv.guest_first_name} {inv.guest_last_name}</span>
-                          </span>
-                        </td>
-                        <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{inv.unit_name}</td>
-                        <td><span style={{ fontWeight: 700, fontSize: 14 }}>{formatAmount(inv.amount, inv.currency)}</span></td>
-                        <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 13 }}>
-                            <Calendar size={12} />{formatDate(inv.issued_at)}
-                          </span>
-                        </td>
-                        <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{formatDate(inv.due_date)}</td>
-                        <td>
-                          {inv.status === 'issued'
-                            ? <span className="badge badge-success">✓ Виставлено</span>
-                            : <span className="badge badge-danger">Скасовано</span>
-                          }
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути / Друк / PDF" onClick={() => openInvoice(inv.id)}>
-                              <Eye size={14} />
-                            </button>
-                            <button className="btn btn-sm btn-ghost btn-icon" title="Завантажити HTML" onClick={() => downloadInvoice(inv.id, inv.invoice_number)}>
-                              <Download size={14} />
-                            </button>
-                          </div>
-                        </td>
+
+              {/* Source filter pills */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                {sourcePills.map(pill => {
+                  const active = invSourceFilter === pill.id;
+                  const cfg = sourceConfig[pill.id as keyof typeof sourceConfig];
+                  const color = cfg?.color || 'var(--accent-primary)';
+                  return (
+                    <button key={pill.id} onClick={() => setInvSourceFilter(pill.id as typeof invSourceFilter)} style={{ padding: '5px 14px', borderRadius: 20, border: active ? `2px solid ${color}` : '2px solid var(--border-primary)', background: active ? (cfg?.bg || 'rgba(79,110,247,0.1)') : 'transparent', color: active ? color : 'var(--text-secondary)', fontWeight: active ? 700 : 400, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
+                      {pill.label}
+                    </button>
+                  );
+                })}
+                {allInvLoading && <RefreshCw size={14} className="spin" style={{ color: 'var(--text-tertiary)' }} />}
+              </div>
+
+              {/* Table */}
+              {allInvError ? (
+                <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--accent-danger)' }}>
+                  <AlertCircle size={24} style={{ marginBottom: 8 }} /><div>{allInvError}</div>
+                </div>
+              ) : !allInvLoading && allInvoices.length === 0 ? (
+                <div className="card" style={{ padding: 56, textAlign: 'center' }}>
+                  <Receipt size={40} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
+                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+                    {invSearch || invSourceFilter !== 'all' ? 'ÐÑ–Ñ‡Ð¾Ð³Ð¾ Ð½Ðµ Ð·Ð½Ð°Ð¹Ð´ÐµÐ½Ð¾' : 'Ð¤Ð°ÐºÑ‚ÑƒÑ€ Ñ‰Ðµ Ð½ÐµÐ¼Ð°Ñ”'}
+                  </div>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+                    {invSearch ? `Ð—Ð° Ð·Ð°Ð¿Ð¸Ñ‚Ð¾Ð¼ Â«${invSearch}Â»` : 'Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶Ñ‚Ðµ Ð²Ð¸Ð¿Ð¸ÑÐºÐ¸ Ñƒ Ð²ÐºÐ»Ð°Ð´Ñ†Ñ– Â«Ð’Ð¸Ð¿Ð¸ÑÐºÐ¸Â»'}
+                  </div>
+                </div>
+              ) : (
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Ð¤Ð°ÐºÑ‚ÑƒÑ€Ð° â„–</th>
+                        <th>Ð”Ð¶ÐµÑ€ÐµÐ»Ð¾</th>
+                        <th>ÐŸÐ¾ÐºÑƒÐ¿ÐµÑ†ÑŒ / ÐŸÑ€Ð¸Ð·Ð½Ð°Ñ‡ÐµÐ½Ð½Ñ</th>
+                        <th>Ð¡ÑƒÐ¼Ð°</th>
+                        <th>Ð”Ð°Ñ‚Ð°</th>
+                        <th></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
+                    </thead>
+                    <tbody>
+                      {allInvoices.map(inv => {
+                        const srcCfg = sourceConfig[inv.source] || sourceConfig.manual;
+                        const isCreditNote = !!inv.is_credit_note;
+                        return (
+                          <tr key={inv.id} style={isCreditNote ? { background: 'rgba(220,38,38,0.04)' } : undefined}>
+                            <td>
+                              <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: isCreditNote ? '#dc2626' : 'var(--accent-primary)' }}>
+                                {inv.invoice_number}
+                              </code>
+                              {isCreditNote && <span style={{ marginLeft: 5, fontSize: 10, color: '#dc2626', fontWeight: 700 }}>STORNO</span>}
+                            </td>
+                            <td>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: srcCfg.bg, color: srcCfg.color }}>
+                                {srcCfg.label}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.buyer_name || 'â€”'}</div>
+                              {(inv.custom_description || inv.unit_name) && (
+                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                                  {inv.custom_description || inv.unit_name}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <span style={{ fontWeight: 700, fontSize: 14, color: isCreditNote ? '#dc2626' : undefined }}>
+                                {formatAmount(inv.amount, inv.currency)}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Calendar size={11} />{formatDate(inv.issued_at)}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                <button className="btn btn-sm btn-ghost btn-icon" title="PDF" onClick={() => downloadPdf(inv.id, inv.invoice_number)}>
+                                  <FileDown size={14} />
+                                </button>
+                                <button className="btn btn-sm btn-ghost btn-icon" title="ISDOC" onClick={() => downloadIsdoc(inv.id, inv.invoice_number)}>
+                                  <FileCode size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* ════════════════════════════════════════════════════════
             TAB: STATEMENTS — Airbnb / Booking / Teya CSV → Invoices
