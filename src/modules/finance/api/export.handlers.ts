@@ -37,10 +37,10 @@ export async function exportOperations(request: NextRequest): Promise<Response> 
   try {
     const format = getFormat(request);
 
-    // Force pageSize=500 for export (max allowed by listOperations)
+    // Force pageSize=10000 for export (max allowed by listOperations)
     const fakeUrl = new URL(request.nextUrl.toString());
     fakeUrl.searchParams.delete('format');
-    fakeUrl.searchParams.set('pageSize', '500');
+    fakeUrl.searchParams.set('pageSize', '10000');
     fakeUrl.searchParams.set('page', '1');
     const fakeReq = new NextRequest(fakeUrl.toString());
 

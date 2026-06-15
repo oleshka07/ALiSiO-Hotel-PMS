@@ -85,10 +85,11 @@ export default function OperationsPage() {
   // History modal: holds the id of the operation whose audit trail is open.
   const [historyOpId, setHistoryOpId] = useState<string | null>(null);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState(0);
 
   const fetchOps = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ from, to, pageSize: '500' });
+    const params = new URLSearchParams({ from, to, pageSize: '5000' });
     if (filterType) params.set('op_type', filterType);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
     if (selectedAccountIds.size > 0) params.set('account_id', [...selectedAccountIds].join(','));
@@ -97,6 +98,7 @@ export default function OperationsPage() {
       const json = await res.json();
       const items: Operation[] = json.items || [];
       setOps(items);
+      setTotal(json.total || items.length);
       // Bulk-fetch attachment counts for visible ops (📎 badge)
       if (items.length > 0) {
         const ids = items.map((o) => o.id).join(',');
@@ -330,7 +332,9 @@ export default function OperationsPage() {
             <span style={{ fontWeight: 600, marginLeft: 'auto' }}>
               Чистий потік: <b style={{ color: netTotal >= 0 ? '#22c55e' : '#ef4444' }}>{formatMoney(netTotal, 'CZK')}</b>
             </span>
-            <span style={{ color: 'var(--text-secondary)' }}>Операцій: {ops.length}</span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Операцій: {ops.length}{total > ops.length && <b style={{ color: '#f59e0b' }}> з {total}</b>}
+            </span>
           </div>
 
           {loading ? (

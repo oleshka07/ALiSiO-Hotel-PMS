@@ -148,7 +148,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     // needs_review=1 → only ops the resolver flagged for admin triage.
     const needsReviewOnly = sp.get('needs_review') === '1';
     const page = Math.max(1, parseInt(sp.get('page') || '1', 10));
-    const pageSize = Math.min(500, Math.max(1, parseInt(sp.get('pageSize') || '50', 10)));
+    const pageSize = Math.min(10000, Math.max(1, parseInt(sp.get('pageSize') || '50', 10)));
 
     const where: string[] = ['o.organization_id = ?'];
     const params: any[] = [orgId];
@@ -207,6 +207,9 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     // account balance AFTER that transaction — like Finmap's "Рахунок/залишок".
     // We query ALL operations per account (not just visible ones) to ensure
     // correctness regardless of pagination, date filters, or op_type filters.
+    // Running balance per account — only when result set is manageable
+    // (for very large result sets, skip to avoid slow queries)
+    if (items.length > 0 && items.length <= 2000) {
     const allAccountIds = new Set<string>();
     for (const item of items) {
       if (item.account_to_id) allAccountIds.add(item.account_to_id);
@@ -257,6 +260,8 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         }
       }
     }
+
+    } // end running balance guard
 
     return NextResponse.json({ items, total: totalRow.n, page, pageSize });
   } catch (error: any) {
