@@ -218,25 +218,29 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
 
     for (const acctId of allAccountIds) {
       const acct = db.prepare(
-        'SELECT initial_balance FROM finance_accounts WHERE id = ?'
+        'SELECT initial_balance, currency FROM finance_accounts WHERE id = ?'
       ).get(acctId) as any;
       if (!acct) continue;
 
-      // Get ALL operations touching this account, in chronological order
+      // Get ALL operations touching this account, in chronological order.
+      // Use the SAME currency-aware amount as the sidebar balance:
+      //   CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
       const allOps = db.prepare(`
-        SELECT id, account_to_id, account_from_id, amount
+        SELECT id, account_to_id, account_from_id,
+          CASE WHEN currency = ? THEN amount ELSE amount_company END AS effective_amount
         FROM fin_operations
         WHERE (account_to_id = ? OR account_from_id = ?)
           AND status = 'completed'
         ORDER BY paid_at ASC, created_at ASC
-      `).all(acctId, acctId) as any[];
+      `).all(acct.currency, acctId, acctId) as any[];
 
       // Walk through ALL ops computing cumulative balance
       let running = Number(acct.initial_balance || 0);
       const balanceMap: Record<string, number> = {};
       for (const op of allOps) {
-        if (op.account_to_id === acctId) running += op.amount;
-        if (op.account_from_id === acctId) running -= op.amount;
+        const amt = Number(op.effective_amount || 0);
+        if (op.account_to_id === acctId) running += amt;
+        if (op.account_from_id === acctId) running -= amt;
         // Only store for operations that are in the visible result set
         if (visibleIds.has(op.id)) {
           balanceMap[op.id] = +running.toFixed(2);

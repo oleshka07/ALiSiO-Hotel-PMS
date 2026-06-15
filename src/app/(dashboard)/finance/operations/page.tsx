@@ -21,6 +21,8 @@ interface Operation {
   account_to_name: string | null;
   account_from_color: string | null;
   account_to_color: string | null;
+  account_from_currency: string | null;
+  account_to_currency: string | null;
   category_id: string | null;
   category_name: string | null;
   category_icon: string | null;
@@ -385,9 +387,9 @@ export default function OperationsPage() {
                             <>
                               <div>{o.account_from_name} → {o.account_to_name}</div>
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
-                                {o.balance_after_from != null && <span>{formatMoney(o.balance_after_from, o.currency)}</span>}
+                                {o.balance_after_from != null && <span>{formatMoney(o.balance_after_from, o.account_from_currency || o.currency)}</span>}
                                 {o.balance_after_from != null && o.balance_after_to != null && <span> → </span>}
-                                {o.balance_after_to != null && <span>{formatMoney(o.balance_after_to, o.currency)}</span>}
+                                {o.balance_after_to != null && <span>{formatMoney(o.balance_after_to, o.account_to_currency || o.currency)}</span>}
                               </div>
                             </>
                           ) : (
@@ -395,7 +397,10 @@ export default function OperationsPage() {
                               <div>{o.account_from_name || o.account_to_name || '—'}</div>
                               {(o.balance_after_to != null || o.balance_after_from != null) && (
                                 <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>
-                                  {formatMoney((o.balance_after_to ?? o.balance_after_from)!, o.currency)}
+                                  {formatMoney(
+                                    (o.balance_after_to ?? o.balance_after_from)!,
+                                    (o.balance_after_to != null ? o.account_to_currency : o.account_from_currency) || o.currency
+                                  )}
                                 </div>
                               )}
                             </>
