@@ -307,15 +307,38 @@ export default function DocumentsPage() {
     }
   };
 
-  const downloadAllIsdoc = (ids: string[], _channel: string) => {
-    // Download each ISDOC with slight delay to avoid browser blocking
-    ids.forEach((id, i) => {
-      setTimeout(() => {
-        const a = document.createElement('a');
-        a.href = `/api/invoices/${id}/isdoc`;
-        a.click();
-      }, i * 200);
-    });
+  // ── Download ZIP (ISDOC or PDF) ──────────────────────────────────────────
+  const [zipLoading, setZipLoading] = useState<'isdoc' | 'pdf' | null>(null);
+
+  const downloadZip = async (
+    ids: string[],
+    format: 'isdoc' | 'pdf',
+    channel: string
+  ) => {
+    if (ids.length === 0) return;
+    setZipLoading(format);
+    try {
+      const res = await fetch('/api/accounting/invoice-batch/zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_ids: ids, format, channel }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `${today}_${channel}_${format}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setZipLoading(null);
+    }
   };
 
   // ── Save buyer name for large Teya transactions (>= 10 000 CZK) ──────────
@@ -657,13 +680,30 @@ export default function DocumentsPage() {
                       ({stmtResult.filter(r => r.created).length} нових)
                     </span>
                   </div>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    onClick={() => downloadAllIsdoc(stmtResult.map(r => r.invoice_id), stmtChannel || '')}
-                  >
-                    <Package size={14} /> Всі ISDOC
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      disabled={zipLoading === 'isdoc'}
+                      onClick={() => downloadZip(stmtResult.map(r => r.invoice_id), 'isdoc', stmtChannel || 'batch')}
+                    >
+                      {zipLoading === 'isdoc'
+                        ? <><RefreshCw size={13} className="spin" /> Генеруємо…</>
+                        : <><Package size={13} /> ZIP ISDOC</>
+                      }
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      disabled={zipLoading === 'pdf'}
+                      onClick={() => downloadZip(stmtResult.map(r => r.invoice_id), 'pdf', stmtChannel || 'batch')}
+                    >
+                      {zipLoading === 'pdf'
+                        ? <><RefreshCw size={13} className="spin" /> Генеруємо…</>
+                        : <><FileDown size={13} /> ZIP PDF</>
+                      }
+                    </button>
+                  </div>
                 </div>
                 <div className="table-wrapper">
                   <table className="table">
