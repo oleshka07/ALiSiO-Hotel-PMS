@@ -109,9 +109,25 @@ export default function DocumentsPage() {
   const [stmtError,   setStmtError]   = useState<string | null>(null);
   const [stmtResult,  setStmtResult]  = useState<StmtInvoice[] | null>(null);
   const [stmtChannel, setStmtChannel] = useState<string | null>(null);
+  const [stmtFilter,  setStmtFilter]  = useState<'all' | 'new' | 'existing' | 'storno'>('all');
   // Inline name editing for Teya rows with amount >= 10 000 CZK
   const [stmtNames,   setStmtNames]   = useState<Record<string, string>>({});
   const [stmtSaving,  setStmtSaving]  = useState<Record<string, boolean>>({});
+
+  // ── Derived: filtered statement results ──────────────────────────
+  const filteredResult: StmtInvoice[] = stmtResult
+    ? stmtResult.filter(r => {
+        if (stmtFilter === 'new')      return r.created && !r.is_credit_note;
+        if (stmtFilter === 'existing') return !r.created && !r.is_credit_note;
+        if (stmtFilter === 'storno')   return r.is_credit_note;
+        return true;
+      })
+    : [];
+  const stmtCountNew      = stmtResult ? stmtResult.filter(r => r.created && !r.is_credit_note).length : 0;
+  const stmtCountExisting = stmtResult ? stmtResult.filter(r => !r.created && !r.is_credit_note).length : 0;
+  const stmtCountStorno   = stmtResult ? stmtResult.filter(r => r.is_credit_note).length : 0;
+
+
 
   // ── Email popover state ───────────────────────────────────────
   const [emailPopover, setEmailPopover] = useState<{
@@ -301,6 +317,7 @@ export default function DocumentsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Помилка завантаження');
       setStmtResult(data.invoices ?? []);
+      setStmtFilter('all'); // reset filter on new import
     } catch (e: unknown) {
       setStmtError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -619,7 +636,7 @@ export default function DocumentsPage() {
             )}
 
             {/* Results */}
-            {/* ── Warning panel: rows needing a buyer name ── */}
+{/* ── Warning panel: rows needing a buyer name ── */}
             {stmtResult && stmtResult.some(r => r.needs_guest_name) && (
               <div style={{
                 background: 'rgba(245,158,11,0.08)',
@@ -674,38 +691,84 @@ export default function DocumentsPage() {
             {/* ── Full results table ── */}
             {stmtResult && stmtResult.length > 0 && (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                {/* Toolbar: counts + ZIP buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 10 }}>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>
                     Фактури: {stmtResult.length}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 12 }}>
-                      ({stmtResult.filter(r => r.created).length} нових)
+                    <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 10 }}>
+                      ({stmtCountNew} нових·{stmtCountExisting} існуючих{stmtCountStorno > 0 ? `·${stmtCountStorno} storno` : ''})
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       className="btn btn-secondary btn-sm"
                       style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                      disabled={zipLoading === 'isdoc'}
-                      onClick={() => downloadZip(stmtResult.map(r => r.invoice_id), 'isdoc', stmtChannel || 'batch')}
+                      disabled={zipLoading === 'isdoc' || filteredResult.length === 0}
+                      onClick={() => downloadZip(filteredResult.map(r => r.invoice_id), 'isdoc', stmtChannel || 'batch')}
                     >
                       {zipLoading === 'isdoc'
                         ? <><RefreshCw size={13} className="spin" /> Генеруємо…</>
-                        : <><Package size={13} /> ZIP ISDOC</>
+                        : <><Package size={13} /> ZIP ISDOC{stmtFilter !== 'all' ? ` (${filteredResult.length})` : ''}</>
                       }
                     </button>
                     <button
                       className="btn btn-secondary btn-sm"
                       style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                      disabled={zipLoading === 'pdf'}
-                      onClick={() => downloadZip(stmtResult.map(r => r.invoice_id), 'pdf', stmtChannel || 'batch')}
+                      disabled={zipLoading === 'pdf' || filteredResult.length === 0}
+                      onClick={() => downloadZip(filteredResult.map(r => r.invoice_id), 'pdf', stmtChannel || 'batch')}
                     >
                       {zipLoading === 'pdf'
                         ? <><RefreshCw size={13} className="spin" /> Генеруємо…</>
-                        : <><FileDown size={13} /> ZIP PDF</>
+                        : <><FileDown size={13} /> ZIP PDF{stmtFilter !== 'all' ? ` (${filteredResult.length})` : ''}</>
                       }
                     </button>
                   </div>
                 </div>
+
+                {/* Filter pills */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  {(['all', 'new', 'existing', 'storno'] as const)
+                    .filter(f => f !== 'storno' || stmtCountStorno > 0)
+                    .map(f => {
+                      const labels: Record<string, string> = { all: 'Усі', new: '✓ Нові', existing: 'Існуючі', storno: '↩ Storno' };
+                      const colors: Record<string, string> = { all: 'var(--accent-primary)', new: '#16a34a', existing: '#6b7280', storno: '#dc2626' };
+                      const counts: Record<string, number> = { all: stmtResult.length, new: stmtCountNew, existing: stmtCountExisting, storno: stmtCountStorno };
+                      const active = stmtFilter === f;
+                      const color = colors[f];
+                      return (
+                        <button
+                          key={f}
+                          onClick={() => setStmtFilter(f)}
+                          style={{
+                            padding: '5px 14px',
+                            borderRadius: 20,
+                            border: active ? `2px solid ${color}` : '2px solid var(--border-primary)',
+                            background: active ? `${color}18` : 'transparent',
+                            color: active ? color : 'var(--text-secondary)',
+                            fontWeight: active ? 700 : 400,
+                            fontSize: 12,
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          {labels[f]}
+                          <span style={{
+                            background: active ? color : 'var(--border-primary)',
+                            color: active ? '#fff' : 'var(--text-tertiary)',
+                            borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 700,
+                          }}>{counts[f]}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+
+                {filteredResult.length === 0
+                  ? (
+                    <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
+                      Немає фактур з обраним фільтром
+                    </div>
+                  ) : (
                 <div className="table-wrapper">
                   <table className="table">
                     <thead>
@@ -719,7 +782,7 @@ export default function DocumentsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {stmtResult.map((inv) => (
+                      {filteredResult.map((inv) => (
                         <tr key={inv.source_ref} style={
                           inv.is_credit_note
                             ? { background: 'rgba(220,38,38,0.04)' }
@@ -769,6 +832,7 @@ export default function DocumentsPage() {
                     </tbody>
                   </table>
                 </div>
+                  )}
               </>
             )}
 
