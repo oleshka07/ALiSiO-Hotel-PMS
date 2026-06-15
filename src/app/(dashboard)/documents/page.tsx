@@ -33,6 +33,7 @@ interface StmtInvoice {
   invoice_id: string;
   invoice_number: string;
   guest_name: string;
+  needs_guest_name: boolean;
   description: string;
   amount: number;
   currency: string;
@@ -107,6 +108,9 @@ export default function DocumentsPage() {
   const [stmtError,   setStmtError]   = useState<string | null>(null);
   const [stmtResult,  setStmtResult]  = useState<StmtInvoice[] | null>(null);
   const [stmtChannel, setStmtChannel] = useState<string | null>(null);
+  // Inline name editing for Teya rows with amount >= 10 000 CZK
+  const [stmtNames,   setStmtNames]   = useState<Record<string, string>>({});
+  const [stmtSaving,  setStmtSaving]  = useState<Record<string, boolean>>({});
 
   // ── Email popover state ───────────────────────────────────────
   const [emailPopover, setEmailPopover] = useState<{
@@ -201,7 +205,7 @@ export default function DocumentsPage() {
         ? `✅ PDF збережено і надіслано на ${customForm.emailTo}`
         : '✅ PDF згенеровано і завантажено');
       // Refresh invoice list after short delay
-      setTimeout(() => { fetchInvoices(); fetchRecon(); }, 1000);
+      setTimeout(() => { fetchInvoices(); }, 1000);
       setTimeout(() => setShowCustomModal(false), 2500);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -219,12 +223,10 @@ export default function DocumentsPage() {
     a.click();
   }, []);
 
-  // ── Open email popover ────────────────────────────────────────
-  const openEmailPopover = useCallback((row: ReconRow) => {
-    if (!row.invoice_id || !row.invoice_number) return;
-    const defaultEmail = row.invoice_company_email || row.guest_email || '';
+  // ── Open email popover (for invoice list) ────────────────────
+  const openEmailPopover = useCallback((invoiceId: string, invoiceNumber: string, defaultEmail: string) => {
     setEmailTo(defaultEmail);
-    setEmailPopover({ invoiceId: row.invoice_id, invoiceNumber: row.invoice_number, defaultEmail });
+    setEmailPopover({ invoiceId, invoiceNumber, defaultEmail });
   }, []);
 
   // ── Send invoice email ────────────────────────────────────────
@@ -305,7 +307,7 @@ export default function DocumentsPage() {
     }
   };
 
-  const downloadAllIsdoc = (ids: string[], channel: string) => {
+  const downloadAllIsdoc = (ids: string[], _channel: string) => {
     // Download each ISDOC with slight delay to avoid browser blocking
     ids.forEach((id, i) => {
       setTimeout(() => {
@@ -314,6 +316,30 @@ export default function DocumentsPage() {
         a.click();
       }, i * 200);
     });
+  };
+
+  // ── Save buyer name for large Teya transactions (>= 10 000 CZK) ──────────
+  const saveBuyerName = async (invoiceId: string, name: string) => {
+    if (!name.trim()) return;
+    setStmtSaving(s => ({ ...s, [invoiceId]: true }));
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/buyer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guest_name: name.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      // Update local result so the row reflects the saved name immediately
+      setStmtResult(prev => prev ? prev.map(r =>
+        r.invoice_id === invoiceId
+          ? { ...r, guest_name: name.trim(), needs_guest_name: false }
+          : r
+      ) : prev);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStmtSaving(s => ({ ...s, [invoiceId]: false }));
+    }
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -569,6 +595,59 @@ export default function DocumentsPage() {
             )}
 
             {/* Results */}
+            {/* ── Warning panel: rows needing a buyer name ── */}
+            {stmtResult && stmtResult.some(r => r.needs_guest_name) && (
+              <div style={{
+                background: 'rgba(245,158,11,0.08)',
+                border: '1px solid rgba(245,158,11,0.35)',
+                borderRadius: 10, padding: '14px 16px', marginBottom: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontWeight: 700, fontSize: 14, color: '#b45309' }}>
+                  <AlertTriangle size={15} />
+                  Потребують уточнення імені покупця ({stmtResult.filter(r => r.needs_guest_name).length} рядк. ≥ 10 000 CZK)
+                </div>
+                <div style={{ fontSize: 12, color: '#92400e', marginBottom: 12 }}>
+                  Фактури створені з плейсхолдером «DOPLNIT JMÉNO». Вкажіть ім&apos;я гостя / назву компанії:
+                </div>
+                {stmtResult.filter(r => r.needs_guest_name).map(inv => (
+                  <div key={inv.source_ref} style={{
+                    display: 'grid', gridTemplateColumns: '110px 1fr 160px 80px',
+                    gap: 8, alignItems: 'center', marginBottom: 6,
+                    background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: '7px 10px',
+                  }}>
+                    <code style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                      {inv.invoice_number}
+                    </code>
+                    <div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>{inv.description}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatDate(inv.date)} · {formatAmount(inv.amount, inv.currency)}</div>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Ім'я гостя / компанія..."
+                      value={stmtNames[inv.invoice_id] ?? ''}
+                      onChange={e => setStmtNames(n => ({ ...n, [inv.invoice_id]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') saveBuyerName(inv.invoice_id, stmtNames[inv.invoice_id] ?? ''); }}
+                      style={{
+                        fontSize: 12, padding: '5px 8px', borderRadius: 5,
+                        border: '1px solid rgba(245,158,11,0.5)', background: '#fffbeb',
+                        color: '#1a1a1a', outline: 'none', width: '100%',
+                      }}
+                    />
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => saveBuyerName(inv.invoice_id, stmtNames[inv.invoice_id] ?? '')}
+                      disabled={!stmtNames[inv.invoice_id]?.trim() || !!stmtSaving[inv.invoice_id]}
+                      style={{ fontSize: 11, padding: '5px 10px' }}
+                    >
+                      {stmtSaving[inv.invoice_id] ? <RefreshCw size={11} className="spin" /> : 'Зберегти'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── Full results table ── */}
             {stmtResult && stmtResult.length > 0 && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -591,7 +670,7 @@ export default function DocumentsPage() {
                     <thead>
                       <tr>
                         <th>Фактура №</th>
-                        <th>Гість / Опис</th>
+                        <th>Покупець / Призначення</th>
                         <th>Дата</th>
                         <th>Сума</th>
                         <th>Статус</th>
@@ -600,22 +679,30 @@ export default function DocumentsPage() {
                     </thead>
                     <tbody>
                       {stmtResult.map((inv) => (
-                        <tr key={inv.source_ref}>
+                        <tr key={inv.source_ref} style={inv.needs_guest_name ? { background: 'rgba(245,158,11,0.05)' } : undefined}>
                           <td>
                             <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: 'var(--accent-primary)' }}>
                               {inv.invoice_number}
                             </code>
                           </td>
                           <td>
-                            <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.guest_name || '—'}</div>
+                            <div style={{ fontWeight: 500, fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              {inv.needs_guest_name && <AlertTriangle size={12} color="#f59e0b" />}
+                              {inv.needs_guest_name
+                                ? <em style={{ color: '#f59e0b', fontStyle: 'normal' }}>DOPLNIT JMÉNO</em>
+                                : (inv.guest_name || '—')
+                              }
+                            </div>
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv.description}</div>
                           </td>
                           <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{formatDate(inv.date)}</td>
                           <td><span style={{ fontWeight: 700, fontSize: 14 }}>{formatAmount(inv.amount, inv.currency)}</span></td>
                           <td>
-                            {inv.created
-                              ? <span className="badge badge-success">✓ Нова</span>
-                              : <span className="badge" style={{ background: 'rgba(156,163,175,0.15)', color: '#9ca3af' }}>Існуюча</span>
+                            {inv.needs_guest_name
+                              ? <span className="badge" style={{ background: 'rgba(245,158,11,0.15)', color: '#b45309', fontSize: 10 }}>⚠ Ім&apos;я</span>
+                              : inv.created
+                                ? <span className="badge badge-success">✓ Нова</span>
+                                : <span className="badge" style={{ background: 'rgba(156,163,175,0.15)', color: '#9ca3af' }}>Існуюча</span>
                             }
                           </td>
                           <td>
@@ -635,6 +722,7 @@ export default function DocumentsPage() {
                 </div>
               </>
             )}
+
 
             {stmtResult && stmtResult.length === 0 && (
               <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-tertiary)' }}>

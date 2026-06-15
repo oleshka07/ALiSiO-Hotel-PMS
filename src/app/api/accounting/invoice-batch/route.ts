@@ -6,7 +6,9 @@
  * valid row — WITHOUT creating any fin_operations entries.
  *
  * Returns the list of created/found invoices so the UI can offer PDF + ISDOC
- * download buttons per row.
+ * download buttons per row. For Teya rows with amount >= 10 000 CZK the flag
+ * `needs_guest_name: true` is returned — the invoice is created with a
+ * placeholder buyer name ("DOPLNIT JMÉNO") that the user can update later.
  *
  * Deduplication: uses notes field as "source:source_ref" key.
  */
@@ -61,12 +63,43 @@ function bookingDate(s: string): string {
   return s;
 }
 
+/** Extract YYYY-MM-DD from Teya date fields ("2026-05-31" or "2026-05-31 12:34:56") */
+function teyaDate(s: string): string {
+  if (!s) return '';
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : s.trim();
+}
+
+// ─── Teya: Payment purpose by CZK amount ─────────────────────────────────────
+//
+// Rules (in priority order):
+//   = 100       → Parkování osobního automobilu
+//   ≤ 50        → Rekreační poplatek
+//   51–150      → Dřevěné uhlí
+//   151–280     → Dřevo na oheň
+//   281–399     → Pronájem grilu
+//   400–599     → Ubytovací služby
+//   600–1 499   → Parkování karavanu a ubytování
+//   ≥ 1 500     → Ubytovací služby
+
+function teyaPurpose(amount: number): string {
+  if (amount === 100)  return 'Parkování osobního automobilu';
+  if (amount <= 50)    return 'Rekreační poplatek';
+  if (amount <= 150)   return 'Dřevěné uhlí';
+  if (amount <= 280)   return 'Dřevo na oheň';
+  if (amount <= 399)   return 'Pronájem grilu';
+  if (amount <= 599)   return 'Ubytovací služby';
+  if (amount <= 1499)  return 'Parkování karavanu a ubytování';
+  return 'Ubytovací služby';
+}
+
 // ─── Parsed row types ────────────────────────────────────────────────────────
 
 export interface BatchRow {
   source: 'airbnb' | 'booking' | 'teya';
   source_ref: string;
   guest_name: string;
+  needs_guest_name?: boolean; // true → amount ≥ 10 000 CZK, buyer name unknown
   listing: string;
   check_in: string;
   check_out: string;
@@ -206,6 +239,20 @@ function parseBooking(csv: string): BatchRow[] {
 }
 
 // ─── Teya parser ─────────────────────────────────────────────────────────────
+//
+// Expected CSV columns (18):
+//   Date, Store name, Payment context, Device ID, Status, Payment type,
+//   Sales, Teya fee, Teya fee classifier, Interchange fee, Scheme fee,
+//   MOTO fee, Fixed fee, Chargeback fee, Total fees,
+//   Pay by Link Email, Pay by Link Phone, Settlement status
+//
+// Rules:
+//   • Keep only Status = SUCCEEDED (skip FAILED, PENDING, REVERSED)
+//   • Skip Payment type = REFUND
+//   • Description = teyaPurpose(Sales in CZK)
+//   • Guest name:
+//       amount < 10 000 CZK  → "Konečný zákazník"
+//       amount ≥ 10 000 CZK  → empty (needs_guest_name=true, UI will ask)
 
 function parseTeya(csv: string): BatchRow[] {
   const lines = csv.split('\n').map(l => l.replace(/\r$/, ''));
@@ -216,16 +263,22 @@ function parseTeya(csv: string): BatchRow[] {
   const iDate    = idx('Date');
   const iStore   = idx('Store name');
   const iContext = idx('Payment context');
+  const iDevId   = idx('Device ID');
   const iStatus  = idx('Status');
   const iType    = idx('Payment type');
   const iSales   = idx('Sales');
-  const iDevId   = idx('Device ID');
 
   if (iDate === -1 || iSales === -1 || iStatus === -1) {
-    throw new Error('Не розпізнано як Teya-виписку. Перевірте формат CSV (очікується: Date, Store name, Status, Sales…).');
+    throw new Error(
+      'Не розпізнано як Teya-виписку. Перевірте формат CSV ' +
+      '(очікується: Date, Store name, Status, Sales…).'
+    );
   }
 
   const rows: BatchRow[] = [];
+  // Track row counters per day+device to handle same-amount transactions
+  const refCounts: Record<string, number> = {};
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -234,30 +287,40 @@ function parseTeya(csv: string): BatchRow[] {
     const status = (cols[iStatus] ?? '').trim().toUpperCase();
     const type   = (cols[iType]   ?? '').trim().toUpperCase();
 
-    // Only SUCCEEDED payments (skip REVERSED, REFUND, etc.)
+    // Only SUCCEEDED payments — skip FAILED, PENDING, REVERSED, REFUND
     if (status !== 'SUCCEEDED') continue;
     if (type === 'REFUND') continue;
 
     const sales = parseNum(cols[iSales] ?? '0');
     if (sales <= 0) continue;
 
-    const date    = (cols[iDate]    ?? '').trim();
+    const rawDate = (cols[iDate]    ?? '').trim();
     const store   = (cols[iStore]   ?? '').trim();
     const context = (cols[iContext] ?? '').trim();
     const devId   = iDevId >= 0 ? (cols[iDevId] ?? '').trim() : '';
+    const date    = teyaDate(rawDate);
 
-    // Use date+store+devId as source_ref for deduplication
-    const ref = `teya_${date}_${devId || store}_${sales}`;
-    const desc = `Teya: ${store}${context ? ` (${context})` : ''} — ${date}`;
+    // Unique ref: date + device + store + sales + counter (for same-day duplicates)
+    const refBase = `teya_${date}_${devId || store}_${sales}`;
+    refCounts[refBase] = (refCounts[refBase] ?? 0) + 1;
+    const ref = refCounts[refBase] > 1 ? `${refBase}_${refCounts[refBase]}` : refBase;
+
+    // Payment purpose (description for invoice)
+    const purpose = teyaPurpose(sales);
+
+    // Guest name logic
+    const needsName  = sales >= 10000;
+    const guestName  = needsName ? '' : 'Konečný zákazník';
 
     rows.push({
       source: 'teya',
       source_ref: ref,
-      guest_name: store,
+      guest_name: guestName,
+      needs_guest_name: needsName,
       listing: context,
       check_in: date,
       check_out: date,
-      description: desc,
+      description: purpose,
       amount: sales,
       currency: 'CZK',
       date,
@@ -294,6 +357,7 @@ export interface BatchInvoiceResult {
   invoice_id: string;
   invoice_number: string;
   guest_name: string;
+  needs_guest_name: boolean;  // true = amount ≥ 10 000, buyer name must be filled in
   description: string;
   amount: number;
   currency: string;
@@ -318,12 +382,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const text = await file.text();
 
     let rows: BatchRow[];
-    if (channel === 'airbnb')  rows = parseAirbnb(text);
+    if (channel === 'airbnb')       rows = parseAirbnb(text);
     else if (channel === 'booking') rows = parseBooking(text);
-    else rows = parseTeya(text);
+    else                            rows = parseTeya(text);
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Жодного рядка не знайдено. Перевірте файл.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Жодного рядка не знайдено. Перевірте файл.' },
+        { status: 400 }
+      );
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -344,6 +411,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const invNum = nextInvoiceNumber(db);
       const due    = row.date > today ? row.date : today;
 
+      // For rows that need a guest name, store a placeholder
+      const buyerName = row.needs_guest_name ? 'DOPLNIT JMÉNO' : (row.guest_name || null);
+
       db.prepare(`
         INSERT INTO invoices
           (id, invoice_number, issued_at, due_date, amount, currency, status, notes, is_custom,
@@ -353,7 +423,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         invId, invNum, today, due,
         row.amount, row.currency,
         noteKey,
-        row.guest_name || null,
+        buyerName,
         row.description,
       );
 
@@ -365,14 +435,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       try {
         const { id, number, created } = createInvoice(row) as { id: string; number: string; created: boolean };
         results.push({
-          source_ref:     row.source_ref,
-          invoice_id:     id,
-          invoice_number: number,
-          guest_name:     row.guest_name,
-          description:    row.description,
-          amount:         row.amount,
-          currency:       row.currency,
-          date:           row.date,
+          source_ref:      row.source_ref,
+          invoice_id:      id,
+          invoice_number:  number,
+          guest_name:      row.guest_name,
+          needs_guest_name: row.needs_guest_name ?? false,
+          description:     row.description,
+          amount:          row.amount,
+          currency:        row.currency,
+          date:            row.date,
           created,
         });
       } catch (e: any) {
@@ -383,8 +454,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       ok: true,
       channel,
-      total: results.length,
+      total:   results.length,
       created: results.filter(r => r.created).length,
+      needs_names: results.filter(r => r.needs_guest_name).length,
       invoices: results,
     });
   } catch (e: any) {
