@@ -9,7 +9,7 @@ import {
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
   XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
-  Sparkles, Send, Building2, FileDown, Loader2,
+  Sparkles, Send, Building2, FileDown, Loader2, Search,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -26,6 +26,22 @@ interface Invoice {
   guest_first_name: string;
   guest_last_name: string;
   unit_name: string;
+}
+
+// Unified invoice (all sources: PMS + batch + manual)
+interface AllInvoice {
+  id: string;
+  invoice_number: string;
+  issued_at: string;
+  due_date?: string;
+  amount: number;
+  currency: string;
+  status: 'issued' | 'cancelled';
+  is_credit_note: number;  // 0 | 1
+  source: 'airbnb' | 'booking' | 'teya' | 'manual' | 'pms';
+  buyer_name: string | null;
+  custom_description: string | null;
+  unit_name: string | null;
 }
 
 interface StmtInvoice {
@@ -100,9 +116,16 @@ export default function DocumentsPage() {
   );
 
   // ── Invoices tab state ────────────────────────────────────────
-  const [invoices, setInvoices]   = useState<Invoice[]>([]);
-  const [invLoading, setInvLoading] = useState(true);
-  const [invError, setInvError]   = useState<string | null>(null);
+  const [invoices,    setInvoices]   = useState<Invoice[]>([]);
+  const [invLoading,  setInvLoading] = useState(true);
+  const [invError,    setInvError]   = useState<string | null>(null);
+
+  // ── All-invoices tab state ────────────────────────────────────────
+  const [allInvoices,      setAllInvoices]      = useState<AllInvoice[]>([]);
+  const [allInvLoading,    setAllInvLoading]    = useState(false);
+  const [allInvError,      setAllInvError]      = useState<string | null>(null);
+  const [invSearch,        setInvSearch]        = useState('');
+  const [invSourceFilter,  setInvSourceFilter]  = useState<'all' | 'airbnb' | 'booking' | 'teya' | 'manual' | 'pms'>('all');
 
   // ── Statements tab state ──────────────────────────────────────
   const [stmtLoading, setStmtLoading] = useState(false);
@@ -286,6 +309,30 @@ export default function DocumentsPage() {
   }, []);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  // ── Fetch ALL invoices (unified: batch + PMS + manual) ────────
+  const fetchAllInvoices = useCallback(async (source: string, search: string) => {
+    setAllInvLoading(true);
+    setAllInvError(null);
+    try {
+      const params = new URLSearchParams({ source, search });
+      const res = await fetch(`/api/accounting/invoices/list?${params}`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      setAllInvoices(await res.json());
+    } catch {
+      setAllInvError('Не вдалося завантажити фактури');
+    } finally {
+      setAllInvLoading(false);
+    }
+  }, []);
+
+  // Auto-fetch when invoices tab is active or filters change
+  useEffect(() => {
+    if (activeTab === 'invoices') {
+      const t = setTimeout(() => fetchAllInvoices(invSourceFilter, invSearch), 300);
+      return () => clearTimeout(t);
+    }
+  }, [activeTab, invSourceFilter, invSearch, fetchAllInvoices]);
 
   // ── Actions ───────────────────────────────────────────────────
   const openInvoice     = (id: string)   => window.open(`/api/invoices/${id}`, '_blank');

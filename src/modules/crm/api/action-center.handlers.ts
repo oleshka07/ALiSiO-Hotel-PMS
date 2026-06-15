@@ -9,10 +9,10 @@ export async function getActionCenter(_request: NextRequest) {
     // 1. Needs Reply — last message was inbound, unanswered
     const needsReply = db.prepare(`
       SELECT l.*,
-        m.body as last_message, m.created_at as last_message_at,
+        m.content as last_message, m.created_at as last_message_at,
         (SELECT COUNT(*) FROM crm_messages m2
          JOIN crm_conversations c2 ON c2.id = m2.conversation_id
-         WHERE c2.lead_id = l.id AND m2.is_read = 0) as unread_count
+         WHERE c2.lead_id = l.id AND m2.read_at IS NULL AND m2.direction = 'inbound') as unread_count
       FROM crm_leads l
       JOIN crm_conversations c ON c.lead_id = l.id
       JOIN crm_messages m ON m.conversation_id = c.id
