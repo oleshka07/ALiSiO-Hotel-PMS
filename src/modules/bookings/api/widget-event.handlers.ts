@@ -42,8 +42,8 @@ export async function trackWidgetEvent(request: NextRequest) {
       return NextResponse.json({ error: 'Missing site_id' }, { status: 400, headers });
     }
 
-    // Check if site exists
-    const site = db.prepare("SELECT id, site_url FROM booking_sites WHERE id = ? AND status != 'deleted'").get(site_id) as any;
+    // Check if site exists by ID or slug
+    const site = db.prepare("SELECT id, site_url FROM booking_sites WHERE (id = ? OR slug = ?) AND status != 'deleted'").get(site_id, site_id) as any;
     if (!site) {
       return NextResponse.json({ error: 'Site not found or deleted' }, { status: 404, headers });
     }
@@ -64,14 +64,14 @@ export async function trackWidgetEvent(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing event_type' }, { status: 400, headers });
     }
 
-    // Insert event
+    // Insert event using the resolved site.id
     db.prepare(`
       INSERT INTO widget_events (
         site_id, session_id, event_type, step, page,
         utm_source, utm_medium, utm_campaign, lang, reservation_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      site_id,
+      site.id,
       session_id || null,
       event_type,
       step !== undefined ? step : null,

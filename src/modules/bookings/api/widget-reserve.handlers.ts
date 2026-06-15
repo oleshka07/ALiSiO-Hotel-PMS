@@ -648,6 +648,7 @@ export async function createWidgetReservation(request: NextRequest) {
       certificateDiscount,
       currency: resCurrency,
       thankYouUrl,
+      guestPageToken,
       testEmailStatus,
     }, { status: 201, headers: dynamicHeaders });
   } catch (error: any) {
