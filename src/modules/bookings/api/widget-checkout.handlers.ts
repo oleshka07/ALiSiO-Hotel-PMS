@@ -306,6 +306,16 @@ export async function createWidgetCheckoutSession(req: Request) {
       } catch { /* invalid URL — keep returnTo */ }
     }
 
+    if (reservation_id) {
+      try {
+        const tokenRes = db.prepare('SELECT guest_page_token FROM reservations WHERE id = ?').get(reservation_id) as any;
+        if (tokenRes?.guest_page_token) {
+          const sep = returnTo.includes('?') ? '&' : '?';
+          returnTo = `${returnTo}${sep}guest_page_token=${tokenRes.guest_page_token}`;
+        }
+      } catch { /* non-fatal */ }
+    }
+
     try {
       const session = await createPaymentSession({
         kind: service_id && service_date ? (reservation_id ? 'reservation_services' : 'service_standalone') : 'booking_full',

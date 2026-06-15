@@ -175,18 +175,28 @@ export default function BookingWizard() {
 
   const hasSentOpened = useRef(false);
   useEffect(() => {
-    if (!hasSentOpened.current) { hasSentOpened.current = true; sendWidgetEvent('widget_opened'); }
-  }, [sendWidgetEvent]);
+    if (!hasSentOpened.current && siteConfig?.id) {
+      sendWidgetEvent('widget_opened');
+      hasSentOpened.current = true;
+    }
+  }, [siteConfig?.id, sendWidgetEvent]);
 
   const lastTrackedStep = useRef<Step | null>(null);
   useEffect(() => {
-    if (lastTrackedStep.current === step) return;
-    sendWidgetEvent(`widget_step_${step}`);
+    if (lastTrackedStep.current === step || !siteConfig?.id) return;
+    const stepNumberMap: Record<Step, number> = {
+      landing: 1,
+      accommodation: 2,
+      extras: 3,
+      summary: 4,
+      success: 5
+    };
+    sendWidgetEvent(`widget_step_${stepNumberMap[step]}`);
     if (step === 'success' && paymentStatus === 'success') {
       sendWidgetEvent('complete', { reservationId });
     }
     lastTrackedStep.current = step;
-  }, [step, paymentStatus, reservationId, sendWidgetEvent]);
+  }, [step, paymentStatus, reservationId, sendWidgetEvent, siteConfig?.id]);
 
   // SW registration
   useEffect(() => {
@@ -284,6 +294,7 @@ export default function BookingWizard() {
         if (state.contact?.name) url.searchParams.set('name', state.contact.name);
         if (state.contact?.phone) url.searchParams.set('phone', encodeURIComponent(state.contact.phone));
         if (state.contact?.email) url.searchParams.set('email', state.contact.email);
+        if (guestPageToken) url.searchParams.set('guest_page_token', guestPageToken);
 
         setTimeout(() => { window.location.href = url.toString(); }, 800);
       } catch { /* invalid URL — stay on page */ }
