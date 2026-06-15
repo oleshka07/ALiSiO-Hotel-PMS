@@ -116,6 +116,7 @@ export async function createWidgetReservation(request: NextRequest) {
       currency: clientCurrency,
       utmParams: rawUtmParams,
       lang: rawLang,
+      conversationId,
     } = body;
 
     const lang: string = ['en', 'uk', 'cs', 'de'].includes(rawLang) ? rawLang : 'en';
@@ -581,6 +582,31 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
+
+    if (conversationId) {
+      try {
+        const content = [
+          `✅ <b>Бронювання завершено (через віджет)!</b>`,
+          `🆔 Бронювання ID: <code>${resId}</code>`,
+          `🏕️ Тип: ${unit.name}`,
+          `📅 Дати: ${checkIn} — ${checkOut} (${nights} ночей)`,
+          `👥 Гості: Дорослих ${adults}, Дітей ${children}${hasPet ? ', Тварина 🐾' : ''}`,
+          `💳 Сума: ${finalPrice} ${resCurrency}`
+        ].join('\n');
+
+        const { executeCreateMessage } = await import('@crm');
+        await executeCreateMessage(db, conversationId, {
+          channelType: 'web_form',
+          direction: 'inbound',
+          senderType: 'guest',
+          senderName: firstName || 'Гість',
+          content,
+          contentType: 'text'
+        });
+      } catch (e: any) {
+        console.error('[Reserve] Failed to add CRM message:', e.message);
+      }
+    }
 
     return NextResponse.json({
       success: true,

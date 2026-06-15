@@ -65,6 +65,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
   const [resolvedUtmParams, setResolvedUtmParams] = useState<Record<string, string>>({});
   const [activeRatePlan, setActiveRatePlan] = useState<ActiveRatePlan | null>(null);
+  const [conversationId, setConversationId] = useState<string>('');
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const nights = useMemo(() => { if (!checkIn || !checkOut) return 0; return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000); }, [checkIn, checkOut]);
@@ -123,7 +124,29 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
     if (urlAdults) setAdults(parseInt(urlAdults,10)||2); if (urlKids) setKids(parseInt(urlKids,10)||0);
     const urlOffer = params.get('offer') || params.get('couponCode') || params.get('couponcode'); if (urlOffer) { setCouponCode(urlOffer); setShowOffer(true); }
     const urlBundle = params.get('bundle') || params.get('bundleId'); if (urlBundle) { setCouponCode(urlBundle); setIsHiddenBundle(true); setShowOffer(true); }
-    const saved = localStorage.getItem('alisio_guest_data'); if (saved) { try { const g = JSON.parse(saved); setFirstName(g.firstName||''); setLastName(g.lastName||''); setEmail(g.email||''); setPhone(g.phone||''); } catch {} }
+    const cId = params.get('conversation_id'); if (cId) setConversationId(cId);
+    const urlFirstName = params.get('firstName');
+    const urlLastName = params.get('lastName');
+    const urlName = params.get('contact_name') || params.get('name');
+    const urlEmail = params.get('contact_email') || params.get('email');
+    const urlPhone = params.get('contact_phone') || params.get('phone');
+
+    let fName = urlFirstName || '';
+    let lName = urlLastName || '';
+    if (urlName && !fName && !lName) {
+      const parts = urlName.trim().split(' ');
+      fName = parts[0] || '';
+      lName = parts.slice(1).join(' ') || '';
+    }
+
+    let savedData: any = {};
+    const saved = localStorage.getItem('alisio_guest_data'); 
+    if (saved) { try { savedData = JSON.parse(saved); } catch {} }
+
+    setFirstName(fName || savedData.firstName || '');
+    setLastName(lName || savedData.lastName || '');
+    setEmail(urlEmail || savedData.email || '');
+    setPhone(urlPhone || savedData.phone || '');
     const v = Math.floor(Math.random()*6)+3; const hours = Math.floor(Math.random()*12)+1;
     setSocialProof({ viewers: v, lastBooking: hours < 5 ? `${hours} ${hours===1 ? v3t.agoHour : v3t.agoHours}` : `45 ${v3t.agoMinutes}` });
   }, []);
@@ -140,7 +163,16 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         window.parent.postMessage({ source: 'alisio-widget', event: 'purchase', reservationId: rId, value: val, currency: 'CZK', eventId }, '*');
       }
       if (siteThankYouUrl) {
-        const timer = setTimeout(() => { const sep = siteThankYouUrl.includes('?') ? '&' : '?'; const rId2 = reservation?.reservationId || ''; const rid2Suffix = rId2 ? ('&reservation_id=' + encodeURIComponent(rId2)) : ''; const url = siteThankYouUrl + sep + 'payment_status=success' + rid2Suffix; if (window.parent !== window) { window.parent.location.href = url; } else { window.location.href = url; } }, 5000);
+        const timer = setTimeout(() => { 
+          const sep = siteThankYouUrl.includes('?') ? '&' : '?'; 
+          const rId2 = reservation?.reservationId || ''; 
+          const rid2Suffix = rId2 ? ('&reservation_id=' + encodeURIComponent(rId2)) : ''; 
+          const checkinParam = checkIn ? `&checkin=${encodeURIComponent(checkIn)}` : '';
+          const checkoutParam = checkOut ? `&checkout=${encodeURIComponent(checkOut)}` : '';
+          const amountParam = reservation?.totalPrice !== undefined ? `&amount=${reservation.totalPrice}` : '';
+          const url = siteThankYouUrl + sep + 'payment_status=success' + rid2Suffix + checkinParam + checkoutParam + amountParam; 
+          if (window.parent !== window) { window.parent.location.href = url; } else { window.location.href = url; } 
+        }, 5000);
         return () => clearTimeout(timer);
       }
     }
@@ -326,6 +358,7 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
           currency:availability?.units.find(u=>u.id===selectedUnitId)?.currency||siteCurrency||'CZK', 
           utmParams,
           handshakeToken,
+          conversationId,
           lang,
         }) 
       });
@@ -390,7 +423,10 @@ export function useBookingWidget({ siteId, siteSlug, thankYouUrl, design, isPrev
         try { retPath = (window.top as any).location.href.split('?')[0]; } catch { retPath = window.location.href.split('?')[0]; }
       }
       const sep = retPath.includes('?') ? '&' : '?';
-      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success`;
+      const checkinParam = checkIn ? `&checkin=${encodeURIComponent(checkIn)}` : '';
+      const checkoutParam = checkOut ? `&checkout=${encodeURIComponent(checkOut)}` : '';
+      const amountParam = reservation.totalPrice !== undefined ? `&amount=${reservation.totalPrice}` : '';
+      retPath += `${sep}res_id=${reservation.reservationId}&payment_status=success${checkinParam}${checkoutParam}${amountParam}`;
 
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reservation_id:reservation.reservationId, site_slug:siteSlug, return_path:retPath }) });
       if (res.status===403) { goToStep(6); setSubmitting(false); return; }
