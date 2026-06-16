@@ -30,6 +30,7 @@ const PUBLIC_PREFIXES = [
 const PUBLIC_EXACT = [
   '/',
   '/login',
+  '/book',
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/me',

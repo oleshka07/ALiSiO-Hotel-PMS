@@ -561,8 +561,9 @@ export default function BookingWizard() {
               ...data.breakdown.map((n: {date: string; type: string; price: number}) => ({ label: `🏠 ${n.date} (${n.type === 'holiday' ? '⭐ Holiday' : 'Standard'})`, amount: n.price })),
               ...(data.touristTax > 0 ? [{ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax }] : []),
             ];
+            // Extras step temporarily hidden — skip straight to summary
             setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
-            setStep('extras');
+            setStep('summary');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'buildings' && (
@@ -572,17 +573,20 @@ export default function BookingWizard() {
             if (data.sleepingBagDiscount != null && data.sleepingBagDiscount > 0) bd.push({ label: `🛌 Own sleeping bags`, amount: -data.sleepingBagDiscount, isDiscount: true });
             if (data.touristTax != null && data.touristTax > 0) bd.push({ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax });
             if (data.kauce != null && data.kauce > 0) bd.push({ label: `🔑 Security deposit (returnable)`, amount: data.kauce });
+            // Extras step temporarily hidden — skip straight to summary
             setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
-            setStep('extras');
+            setStep('summary');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'camping' && (
           <StepCamping prices={prices} onNext={(data) => {
+            // Extras step temporarily hidden — skip straight to summary
             setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
-            setStep('extras');
+            setStep('summary');
           }} />
         )}
 
+        {/* StepExtras temporarily hidden — uncomment to restore:
         {step === 'extras' && (
           <StepExtras
             accommodationType={state.accommodationType || ''}
@@ -591,6 +595,7 @@ export default function BookingWizard() {
             onSkip={() => { setState(s => ({ ...s, extras: [] })); setStep('summary'); }}
           />
         )}
+        */}
 
         {step === 'summary' && (
           <StepSummary
