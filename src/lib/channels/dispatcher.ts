@@ -4,6 +4,7 @@
  * Routes outbound messages through the appropriate channel (email, whatsapp, etc.)
  */
 import { sendEmail } from '@/lib/channels/email';
+import { sendWhatsAppMessage } from '@/lib/channels/whatsapp';
 import { getDb } from '@/lib/db';
 
 export interface DispatchResult {
@@ -29,7 +30,7 @@ export async function dispatchMessage(opts: {
     case 'email':
       return await dispatchEmail(db, leadId, opts.conversationId, content, senderName);
     case 'whatsapp':
-      return { success: false, error: 'WhatsApp not configured yet' };
+      return await dispatchWhatsApp(db, leadId, content);
     case 'manual':
       return { success: true };
     case 'phone':
@@ -120,3 +121,33 @@ async function dispatchEmail(
   return { success: false, error: 'SMTP send failed' };
 }
 
+/**
+ * Dispatch via WhatsApp Cloud API
+ */
+async function dispatchWhatsApp(
+  db: any,
+  leadId: string,
+  content: string,
+): Promise<DispatchResult> {
+  const lead = db.prepare(
+    "SELECT whatsapp, phone, first_name FROM crm_leads WHERE id = ?"
+  ).get(leadId) as any;
+
+  const phoneNumber = lead?.whatsapp || lead?.phone;
+  if (!phoneNumber) {
+    return { success: false, error: 'Lead has no WhatsApp or phone number' };
+  }
+
+  // Normalize: remove spaces, dashes, and leading +
+  const normalized = phoneNumber.replace(/[\s\-\+\(\)]/g, '');
+
+  const result = await sendWhatsAppMessage({
+    to: normalized,
+    content,
+  });
+
+  if (result.success) {
+    return { success: true, externalId: result.messageId };
+  }
+  return { success: false, error: result.error || 'WhatsApp send failed' };
+}
