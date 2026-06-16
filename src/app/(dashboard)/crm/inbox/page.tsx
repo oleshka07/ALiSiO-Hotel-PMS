@@ -10,7 +10,7 @@ import {
   MessageSquare, User, Clock,
   ArrowLeft, Bot,
   Sparkles, PanelRightOpen, PanelRightClose,
-  Brain,
+  Brain, Languages,
 } from 'lucide-react';
 import '../crm.css';
 import {
@@ -160,6 +160,8 @@ export default function CrmInboxPage() {
   const [newMessage, setNewMessage] = useState('');
   const [sendChannel, setSendChannel] = useState('manual');
   const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<'delivered' | 'failed' | null>(null);
+  const [translating, setTranslating] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [aiSuggesting, setAiSuggesting] = useState(false);
@@ -191,6 +193,7 @@ export default function CrmInboxPage() {
 
   const fetchConversation = useCallback(async (leadId: string) => {
     setConvLoading(true);
+    setSendStatus(null);
     try {
       const leadRes = await fetch(`/api/crm/leads/${leadId}`);
       if (leadRes.ok) {
@@ -198,7 +201,17 @@ export default function CrmInboxPage() {
         const convs = ld.conversations || [];
         if (convs.length > 0) {
           const convRes = await fetch(`/api/crm/conversations/${convs[0].id}`);
-          if (convRes.ok) setConversation(await convRes.json());
+          if (convRes.ok) {
+            const convData = await convRes.json();
+            setConversation(convData);
+            // Auto-select channel from last inbound message
+            const lastInbound = convData.messages?.filter((m: any) => m.direction === 'inbound').pop();
+            if (lastInbound?.channel_type && lastInbound.channel_type !== 'manual') {
+              setSendChannel(lastInbound.channel_type);
+            } else if (ld.email) {
+              setSendChannel('email');
+            }
+          }
         } else {
           setConversation({
             id: '', lead_id: leadId, first_name: ld.first_name, last_name: ld.last_name,
@@ -210,6 +223,7 @@ export default function CrmInboxPage() {
             reservation_status: null, payment_status: null, total_price: null,
             external_uid: null, bcom_reservation_id: null, messages: [],
           });
+          if (ld.email) setSendChannel('email');
         }
       }
     } catch (err: any) { console.error('Помилка завантаження розмови:', err); showError(err.message || 'Помилка завантаження розмови'); }
@@ -272,8 +286,9 @@ export default function CrmInboxPage() {
     const isAiGenerated = aiDraft !== null && aiDraft.length > 0;
     const wasEdited = isAiGenerated && newMessage.trim() !== aiDraft?.trim();
     setSending(true);
+    setSendStatus(null);
     try {
-      await fetch(`/api/crm/conversations/${conversation.id}/messages`, {
+      const res = await fetch(`/api/crm/conversations/${conversation.id}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channelType: sendChannel, direction: 'outbound',
@@ -282,6 +297,14 @@ export default function CrmInboxPage() {
           isAiGenerated: isAiGenerated ? 1 : 0,
         }),
       });
+      const result = await res.json();
+      if (result.status === 'failed') {
+        setSendStatus('failed');
+        showError('Помилка відправки email — перевірте SMTP налаштування');
+      } else {
+        setSendStatus(sendChannel === 'email' ? 'delivered' : null);
+        if (sendChannel === 'email') setTimeout(() => setSendStatus(null), 4000);
+      }
       // Save training data if AI was involved
       if (isAiGenerated && aiDraft) {
         const lastGuestMsg = conversation.messages?.filter((m: any) => m.direction === 'inbound').pop();
@@ -301,8 +324,28 @@ export default function CrmInboxPage() {
       setNewMessage('');
       setAiDraft(null);
       if (selectedLeadId) fetchConversation(selectedLeadId);
-    } catch (err: any) { console.error('Помилка відправки повідомлення:', err); showError(err.message || 'Помилка відправки повідомлення'); }
+    } catch (err: any) { console.error('Помилка відправки повідомлення:', err); showError(err.message || 'Помилка відправки повідомлення'); setSendStatus('failed'); }
     setSending(false);
+  };
+
+  const handleTranslate = async (targetLang: string) => {
+    if (!newMessage.trim() || translating) return;
+    setTranslating(true);
+    try {
+      const res = await fetch('/api/crm/ai/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: newMessage.trim(), targetLang }),
+      });
+      if (!res.ok) throw new Error('Translation failed');
+      const data = await res.json();
+      if (data.translated) {
+        setNewMessage(data.translated);
+      }
+    } catch (err: any) {
+      console.error('Translation error:', err);
+      showError('Помилка перекладу');
+    }
+    setTranslating(false);
   };
 
   const handleSaveToKnowledge = async (form: any) => {
@@ -520,6 +563,21 @@ export default function CrmInboxPage() {
                       <button className="btn btn-primary inbox-send-btn" onClick={handleSend} disabled={sending || !newMessage.trim() || !conversation.id}>
                         {sending ? <Loader2 size={16} className="animate-pulse" /> : <Send size={16} />}
                       </button>
+                    </div>
+                    {/* Translation buttons + status */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderTop: '1px solid var(--border-subtle)' }}>
+                      <Languages size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                      {[{ code: 'uk', flag: '🇺🇦', label: 'UK' }, { code: 'cs', flag: '🇨🇿', label: 'CZ' }, { code: 'en', flag: '🇬🇧', label: 'EN' }, { code: 'de', flag: '🇩🇪', label: 'DE' }].map(lang => (
+                        <button key={lang.code} className="btn btn-ghost" onClick={() => handleTranslate(lang.code)}
+                          disabled={translating || !newMessage.trim()}
+                          style={{ height: 24, padding: '0 6px', fontSize: 11, gap: 2, opacity: !newMessage.trim() ? 0.4 : 1 }}
+                          title={`Перекласти на ${lang.label}`}>
+                          <span>{lang.flag}</span> <span>{lang.label}</span>
+                        </button>
+                      ))}
+                      {translating && <Loader2 size={12} className="animate-pulse" style={{ color: 'var(--accent-info)' }} />}
+                      {sendStatus === 'delivered' && <span style={{ fontSize: 10, color: 'var(--accent-success)', marginLeft: 'auto' }}>✅ Email надіслано</span>}
+                      {sendStatus === 'failed' && <span style={{ fontSize: 10, color: 'var(--accent-danger)', marginLeft: 'auto' }}>❌ Помилка відправки</span>}
                     </div>
                   </div>
                 </div>
