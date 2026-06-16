@@ -251,6 +251,180 @@ function getTasksSummary(): TasksSummary {
   return { overdue, today: todayTasks, inProgress, total };
 }
 
+// ─── Detailed Property/BU Breakdown ──────────────────────
+
+interface BuBreakdown {
+  buId: string;
+  buName: string;
+  checkIns: { guestName: string; unitName: string; nights: number }[];
+  cash: number;
+  card: number;
+  other: number;
+  totalIncome: number;
+  cashExpenses: number;
+  expenseDetails: { comment: string; amount: number }[];
+}
+
+function getDetailedBreakdown(): BuBreakdown[] {
+  const db = getDb();
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get active business units
+  const bus = db.prepare(`
+    SELECT id, name FROM business_units
+    WHERE is_active = 1 AND is_shared = 0
+    ORDER BY sort_order
+  `).all() as any[];
+
+  // For each BU, collect income by method and expenses
+  const result: BuBreakdown[] = [];
+
+  for (const bu of bus) {
+    // Income by method for this BU
+    const incomeRows = db.prepare(`
+      SELECT method, SUM(amount) as total
+      FROM fin_operations
+      WHERE project_id = ? AND op_type = 'income' AND status = 'completed'
+        AND date(paid_at) = ?
+      GROUP BY method
+    `).all(bu.id, today) as any[];
+
+    const methods: Record<string, number> = {};
+    for (const r of incomeRows) methods[r.method || 'other'] = r.total;
+
+    // Cash expenses for this BU
+    const expenseRows = db.prepare(`
+      SELECT amount, comment
+      FROM fin_operations
+      WHERE project_id = ? AND op_type = 'expense' AND status = 'completed'
+        AND date(paid_at) = ? AND (method = 'cash' OR method IS NULL)
+    `).all(bu.id, today) as any[];
+
+    const cashExpenses = expenseRows.reduce((s: number, r: any) => s + r.amount, 0);
+
+    // Check-ins: match BU name to category/property
+    // BU maps: Глемпинг→glamping, Кемпинг→camping, Будова F/D→resort, etc.
+    // Use unit category type + reservation check-in
+    let checkIns: any[] = [];
+    const buNameLower = bu.name.toLowerCase();
+    
+    if (buNameLower.includes('глемп') || buNameLower.includes('glamping')) {
+      checkIns = db.prepare(`
+        SELECT g.first_name, g.last_name, u.name as unit_name, r.nights
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        JOIN categories c ON c.id = u.category_id
+        JOIN guests g ON g.id = r.guest_id
+        WHERE r.check_in = ? AND r.status IN ('confirmed','checked_in')
+          AND c.type = 'glamping'
+        ORDER BY u.name
+      `).all(today) as any[];
+    } else if (buNameLower.includes('кемп') || buNameLower.includes('camping') || buNameLower.includes('палатк') || buNameLower.includes('караван')) {
+      checkIns = db.prepare(`
+        SELECT g.first_name, g.last_name, u.name as unit_name, r.nights
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        JOIN categories c ON c.id = u.category_id
+        JOIN guests g ON g.id = r.guest_id
+        WHERE r.check_in = ? AND r.status IN ('confirmed','checked_in')
+          AND c.type = 'camping'
+        ORDER BY u.name
+      `).all(today) as any[];
+    } else if (buNameLower.includes('будов') || buNameLower.includes('resort') || buNameLower.includes('готел')) {
+      checkIns = db.prepare(`
+        SELECT g.first_name, g.last_name, u.name as unit_name, r.nights
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        JOIN categories c ON c.id = u.category_id
+        JOIN guests g ON g.id = r.guest_id
+        WHERE r.check_in = ? AND r.status IN ('confirmed','checked_in')
+          AND c.type = 'resort'
+        ORDER BY u.name
+      `).all(today) as any[];
+    }
+
+    const totalIncome = Object.values(methods).reduce((s, v) => s + v, 0);
+
+    // Only include BU if it has any activity today
+    if (totalIncome > 0 || cashExpenses > 0 || checkIns.length > 0) {
+      result.push({
+        buId: bu.id,
+        buName: bu.name,
+        checkIns: checkIns.map(r => ({
+          guestName: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+          unitName: r.unit_name,
+          nights: r.nights,
+        })),
+        cash: methods['cash'] || 0,
+        card: methods['card'] || 0,
+        other: totalIncome - (methods['cash'] || 0) - (methods['card'] || 0),
+        totalIncome,
+        cashExpenses,
+        expenseDetails: expenseRows.map((r: any) => ({
+          comment: r.comment || '',
+          amount: r.amount,
+        })),
+      });
+    }
+  }
+
+  return result;
+}
+
+function formatDetailedDigest(breakdown: BuBreakdown[]): string {
+  const todayStr = new Date().toLocaleDateString('uk-UA', {
+    day: '2-digit', month: '2-digit',
+    timeZone: 'Europe/Prague',
+  });
+
+  const lines: string[] = [
+    `📋 <b>${todayStr}</b>`,
+    ``,
+  ];
+
+  for (const bu of breakdown) {
+    lines.push(`<b>${escapeHtml(bu.buName)}</b>`);
+
+    // Check-ins
+    if (bu.checkIns.length > 0) {
+      lines.push(`🔑 ${bu.checkIns.length} поселен${bu.checkIns.length === 1 ? 'ня' : 'ь'}`);
+      for (const ci of bu.checkIns) {
+        lines.push(`  • ${escapeHtml(ci.unitName)} — ${escapeHtml(ci.guestName)}`);
+      }
+    }
+
+    // Income: cash / card
+    const incomeParts: string[] = [];
+    if (bu.cash > 0) incomeParts.push(`💵 ${formatAmount(bu.cash)} нал.`);
+    if (bu.card > 0) incomeParts.push(`💳 ${formatAmount(bu.card)} картка`);
+    if (bu.other > 0) incomeParts.push(`🌐 ${formatAmount(bu.other)} інше`);
+
+    if (incomeParts.length > 0) {
+      lines.push(incomeParts.join(' / '));
+    } else if (bu.checkIns.length === 0) {
+      // no income, no check-ins — skip income line
+    }
+
+    // Cash expenses
+    if (bu.cashExpenses > 0) {
+      lines.push(`📉 Витрати: ${formatAmount(bu.cashExpenses)}`);
+      for (const exp of bu.expenseDetails) {
+        if (exp.comment) {
+          lines.push(`  • ${formatAmount(exp.amount)} — ${escapeHtml(exp.comment)}`);
+        }
+      }
+    }
+
+    lines.push(``);
+  }
+
+  if (breakdown.length === 0) {
+    lines.push(`<i>Сьогодні немає активності по об'єктах</i>`);
+  }
+
+  return lines.join('\n');
+}
+
 // ─── Format & Send ───────────────────────────────────────
 
 function formatDailyDigest(
@@ -376,6 +550,9 @@ async function sendToChat(chatId: string, text: string): Promise<number | null> 
 
 /**
  * Main entry point — collect all data and send digest to Telegram.
+ * Sends TWO messages:
+ * 1. General digest (CRM, Finance totals, Bookings, Tasks)
+ * 2. Detailed per-property/BU breakdown (check-ins, cash/card, expenses)
  */
 export async function sendDailyOperationalDigest(): Promise<{
   sent: boolean;
@@ -387,12 +564,19 @@ export async function sendDailyOperationalDigest(): Promise<{
   const tasks = getTasksSummary();
   const text = formatDailyDigest(crm, finance, bookings, tasks);
 
+  // Detailed breakdown by business unit
+  const breakdown = getDetailedBreakdown();
+  const detailedText = formatDetailedDigest(breakdown);
+
   let sent = false;
 
-  // Send to primary chat
+  // Send to primary chat — message 1 (general) + message 2 (detailed)
   if (CHAT_ID) {
     const msgId = await sendToChat(CHAT_ID, text);
     sent = !!msgId;
+    if (breakdown.length > 0) {
+      await sendToChat(CHAT_ID, detailedText);
+    }
   }
 
   // Send copies to admin chats
@@ -400,9 +584,14 @@ export async function sendDailyOperationalDigest(): Promise<{
     sendToChat(adminId, text).catch(e =>
       console.error(`[DailyDigest] Admin send to ${adminId} failed:`, e.message)
     );
+    if (breakdown.length > 0) {
+      sendToChat(adminId, detailedText).catch(e =>
+        console.error(`[DailyDigest] Admin detailed to ${adminId} failed:`, e.message)
+      );
+    }
   }
 
-  console.log(`[DailyDigest] CRM: ${crm.newMessagesToday} msgs, ${crm.unansweredLeads.length} unanswered | Finance: ${finance.totalIncome} ${finance.currency} | Bookings: ${bookings.newBookingsToday} new, ${bookings.occupancyPct}% occ | Tasks: ${tasks.total} active`);
+  console.log(`[DailyDigest] CRM: ${crm.newMessagesToday} msgs, ${crm.unansweredLeads.length} unanswered | Finance: ${finance.totalIncome} ${finance.currency} | Bookings: ${bookings.newBookingsToday} new, ${bookings.occupancyPct}% occ | Tasks: ${tasks.total} active | BU breakdown: ${breakdown.length} units`);
 
   return { sent, sections: { crm, finance, bookings, tasks } };
 }
