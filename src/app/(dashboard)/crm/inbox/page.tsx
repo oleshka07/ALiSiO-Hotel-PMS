@@ -557,7 +557,7 @@ export default function CrmInboxPage() {
                       )}
                     </div>
                     <div className="inbox-compose-input">
-                      <textarea ref={textareaRef} className="inbox-textarea" placeholder="Напишіть повідомлення..." value={newMessage} rows={1}
+                      <textarea ref={textareaRef} className="inbox-textarea" placeholder="Напишіть повідомлення..." value={newMessage} rows={5}
                         onChange={e => setNewMessage(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} />
                       <button className="btn btn-primary inbox-send-btn" onClick={handleSend} disabled={sending || !newMessage.trim() || !conversation.id}>

@@ -679,8 +679,8 @@
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s ease;
-  min-height: 42px;
-  max-height: 120px;
+  min-height: 120px;
+  max-height: 360px;
 }
 
 .inbox-textarea:focus {
