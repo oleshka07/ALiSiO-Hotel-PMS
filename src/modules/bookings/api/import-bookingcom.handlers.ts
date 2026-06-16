@@ -128,11 +128,16 @@ function planRow(
       return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing: null, action: 'skip-no-unit-type', warnings };
     }
     const requestedCount = Math.max(1, row.rooms || 1);
+    // Booking.com Excel reports TOTAL persons/adults across all rooms.
+    // Divide by room count to get per-room capacity.
+    const perRoomAdults = requestedCount > 1
+      ? Math.ceil((row.persons || row.adults || 1) / requestedCount)
+      : (row.persons || row.adults || 1);
     const units: PlannedUnit[] = [];
     for (let i = 0; i < requestedCount; i++) {
       units.push({
         unitId: pool.id, unitName: pool.name,
-        capacity: row.persons || row.adults || 1,
+        capacity: perRoomAdults,
         unitTypeId: pool.unit_type_id, buildingCode: pool.building_code,
       });
     }
@@ -435,8 +440,10 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
                 checkIn: row.checkIn,
                 checkOut: row.checkOut,
                 nights: row.duration || 1,
-                adults: row.adults,
-                children: row.children,
+                // For multi-room: Booking.com Excel gives TOTAL adults/children.
+                // Divide by room count to get per-room values.
+                adults: isMultiRoom ? Math.ceil(row.adults / plan.plannedUnits.length) : row.adults,
+                children: isMultiRoom ? Math.ceil(row.children / plan.plannedUnits.length) : row.children,
                 totalPrice: totalPriceCzk,
                 currency: storedCurrency,
                 bcomReservationId: row.bookNumber,

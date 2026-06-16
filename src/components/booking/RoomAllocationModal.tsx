@@ -140,9 +140,10 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
       const fUnits = (Array.isArray(uAll) ? uAll : []).filter((u: any) => {
         // Pool unit always included regardless of building — Чорновик is shared
         if (u.is_pool === 1) return true;
-        const code = (u.code || '').toUpperCase();
-        const buildingNameUpper = (u.building_name || '').toUpperCase();
-        return code.startsWith(activeBuilding) || buildingNameUpper.includes(activeBuilding);
+        // Use building_code for exact match — substring on building_name
+        // matched 'D' in 'Будова' and 'Standart', mixing F rooms into D tab
+        const bCode = (u.building_code || '').toUpperCase();
+        return bCode === activeBuilding;
       });
       const fUnitIds = new Set(fUnits.map((u: any) => u.id));
 
