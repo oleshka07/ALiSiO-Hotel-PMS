@@ -10,7 +10,7 @@ import crypto from 'crypto';
 export async function handleTelegramCallback(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, draftId, callbackQueryId, correctionText } = body;
+    const { action, draftId, callbackQueryId, correctionText, targetLang } = body;
 
     if (!action || !draftId) {
       return NextResponse.json({ error: 'Missing action or draftId' }, { status: 400 });
@@ -25,6 +25,8 @@ export async function handleTelegramCallback(request: NextRequest) {
     switch (action) {
       case 'translate':
         return await handleTranslate(db, draft, callbackQueryId);
+      case 'translate_to':
+        return await handleTranslate(db, draft, callbackQueryId, targetLang);
       case 'approve':
         return await handleApprove(db, draft, callbackQueryId, false);
       case 'approve_translated':
@@ -44,16 +46,22 @@ export async function handleTelegramCallback(request: NextRequest) {
   }
 }
 
-async function handleTranslate(db: any, draft: any, callbackQueryId?: string) {
-  if (callbackQueryId) await answerCallbackQuery(callbackQueryId, '🌍 Перекладаю...');
+async function handleTranslate(db: any, draft: any, callbackQueryId?: string, overrideLang?: string) {
+  const langLabels: Record<string, string> = { cs: '🇨🇿 CZ', de: '🇩🇪 DE', en: '🇬🇧 EN' };
+  const langHint = overrideLang ? (langLabels[overrideLang] || overrideLang.toUpperCase()) : '🌍';
+  if (callbackQueryId) await answerCallbackQuery(callbackQueryId, `${langHint} Перекладаю...`);
 
-  const translated = await translateDraft(draft.id);
+  const translated = await translateDraft(draft.id, overrideLang);
   if (!translated) {
     return NextResponse.json({ error: 'Translation failed' }, { status: 500 });
   }
 
+  // Re-read draft to get updated target_language
+  const updatedDraft = db.prepare('SELECT target_language FROM crm_auto_drafts WHERE id = ?').get(draft.id) as any;
+  const langCode = updatedDraft?.target_language || overrideLang || draft.target_language;
+
   if (draft.telegram_message_id) {
-    const langLabel = draft.target_language?.toUpperCase() || '??';
+    const langLabel = langCode?.toUpperCase() || '??';
     const text = [
       `📩 <b>Запит від</b> ${escapeHtml(draft.reply_to_email)}`,
       `📋 <b>Тема:</b> ${escapeHtml(draft.reply_subject || '')}`,
@@ -69,6 +77,11 @@ async function handleTranslate(db: any, draft: any, callbackQueryId?: string) {
       [
         { text: '✅ Підтвердити', callback_data: `crm_approve_translated_${draft.id}` },
         { text: '✏️ Змінити', callback_data: `crm_edit_${draft.id}` },
+      ],
+      [
+        { text: '🇨🇿 CZ', callback_data: `crm_translate_cs_${draft.id}` },
+        { text: '🇩🇪 DE', callback_data: `crm_translate_de_${draft.id}` },
+        { text: '🇬🇧 EN', callback_data: `crm_translate_en_${draft.id}` },
       ],
       [
         { text: '❌ Відхилити', callback_data: `crm_reject_${draft.id}` },
@@ -158,6 +171,11 @@ async function handleApplyCorrection(db: any, draft: any, correctionText?: strin
       [
         { text: '🌍 Перекласти', callback_data: `crm_translate_${draft.id}` },
         { text: '✏️ Змінити ще', callback_data: `crm_edit_${draft.id}` },
+      ],
+      [
+        { text: '🇨🇿 CZ', callback_data: `crm_translate_cs_${draft.id}` },
+        { text: '🇩🇪 DE', callback_data: `crm_translate_de_${draft.id}` },
+        { text: '🇬🇧 EN', callback_data: `crm_translate_en_${draft.id}` },
       ],
       [
         { text: '✅ Відправити як є (UK)', callback_data: `crm_approve_${draft.id}` },

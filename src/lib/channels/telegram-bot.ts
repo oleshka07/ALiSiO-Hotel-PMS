@@ -202,6 +202,11 @@ export async function sendDraftApproval(opts: {
       { text: '✏️ Змінити', callback_data: `crm_edit_${opts.draftId}` },
     ],
     [
+      { text: '🇨🇿 CZ', callback_data: `crm_translate_cs_${opts.draftId}` },
+      { text: '🇩🇪 DE', callback_data: `crm_translate_de_${opts.draftId}` },
+      { text: '🇬🇧 EN', callback_data: `crm_translate_en_${opts.draftId}` },
+    ],
+    [
       { text: '✅ Відправити як є (UK)', callback_data: `crm_approve_${opts.draftId}` },
       { text: '❌ Відхилити', callback_data: `crm_reject_${opts.draftId}` },
     ],

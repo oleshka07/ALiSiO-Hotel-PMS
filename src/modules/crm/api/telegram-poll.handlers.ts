@@ -32,9 +32,15 @@ export async function pollTelegram() {
       const parts = cbq.data.replace('crm_', '').split('_');
       let action: string;
       let draftId: string;
+      let targetLang: string | undefined;
 
       if (parts.length >= 3 && parts[0] === 'approve' && parts[1] === 'translated') {
         action = 'approve_translated';
+        draftId = parts.slice(2).join('_');
+      } else if (parts.length >= 3 && parts[0] === 'translate' && ['cs', 'de', 'en', 'ru', 'sk', 'pl', 'fr', 'it', 'es'].includes(parts[1])) {
+        // Language-specific translate: crm_translate_cs_DRAFTID
+        action = 'translate_to';
+        targetLang = parts[1];
         draftId = parts.slice(2).join('_');
       } else if (parts.length >= 2) {
         action = parts[0];
@@ -43,13 +49,13 @@ export async function pollTelegram() {
         continue;
       }
 
-      console.log(`[TG Poll] Callback: ${action} for draft ${draftId}`);
+      console.log(`[TG Poll] Callback: ${action}${targetLang ? ` (${targetLang})` : ''} for draft ${draftId}`);
 
       try {
         await fetch(`${BASE_URL}/api/crm/channels/telegram/callback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, draftId, callbackQueryId: cbq.id }),
+          body: JSON.stringify({ action, draftId, callbackQueryId: cbq.id, targetLang }),
         });
         processed++;
       } catch (err: any) {

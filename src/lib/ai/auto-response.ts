@@ -271,7 +271,7 @@ ${history || 'Це перше повідомлення від гостя.'}
 /* ────────────────────────────────────────────────────────
    Translate draft to guest language
    ──────────────────────────────────────────────────────── */
-export async function translateDraft(draftId: string): Promise<string | null> {
+export async function translateDraft(draftId: string, overrideLang?: string): Promise<string | null> {
   const db = getDb();
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -285,11 +285,13 @@ export async function translateDraft(draftId: string): Promise<string | null> {
     it: 'Italian', es: 'Spanish', nl: 'Dutch', hu: 'Hungarian',
   };
 
-  const targetLang = langMap[draft.target_language] || draft.target_language || 'English';
+  // Use override language if provided, otherwise fall back to draft's target_language
+  const langCode = overrideLang || draft.target_language || 'en';
+  const targetLang = langMap[langCode] || langCode || 'English';
 
-  // If already Ukrainian, no need to translate
-  if (draft.target_language === 'uk') {
-    db.prepare("UPDATE crm_auto_drafts SET draft_content_translated = draft_content_uk, status = 'translated', updated_at = datetime('now') WHERE id = ?")
+  // If target is Ukrainian, no need to translate
+  if (langCode === 'uk') {
+    db.prepare("UPDATE crm_auto_drafts SET draft_content_translated = draft_content_uk, target_language = 'uk', status = 'translated', updated_at = datetime('now') WHERE id = ?")
       .run(draftId);
     return draft.draft_content_uk;
   }
@@ -314,9 +316,9 @@ Keep the same tone, meaning, and formatting. Do not add or remove information.`,
 
   db.prepare(`
     UPDATE crm_auto_drafts 
-    SET draft_content_translated = ?, status = 'translated', updated_at = datetime('now')
+    SET draft_content_translated = ?, target_language = ?, status = 'translated', updated_at = datetime('now')
     WHERE id = ?
-  `).run(translated, draftId);
+  `).run(translated, langCode, draftId);
 
   return translated;
 }
