@@ -567,15 +567,7 @@ export async function getAnalyticsFunnel(
     const step4 = getEventSessions('widget_step_4');
     const step5 = getEventSessions('widget_step_5');
 
-    // 8. CRM Leads from website forms
-    const leadsSql = `
-      SELECT COUNT(*) as count 
-      FROM site_incoming_leads 
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ?
-    `;
-    const leadsRow = db.prepare(leadsSql).get(siteId, `${dateFrom} 00:00:00`, `${dateTo} 23:59:59`) as { count: number };
-    const crmLeads = leadsRow ? leadsRow.count : 0;
-
+    // Removed old step 8 (crmLeads) as it is now in the Contact Funnel
     // 9-11. Reservations counts
     const getReservationsFunnelCount = (statusFilter?: string, paidFilter?: boolean) => {
       const source = `widget:${siteId}`;
