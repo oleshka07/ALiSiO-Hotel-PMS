@@ -237,12 +237,12 @@ async function processIncomingMessage(
     // Auto-send welcome template to new WhatsApp leads
     const lang = detectTemplateLanguage(content);
     const templateName = `welcome_inquiry_${lang}`;
-    const firstName = nameParts[0] || 'Guest';
+    const guestFirstName = nameParts[0] || 'Guest';
     sendWhatsAppTemplate({
       to: senderPhone,
       templateName,
       languageCode: lang,
-      parameters: [firstName],
+      parameters: [guestFirstName],
     }).then(result => {
       if (result.success) {
         console.log(`[WhatsApp Webhook] Auto-sent ${templateName} to ${senderPhone}`);
