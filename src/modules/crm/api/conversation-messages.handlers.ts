@@ -28,7 +28,7 @@ export async function executeCreateMessage(db: any, conversationId: string, body
 
   let externalId: string | undefined;
   let status = 'sent';
-  if (direction === 'outbound' && channelType === 'email') {
+  if (direction === 'outbound' && (channelType === 'email' || channelType === 'whatsapp')) {
     const result = await dispatchMessage({
       channelType,
       leadId: conv.lead_id,
