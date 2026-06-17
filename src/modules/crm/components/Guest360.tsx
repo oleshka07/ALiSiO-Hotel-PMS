@@ -5,6 +5,7 @@ import {
   X, Loader2, Phone, Mail, Calendar, User, Clock,
   ChevronRight, Globe, Smartphone, Truck, Tent, DollarSign,
   ExternalLink, Users, Zap, FileText, Hash, MessageSquare,
+  Pencil, Save, XCircle,
 } from 'lucide-react';
 import {
   STAGE_CONFIG, CHANNEL_ICONS, SOURCE_LABELS,
@@ -80,6 +81,12 @@ export default function Guest360({ leadId, onClose, onStageChanged, variant = 's
   const [loading, setLoading] = useState(true);
   const [changingStage, setChangingStage] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    firstName: string; lastName: string; phone: string;
+    email: string; whatsapp: string; notes: string;
+  }>({ firstName: '', lastName: '', phone: '', email: '', whatsapp: '', notes: '' });
 
   const show = !!leadId;
 
@@ -115,6 +122,51 @@ export default function Guest360({ leadId, onClose, onStageChanged, variant = 's
       setError(err.message || 'Помилка зміни етапу');
     }
     setChangingStage(false);
+  };
+
+  const startEditing = () => {
+    if (!lead) return;
+    setEditForm({
+      firstName: lead.first_name || '',
+      lastName: lead.last_name || '',
+      phone: lead.phone || '',
+      email: lead.email || '',
+      whatsapp: lead.whatsapp || '',
+      notes: lead.notes || '',
+    });
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+
+  const handleSaveContact = async () => {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/crm/leads/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      const updated = await res.json();
+      setLead(prev => prev ? {
+        ...prev,
+        first_name: updated.first_name,
+        last_name: updated.last_name,
+        phone: updated.phone,
+        email: updated.email,
+        whatsapp: updated.whatsapp,
+        notes: updated.notes,
+      } : null);
+      setEditing(false);
+      onStageChanged?.();
+    } catch (err: any) {
+      setError(err.message || 'Помилка збереження');
+    }
+    setSaving(false);
   };
 
   const nights = lead ? formatNights(lead.check_in_date, lead.check_out_date) : 0;
@@ -188,24 +240,85 @@ export default function Guest360({ leadId, onClose, onStageChanged, variant = 's
         <div className="g360-body">
           {/* Contact section */}
           <div className="g360-section">
-            <h4><User size={13} /> Контакт</h4>
-            {lead.phone && (
-              <div className="g360-kv">
-                <span className="g360-kv-key"><Phone size={12} style={{ marginRight: 6 }} />Телефон</span>
-                <span className="g360-kv-value">{lead.phone}</span>
+            <h4 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><User size={13} /> Контакт</span>
+              {!editing && (
+                <button className="btn btn-ghost" onClick={startEditing}
+                  style={{ height: 22, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Редагувати">
+                  <Pencil size={12} />
+                </button>
+              )}
+            </h4>
+            {editing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input className="form-input" placeholder="Ім'я" value={editForm.firstName}
+                    onChange={e => setEditForm(p => ({ ...p, firstName: e.target.value }))}
+                    style={{ flex: 1, height: 32, fontSize: 12, padding: '0 8px' }} />
+                  <input className="form-input" placeholder="Прізвище" value={editForm.lastName}
+                    onChange={e => setEditForm(p => ({ ...p, lastName: e.target.value }))}
+                    style={{ flex: 1, height: 32, fontSize: 12, padding: '0 8px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Phone size={12} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+                  <input className="form-input" placeholder="Телефон" value={editForm.phone}
+                    onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))}
+                    style={{ flex: 1, height: 32, fontSize: 12, padding: '0 8px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Mail size={12} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+                  <input className="form-input" placeholder="Email" value={editForm.email}
+                    onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
+                    style={{ flex: 1, height: 32, fontSize: 12, padding: '0 8px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Smartphone size={12} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+                  <input className="form-input" placeholder="WhatsApp" value={editForm.whatsapp}
+                    onChange={e => setEditForm(p => ({ ...p, whatsapp: e.target.value }))}
+                    style={{ flex: 1, height: 32, fontSize: 12, padding: '0 8px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={12} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+                  <textarea className="form-input" placeholder="Нотатки" value={editForm.notes}
+                    onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))}
+                    style={{ flex: 1, minHeight: 48, fontSize: 12, padding: '6px 8px', resize: 'vertical' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-sm btn-ghost" onClick={cancelEditing} disabled={saving}
+                    style={{ height: 28, fontSize: 11, gap: 4 }}>
+                    <XCircle size={12} /> Скасувати
+                  </button>
+                  <button className="btn btn-sm btn-primary" onClick={handleSaveContact} disabled={saving || !editForm.firstName.trim()}
+                    style={{ height: 28, fontSize: 11, gap: 4 }}>
+                    {saving ? <Loader2 size={12} className="animate-pulse" /> : <Save size={12} />} Зберегти
+                  </button>
+                </div>
               </div>
-            )}
-            {lead.email && (
-              <div className="g360-kv">
-                <span className="g360-kv-key"><Mail size={12} style={{ marginRight: 6 }} />Email</span>
-                <span className="g360-kv-value" style={{ fontSize: 12 }}>{lead.email}</span>
-              </div>
-            )}
-            {lead.whatsapp && lead.whatsapp !== lead.phone && (
-              <div className="g360-kv">
-                <span className="g360-kv-key"><Smartphone size={12} style={{ marginRight: 6 }} />WhatsApp</span>
-                <span className="g360-kv-value">{lead.whatsapp}</span>
-              </div>
+            ) : (
+              <>
+                {lead.phone && (
+                  <div className="g360-kv">
+                    <span className="g360-kv-key"><Phone size={12} style={{ marginRight: 6 }} />Телефон</span>
+                    <span className="g360-kv-value">{lead.phone}</span>
+                  </div>
+                )}
+                {lead.email && (
+                  <div className="g360-kv">
+                    <span className="g360-kv-key"><Mail size={12} style={{ marginRight: 6 }} />Email</span>
+                    <span className="g360-kv-value" style={{ fontSize: 12 }}>{lead.email}</span>
+                  </div>
+                )}
+                {lead.whatsapp && lead.whatsapp !== lead.phone && (
+                  <div className="g360-kv">
+                    <span className="g360-kv-key"><Smartphone size={12} style={{ marginRight: 6 }} />WhatsApp</span>
+                    <span className="g360-kv-value">{lead.whatsapp}</span>
+                  </div>
+                )}
+                {!lead.phone && !lead.email && !lead.whatsapp && (
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Немає контактних даних — натисніть ✏️</div>
+                )}
+              </>
             )}
           </div>
 
@@ -268,8 +381,8 @@ export default function Guest360({ leadId, onClose, onStageChanged, variant = 's
             </div>
           )}
 
-          {/* Notes */}
-          {lead.notes && (
+          {/* Notes (only show when not editing, since notes are in edit form) */}
+          {!editing && lead.notes && (
             <div className="g360-section">
               <h4><FileText size={13} /> Нотатки</h4>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{lead.notes}</div>
