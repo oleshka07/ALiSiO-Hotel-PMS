@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDb } from '@/lib/db';
+import { sendWhatsAppTemplate, detectTemplateLanguage } from '@/lib/channels/whatsapp';
 
 // ─── Helpers ──────────────────────────────────────────────────
 function generateId(): string {
@@ -232,6 +233,25 @@ async function processIncomingMessage(
 
     lead = { id: leadId };
     console.log(`[WhatsApp Webhook] Created new lead ${leadId} for ${senderName}`);
+
+    // Auto-send welcome template to new WhatsApp leads
+    const lang = detectTemplateLanguage(content);
+    const templateName = `welcome_inquiry_${lang}`;
+    const firstName = nameParts[0] || 'Guest';
+    sendWhatsAppTemplate({
+      to: senderPhone,
+      templateName,
+      languageCode: lang,
+      parameters: [firstName],
+    }).then(result => {
+      if (result.success) {
+        console.log(`[WhatsApp Webhook] Auto-sent ${templateName} to ${senderPhone}`);
+      } else {
+        console.warn(`[WhatsApp Webhook] Failed to auto-send template: ${result.error}`);
+      }
+    }).catch(err => {
+      console.warn(`[WhatsApp Webhook] Template send error:`, err.message);
+    });
   }
 
   // ── 2. Find or create conversation ────────────────────────
