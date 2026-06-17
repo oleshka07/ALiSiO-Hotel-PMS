@@ -455,7 +455,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
               )}
 
               {/* SECTION: FUNNEL */}
-              {activeSection === 'funnel' && Array.isArray(data) && (
+              {activeSection === 'funnel' && data.funnelWidget && (
                 <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
                     <div>
@@ -485,7 +485,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
 
                   {/* Funnel steps chart */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-                    {data.map((stepItem: any, idx: number) => {
+                    {data.funnelWidget.map((stepItem: any, idx: number) => {
                       // Determine bar color based on category
                       let barColor = 'linear-gradient(90deg, #4f6ef7, #6382ff)';
                       if (stepItem.step === 1) barColor = 'linear-gradient(90deg, #60a5fa, #3b82f6)';
@@ -544,6 +544,69 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           </div>
 
                           {/* Conversion indicators */}
+                          <div style={{ width: 180, display: 'flex', gap: 12, fontSize: 12, flexShrink: 0 }}>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ color: 'var(--text-tertiary)' }}>Загальна:</span>{' '}
+                              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stepItem.conversionFromFirst}%</span>
+                            </div>
+                            {idx > 0 && (
+                              <div style={{ flex: 1 }}>
+                                <span style={{ color: 'var(--text-tertiary)' }}>Крок:</span>{' '}
+                                <span style={{ fontWeight: 700, color: 'var(--accent-info)' }}>{stepItem.conversionFromPrevious}%</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION: CONTACT LEADS FUNNEL */}
+              {activeSection === 'funnel' && data.funnelContact && (
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                      <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Воронка: Форми зворотного зв'язку</h4>
+                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Конверсія лідів, що залишили заявку через контактну форму сайту</p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+                    {data.funnelContact.map((stepItem: any, idx: number) => {
+                      // Custom colors for contact funnel
+                      let barColor = 'linear-gradient(90deg, #8b5cf6, #a78bfa)';
+                      if (stepItem.step === 1) barColor = 'linear-gradient(90deg, #60a5fa, #3b82f6)';
+                      else if (stepItem.step === 2) barColor = 'linear-gradient(90deg, #fb923c, #f97316)';
+                      else if (stepItem.step === 3) barColor = 'linear-gradient(90deg, #4f6ef7, #6382ff)';
+                      else if (stepItem.step >= 4) barColor = 'linear-gradient(90deg, #34d399, #10b981)';
+
+                      return (
+                        <div key={stepItem.step} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <div style={{ width: 220, flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{
+                                width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)'
+                              }}>
+                                {stepItem.step}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{stepItem.name}</span>
+                            </div>
+                          </div>
+
+                          <div style={{ flex: 1, height: 24, background: 'var(--bg-secondary)', borderRadius: 6, overflow: 'hidden', position: 'relative', border: '1px solid var(--border-primary)' }}>
+                            <div style={{
+                              height: '100%', width: `${Math.max(1, stepItem.conversionFromFirst)}%`, background: barColor, transition: 'width 0.5s ease', borderRadius: 4
+                            }} />
+                            <div style={{
+                              position: 'absolute', top: 0, left: 12, height: '100%', display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 700, color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+                            }}>
+                              {stepItem.count.toLocaleString()}
+                            </div>
+                          </div>
+
                           <div style={{ width: 180, display: 'flex', gap: 12, fontSize: 12, flexShrink: 0 }}>
                             <div style={{ flex: 1 }}>
                               <span style={{ color: 'var(--text-tertiary)' }}>Загальна:</span>{' '}

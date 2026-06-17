@@ -24,15 +24,15 @@ function getReservationsStats(db: any, siteId: string, from: string, to: string,
       COALESCE(SUM(total_price - COALESCE(commission_amount, 0)), 0) as revenue,
       COALESCE(AVG(total_price), 0) as avg_check
     FROM reservations
-    WHERE source = ? AND status != 'cancelled'
+    WHERE source IN (?, ?) AND status != 'cancelled'
   `;
-  const params = [source];
+  const params = [source, 'widget'];
   if (dateType === 'check_in') {
     sql += ' AND check_in >= ? AND check_in <= ?';
     params.push(from, to);
   } else {
     sql += ' AND created_at >= ? AND created_at <= ?';
-    params.push(`${from}T00:00:00Z`, `${to}T23:59:59Z`);
+    params.push(`${from} 00:00:00`, `${to} 23:59:59`);
   }
   return db.prepare(sql).get(params) as { count: number; revenue: number; avg_check: number };
 }
@@ -147,15 +147,15 @@ export async function getAnalyticsTraffic(
         COUNT(*) as bookings, 
         SUM(total_price - COALESCE(commission_amount, 0)) as revenue
       FROM reservations
-      WHERE source = ? AND status != 'cancelled' AND utm_source IS NOT NULL
+      WHERE source IN (?, ?) AND status != 'cancelled' AND utm_source IS NOT NULL
     `;
-    const bookingsParams = [source];
+    const bookingsParams = [source, 'widget'];
     if (dateType === 'check_in') {
       bookingsSql += ' AND check_in >= ? AND check_in <= ?';
       bookingsParams.push(dateFrom, dateTo);
     } else {
       bookingsSql += ' AND created_at >= ? AND created_at <= ?';
-      bookingsParams.push(fromTime, toTime);
+      bookingsParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     bookingsSql += ' GROUP BY utm_source';
 
@@ -246,15 +246,15 @@ export async function getAnalyticsGeo(
         COUNT(*) as bookings, 
         SUM(total_price - COALESCE(commission_amount, 0)) as revenue
       FROM reservations
-      WHERE source = ? AND status != 'cancelled' AND booking_lang IS NOT NULL
+      WHERE source IN (?, ?) AND status != 'cancelled' AND booking_lang IS NOT NULL
     `;
-    const langParams = [source];
+    const langParams = [source, 'widget'];
     if (dateType === 'check_in') {
       langBookingsSql += ' AND check_in >= ? AND check_in <= ?';
       langParams.push(dateFrom, dateTo);
     } else {
       langBookingsSql += ' AND created_at >= ? AND created_at <= ?';
-      langParams.push(fromTime, toTime);
+      langParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     langBookingsSql += ' GROUP BY booking_lang';
 
@@ -295,15 +295,15 @@ export async function getAnalyticsGeo(
         COUNT(*) as bookings, 
         SUM(total_price - COALESCE(commission_amount, 0)) as revenue
       FROM reservations
-      WHERE source = ? AND status != 'cancelled' AND country_code IS NOT NULL
+      WHERE source IN (?, ?) AND status != 'cancelled' AND country_code IS NOT NULL
     `;
-    const countryParams = [source];
+    const countryParams = [source, 'widget'];
     if (dateType === 'check_in') {
       countrySql += ' AND check_in >= ? AND check_in <= ?';
       countryParams.push(dateFrom, dateTo);
     } else {
       countrySql += ' AND created_at >= ? AND created_at <= ?';
-      countryParams.push(fromTime, toTime);
+      countryParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     countrySql += ' GROUP BY country_code';
 
@@ -364,15 +364,15 @@ export async function getAnalyticsListings(
       FROM reservations r
       JOIN units u ON r.unit_id = u.id
       JOIN unit_types ut ON u.unit_type_id = ut.id
-      WHERE r.source = ? AND r.status != 'cancelled'
+      WHERE r.source IN (?, ?) AND r.status != 'cancelled'
     `;
-    const utParams = [source];
+    const utParams = [source, 'widget'];
     if (dateType === 'check_in') {
       utSql += ' AND r.check_in >= ? AND r.check_in <= ?';
       utParams.push(dateFrom, dateTo);
     } else {
       utSql += ' AND r.created_at >= ? AND r.created_at <= ?';
-      utParams.push(fromTime, toTime);
+      utParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     utSql += ' GROUP BY ut.id ORDER BY bookings DESC';
 
@@ -388,15 +388,15 @@ export async function getAnalyticsListings(
       FROM reservations r
       JOIN units u ON r.unit_id = u.id
       JOIN categories c ON u.category_id = c.id
-      WHERE r.source = ? AND r.status != 'cancelled'
+      WHERE r.source IN (?, ?) AND r.status != 'cancelled'
     `;
-    const catParams = [source];
+    const catParams = [source, 'widget'];
     if (dateType === 'check_in') {
       catSql += ' AND r.check_in >= ? AND r.check_in <= ?';
       catParams.push(dateFrom, dateTo);
     } else {
       catSql += ' AND r.created_at >= ? AND r.created_at <= ?';
-      catParams.push(fromTime, toTime);
+      catParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     catSql += ' GROUP BY c.id ORDER BY bookings DESC';
 
@@ -452,15 +452,15 @@ export async function getAnalyticsCampaigns(
         COUNT(*) as bookings, 
         SUM(total_price - COALESCE(commission_amount, 0)) as revenue
       FROM reservations
-      WHERE source = ? AND status != 'cancelled'
+      WHERE source IN (?, ?) AND status != 'cancelled'
     `;
-    const bookingsParams = [source];
+    const bookingsParams = [source, 'widget'];
     if (dateType === 'check_in') {
       bookingsSql += ' AND check_in >= ? AND check_in <= ?';
       bookingsParams.push(dateFrom, dateTo);
     } else {
       bookingsSql += ' AND created_at >= ? AND created_at <= ?';
-      bookingsParams.push(fromTime, toTime);
+      bookingsParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
     bookingsSql += ' GROUP BY utm_source, utm_medium, utm_campaign';
 
@@ -582,9 +582,9 @@ export async function getAnalyticsFunnel(
       let sql = `
         SELECT COUNT(*) as count 
         FROM reservations 
-        WHERE source = ? AND status != 'cancelled'
+        WHERE source IN (?, ?) AND status != 'cancelled'
       `;
-      const p = [source];
+      const p = [source, 'widget'];
       
       if (statusFilter) {
         if (statusFilter === 'checked_in') {
@@ -603,7 +603,7 @@ export async function getAnalyticsFunnel(
         p.push(dateFrom, dateTo);
       } else {
         sql += ' AND created_at >= ? AND created_at <= ?';
-        p.push(fromTime, toTime);
+        p.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
       }
       
       const row = db.prepare(sql).get(p) as { count: number };
@@ -614,23 +614,22 @@ export async function getAnalyticsFunnel(
     const bookingsCheckedIn = getReservationsFunnelCount('checked_in');
     const bookingsPaid = getReservationsFunnelCount(undefined, true);
 
-    const funnel = [
+    const funnelWidgetRaw = [
       { step: 1, name: "Відвідування сайту", count: siteViews, key: "site_views" },
-      { step: 2, name: "Клік Book / Відкриття віджета", count: bookClicks, key: "book_clicks" },
+      { step: 2, name: "Розпочато бронювання", count: bookClicks, key: "book_clicks" },
       { step: 3, name: "Крок 1 (Вибір дат)", count: step1, key: "widget_step_1" },
       { step: 4, name: "Крок 2 (Вибір житла)", count: step2, key: "widget_step_2" },
       { step: 5, name: "Крок 3 (Послуги)", count: step3, key: "widget_step_3" },
       { step: 6, name: "Крок 4 (Дані гостя)", count: step4, key: "widget_step_4" },
       { step: 7, name: "Крок 5 (Оплата/Підтвердження)", count: step5, key: "widget_step_5" },
-      { step: 8, name: "Надіслано контактних лідів", count: crmLeads, key: "crm_leads" },
-      { step: 9, name: "Створено бронювань", count: bookingsCreated, key: "bookings_created" },
-      { step: 10, name: "Успішних заселень", count: bookingsCheckedIn, key: "bookings_checked_in" },
-      { step: 11, name: "Оплачено повністю", count: bookingsPaid, key: "bookings_paid" }
+      { step: 8, name: "Створено бронювань", count: bookingsCreated, key: "bookings_created" },
+      { step: 9, name: "Успішних заселень", count: bookingsCheckedIn, key: "bookings_checked_in" },
+      { step: 10, name: "Оплачено повністю", count: bookingsPaid, key: "bookings_paid" }
     ];
 
-    const result = funnel.map((item, idx) => {
-      const fromFirst = funnel[0].count > 0 ? (item.count / funnel[0].count) * 100 : 0;
-      const fromPrev = idx > 0 && funnel[idx - 1].count > 0 ? (item.count / funnel[idx - 1].count) * 100 : 100;
+    const funnelWidget = funnelWidgetRaw.map((item, idx) => {
+      const fromFirst = funnelWidgetRaw[0].count > 0 ? (item.count / funnelWidgetRaw[0].count) * 100 : 0;
+      const fromPrev = idx > 0 && funnelWidgetRaw[idx - 1].count > 0 ? (item.count / funnelWidgetRaw[idx - 1].count) * 100 : 100;
       return {
         ...item,
         conversionFromFirst: Math.round(fromFirst * 10) / 10,
@@ -638,7 +637,89 @@ export async function getAnalyticsFunnel(
       };
     });
 
-    return NextResponse.json(result);
+    // Funnel 2: Contact Leads
+    const leadsSql = `
+      SELECT id, email, phone, status 
+      FROM site_incoming_leads 
+      WHERE site_id = ? AND created_at >= ? AND created_at <= ?
+    `;
+    const submittedLeads = db.prepare(leadsSql).all(siteId, `${dateFrom} 00:00:00`, `${dateTo} 23:59:59`) as any[];
+    const leadsSubmitted = submittedLeads.length;
+
+    let leadsProcessed = 0;
+    let leadsBooked = 0;
+    let leadsPaid = 0;
+    let leadsCheckedIn = 0;
+
+    if (submittedLeads.length > 0) {
+      const emails = submittedLeads.map(l => l.email).filter(Boolean);
+      const phones = submittedLeads.map(l => l.phone).filter(Boolean);
+      
+      const emailList = emails.map(e => `'${e.replace(/'/g, "''")}'`).join(',');
+      const phoneList = phones.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+
+      let processedCount = submittedLeads.filter(l => l.status !== 'new').length;
+      let crmProcessedCount = 0;
+
+      if (emailList || phoneList) {
+        const crmConds = [];
+        if (emailList) crmConds.push(`cl.email IN (${emailList})`);
+        if (phoneList) crmConds.push(`cl.phone IN (${phoneList})`);
+        const crmCond = crmConds.join(' OR ');
+
+        // Outbound messages check
+        const crmProcessedSql = `
+          SELECT COUNT(DISTINCT cl.id) as count
+          FROM crm_leads cl
+          JOIN crm_conversations cc ON cc.lead_id = cl.id
+          JOIN crm_messages cm ON cm.conversation_id = cc.id
+          WHERE (${crmCond}) AND cm.direction = 'outbound'
+        `;
+        crmProcessedCount = (db.prepare(crmProcessedSql).get() as any).count;
+      }
+      
+      leadsProcessed = Math.max(processedCount, crmProcessedCount);
+
+      if (emailList || phoneList) {
+        const guestConds = [];
+        if (emailList) guestConds.push(`g.email IN (${emailList})`);
+        if (phoneList) guestConds.push(`g.phone IN (${phoneList})`);
+        const guestCond = guestConds.join(' OR ');
+
+        // We count reservations created AFTER the start of the period
+        const resSql = `
+          SELECT DISTINCT r.id, r.status, r.payment_status 
+          FROM reservations r
+          JOIN guests g ON r.guest_id = g.id
+          WHERE (${guestCond}) AND r.created_at >= ? AND r.status != 'cancelled'
+        `;
+        const linkedReservations = db.prepare(resSql).all(`${dateFrom} 00:00:00`) as any[];
+        
+        leadsBooked = linkedReservations.length;
+        leadsCheckedIn = linkedReservations.filter(r => r.status === 'checked_in' || r.status === 'checked_out').length;
+        leadsPaid = linkedReservations.filter(r => r.payment_status === 'paid').length;
+      }
+    }
+
+    const funnelContactRaw = [
+      { step: 1, name: "Надіслано форму", count: leadsSubmitted, key: "leads_submitted" },
+      { step: 2, name: "Опрацьовано (відповідь)", count: leadsProcessed, key: "leads_processed" },
+      { step: 3, name: "Заброньовано", count: leadsBooked, key: "leads_booked" },
+      { step: 4, name: "Оплачено повністю", count: leadsPaid, key: "leads_paid" },
+      { step: 5, name: "Успішних заселень", count: leadsCheckedIn, key: "leads_checked_in" }
+    ];
+
+    const funnelContact = funnelContactRaw.map((item, idx) => {
+      const fromFirst = funnelContactRaw[0].count > 0 ? (item.count / funnelContactRaw[0].count) * 100 : 0;
+      const fromPrev = idx > 0 && funnelContactRaw[idx - 1].count > 0 ? (item.count / funnelContactRaw[idx - 1].count) * 100 : 100;
+      return {
+        ...item,
+        conversionFromFirst: Math.round(fromFirst * 10) / 10,
+        conversionFromPrevious: Math.round(fromPrev * 10) / 10
+      };
+    });
+
+    return NextResponse.json({ funnelWidget, funnelContact });
   } catch (error: any) {
     console.error('Error fetching site funnel analytics:', error?.message || error);
     return NextResponse.json({ error: 'Failed to fetch funnel analytics' }, { status: 500 });
