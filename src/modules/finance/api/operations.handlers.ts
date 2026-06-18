@@ -150,8 +150,11 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const page = Math.max(1, parseInt(sp.get('page') || '1', 10));
     const pageSize = Math.min(10000, Math.max(1, parseInt(sp.get('pageSize') || '50', 10)));
 
-    const where: string[] = ['o.organization_id = ?'];
-    const params: any[] = [orgId];
+    // If they touch an account belonging to this org, they belong to this org.
+    // This fixes finmap import anomalies where organization_id might be NULL.
+    const where = [`(o.organization_id = ? OR afr.organization_id = ? OR ato.organization_id = ?)`];
+    const params: any[] = [orgId, orgId, orgId];
+
     if (needsReviewOnly) where.push('o.needs_review = 1');
     if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
@@ -196,7 +199,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       LEFT JOIN finance_accounts       ato ON ato.id = o.account_to_id
       LEFT JOIN fin_recurring_templates rt ON rt.id  = o.suggested_recurring_id
       WHERE ${whereSql}
-      ORDER BY o.paid_at DESC, o.created_at DESC
+      ORDER BY o.paid_at DESC, o.created_at DESC, o.rowid DESC
       LIMIT ? OFFSET ?
     `).all(...params, pageSize, (page - 1) * pageSize) as any[];
 
@@ -234,7 +237,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         FROM fin_operations
         WHERE (account_to_id = ? OR account_from_id = ?)
           AND status = 'completed'
-        ORDER BY paid_at ASC, created_at ASC
+        ORDER BY paid_at ASC, created_at ASC, rowid ASC
       `).all(acct.currency, acctId, acctId) as any[];
 
       // Walk through ALL ops computing cumulative balance

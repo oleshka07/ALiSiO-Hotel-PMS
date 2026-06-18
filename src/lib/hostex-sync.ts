@@ -25,12 +25,12 @@ const BLOCKED_CHANNEL_TYPES = new Set(['owner', 'manual', 'owner_reservation', '
 
 /** Hostex property_id → ALiSiO unit_id mapping */
 const PROPERTY_MAP: Record<number, string> = {
-  12446083: 'u_mr1',                           // A1 River Wood → A1 - Mirror
-  12558043: 'u_mr2',                           // A2 Slow Down  → A2 - Mirror
-  12590381: 'u_st1',                           // B1            → B1 - Stealth
-  12590382: 'u_st2',                           // B2            → B2 - Stealth
-  12446084: 'u_st3',                           // B3 Stealth    → B3 - Stealth
-  12565124: 'd503be0cd56044e5fe4d1a5a727c8bdb', // B4 Svitanok   → ST4 - Stealth 4 (same cabin)
+  12446083: 'u_mr1',                           // A1 River Wood → A1 - Mirror - River Wood
+  12558043: 'u_mr2',                           // A2 Slow Down  → A2 - Mirror - Slow Down
+  12590381: 'u_st1',                           // B1            → B1 - Stealth - Stealth 1
+  12590382: 'u_st2',                           // B2            → B2 - Stealth - Stealth 2
+  12446084: 'u_st3',                           // B3 Stealth    → B3 - Stealth - Stealth 3
+  12565124: 'u_st4',                           // B4 Svitanok   → B4 - Stealth - Svitanok
 };
 
 const PROPERTY_ID = 'prop_main_001';

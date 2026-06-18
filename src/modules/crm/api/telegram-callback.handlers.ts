@@ -17,8 +17,35 @@ export async function handleTelegramCallback(request: NextRequest) {
     }
 
     const db = getDb();
+
+    // Ensure drafts table exists (it's created dynamically by auto-response)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS crm_auto_drafts (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        lead_id TEXT NOT NULL,
+        account_id TEXT,
+        original_query TEXT NOT NULL,
+        draft_content_uk TEXT NOT NULL,
+        draft_content_translated TEXT,
+        target_language TEXT,
+        status TEXT DEFAULT 'pending',
+        telegram_message_id INTEGER,
+        reply_subject TEXT,
+        reply_to_email TEXT,
+        in_reply_to TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const draft = db.prepare('SELECT * FROM crm_auto_drafts WHERE id = ?').get(draftId) as any;
     if (!draft) {
+      // Tell Telegram user the draft is gone
+      if (callbackQueryId) {
+        await answerCallbackQuery(callbackQueryId, '⚠️ Чернетку не знайдено — можливо вона застаріла');
+      }
       return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
     }
 

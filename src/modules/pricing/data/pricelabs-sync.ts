@@ -19,12 +19,12 @@ import { getEurCzkRate } from '@/lib/hostex';
  * appears. Premature DRY costs more than the two-line repeat.
  */
 const HOSTEX_TO_UNIT: Record<number, string> = {
-  12446083: 'u_mr1',                            // A1 River Wood
-  12558043: 'u_mr2',                            // A2 Slow Down
-  12590381: 'u_st1',                            // B1
-  12590382: 'u_st2',                            // B2
-  12446084: 'u_st3',                            // B3 Stealth
-  12565124: '1e7f6c7bd383af9cdfaa43eb50160148', // B4 Svitanok
+  12446083: 'u_mr1',                            // A1 - Mirror - River Wood
+  12558043: 'u_mr2',                            // A2 - Mirror - Slow Down
+  12590381: 'u_st1',                            // B1 - Stealth - Stealth 1
+  12590382: 'u_st2',                            // B2 - Stealth - Stealth 2
+  12446084: 'u_st3',                            // B3 - Stealth - Stealth 3
+  12565124: 'u_st4',                            // B4 - Stealth - Svitanok
 };
 
 export interface SyncListingResult {
