@@ -10,7 +10,9 @@
 
 let isRunning = false;
 let emailIntervalId: ReturnType<typeof setTimeout> | null = null;
+let tgPollIntervalId: ReturnType<typeof setTimeout> | null = null;
 const EMAIL_POLL_MS = 2 * 60 * 1000; // 2 minutes
+const TG_POLL_MS = 10 * 1000; // 10 seconds
 
 async function pollEmails() {
   if (isRunning) return;
@@ -50,8 +52,27 @@ async function pollEmails() {
   }
 }
 
-// Telegram callback polling removed — handled by kemptimebot Python bridge
-// See: /root/projects/alisio-bot/src/bot/handlers/crm_bridge.py
+let tgPollRunning = false;
+async function pollTelegramCallbacks() {
+  if (tgPollRunning) return;
+  tgPollRunning = true;
+  try {
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const res = await fetch(`${baseUrl}/api/crm/channels/telegram/poll`, {
+      headers: { 'X-Internal-Cron': '1' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.processed > 0) {
+        console.log(`[TG Cron] ✅ Processed ${data.processed} callback(s)`);
+      }
+    }
+  } catch (err: any) {
+    // Silent — polling errors are non-critical
+  } finally {
+    tgPollRunning = false;
+  }
+}
 
 async function syncStages() {
   try {
@@ -106,9 +127,11 @@ export function startEmailPoller() {
     emailIntervalId = setInterval(pollEmails, EMAIL_POLL_MS);
   }
 
-  // NOTE: Telegram callbacks now handled by kemptimebot (Python) bridge
+  // Telegram callback polling (every 10 seconds)
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    console.log('[CRM Cron] 🤖 Telegram: using kemptimebot bridge (no local polling)');
+    console.log('[CRM Cron] 🤖 Telegram callback poller (every 10s)');
+    setTimeout(pollTelegramCallbacks, 8000);
+    tgPollIntervalId = setInterval(pollTelegramCallbacks, TG_POLL_MS);
   }
 
   // Stage sync (every 5 min)
@@ -121,6 +144,10 @@ export function stopEmailPoller() {
   if (emailIntervalId) {
     clearInterval(emailIntervalId);
     emailIntervalId = null;
+  }
+  if (tgPollIntervalId) {
+    clearInterval(tgPollIntervalId);
+    tgPollIntervalId = null;
   }
   console.log('[CRM Cron] Stopped');
 }
