@@ -219,7 +219,7 @@ export default function BookingWizard() {
       .catch(() => {});
   }, []);
 
-  // Restore draft
+  // Restore draft or read category from URL
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem(STORAGE_KEY);
@@ -228,6 +228,14 @@ export default function BookingWizard() {
         if (parsed.accommodationType && parsed.checkIn) { setShowResume(true); setState(parsed); }
       }
     } catch { /* ignore */ }
+
+    // Direct redirect from URL
+    const params = new URLSearchParams(window.location.search);
+    const category = params.get('category');
+    if (category && ['glamping', 'buildings', 'camping'].includes(category)) {
+      setState(s => ({ ...s, accommodationType: category as AccommodationType }));
+      setStep('accommodation');
+    }
   }, []);
 
   // Save draft

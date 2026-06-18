@@ -73,7 +73,7 @@ export function PaymentGateScreen({ data, t, lang, setLang, token }: Props) {
           {ALL_LANGS.map(l => (
             <button key={l} className={`gp-lang-pill ${l === lang ? 'active' : ''}`}
               onClick={() => setLang(l)}
-              style={{ fontSize: 11, padding: '4px 8px' }}>{LANG_LABELS[l]}</button>
+              style={{ fontSize: 11, padding: '4px 8px', background: l === lang ? '#000' : 'rgba(0,0,0,0.4)', color: '#FFF' }}>{LANG_LABELS[l]}</button>
           ))}
         </div>
       )}
