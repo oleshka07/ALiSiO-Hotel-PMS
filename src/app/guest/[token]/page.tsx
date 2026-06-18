@@ -1730,7 +1730,7 @@ function PostStayPage({ data, lang, setLang }: {
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px', gap: 4 }}>
         {ALL_LANGS.map(l => (
           <button key={l} className={`gp-lang-pill ${l === lang ? 'active' : ''}`}
-            style={{ background: l === lang ? 'var(--gp-tint)' : 'var(--gp-sep)', color: l === lang ? '#FFF' : 'var(--gp-sub)' }}
+            style={{ background: l === lang ? '#000' : 'rgba(0,0,0,0.4)', color: '#FFF' }}
             onClick={() => setLang(l)}>{LANG_LABELS[l]}</button>
         ))}
       </div>
