@@ -150,6 +150,44 @@ export async function createBookingDraft(req: Request) {
         ORDER BY u.sort_order LIMIT 1
       `).get(property.id, `%${unitCode}%`, `%${unitCode}%`) as any;
       unitId = glamUnit?.id || null;
+    } else if (accommodationType === 'buildings') {
+      const bld = body.accommodation_data?.building === 'budova_f' ? 'bldg_f' : 'bldg_d';
+      const checkIn  = body.check_in  || null;
+      const checkOut = body.check_out || null;
+
+      const buildingUnit = (checkIn && checkOut)
+        ? db.prepare(`
+            SELECT u.id FROM units u
+            WHERE u.property_id = ? AND u.is_active = 1
+              AND u.building_id = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM reservations r
+                WHERE r.unit_id = u.id
+                  AND r.status NOT IN ('cancelled', 'no_show')
+                  AND r.check_in  < ?
+                  AND r.check_out > ?
+              )
+            ORDER BY u.sort_order, u.name
+            LIMIT 1
+          `).get(property.id, bld, checkOut, checkIn) as any
+        : db.prepare(`
+            SELECT u.id FROM units u
+            WHERE u.property_id = ? AND u.is_active = 1
+              AND u.building_id = ?
+            ORDER BY u.sort_order, u.name
+            LIMIT 1
+          `).get(property.id, bld) as any;
+
+      if (!buildingUnit) {
+        const fallbackBld = db.prepare(`
+          SELECT u.id FROM units u
+          WHERE u.property_id = ? AND u.is_active = 1 AND u.building_id = ?
+          ORDER BY u.sort_order, u.name LIMIT 1
+        `).get(property.id, bld) as any;
+        unitId = fallbackBld?.id || null;
+      } else {
+        unitId = buildingUnit.id;
+      }
     }
 
     // Ultimate fallback: any unit at all (so we never fail with NOT NULL constraint)
