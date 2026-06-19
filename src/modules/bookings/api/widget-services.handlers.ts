@@ -147,7 +147,7 @@ export async function getWidgetServices(request: NextRequest) {
         // Check if service is included in rate plan
         const isIncluded = includedServices.includes(s.id) || includedServices.includes(s.code || '');
         if (isIncluded) {
-          formatted.is_included = true;
+          (formatted as any).is_included = true;
           formatted.price = 0;
         }
         return formatted;

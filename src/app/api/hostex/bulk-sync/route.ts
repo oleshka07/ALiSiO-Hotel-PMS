@@ -12,5 +12,5 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
-  return hostexBulkSync();
+  return hostexBulkSync(request as any);
 }

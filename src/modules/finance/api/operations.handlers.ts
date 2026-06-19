@@ -103,17 +103,20 @@ function getTagsFor(db: any, operationId: string): string[] {
 /** Batch-fetch tags for multiple operations in one query. */
 function getBatchTags(db: any, operationIds: string[]): Record<string, string[]> {
   if (operationIds.length === 0) return {};
-  const ph = operationIds.map(() => '?').join(',');
-  const rows = db.prepare(`
-    SELECT ot.operation_id, t.name FROM fin_operation_tags ot
-    JOIN finance_tags t ON t.id = ot.tag_id
-    WHERE ot.operation_id IN (${ph})
-    ORDER BY t.sort_order, t.name
-  `).all(...operationIds) as { operation_id: string; name: string }[];
   const map: Record<string, string[]> = {};
-  for (const r of rows) {
-    if (!map[r.operation_id]) map[r.operation_id] = [];
-    map[r.operation_id].push(r.name);
+  for (let i = 0; i < operationIds.length; i += 500) {
+    const chunk = operationIds.slice(i, i + 500);
+    const ph = chunk.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT ot.operation_id, t.name FROM fin_operation_tags ot
+      JOIN finance_tags t ON t.id = ot.tag_id
+      WHERE ot.operation_id IN (${ph})
+      ORDER BY t.sort_order, t.name
+    `).all(...chunk) as { operation_id: string; name: string }[];
+    for (const r of rows) {
+      if (!map[r.operation_id]) map[r.operation_id] = [];
+      map[r.operation_id].push(r.name);
+    }
   }
   return map;
 }
@@ -180,7 +183,13 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     }
 
     const whereSql = where.join(' AND ');
-    const totalRow = db.prepare(`SELECT COUNT(*) AS n FROM fin_operations o WHERE ${whereSql}`).get(...params) as { n: number };
+    const totalRow = db.prepare(`
+      SELECT COUNT(*) AS n 
+      FROM fin_operations o 
+      LEFT JOIN finance_accounts afr ON afr.id = o.account_from_id
+      LEFT JOIN finance_accounts ato ON ato.id = o.account_to_id
+      WHERE ${whereSql}
+    `).get(...params) as { n: number };
 
     const rows = db.prepare(`
       SELECT
@@ -199,7 +208,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       LEFT JOIN finance_accounts       ato ON ato.id = o.account_to_id
       LEFT JOIN fin_recurring_templates rt ON rt.id  = o.suggested_recurring_id
       WHERE ${whereSql}
-      ORDER BY o.paid_at DESC, o.created_at DESC, o.rowid DESC
+      ORDER BY o.paid_at DESC, o.created_at DESC, o.id DESC
       LIMIT ? OFFSET ?
     `).all(...params, pageSize, (page - 1) * pageSize) as any[];
 
@@ -237,7 +246,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         FROM fin_operations
         WHERE (account_to_id = ? OR account_from_id = ?)
           AND status = 'completed'
-        ORDER BY paid_at ASC, created_at ASC, rowid ASC
+        ORDER BY paid_at ASC, created_at ASC, id ASC
       `).all(acct.currency, acctId, acctId) as any[];
 
       // Walk through ALL ops computing cumulative balance
@@ -263,11 +272,12 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         }
       }
     }
-
     } // end running balance guard
 
     return NextResponse.json({ items, total: totalRow.n, page, pageSize });
   } catch (error: any) {
+    try { require('fs').appendFileSync('pms-error.log', new Date().toISOString() + ' GET /operations ERROR: ' + error.message + '\n' + error.stack + '\n'); } catch (e) {}
+    console.error('GET /api/finance/operations error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

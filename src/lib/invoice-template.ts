@@ -619,7 +619,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
               <span style="color:#6b7280; font-size:8.5pt">→ ${formatDate(data.check_out)}</span>
             </td>
             <td>${nights}</td>
-            <td style="font-weight:600; color:#1a1a2e">${formatAmount(data.amount, data.currency)}</td>
+            <td style="font-weight:600; color:#1a1a2e">${formatAmount(data.amount, data.currency as string)}</td>
           </tr>
         </tbody>
       </table>
@@ -629,7 +629,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
         <div class="totals-inner">
           <div class="total-line main">
             <span>Celkem k úhradě</span>
-            <span class="amount">${formatAmount(data.amount, data.currency)}</span>
+            <span class="amount">${formatAmount(data.amount, data.currency as string)}</span>
           </div>
           <div class="no-vat-note">Fakturující subjekt není plátcem DPH.</div>
         </div>

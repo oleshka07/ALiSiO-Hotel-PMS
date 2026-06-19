@@ -125,7 +125,7 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     // Auto-create reservation for any new Booking.com booking (any property type).
     // Until now this fired only for categoryType==='resort', leaving Booking
     // emails for camping/glamping/hostel as leads-only with no reservation row.
-    if (bookingData.isBookingCom && bookingData.isNewReservation && !lead.reservation_id && bookingData.checkIn && bookingData.checkOut) {
+    if (bookingData.isBookingCom && bookingData.isNewReservation && !(lead as any).reservation_id && bookingData.checkIn && bookingData.checkOut) {
       autoCreateReservationFromEmail(db, lead.id, bookingData, email.textBody);
     }
   }
@@ -147,7 +147,7 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     }
 
     // Auto-create reservation for Vrbo (Resort by default)
-    if (vrboData.isNewReservation && !lead.reservation_id && vrboData.checkIn && vrboData.checkOut) {
+    if (vrboData.isNewReservation && !(lead as any).reservation_id && vrboData.checkIn && vrboData.checkOut) {
       const mappedData = {
         confirmationId: vrboData.confirmationId,
         checkIn: vrboData.checkIn,

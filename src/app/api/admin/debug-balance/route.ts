@@ -3,19 +3,23 @@
  * Shows all operations on an account between dates with running balance
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, getOrgId } from '@core/db';
+import { getDb } from '@core/db';
 
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
+    const orgRow = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
+    const orgId = orgRow?.id;
+    if (!orgId) return NextResponse.json({ error: 'No org' }, { status: 400 });
+
     const sp = request.nextUrl.searchParams;
     const accountName = sp.get('account') || 'Олег наличные';
     const from = sp.get('from') || '2026-01-20';
     const to = sp.get('to') || '2026-01-25';
 
     const acct = db.prepare(
-      "SELECT id, name, currency, initial_balance FROM finance_accounts WHERE name = ?"
-    ).get(accountName) as any;
+      "SELECT id, name, currency, initial_balance FROM finance_accounts WHERE name = ? AND org_id = ?"
+    ).get(accountName, orgId) as any;
 
     if (!acct) {
       return NextResponse.json({ error: `Account "${accountName}" not found` }, { status: 404 });

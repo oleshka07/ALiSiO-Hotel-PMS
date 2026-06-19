@@ -55,10 +55,10 @@ async function runLocalTesseract(imageUrl: string): Promise<string | null> {
       const child = runCmd('node', [scriptPath]);
       let stdout = '';
 
-      child.stdout.on('data', (data) => { stdout += data.toString(); });
-      child.stderr.on('data', (data) => { console.error('[Tesseract STDERR]', data.toString()); });
+      child.stdout.on('data', (data: any) => { stdout += data.toString(); });
+      child.stderr.on('data', (data: any) => { console.error('[Tesseract STDERR]', data.toString()); });
 
-      child.on('close', (code) => {
+      child.on('close', (code: any) => {
         if (code !== 0) {
           console.error('[Tesseract] exited with code', code);
           return resolve(null);

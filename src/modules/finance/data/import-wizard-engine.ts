@@ -67,7 +67,7 @@ export async function parseUploadedFile(buffer: Buffer, filename: string): Promi
 
 async function parseXlsx(buffer: Buffer): Promise<ParsedSpreadsheet> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
+  await wb.xlsx.load(buffer as any);
   const ws = wb.worksheets[0];
   if (!ws) return { headers: [], rows: [], row_count: 0, signature: '' };
 

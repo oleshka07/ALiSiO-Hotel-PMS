@@ -10,7 +10,7 @@ export async function POST(
   const { token } = await params;
   if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 });
 
-  const rl = checkRateLimit(token, 'ocr', 5, 10); // 5 requests per 10 minutes max
+  const rl = checkRateLimit(token, 'ocr' as any, 5, 10); // 5 requests per 10 minutes max
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Too many OCR attempts. Please try again later.' }, { status: 429 });
   }

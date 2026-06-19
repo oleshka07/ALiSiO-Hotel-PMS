@@ -205,6 +205,7 @@ export default function GuestPage() {
             dateOfBirth: g.date_of_birth || '',
             documentType: g.document_type || '', documentNumber: g.document_number || '',
             nationality: g.nationality || '', address: g.address || '',
+            purposeOfStay: g.purpose_of_stay || '', visaNumber: g.visa_number || '',
           });
         } else if (d.reservation) {
           // Pre-fill from reservation data (name, phone, email) — per spec

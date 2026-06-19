@@ -15,8 +15,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE v.id = ?
     `).get(id);
-    if (!giftCard) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
-    return NextResponse.json({ giftCard });
+    if (!gift_card) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
+    return NextResponse.json({ giftCard: gift_card });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

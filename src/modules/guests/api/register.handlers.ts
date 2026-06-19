@@ -132,7 +132,7 @@ export async function registerGuests(
       parsedGuests.push(result.data);
     }
 
-    const clientIp = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    const clientIp = request.headers.get('x-forwarded-for') || 'unknown';
     const registeredGuests = registrationRepo.saveRegistrations(reservation.id, reservation.organization_id, parsedGuests, clientIp);
 
     // ── Auto-sync to Google Sheets (non-blocking) ─────────────────────────

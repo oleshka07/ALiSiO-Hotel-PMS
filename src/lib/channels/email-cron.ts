@@ -57,18 +57,10 @@ async function pollTelegramCallbacks() {
   if (tgPollRunning) return;
   tgPollRunning = true;
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/crm/channels/telegram/poll`, {
-      headers: { 'X-Internal-Cron': '1' },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.processed > 0) {
-        console.log(`[TG Cron] ✅ Processed ${data.processed} callback(s)`);
-      }
-    }
+    const { pollTelegram } = await import('@/modules/crm/api/telegram-poll.handlers');
+    await pollTelegram();
   } catch (err: any) {
-    // Silent — polling errors are non-critical
+    console.error('[TG Cron] Poll error:', err.message);
   } finally {
     tgPollRunning = false;
   }

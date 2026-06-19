@@ -50,7 +50,7 @@ export async function GET(req: Request) {
         AND expires_at < date('now')
     `).run();
 
-    return NextResponse.json({ gift_cards, templates: GIFT_CARD_TEMPLATES });
+    return NextResponse.json({ gift_cards: giftCards, templates: GIFT_CARD_TEMPLATES });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('GET /api/gift-cards error:', message);
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
     ) as { id: string };
 
     const gift_card = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(id.id);
-    return NextResponse.json({ giftCard }, { status: 201 });
+    return NextResponse.json({ giftCard: gift_card }, { status: 201 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('POST /api/gift-cards error:', message);

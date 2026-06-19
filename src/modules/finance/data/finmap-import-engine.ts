@@ -91,7 +91,7 @@ function str(v: any): string {
 
 export async function parseFinmapXlsx(buffer: Buffer): Promise<FinmapRow[]> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
+  await wb.xlsx.load(buffer as any);
   const ws = wb.worksheets[0];
   if (!ws) return [];
 

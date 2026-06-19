@@ -14,19 +14,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const gift_card = db.prepare('SELECT * FROM gift_cards WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!giftCard) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
+    if (!gift_card) return NextResponse.json({ error: 'GiftCard not found' }, { status: 404 });
 
     // Перевірки
-    if (giftCard.status === 'activated') {
+    if (gift_card.status === 'activated') {
       return NextResponse.json({ error: 'GiftCard already activated' }, { status: 409 });
     }
-    if (giftCard.status === 'cancelled') {
+    if (gift_card.status === 'cancelled') {
       return NextResponse.json({ error: 'GiftCard is cancelled' }, { status: 409 });
     }
-    if (giftCard.status === 'expired') {
+    if (gift_card.status === 'expired') {
       return NextResponse.json({ error: 'GiftCard has expired' }, { status: 409 });
     }
-    if (giftCard.status === 'draft') {
+    if (gift_card.status === 'draft') {
       return NextResponse.json({ error: 'GiftCard is not yet active' }, { status: 409 });
     }
 

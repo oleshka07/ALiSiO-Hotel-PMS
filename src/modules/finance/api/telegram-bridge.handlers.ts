@@ -165,14 +165,13 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
     const amountCompany = fxRate ? amount * fxRate : amount;
 
     const operationId = createOperationInTx(db, orgId, {
-      op_type: opType,
+      op_type: opType as 'income' | 'expense' | 'transfer',
       account_from_id: accountFromId,
       account_to_id: accountToId,
       amount,
       currency,
-      fx_rate: fxRate,
-      amount_company: amountCompany,
       paid_at: paidAt,
+      ...(fxRate ? { fx_rate_override: fxRate } : {}),
       category_id: body.category_id || null,
       project_id: body.project_id || null,
       counterparty_id: body.counterparty_id || null,

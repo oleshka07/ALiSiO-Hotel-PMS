@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { getSessionUser } from '@/lib/auth';
 
@@ -151,8 +151,8 @@ async function buildReport(apply: boolean) {
   };
 }
 
-export async function GET(req: Request) {
-  const user = await getSessionUser(req);
+export async function GET(req: NextRequest) {
+  const user = await getSessionUser(req as any);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
@@ -163,8 +163,8 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
-  const user = await getSessionUser(req);
+export async function POST(req: NextRequest) {
+  const user = await getSessionUser(req as any);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
