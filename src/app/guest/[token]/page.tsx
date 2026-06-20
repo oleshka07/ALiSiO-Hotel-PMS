@@ -461,13 +461,15 @@ export default function GuestPage() {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
       // Collect all previously registered guests + this new one
+      const VALID_DOC_TYPES = ['id_card', 'passport', 'driving_license', 'other'];
       const existingGuests = (data?.registeredGuests || []).map((g: any) => ({
         firstName: g.first_name, lastName: g.last_name,
-        dateOfBirth: g.date_of_birth, address: g.address,
-        nationality: g.nationality, documentType: g.document_type,
-        documentNumber: g.document_number,
+        dateOfBirth: g.date_of_birth || null, address: g.address || null,
+        nationality: g.nationality || null,
+        documentType: VALID_DOC_TYPES.includes(g.document_type) ? g.document_type : 'other',
+        documentNumber: g.document_number || null,
         purposeOfStay: g.purpose_of_stay || 'Tourism',
-        visaNumber: g.visa_number || '',
+        visaNumber: g.visa_number || null,
       }));
       const allGuests = [...existingGuests, {
         firstName, lastName,
@@ -482,7 +484,10 @@ export default function GuestPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guests: allGuests }),
       });
-      if (!res.ok) throw new Error('Error');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Registration failed');
+      }
       const result = await res.json();
       setData((prev: any) => ({ ...prev, registeredGuests: result.registeredGuests }));
       const newCount = result.registeredGuests?.length || 0;

@@ -111,13 +111,15 @@ export async function registerGuests(
     }
 
     const { z } = require('zod');
+    const VALID_DOC_TYPES = ['id_card', 'passport', 'driving_license', 'other'] as const;
     const guestSchema = z.object({
       firstName: z.string().min(1).max(100),
       lastName: z.string().min(1).max(100),
-      dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth is required (YYYY-MM-DD)'),
-      documentType: z.enum(['id_card', 'passport', 'driving_license', 'other']),
-      documentNumber: z.string().min(1, 'Document number is required').max(50),
-      nationality: z.string().min(1, 'Nationality is required').max(50),
+      // Optional fields — Telegram alert fires when they are missing (alertMissingFields)
+      dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().or(z.literal('')),
+      documentType: z.enum(VALID_DOC_TYPES).nullable().optional().default('other'),
+      documentNumber: z.string().max(50).nullable().optional(),
+      nationality: z.string().max(50).nullable().optional(),
       address: z.string().max(255).nullable().optional(),
       purposeOfStay: z.string().max(100).nullable().optional(),
       visaNumber: z.string().max(50).nullable().optional(),
@@ -125,7 +127,15 @@ export async function registerGuests(
 
     const parsedGuests = [];
     for (const g of guests) {
-      const result = guestSchema.safeParse(g);
+      // Normalise documentType: empty string → 'other'
+      const normalized = {
+        ...g,
+        documentType: VALID_DOC_TYPES.includes(g.documentType) ? g.documentType : 'other',
+        dateOfBirth: g.dateOfBirth || null,
+        documentNumber: g.documentNumber || null,
+        nationality: g.nationality || null,
+      };
+      const result = guestSchema.safeParse(normalized);
       if (!result.success) {
         return NextResponse.json({ error: `Validation failed: ${result.error.issues[0].message}` }, { status: 400 });
       }
