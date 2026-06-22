@@ -119,12 +119,16 @@ export function startEmailPoller() {
     emailIntervalId = setInterval(pollEmails, EMAIL_POLL_MS);
   }
 
-  // Telegram callback polling (every 10 seconds)
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    console.log('[CRM Cron] 🤖 Telegram callback poller (every 10s)');
-    setTimeout(pollTelegramCallbacks, 8000);
-    tgPollIntervalId = setInterval(pollTelegramCallbacks, TG_POLL_MS);
-  }
+  // ⛔ Telegram callback polling is DISABLED in PMS.
+  // The Python bot (kemptimebot / alisio-bot) is the sole getUpdates consumer.
+  // Running getUpdates from BOTH PMS and the Python bot causes a race condition:
+  // one process "steals" the update from the other, making buttons work intermittently.
+  // See TELEGRAM_BOT_BRIDGE.md for architecture.
+  // if (process.env.TELEGRAM_BOT_TOKEN) {
+  //   console.log('[CRM Cron] 🤖 Telegram callback poller (every 10s)');
+  //   setTimeout(pollTelegramCallbacks, 8000);
+  //   tgPollIntervalId = setInterval(pollTelegramCallbacks, TG_POLL_MS);
+  // }
 
   // Stage sync (every 5 min)
   console.log('[CRM Cron] 🔄 Stage sync (every 5 min)');

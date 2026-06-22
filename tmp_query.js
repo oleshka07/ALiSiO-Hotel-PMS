@@ -1,29 +1,49 @@
 const db = require('better-sqlite3')('./data/alisio.db');
 
-// booking_drafts schema + all entries
-console.log('=== BOOKING_DRAFTS schema ===');
-const bd = db.prepare("PRAGMA table_info(booking_drafts)").all();
-console.log(bd.map(c => c.name).join(', '));
-console.log('\n=== ALL BOOKING_DRAFTS ===');
-const drafts = db.prepare("SELECT * FROM booking_drafts ORDER BY created_at DESC LIMIT 20").all();
-console.log(JSON.stringify(drafts, null, 2));
-console.log(`Total: ${drafts.length}`);
+// What is BB25?
+console.log('=== BB25 unit ===');
+const bb25 = db.prepare("SELECT id, code, name, category_id FROM units WHERE code = 'BB25'").all();
+console.log(JSON.stringify(bb25, null, 2));
 
-// early_bookings 
-console.log('\n=== EARLY_BOOKINGS schema ===');
-const eb = db.prepare("PRAGMA table_info(early_bookings)").all();
-console.log(eb.map(c => c.name).join(', '));
-const ebAll = db.prepare("SELECT * FROM early_bookings ORDER BY created_at DESC LIMIT 10").all();
-console.log(JSON.stringify(ebAll, null, 2));
+// What is ST4 / B4-Svitanok?
+console.log('\n=== ST4 / Svitanok ===');
+const st4 = db.prepare("SELECT id, code, name, category_id FROM units WHERE code = 'ST4'").all();
+console.log(JSON.stringify(st4, null, 2));
 
-// Full text search across all CRM leads  
-console.log('\n=== ALL CRM LEADS ===');
-const allLeads = db.prepare("SELECT id, first_name, last_name, email, phone, source, stage, check_in_date, check_out_date, estimated_value, created_at FROM crm_leads ORDER BY created_at DESC").all();
-allLeads.forEach(l => {
-  console.log(`${l.created_at} | ${l.first_name} ${l.last_name} | ${l.email || '-'} | ${l.source} | ${l.stage} | ${l.check_in_date || '-'} → ${l.check_out_date || '-'} | ${l.estimated_value}`);
-});
+// Decode timestamp: r_178188xxxx → Date.now() starts with 178188
+// Let's see what date range that covers
+const tsMin = 1781880000000;
+const tsMax = 1781889999999;
+console.log('\n=== Timestamp range for r_178188* ===');
+console.log(`From: ${new Date(tsMin).toISOString()}`);
+console.log(`To:   ${new Date(tsMax).toISOString()}`);
 
-// All guests with stipek/daniel recently
-console.log('\n=== GUESTS search ===');
-const guests = db.prepare("SELECT * FROM guests WHERE LOWER(first_name||last_name) LIKE '%tipek%' OR LOWER(first_name||last_name) LIKE '%daniel%st%'").all();
-console.log(JSON.stringify(guests, null, 2));
+// Check if there are any reservations created around that time
+console.log('\n=== Reservations created around that time ===');
+const fromDate = new Date(tsMin).toISOString().replace('T', ' ').slice(0, 19);
+const toDate = new Date(tsMax).toISOString().replace('T', ' ').slice(0, 19);
+const nearby = db.prepare(`
+  SELECT r.id, r.created_at, r.check_in, r.check_out, r.total_price, r.currency,
+         r.status, r.payment_status, r.source, r.is_multi_room, r.group_id, r.multi_room_marker,
+         g.first_name, g.last_name, g.email, g.phone,
+         u.code, u.name as unit_name
+  FROM reservations r
+  LEFT JOIN guests g ON r.guest_id = g.id  
+  LEFT JOIN units u ON r.unit_id = u.id
+  WHERE r.id LIKE 'r_178188%' OR r.id LIKE 'r_17818%'
+  ORDER BY r.created_at DESC
+`).all();
+console.log(JSON.stringify(nearby, null, 2));
+console.log(`Found: ${nearby.length}`);
+
+// Price 1980 CZK - check if that's B4/Svitanok (glamping)
+// Price 225 CZK - check if that's BB25 (camping, likely city tax or addon)
+console.log('\n=== BB25 category ===');
+const bb25cat = db.prepare(`
+  SELECT u.id, u.code, u.name, c.name as cat_name, c.type as cat_type, ut.name as ut_name
+  FROM units u 
+  JOIN categories c ON u.category_id = c.id
+  JOIN unit_types ut ON u.unit_type_id = ut.id
+  WHERE u.code = 'BB25'
+`).all();
+console.log(JSON.stringify(bb25cat, null, 2));
