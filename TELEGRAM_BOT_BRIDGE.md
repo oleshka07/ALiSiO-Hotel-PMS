@@ -79,6 +79,14 @@ PMS (Next.js, port 3001)  ←→  kemptimebot (Python, polling)
    - `GET /api/finance/telegram-bridge/categories?op_type=income|expense` — категорії + проєкти для inline-клавіатур
    - `GET /api/finance/telegram-bridge/operations?source=telegram_sauna&limit=20` — recent imports
 
+5. **Бот → PMS Registration (группова реєстрація через фото)**
+   - `GET /api/registration/telegram-bridge` — today's check-ins (для inline клавіатури бота)
+   - `POST /api/registration/telegram-bridge` — upload passport photos → OCR → register guests
+   - Auth: `Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>`
+   - POST body: `multipart/form-data` з полями `reservation_id`, `photos_0..photos_N` (JPEG/PNG)
+   - Response: `{ success: true, guests_registered: N, guests: [...] }`
+   - Bot handler spec: `bot-specs/registration.py`
+
 ### Як додати нову інтеграцію
 
 **PMS → Telegram**: Використовуй `sendTelegramMessage()` з `src/lib/channels/telegram-bot.ts`  
