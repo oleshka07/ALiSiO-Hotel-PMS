@@ -50,6 +50,14 @@ export async function updateRegistryEntry(
         registryRepo.updateFee(id, { feeAmount, feeExempt, feeExemptReason });
         break;
       }
+      case 'hide': {
+        registryRepo.hideRegistryEntry(id);
+        break;
+      }
+      case 'unhide': {
+        registryRepo.unhideRegistryEntry(id);
+        break;
+      }
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }

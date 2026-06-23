@@ -87,6 +87,7 @@ export default function GuestRegistryPage() {
   const [unregisteredOnly, setUnregisteredOnly] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<RegistryEntry | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [hideConfirm, setHideConfirm] = useState<RegistryEntry | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -128,6 +129,23 @@ export default function GuestRegistryPage() {
       await fetchData();
     } catch (e) {
       console.error('[GuestRegistry] toggle error:', e);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleHide = async (entry: RegistryEntry) => {
+    setUpdating(entry.id);
+    try {
+      await fetch(`/api/guest-registry/${entry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'hide' }),
+      });
+      await fetchData();
+      setHideConfirm(null);
+    } catch (e) {
+      console.error('[GuestRegistry] hide error:', e);
     } finally {
       setUpdating(null);
     }
@@ -291,7 +309,13 @@ export default function GuestRegistryPage() {
                   ) : '—'}
                 </td>
                 <td className="td-unit">
-                  <span className="unit-badge">{e.unit_code || e.unit_name}</span>
+                  <span
+                    className="unit-badge unit-badge-clickable"
+                    onClick={() => setHideConfirm(e)}
+                    title="Klikněte pro skrytí z evidence"
+                  >
+                    {e.unit_code || e.unit_name}
+                  </span>
                 </td>
                 <td>{formatDate(e.check_in)}</td>
                 <td>{formatDate(e.check_out)}</td>
@@ -314,6 +338,32 @@ export default function GuestRegistryPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Hide Confirmation Popup */}
+      {hideConfirm && (
+        <div className="registry-modal-backdrop" onClick={() => setHideConfirm(null)}>
+          <div className="registry-hide-popup" onClick={(e) => e.stopPropagation()}>
+            <div className="registry-hide-popup-icon">👁️🗨️</div>
+            <h3>Skrýt z evidence?</h3>
+            <p>
+              <strong>{hideConfirm.first_name} {hideConfirm.last_name}</strong>
+              <br />
+              {hideConfirm.unit_code || hideConfirm.unit_name} · {formatDate(hideConfirm.check_in)} – {formatDate(hideConfirm.check_out)}
+            </p>
+            <p className="hide-note">Záznam bude skrytý z tabulky i z CSV exportu. Lze obnovit v databázi.</p>
+            <div className="registry-hide-actions">
+              <button className="hide-cancel" onClick={() => setHideConfirm(null)}>Zrušit</button>
+              <button
+                className="hide-confirm"
+                onClick={() => handleHide(hideConfirm)}
+                disabled={updating === hideConfirm.id}
+              >
+                {updating === hideConfirm.id ? 'Skrývám...' : 'Skrýt záznam'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail Modal */}
       {selectedEntry && (
@@ -808,6 +858,81 @@ export default function GuestRegistryPage() {
           .registry-summary { flex-direction: column; }
           .registry-card { min-width: unset; }
           .detail-grid { grid-template-columns: 1fr; }
+        }
+
+        .unit-badge-clickable {
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .unit-badge-clickable:hover {
+          background: rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+          transform: scale(1.05);
+        }
+        .registry-hide-popup {
+          background: var(--surface, #1e1e2e);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 16px;
+          padding: 24px;
+          max-width: 380px;
+          width: 90%;
+          text-align: center;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .registry-hide-popup-icon {
+          font-size: 32px;
+          margin-bottom: 8px;
+        }
+        .registry-hide-popup h3 {
+          margin: 0 0 12px;
+          font-size: 18px;
+          color: #fff;
+        }
+        .registry-hide-popup p {
+          color: rgba(255,255,255,0.7);
+          font-size: 14px;
+          margin: 0 0 8px;
+          line-height: 1.5;
+        }
+        .hide-note {
+          font-size: 12px !important;
+          color: rgba(255,255,255,0.4) !important;
+          font-style: italic;
+        }
+        .registry-hide-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 16px;
+          justify-content: center;
+        }
+        .hide-cancel {
+          padding: 8px 20px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.15);
+          background: transparent;
+          color: rgba(255,255,255,0.7);
+          cursor: pointer;
+          font-size: 14px;
+        }
+        .hide-cancel:hover {
+          background: rgba(255,255,255,0.05);
+        }
+        .hide-confirm {
+          padding: 8px 20px;
+          border-radius: 8px;
+          border: none;
+          background: #ef4444;
+          color: #fff;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 600;
+        }
+        .hide-confirm:hover {
+          background: #dc2626;
+        }
+        .hide-confirm:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
       `}</style>
     </div>

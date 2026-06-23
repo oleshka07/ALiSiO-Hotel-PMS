@@ -79,12 +79,12 @@ export function saveRegistrations(reservationId: string, organizationId: string,
       }
 
       // Write to reservation_guests (guest portal view)
-      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
+      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason, guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null);
 
       // Write to guest_registrations (dashboard view) — syncs data to PMS
       if (guestId) {
         const grId = crypto.randomUUID();
-        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
+        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null);
         isPrimary = 0; // only first guest is primary
       }
     }

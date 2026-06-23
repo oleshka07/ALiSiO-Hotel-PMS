@@ -75,9 +75,9 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
       rg.document_number,
       rg.address,
       rg.visa_number,
-      rg.purpose_of_stay,
+      COALESCE(rg.purpose_of_stay, 'Tourism') as purpose_of_stay,
       CASE WHEN rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END as is_foreigner,
-      COALESCE(rg.fee_amount, 0) as fee_amount,
+      CASE WHEN COALESCE(rg.fee_exempt, 0) = 1 THEN 0 ELSE r.nights * 20 END as fee_amount,
       COALESCE(rg.fee_exempt, 0) as fee_exempt,
       rg.fee_exempt_reason,
       COALESCE(rg.police_reported, 0) as police_reported,
@@ -115,6 +115,8 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
     params.push(`%${filters.search}%`);
   }
 
+  query += ' AND COALESCE(rg.is_hidden, 0) = 0';
+
   query += ' ORDER BY r.check_in, rg.last_name, rg.first_name';
 
   return getDb().prepare(query).all(...params) as RegistryEntry[];
@@ -130,7 +132,7 @@ export function getRegistrySummary(filters: { month: string; propertyId?: string
       SUM(CASE WHEN rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END) as foreigners,
       SUM(CASE WHEN rg.police_reported = 1 THEN 1 ELSE 0 END) as registeredPolice,
       SUM(CASE WHEN COALESCE(rg.police_reported, 0) = 0 AND rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END) as unregisteredPolice,
-      SUM(COALESCE(rg.fee_amount, 0)) as totalFees,
+      SUM(CASE WHEN COALESCE(rg.fee_exempt, 0) = 1 THEN 0 ELSE r.nights * 20 END) as totalFees,
       SUM(CASE WHEN rg.fee_exempt = 1 THEN 1 ELSE 0 END) as exemptGuests
     FROM reservation_guests rg
     JOIN reservations r ON rg.reservation_id = r.id
@@ -142,6 +144,8 @@ export function getRegistrySummary(filters: { month: string; propertyId?: string
     query += ' AND r.property_id = ?';
     params.push(filters.propertyId);
   }
+
+  query += ' AND COALESCE(rg.is_hidden, 0) = 0';
 
   const row = getDb().prepare(query).get(...params) as any;
 
@@ -213,4 +217,12 @@ export function calculateFees(month: string, feePerNight: number): number {
   })();
 
   return total;
+}
+
+export function hideRegistryEntry(id: string): void {
+  getDb().prepare('UPDATE reservation_guests SET is_hidden = 1 WHERE id = ?').run(id);
+}
+
+export function unhideRegistryEntry(id: string): void {
+  getDb().prepare('UPDATE reservation_guests SET is_hidden = 0 WHERE id = ?').run(id);
 }

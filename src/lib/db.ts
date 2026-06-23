@@ -4606,6 +4606,7 @@ function runMigrations(database: any) {
   try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_reported INTEGER DEFAULT 0"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_reported_at TEXT"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE reservation_guests ADD COLUMN police_report_ref TEXT"); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE reservation_guests ADD COLUMN is_hidden INTEGER DEFAULT 0"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_given INTEGER DEFAULT 0"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_at TEXT"); } catch { /* already exists */ }
   try { database.exec("ALTER TABLE guest_registrations ADD COLUMN consent_ip TEXT"); } catch { /* already exists */ }
