@@ -295,15 +295,26 @@ function TaskDrawer({
   }, [form.title]);
 
   const handleSave = async () => {
+    // Cancel any pending auto-save
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     setSaving(true);
     try {
-      await fetch(`/api/tasks/${task.id}`, {
+      const res = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, tag_ids: taskTags }),
       });
-      onUpdated();
-    } catch { /* */ }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Помилка збереження' }));
+        console.error('Save failed:', err);
+        alert(err.error || 'Не вдалося зберегти задачу');
+      } else {
+        onUpdated();
+      }
+    } catch (e) {
+      console.error('Save error:', e);
+      alert('Помилка з\'єднання при збереженні');
+    }
     setSaving(false);
   };
 
@@ -1041,7 +1052,7 @@ function TasksDesktop() {
 
   const fetchProperties = useCallback(async () => {
     try {
-      const res = await fetch('/api/properties');
+      const res = await fetch('/api/business-units');
       if (res.ok) {
         const data = await res.json();
         setProperties(Array.isArray(data) ? data : []);
@@ -1112,7 +1123,8 @@ function TasksDesktop() {
         return dir * (order.indexOf(a.priority) - order.indexOf(b.priority));
       }
       case 'assignee': return dir * (a.assignee_name || 'яяя').localeCompare(b.assignee_name || 'яяя');
-      case 'project': return dir * (a.project_name || 'яяя').localeCompare(b.project_name || 'яяя');
+      case 'project': return dir * (a.project_name || '\u044f\u044f\u044f').localeCompare(b.project_name || '\u044f\u044f\u044f');
+      case 'property': return dir * (a.property_name || '\u044f\u044f\u044f').localeCompare(b.property_name || '\u044f\u044f\u044f');
       case 'due_date': {
         const ad = a.due_date || '9999-99-99';
         const bd = b.due_date || '9999-99-99';
@@ -1682,6 +1694,9 @@ function TasksDesktop() {
                         <th className="tasks-table-th-sort" style={{ width: 150 }} onClick={() => toggleSort('project')}>
                           Проєкт <SortIcon col="project" />
                         </th>
+                        <th className="tasks-table-th-sort" style={{ width: 140 }} onClick={() => toggleSort('property')}>
+                          Об&apos;єкт <SortIcon col="property" />
+                        </th>
                         <th className="tasks-table-th-sort" style={{ width: 140 }} onClick={() => toggleSort('due_date')}>
                           Дедлайн <SortIcon col="due_date" />
                         </th>
@@ -1689,7 +1704,7 @@ function TasksDesktop() {
                     </thead>
                     <tbody>
                       {sortedTasks.length === 0 && (
-                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Задач немає</td></tr>
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Задач немає</td></tr>
                       )}
                       {sortedTasks.map(task => {
                         const isDone = task.status === 'done';
@@ -1769,6 +1784,19 @@ function TasksDesktop() {
                               >
                                 <option value="">—</option>
                                 {projects.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Object (Business Unit) inline */}
+                            <td>
+                              <select
+                                className="tasks-table-select"
+                                value={task.property_id || ''}
+                                onChange={e => handleInlineUpdate(task.id, 'property_id', e.target.value || null)}
+                              >
+                                <option value="">—</option>
+                                {properties.map(p => (
                                   <option key={p.id} value={p.id}>{p.name}</option>
                                 ))}
                               </select>

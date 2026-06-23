@@ -1346,13 +1346,16 @@
   cursor: pointer;
   user-select: none;
   transition: color 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .tasks-table-th-sort:hover {
   color: var(--text-primary);
+}
+
+.tasks-table-th-sort svg {
+  display: inline;
+  vertical-align: middle;
+  margin-left: 4px;
 }
 
 /* Table body */

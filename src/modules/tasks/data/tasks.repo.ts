@@ -98,7 +98,7 @@ export function listTasks(filters: ListTasksFilters = {}): Task[] {
     LEFT JOIN app_users a  ON a.id = t.assignee_id
     LEFT JOIN app_users cr ON cr.id = t.created_by
     LEFT JOIN task_projects tp ON tp.id = t.project_id
-    LEFT JOIN properties p ON p.id = t.property_id
+    LEFT JOIN business_units p ON p.id = t.property_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY t.sort_order, t.created_at DESC
   `).all(...params) as Task[];
@@ -130,7 +130,7 @@ export function getTaskById(id: string): (Task & { subtasks?: Task[] }) | null {
     LEFT JOIN app_users a  ON a.id = t.assignee_id
     LEFT JOIN app_users cr ON cr.id = t.created_by
     LEFT JOIN task_projects tp ON tp.id = t.project_id
-    LEFT JOIN properties p ON p.id = t.property_id
+    LEFT JOIN business_units p ON p.id = t.property_id
     WHERE t.id = ?
   `).get(id) as Task | undefined;
 
