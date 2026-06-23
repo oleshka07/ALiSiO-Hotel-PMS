@@ -218,7 +218,7 @@ export default function ChatWidget() {
         title="AI Асистент (Ctrl+K)"
         style={{
           position: 'fixed',
-          bottom: 54,
+          bottom: 100,
           right: 24,
           zIndex: 1000,
           width: 52,
@@ -245,7 +245,7 @@ export default function ChatWidget() {
       {open && (
         <div className="ai-chat-panel" style={{
           position: 'fixed',
-          bottom: 118,
+          bottom: 164,
           right: 24,
           zIndex: 999,
           width: 420,
