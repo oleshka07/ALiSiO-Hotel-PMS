@@ -15,6 +15,7 @@ interface Props {
   priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
   onPayOnline: (contact: { name: string; email: string; phone: string }) => void;
   onPayAdmin: (contact: { name: string; email: string; phone: string }) => void;
+  onPayAdminEur: (contact: { name: string; email: string; phone: string }) => void;
   onPayTerminal: (contact: { name: string; email: string; phone: string }) => void;
   onShowQr: (contact: { name: string; email: string; phone: string }) => Promise<{ url: string; reservationId: string } | null>;
   onQrPaid: (reservationId: string) => void;
@@ -23,7 +24,7 @@ interface Props {
 
 export default function StepSummary({
   accommodationLabel, checkIn, checkOut, nights, guests,
-  total, extras, priceBreakdown, onPayOnline, onPayAdmin, onPayTerminal, onShowQr, onQrPaid, submitting,
+  total, extras, priceBreakdown, onPayOnline, onPayAdmin, onPayAdminEur, onPayTerminal, onShowQr, onQrPaid, submitting,
 }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -108,7 +109,12 @@ export default function StepSummary({
         <div className="kc-summary-divider" />
         <div className="kc-summary-row" style={{ fontSize: 18 }}>
           <span><strong>Total</strong></span>
-          <strong style={{ color: 'var(--kc-green)' }}>{formatPrice(grandTotal)} Kč</strong>
+          <strong style={{ color: 'var(--kc-green)' }}>
+            {formatPrice(grandTotal)} Kč
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#555', marginLeft: 8 }}>
+              (≈ {(grandTotal / 24).toFixed(2)} €)
+            </span>
+          </strong>
         </div>
       </div>
 
@@ -142,6 +148,11 @@ export default function StepSummary({
         <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
           onClick={() => onPayAdmin({ name, email, phone })} type="button">
           🏢 Pay via administrator (cash)
+        </button>
+        <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
+          onClick={() => onPayAdminEur({ name, email, phone })} type="button"
+          style={{ borderColor: '#166534', color: '#166534' }}>
+          💶 Pay via administrator (EUR ≈ {(grandTotal / 24).toFixed(2)} €)
         </button>
         <button className="kc-btn kc-btn-secondary" disabled={!valid || submitting}
           onClick={() => onPayTerminal({ name, email, phone })} type="button"

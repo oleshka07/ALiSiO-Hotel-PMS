@@ -31,7 +31,7 @@ async function resizeImageDataUrl(dataUrl: string, maxDim = 1600, quality = 0.85
 }
 
 interface Props {
-  status: 'success' | 'failed' | 'pending' | 'admin_pending' | 'terminal_pending';
+  status: 'success' | 'failed' | 'pending' | 'admin_pending' | 'admin_eur_pending' | 'terminal_pending';
   reservationId?: string;
   accommodationLabel: string;
   checkIn: string;
@@ -45,6 +45,7 @@ interface Props {
   qrCodeUrl?: string;
   onReset: () => void;
   onAdminConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
+  onAdminEurConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
   onTerminalConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
 }
 
@@ -296,7 +297,7 @@ function GuestPageLink({ token }: { token: string }) {
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
   nights, total, adults = 1, guestEmail, guestPageToken, paymentUrl, qrCodeUrl,
-  onReset, onAdminConfirm, onTerminalConfirm,
+  onReset, onAdminConfirm, onAdminEurConfirm, onTerminalConfirm,
 }: Props) {
   const hasEmail = !!(guestEmail && guestEmail.trim());
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
@@ -310,6 +311,7 @@ export default function StepSuccess({
   const [registeredNames, setRegisteredNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showPinPopup, setShowPinPopup] = useState(false);
+  const [showEurPinPopup, setShowEurPinPopup] = useState(false);
   const [showTerminalPinPopup, setShowTerminalPinPopup] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -482,6 +484,63 @@ export default function StepSuccess({
             }}
           >
             💳 Адміністратор: Підтвердити оплату терміналом
+          </button>
+        )}
+
+        <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact administrator</a>
+      </div>
+    );
+  }
+
+  // ─── Admin EUR pending ─────────────────────────────
+  if (status === 'admin_eur_pending') {
+    const eurAmount = Math.round((total / 24) * 100) / 100;
+    return (
+      <div className="kc-fade-in kc-success">
+        {/* EUR PIN popup */}
+        {showEurPinPopup && onAdminEurConfirm && (
+          <AdminPinPopup
+            title="Оплата готівкою в ЄВРО 💶"
+            successPrefix="💶 EUR-оплату підтверджено"
+            onConfirm={onAdminEurConfirm}
+            onClose={() => setShowEurPinPopup(false)}
+          />
+        )}
+
+        <div className="kc-success-icon" style={{ background: '#f0fdf4', color: '#166534' }}>💶</div>
+        <h2>EUR cash payment</h2>
+        <p>Please collect EUR cash from the guest. Administrator confirms the payment.</p>
+
+        <div className="kc-summary" style={{ textAlign: 'left', marginTop: 20 }}>
+          {reservationId && <div className="kc-summary-row"><span>Booking ID</span><strong>{reservationId}</strong></div>}
+          <div className="kc-summary-row">
+            <span>Total (Kč)</span>
+            <strong style={{ color: 'var(--kc-green)' }}>{formatPrice(total)} Kč</strong>
+          </div>
+          <div className="kc-summary-row">
+            <span>EUR equivalent (÷24)</span>
+            <strong style={{ color: '#166534' }}>≈ {eurAmount.toFixed(2)} €</strong>
+          </div>
+        </div>
+
+        {/* Guest page QR */}
+        {guestPageToken && <GuestPageLink token={guestPageToken} />}
+
+        {/* EUR Admin confirm — protected by PIN popup */}
+        {onAdminEurConfirm && (
+          <button
+            className="kc-btn"
+            onClick={() => setShowEurPinPopup(true)}
+            type="button"
+            style={{
+              marginTop: 20,
+              background: '#166534', color: '#fff',
+              border: 'none', borderRadius: 14,
+              padding: '13px 20px', fontWeight: 700, fontSize: 15,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            💶 Адміністратор: Підтвердити EUR-оплату
           </button>
         )}
 

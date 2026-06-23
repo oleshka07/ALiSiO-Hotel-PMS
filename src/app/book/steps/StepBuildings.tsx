@@ -240,8 +240,6 @@ export default function StepBuildings({ prices, onNext }: Props) {
 
               <div className="kc-breakdown-divider" />
               <div className="kc-breakdown-total"><span>Total</span><span>{formatPrice(pricing.total)} Kč</span></div>
-              <div className="kc-breakdown-deposit"><span>Deposit ({pricing.isGroup ? '50%' : '30%'}) — pay now</span><span>{formatPrice(pricing.deposit)} Kč</span></div>
-              <div className="kc-breakdown-remaining"><span>Remaining</span><span>{formatPrice(pricing.remaining)} Kč</span></div>
             </div>
           )}
 
