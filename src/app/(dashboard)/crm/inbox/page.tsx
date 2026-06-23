@@ -142,6 +142,19 @@ const QUICK_REPLIES = [
   { label: '⏰ Нагадування', text: 'Доброго дня! Хотіли нагадати про вашу пропозицію. Чи є якісь запитання?' },
 ];
 
+// WhatsApp pre-approved templates (must match Meta-approved names)
+const WA_TEMPLATES = [
+  { name: 'welcome_inquiry', label: '🏕️ Привітання (запит)', params: 1 },
+  { name: 'price_offer', label: '💰 Цінова пропозиція', params: 4 },
+  { name: 'booking_confirmed', label: '✅ Підтвердження бронювання', params: 2 },
+  { name: 'reminder_followup', label: '⏰ Нагадування', params: 1 },
+];
+const WA_LANGS = [
+  { code: 'cs', flag: '🇨🇿', label: 'CZ' },
+  { code: 'en', flag: '🇬🇧', label: 'EN' },
+  { code: 'de', flag: '🇩🇪', label: 'DE' },
+];
+
 
 /* ================================================================
    Main Page
@@ -168,6 +181,7 @@ export default function CrmInboxPage() {
   const [aiDraft, setAiDraft] = useState<string | null>(null);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState<any | null>(null);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
+  const [waSending, setWaSending] = useState<string | null>(null); // template name being sent
   const [error, setError] = useState<string | null>(null);
 
   const showError = (msg: string) => { setError(msg); setTimeout(() => setError(null), 5000); };
@@ -302,8 +316,8 @@ export default function CrmInboxPage() {
         setSendStatus('failed');
         showError('Помилка відправки email — перевірте SMTP налаштування');
       } else {
-        setSendStatus(sendChannel === 'email' ? 'delivered' : null);
-        if (sendChannel === 'email') setTimeout(() => setSendStatus(null), 4000);
+        setSendStatus((sendChannel === 'email' || sendChannel === 'whatsapp') ? 'delivered' : null);
+        if (sendChannel === 'email' || sendChannel === 'whatsapp') setTimeout(() => setSendStatus(null), 4000);
       }
       // Save training data if AI was involved
       if (isAiGenerated && aiDraft) {
@@ -326,6 +340,41 @@ export default function CrmInboxPage() {
       if (selectedLeadId) fetchConversation(selectedLeadId);
     } catch (err: any) { console.error('Помилка відправки повідомлення:', err); showError(err.message || 'Помилка відправки повідомлення'); setSendStatus('failed'); }
     setSending(false);
+  };
+
+  const handleSendWaTemplate = async (templateName: string, langCode: string) => {
+    if (!selectedLeadId || !conversation?.id) return;
+    const fullName = `${templateName}_${langCode}`;
+    setWaSending(fullName);
+    try {
+      // Build parameters — {{1}} is always the guest name
+      const guestName = conversation.first_name || 'Guest';
+      const params = [guestName];
+
+      const res = await fetch('/api/crm/whatsapp-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: selectedLeadId,
+          conversationId: conversation.id,
+          templateName: fullName,
+          languageCode: langCode,
+          parameters: params,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'WhatsApp template error');
+      } else {
+        setSendStatus('delivered');
+        setTimeout(() => setSendStatus(null), 4000);
+        fetchConversation(selectedLeadId);
+      }
+    } catch (err: any) {
+      showError(err.message || 'WhatsApp template error');
+    }
+    setWaSending(null);
+    setShowQuickReplies(false);
   };
 
   const handleTranslate = async (targetLang: string) => {
@@ -522,15 +571,53 @@ export default function CrmInboxPage() {
                     {showQuickReplies && (
                       <div className="inbox-quick-replies">
                         <div className="inbox-quick-replies-header">
-                          <Sparkles size={12} /> Шаблони відповідей
+                          <Sparkles size={12} /> {sendChannel === 'whatsapp' ? 'WhatsApp шаблони' : 'Шаблони відповідей'}
                           <button className="btn btn-ghost btn-icon btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowQuickReplies(false)}><X size={14} /></button>
                         </div>
-                        {QUICK_REPLIES.map((qr, i) => (
-                          <button key={i} className="inbox-quick-reply-item" onClick={() => { setNewMessage(qr.text); setShowQuickReplies(false); textareaRef.current?.focus(); }}>
-                            <div style={{ fontWeight: 600, fontSize: 12 }}>{qr.label}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{qr.text.substring(0, 80)}...</div>
-                          </button>
-                        ))}
+                        {sendChannel === 'whatsapp' ? (
+                          /* ── WhatsApp Templates ── */
+                          <>
+                            {!(conversation?.whatsapp || conversation?.phone) && (
+                              <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--accent-danger)' }}>
+                                ⚠️ У ліда немає WhatsApp/телефону — шаблон не можна відправити
+                              </div>
+                            )}
+                            {WA_TEMPLATES.map((tpl) => (
+                              <div key={tpl.name} className="inbox-quick-reply-item" style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 12 }}>{tpl.label}</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                  {WA_LANGS.map((lang) => {
+                                    const fullName = `${tpl.name}_${lang.code}`;
+                                    const isSending = waSending === fullName;
+                                    return (
+                                      <button
+                                        key={lang.code}
+                                        className="btn btn-sm btn-ghost"
+                                        style={{ height: 26, padding: '0 8px', fontSize: 11, gap: 3, border: '1px solid var(--border-subtle)', borderRadius: 6, opacity: isSending ? 0.5 : 1 }}
+                                        disabled={!!waSending || !(conversation?.whatsapp || conversation?.phone)}
+                                        onClick={() => handleSendWaTemplate(tpl.name, lang.code)}
+                                        title={`Надіслати ${tpl.label} (${lang.label})`}
+                                      >
+                                        {isSending ? <Loader2 size={11} className="animate-pulse" /> : <span>{lang.flag}</span>}
+                                        <span>{lang.label}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          /* ── Regular Quick Replies ── */
+                          QUICK_REPLIES.map((qr, i) => (
+                            <button key={i} className="inbox-quick-reply-item" onClick={() => { setNewMessage(qr.text); setShowQuickReplies(false); textareaRef.current?.focus(); }}>
+                              <div style={{ fontWeight: 600, fontSize: 12 }}>{qr.label}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{qr.text.substring(0, 80)}...</div>
+                            </button>
+                          ))
+                        )}
                       </div>
                     )}
                     <div className="inbox-compose-top">
@@ -576,7 +663,7 @@ export default function CrmInboxPage() {
                         </button>
                       ))}
                       {translating && <Loader2 size={12} className="animate-pulse" style={{ color: 'var(--accent-info)' }} />}
-                      {sendStatus === 'delivered' && <span style={{ fontSize: 10, color: 'var(--accent-success)', marginLeft: 'auto' }}>✅ Email надіслано</span>}
+                      {sendStatus === 'delivered' && <span style={{ fontSize: 10, color: 'var(--accent-success)', marginLeft: 'auto' }}>✅ {sendChannel === 'whatsapp' ? 'WhatsApp' : 'Email'} надіслано</span>}
                       {sendStatus === 'failed' && <span style={{ fontSize: 10, color: 'var(--accent-danger)', marginLeft: 'auto' }}>❌ Помилка відправки</span>}
                     </div>
                   </div>
