@@ -6,7 +6,7 @@ import MobileTasks from '@/components/mobile/pages/MobileTasks';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
-  Plus, Search, X, RefreshCw, Loader2, LayoutGrid, List,
+  Plus, Search, X, RefreshCw, Loader2, LayoutGrid, List, Table2,
   Calendar, ChevronDown, ChevronRight, Check, Clock, Tag,
   User, Building2, FolderOpen, Inbox, AlertTriangle, Filter,
   Hash, Flag, CheckSquare, Paperclip, Image, Trash2,
@@ -960,7 +960,7 @@ function TasksDesktop() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'list' | 'kanban'>('list');
+  const [view, setView] = useState<'list' | 'kanban' | 'table'>('list');
   const [search, setSearch] = useState('');
   const [selectedProject, setSelectedProject] = useState<string | null>(null); // null = all, '' = inbox
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'upcoming' | 'overdue' | 'my'>('all');
@@ -1107,6 +1107,38 @@ function TasksDesktop() {
       });
       fetchTasks();
     } catch { /* */ }
+  };
+
+  /* ── Inline field update (for table view) ── */
+  const handleInlineUpdate = async (taskId: string, field: string, value: string | null) => {
+    // Optimistic update
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      const updated: Record<string, unknown> = { ...t, [field]: value };
+      if (field === 'status') {
+        updated.completed_at = value === 'done' ? new Date().toISOString() : null;
+      }
+      if (field === 'assignee_id') {
+        updated.assignee_name = users.find(u => u.id === value)?.full_name || null;
+      }
+      if (field === 'project_id') {
+        const proj = projects.find(p => p.id === value);
+        updated.project_name = proj?.name || null;
+        updated.project_color = proj?.color || null;
+      }
+      return updated as Task;
+    }));
+    try {
+      const body: Record<string, unknown> = { [field]: value };
+      if (field === 'status') {
+        body.completed_at = value === 'done' ? new Date().toISOString() : null;
+      }
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch { fetchTasks(); }
   };
 
   /* ── Kanban Drag & Drop ── */
@@ -1303,6 +1335,9 @@ function TasksDesktop() {
                   </button>
                   <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
                     <LayoutGrid size={14} /> Канбан
+                  </button>
+                  <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>
+                    <Table2 size={14} /> Таблиця
                   </button>
                 </div>
                 <div className="tasks-search">
@@ -1523,6 +1558,129 @@ function TasksDesktop() {
                       </div>
                     );
                   })}
+              </div>
+            )}
+
+            {/* ═══════ TABLE VIEW ═══════ */}
+            {!loading && view === 'table' && (
+              <div className="tasks-table-wrap">
+                <table className="tasks-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}></th>
+                      <th style={{ minWidth: 260 }}>Назва</th>
+                      <th style={{ width: 130 }}>Статус</th>
+                      <th style={{ width: 120 }}>Пріоритет</th>
+                      <th style={{ width: 150 }}>Виконавець</th>
+                      <th style={{ width: 160 }}>Проєкт</th>
+                      <th style={{ width: 140 }}>Дедлайн</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTasks.length === 0 && (
+                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Задач немає</td></tr>
+                    )}
+                    {filteredTasks
+                      .sort((a, b) => {
+                        if (a.status === 'done' && b.status !== 'done') return 1;
+                        if (a.status !== 'done' && b.status === 'done') return -1;
+                        return a.sort_order - b.sort_order;
+                      })
+                      .map(task => {
+                        const isDone = task.status === 'done';
+                        return (
+                          <tr key={task.id} className={isDone ? 'row-done' : ''}>
+                            {/* Checkbox */}
+                            <td className="tasks-table-td-check">
+                              <button
+                                className={`task-checkbox ${isDone ? 'checked' : ''} priority-${task.priority}`}
+                                onClick={() => handleToggleStatus(task.id, task.status)}
+                              >
+                                {isDone && <Check size={11} color="white" />}
+                              </button>
+                            </td>
+                            {/* Title — click opens drawer */}
+                            <td className="tasks-table-td-title">
+                              <span
+                                className={`tasks-table-title-link ${isDone ? 'completed' : ''}`}
+                                onClick={() => setSelectedTask(task)}
+                              >
+                                {task.title}
+                              </span>
+                              {task.tags && task.tags.length > 0 && (
+                                <span className="tasks-table-tags">
+                                  {task.tags.map(tag => (
+                                    <span key={tag.id} className="task-tag" style={{ background: `${tag.color}20`, color: tag.color }}>{tag.name}</span>
+                                  ))}
+                                </span>
+                              )}
+                            </td>
+                            {/* Status inline */}
+                            <td>
+                              <select
+                                className="tasks-table-select"
+                                value={task.status}
+                                onChange={e => handleInlineUpdate(task.id, 'status', e.target.value)}
+                                style={{ color: STATUS_CONFIG[task.status]?.color }}
+                              >
+                                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                                  <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Priority inline */}
+                            <td>
+                              <select
+                                className="tasks-table-select"
+                                value={task.priority}
+                                onChange={e => handleInlineUpdate(task.id, 'priority', e.target.value)}
+                                style={{ color: PRIORITY_CONFIG[task.priority]?.color }}
+                              >
+                                {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
+                                  <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Assignee inline */}
+                            <td>
+                              <select
+                                className="tasks-table-select"
+                                value={task.assignee_id || ''}
+                                onChange={e => handleInlineUpdate(task.id, 'assignee_id', e.target.value || null)}
+                              >
+                                <option value="">—</option>
+                                {users.map(u => (
+                                  <option key={u.id} value={u.id}>{u.full_name}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Project inline */}
+                            <td>
+                              <select
+                                className="tasks-table-select"
+                                value={task.project_id || ''}
+                                onChange={e => handleInlineUpdate(task.id, 'project_id', e.target.value || null)}
+                              >
+                                <option value="">—</option>
+                                {projects.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Due date inline */}
+                            <td>
+                              <input
+                                type="date"
+                                className="tasks-table-input"
+                                value={task.due_date || ''}
+                                onChange={e => handleInlineUpdate(task.id, 'due_date', e.target.value || null)}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

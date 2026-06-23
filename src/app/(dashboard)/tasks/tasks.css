@@ -1242,3 +1242,141 @@
     font-size: 18px;
   }
 }
+
+/* ═══════ TABLE VIEW ═══════ */
+.tasks-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+}
+
+.tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tasks-table thead tr {
+  background: var(--bg-secondary, rgba(255,255,255,0.03));
+  border-bottom: 1px solid var(--border);
+}
+
+.tasks-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  z-index: 1;
+}
+
+.tasks-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tasks-table tbody tr:hover {
+  background: rgba(79, 110, 247, 0.04);
+}
+
+.tasks-table tbody tr.row-done {
+  opacity: 0.5;
+}
+
+.tasks-table-td-check {
+  text-align: center;
+  width: 36px;
+}
+
+.tasks-table-td-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tasks-table-title-link {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: color 0.15s;
+}
+
+.tasks-table-title-link:hover {
+  color: var(--accent, #4f6ef7);
+  text-decoration: underline;
+}
+
+.tasks-table-title-link.completed {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+.tasks-table-tags {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tasks-table-select,
+.tasks-table-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.tasks-table-select:hover,
+.tasks-table-input:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary, rgba(255,255,255,0.03));
+}
+
+.tasks-table-select:focus,
+.tasks-table-input:focus {
+  border-color: var(--accent, #4f6ef7);
+  background: var(--card-bg);
+  box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.15);
+}
+
+.tasks-table-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c7086' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 22px;
+}
+
+.tasks-table-input[type="date"] {
+  font-family: inherit;
+}
+
+.tasks-table-input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+.tasks-table-input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.8;
+}
+
+/* Dark mode select options */
+.tasks-table-select option {
+  background: var(--card-bg, #1a1a2e);
+  color: var(--text-primary);
+}
