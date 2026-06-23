@@ -18,6 +18,8 @@ const nextConfig: NextConfig = {
   // Allow build to succeed during modular architecture migration
   // Remove once all modules are fully migrated and TS errors resolved
   typescript: { ignoreBuildErrors: true },
+  // Fix Turbopack workspace root detection on VPS
+  turbopack: { root: '.' },
   async headers() {
     return [
       {
