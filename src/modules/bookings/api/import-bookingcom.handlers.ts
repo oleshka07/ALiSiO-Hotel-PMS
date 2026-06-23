@@ -147,17 +147,27 @@ function planRow(
       warnings.push('Pool unit (Чорновик F) не знайдено в БД');
       return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing: null, action: 'skip-no-unit-type', warnings };
     }
-    const requestedCount = Math.max(1, row.rooms || 1);
-    // Booking.com Excel reports TOTAL persons/adults across all rooms.
-    // Divide by room count to get per-room capacity.
-    const perRoomAdults = requestedCount > 1
-      ? Math.ceil((row.persons || row.adults || 1) / requestedCount)
-      : (row.persons || row.adults || 1);
+    // Determine room count from multiple sources:
+    // 1. unitTypes split by comma (e.g. "Triple Room, Triple Room, Triple Room" = 3)
+    // 2. row.rooms from Excel 'Rooms' column
+    // 3. Fallback to 1
+    const typeCapacities: number[] = (row.unitTypes.length > 0 ? row.unitTypes : [row.unitTypeRaw])
+      .map((t) => parseCapacityFromUnitTypeName(t))
+      .filter((n): n is number => n != null);
+    // If unitTypes gave us multiple entries, that's the real room count
+    const requestedCount = Math.max(1, row.unitTypes.length > 1 ? row.unitTypes.length : (row.rooms || 1));
+    const totalGuests = row.persons || row.adults || 1;
+    console.log(`[Draft Import] ${row.guestName}: rooms=${row.rooms}, unitTypes=${JSON.stringify(row.unitTypes)}, typeCapacities=${JSON.stringify(typeCapacities)}, requestedCount=${requestedCount}, totalGuests=${totalGuests}`);
+
     const units: PlannedUnit[] = [];
     for (let i = 0; i < requestedCount; i++) {
+      // Per-room capacity: use parsed type capacity if available, otherwise divide total by rooms
+      const perRoom = typeCapacities.length > 0
+        ? typeCapacities[i % typeCapacities.length]
+        : Math.ceil(totalGuests / requestedCount);
       units.push({
         unitId: pool.id, unitName: pool.name,
-        capacity: perRoomAdults,
+        capacity: perRoom,
         unitTypeId: pool.unit_type_id, buildingCode: pool.building_code,
       });
     }
@@ -457,8 +467,8 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
                 checkIn: row.checkIn,
                 checkOut: row.checkOut,
                 nights: row.duration || 1,
-                adults: perRoomAdults,
-                children: perRoomChildren,
+                adults: unit.capacity,
+                children: isMultiRoom ? Math.ceil(row.children / roomCount) : row.children,
                 totalPrice: i === 0 ? (isEurRow ? +(row.priceMajor * eurToCzk).toFixed(2) : row.priceMajor) : 0,
                 currency: isEurRow ? 'CZK' : (row.currency || 'CZK'),
                 bcomReservationId: row.bookNumber,
