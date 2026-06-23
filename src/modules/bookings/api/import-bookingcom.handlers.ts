@@ -117,7 +117,27 @@ function planRow(
   }
 
   if (existing) {
-    return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'skip-already', warnings };
+    // In draft mode: if the existing record is still a draft, delete it
+    // so we can re-create with corrected per-room guest counts.
+    // This allows re-importing the same Excel file to fix broken drafts.
+    if (mode === 'draft' && existing.status === 'draft') {
+      const db = getDb();
+      // Delete children first (sub-bookings and child reservations)
+      const children = db.prepare('SELECT id FROM reservations WHERE parent_id = ?').all(existing.id);
+      for (const child of children) {
+        db.prepare('DELETE FROM reservation_sub_bookings WHERE child_reservation_id = ?').run((child as any).id);
+        db.prepare('DELETE FROM reservations WHERE id = ?').run((child as any).id);
+      }
+      // Delete orphan drafts with same bcom_reservation_id (independent draft cards)
+      db.prepare("DELETE FROM reservations WHERE bcom_reservation_id = ? AND status = 'draft' AND id != ?").run(row.bookNumber, existing.id);
+      // Delete master sub-booking links and the master itself
+      db.prepare('DELETE FROM reservation_sub_bookings WHERE reservation_id = ?').run(existing.id);
+      db.prepare('DELETE FROM reservations WHERE id = ?').run(existing.id);
+      warnings.push(`Попередній draft #${row.bookNumber} видалено — створюється заново з правильною кількістю гостей`);
+      // Fall through to create new draft below
+    } else {
+      return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'skip-already', warnings };
+    }
   }
 
   // Draft mode: skip room matching entirely — everything goes to pool unit.
