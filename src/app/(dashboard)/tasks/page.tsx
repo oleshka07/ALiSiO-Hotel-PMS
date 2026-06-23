@@ -10,6 +10,7 @@ import {
   Calendar, ChevronDown, ChevronRight, Check, Clock, Tag,
   User, Building2, FolderOpen, Inbox, AlertTriangle, Filter,
   Hash, Flag, CheckSquare, Paperclip, Image, Trash2,
+  ArrowUpDown, ArrowUp, ArrowDown, Eye, EyeOff,
 } from 'lucide-react';
 import './tasks.css';
 
@@ -960,7 +961,7 @@ function TasksDesktop() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'list' | 'kanban' | 'table'>('list');
+  const [view, setView] = useState<'list' | 'kanban' | 'table'>('table');
   const [search, setSearch] = useState('');
   const [selectedProject, setSelectedProject] = useState<string | null>(null); // null = all, '' = inbox
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'upcoming' | 'overdue' | 'my'>('all');
@@ -971,6 +972,28 @@ function TasksDesktop() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const onMenuClick = useMobileMenu();
+
+  // ── Table filters ──
+  const [filterStatus, setFilterStatus] = useState<string>('active'); // 'all' | 'active' | specific status
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterAssignee, setFilterAssignee] = useState<string>('all');
+  // ── Table sorting ──
+  const [sortColumn, setSortColumn] = useState<string>('sort_order');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const toggleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortColumn !== col) return <ArrowUpDown size={12} style={{ opacity: 0.3 }} />;
+    return sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+  };
 
   // Fetch data
   const fetchTasks = useCallback(async () => {
@@ -1059,7 +1082,48 @@ function TasksDesktop() {
       today.setHours(0, 0, 0, 0);
       return new Date(t.due_date + 'T00:00:00') < today && t.status !== 'done' && t.status !== 'cancelled';
     }
+    // Table-specific filters
+    if (filterStatus === 'active' && (t.status === 'done' || t.status === 'cancelled')) return false;
+    if (filterStatus !== 'all' && filterStatus !== 'active' && t.status !== filterStatus) return false;
+    if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
+    if (filterAssignee !== 'all') {
+      if (filterAssignee === 'unassigned') { if (t.assignee_id) return false; }
+      else if (t.assignee_id !== filterAssignee) return false;
+    }
     return true;
+  });
+
+  // Sort tasks for table view
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    if (view !== 'table') {
+      if (a.status === 'done' && b.status !== 'done') return 1;
+      if (a.status !== 'done' && b.status === 'done') return -1;
+      return a.sort_order - b.sort_order;
+    }
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortColumn) {
+      case 'title': return dir * a.title.localeCompare(b.title);
+      case 'status': {
+        const order = ['todo', 'in_progress', 'done', 'cancelled'];
+        return dir * (order.indexOf(a.status) - order.indexOf(b.status));
+      }
+      case 'priority': {
+        const order = ['urgent', 'high', 'normal', 'low'];
+        return dir * (order.indexOf(a.priority) - order.indexOf(b.priority));
+      }
+      case 'assignee': return dir * (a.assignee_name || 'яяя').localeCompare(b.assignee_name || 'яяя');
+      case 'project': return dir * (a.project_name || 'яяя').localeCompare(b.project_name || 'яяя');
+      case 'due_date': {
+        const ad = a.due_date || '9999-99-99';
+        const bd = b.due_date || '9999-99-99';
+        return dir * ad.localeCompare(bd);
+      }
+      default: {
+        if (a.status === 'done' && b.status !== 'done') return 1;
+        if (a.status !== 'done' && b.status === 'done') return -1;
+        return a.sort_order - b.sort_order;
+      }
+    }
   });
 
   // Group by project for list view
@@ -1563,33 +1627,75 @@ function TasksDesktop() {
 
             {/* ═══════ TABLE VIEW ═══════ */}
             {!loading && view === 'table' && (
-              <div className="tasks-table-wrap">
-                <table className="tasks-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 36 }}></th>
-                      <th style={{ minWidth: 260 }}>Назва</th>
-                      <th style={{ width: 130 }}>Статус</th>
-                      <th style={{ width: 120 }}>Пріоритет</th>
-                      <th style={{ width: 150 }}>Виконавець</th>
-                      <th style={{ width: 160 }}>Проєкт</th>
-                      <th style={{ width: 140 }}>Дедлайн</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTasks.length === 0 && (
-                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Задач немає</td></tr>
-                    )}
-                    {filteredTasks
-                      .sort((a, b) => {
-                        if (a.status === 'done' && b.status !== 'done') return 1;
-                        if (a.status !== 'done' && b.status === 'done') return -1;
-                        return a.sort_order - b.sort_order;
-                      })
-                      .map(task => {
+              <>
+                {/* Filter bar */}
+                <div className="tasks-table-filters">
+                  <div className="tasks-table-filter-group">
+                    <label className="tasks-table-filter-label"><Filter size={12} /> Статус</label>
+                    <select className="tasks-table-filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                      <option value="active">Активні</option>
+                      <option value="all">Всі</option>
+                      {Object.entries(STATUS_CONFIG).map(([k, v]) => (
+                        <option key={k} value={k}>{v.icon} {v.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="tasks-table-filter-group">
+                    <label className="tasks-table-filter-label"><Flag size={12} /> Пріоритет</label>
+                    <select className="tasks-table-filter-select" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+                      <option value="all">Всі</option>
+                      {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
+                        <option key={k} value={k}>{v.icon} {v.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="tasks-table-filter-group">
+                    <label className="tasks-table-filter-label"><User size={12} /> Виконавець</label>
+                    <select className="tasks-table-filter-select" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
+                      <option value="all">Всі</option>
+                      <option value="unassigned">Без виконавця</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div className="tasks-table-filter-count">
+                    {sortedTasks.length} з {tasks.filter(t => !t.parent_id).length} задач
+                  </div>
+                </div>
+
+                <div className="tasks-table-wrap">
+                  <table className="tasks-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 36 }}></th>
+                        <th className="tasks-table-th-sort" onClick={() => toggleSort('title')}>
+                          Назва <SortIcon col="title" />
+                        </th>
+                        <th className="tasks-table-th-sort" style={{ width: 130 }} onClick={() => toggleSort('status')}>
+                          Статус <SortIcon col="status" />
+                        </th>
+                        <th className="tasks-table-th-sort" style={{ width: 120 }} onClick={() => toggleSort('priority')}>
+                          Пріоритет <SortIcon col="priority" />
+                        </th>
+                        <th className="tasks-table-th-sort" style={{ width: 150 }} onClick={() => toggleSort('assignee')}>
+                          Виконавець <SortIcon col="assignee" />
+                        </th>
+                        <th className="tasks-table-th-sort" style={{ width: 150 }} onClick={() => toggleSort('project')}>
+                          Проєкт <SortIcon col="project" />
+                        </th>
+                        <th className="tasks-table-th-sort" style={{ width: 140 }} onClick={() => toggleSort('due_date')}>
+                          Дедлайн <SortIcon col="due_date" />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedTasks.length === 0 && (
+                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Задач немає</td></tr>
+                      )}
+                      {sortedTasks.map(task => {
                         const isDone = task.status === 'done';
+                        const dueInfo = getDueLabel(task.due_date);
                         return (
-                          <tr key={task.id} className={isDone ? 'row-done' : ''}>
+                          <tr key={task.id} className={`tasks-table-row ${isDone ? 'row-done' : ''} ${dueInfo.cls === 'overdue' ? 'row-overdue' : ''}`}>
                             {/* Checkbox */}
                             <td className="tasks-table-td-check">
                               <button
@@ -1668,7 +1774,7 @@ function TasksDesktop() {
                               </select>
                             </td>
                             {/* Due date inline */}
-                            <td>
+                            <td className={dueInfo.cls === 'overdue' ? 'td-overdue' : dueInfo.cls === 'today' ? 'td-today' : ''}>
                               <input
                                 type="date"
                                 className="tasks-table-input"
@@ -1679,9 +1785,10 @@ function TasksDesktop() {
                           </tr>
                         );
                       })}
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>
