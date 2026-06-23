@@ -129,11 +129,15 @@ function initSchema(database: any) {
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK (type IN ('glamping', 'resort', 'camping')),
+      type TEXT NOT NULL CHECK (type IN ('glamping', 'resort', 'camping', 'facility', 'area', 'zone')),
       description TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       icon TEXT,
       color TEXT,
+      show_in_tasks INTEGER NOT NULL DEFAULT 1,
+      show_in_finance INTEGER NOT NULL DEFAULT 0,
+      show_in_booking INTEGER NOT NULL DEFAULT 1,
+      show_in_investor INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -4682,6 +4686,58 @@ function runMigrations(database: any) {
     }
   } catch (e: any) {
     console.log('[DB] country migration note:', e.message);
+  }
+
+  // --- Migration: expand categories table with visibility flags and new types ---
+  try {
+    const catCols = database.prepare("PRAGMA table_info(categories)").all() as { name: string }[];
+    const hasShowInTasks = catCols.some(c => c.name === 'show_in_tasks');
+    if (!hasShowInTasks) {
+      console.log('[DB] Migrating categories: expanding types + adding visibility flags...');
+      database.exec('PRAGMA foreign_keys = OFF');
+      database.exec(`
+        CREATE TABLE categories_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('glamping', 'resort', 'camping', 'facility', 'area', 'zone')),
+          description TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          icon TEXT,
+          color TEXT,
+          show_in_tasks INTEGER NOT NULL DEFAULT 1,
+          show_in_finance INTEGER NOT NULL DEFAULT 0,
+          show_in_booking INTEGER NOT NULL DEFAULT 1,
+          show_in_investor INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      database.exec(`
+        INSERT INTO categories_new (id, property_id, name, type, description, sort_order, icon, color, created_at)
+        SELECT id, property_id, name, type, description, sort_order, icon, color, created_at FROM categories
+      `);
+      // Mark existing accommodation categories as visible everywhere
+      database.exec(`UPDATE categories_new SET show_in_tasks = 1, show_in_finance = 1, show_in_booking = 1, show_in_investor = 1`);
+      database.exec('DROP TABLE categories');
+      database.exec('ALTER TABLE categories_new RENAME TO categories');
+      database.exec('PRAGMA foreign_keys = ON');
+
+      // Seed non-accommodation categories
+      const propId = (database.prepare('SELECT id FROM properties LIMIT 1').get() as { id: string })?.id;
+      if (propId) {
+        const insertCat = database.prepare(`
+          INSERT OR IGNORE INTO categories (id, property_id, name, type, sort_order, icon, color, show_in_tasks, show_in_finance, show_in_booking, show_in_investor)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insertCat.run('cat_restaurant', propId, 'Ресторан', 'facility', 10, '🍽️', '#f59e0b', 1, 1, 0, 0);
+        insertCat.run('cat_sauna', propId, 'Сауна', 'facility', 11, '🧖', '#ef4444', 1, 1, 0, 0);
+        insertCat.run('cat_pool', propId, 'Купель', 'facility', 12, '🛁', '#06b6d4', 1, 1, 0, 0);
+        insertCat.run('cat_territory', propId, 'Територія', 'area', 13, '🌳', '#22c55e', 1, 0, 0, 0);
+      }
+      console.log('[DB] Categories migration complete: expanded types + visibility flags + seeded facilities');
+    }
+  } catch (e: any) {
+    console.log('[DB] categories expansion note:', e.message);
   }
 
   // --- Migration: create locations table (unified Locations Registry) ---

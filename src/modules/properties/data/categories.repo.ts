@@ -1,12 +1,13 @@
 import { getDb } from '@core/db';
 
-const VALID_TYPES = ['glamping', 'resort', 'camping'] as const;
+const VALID_TYPES = ['glamping', 'resort', 'camping', 'facility', 'area', 'zone'] as const;
 export type CategoryTypeValue = typeof VALID_TYPES[number];
 
 export function listCategories() {
   return getDb().prepare(`
     SELECT
-      c.id, c.name, c.type, c.icon, c.color, c.sort_order,
+      c.id, c.name, c.type, c.icon, c.color, c.sort_order, c.description,
+      c.show_in_tasks, c.show_in_finance, c.show_in_booking, c.show_in_investor,
       COUNT(u.id) as unit_count
     FROM categories c
     LEFT JOIN units u ON u.category_id = c.id AND u.is_active = 1
@@ -23,6 +24,10 @@ export interface CreateCategoryInput {
   sort_order?: number;
   icon?: string;
   color?: string;
+  show_in_tasks?: number;
+  show_in_finance?: number;
+  show_in_booking?: number;
+  show_in_investor?: number;
 }
 
 export function validateCategoryType(type: string): type is CategoryTypeValue {
@@ -32,15 +37,21 @@ export function validateCategoryType(type: string): type is CategoryTypeValue {
 export function createCategory(input: CreateCategoryInput) {
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO categories (property_id, name, type, description, sort_order, icon, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(input.property_id, input.name, input.type, input.description ?? null, input.sort_order ?? 0, input.icon ?? null, input.color ?? null);
+    INSERT INTO categories (property_id, name, type, description, sort_order, icon, color, show_in_tasks, show_in_finance, show_in_booking, show_in_investor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.property_id, input.name, input.type, input.description ?? null,
+    input.sort_order ?? 0, input.icon ?? null, input.color ?? null,
+    input.show_in_tasks ?? 1, input.show_in_finance ?? 0,
+    input.show_in_booking ?? 1, input.show_in_investor ?? 0,
+  );
   return db.prepare('SELECT * FROM categories WHERE rowid = ?').get(result.lastInsertRowid);
 }
 
 export function updateCategory(id: string, fields: Record<string, unknown>) {
   const db = getDb();
-  const allowed = ['name', 'type', 'description', 'sort_order', 'icon', 'color'];
+  const allowed = ['name', 'type', 'description', 'sort_order', 'icon', 'color',
+    'show_in_tasks', 'show_in_finance', 'show_in_booking', 'show_in_investor'];
   const updates: string[] = [];
   const values: unknown[] = [];
 

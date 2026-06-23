@@ -56,15 +56,27 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   glamping: <Tent size={16} />,
   resort: <Building2 size={16} />,
   camping: <TreePine size={16} />,
+  facility: <Building2 size={16} />,
+  area: <MapPin size={16} />,
+  zone: <MapPin size={16} />,
 };
 
 const CATEGORY_EMOJI: Record<string, string> = {
   glamping: '🏕️', resort: '🏨', camping: '⛺',
+  facility: '🏭', area: '🌳', zone: '📍',
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
   glamping: '#a78bfa', resort: '#60a5fa', camping: '#34d399',
+  facility: '#f59e0b', area: '#22c55e', zone: '#6c7086',
 };
+
+const VISIBILITY_FLAGS = [
+  { key: 'show_in_tasks', label: 'Задачі', color: '#3b82f6' },
+  { key: 'show_in_finance', label: 'Фінанси', color: '#22c55e' },
+  { key: 'show_in_booking', label: 'Бронювання', color: '#f59e0b' },
+  { key: 'show_in_investor', label: 'Інвестори', color: '#a855f7' },
+];
 
 const STATUS_COLORS: Record<string, { label: string; color: string }> = {
   available: { label: 'Вільний', color: '#22c55e' },
@@ -121,7 +133,7 @@ export default function SettingsPropertiesPage() {
 
   // ── Forms ──
   const [propForm, setPropForm] = useState({ name: '', slug: '', address: '', city: '', country: 'CZ', phone: '', email: '', check_in_time: '15:00', check_out_time: '10:00' });
-  const [catForm, setCatForm] = useState({ name: '', type: 'glamping', description: '', icon: '🏕️', color: '#a78bfa', sort_order: 0 });
+  const [catForm, setCatForm] = useState({ name: '', type: 'glamping', description: '', icon: '🏕️', color: '#a78bfa', sort_order: 0, show_in_tasks: 1, show_in_finance: 0, show_in_booking: 1, show_in_investor: 0 });
   const [bldForm, setBldForm] = useState({ category_id: '', name: '', code: '', description: '', sort_order: 0 });
   const [utForm, setUtForm] = useState({ category_id: '', building_id: '', name: '', code: '', max_adults: 2, max_children: 2, max_occupancy: 4, base_occupancy: 2, beds_single: 0, beds_double: 1, beds_sofa: 0, extra_bed_available: 0, sort_order: 0 });
   const [unitForm, setUnitForm] = useState({ unit_type_id: '', category_id: '', building_id: '', name: '', code: '', beds: 2, floor: '', zone: '', notes: '', sort_order: 0 });
@@ -244,10 +256,10 @@ export default function SettingsPropertiesPage() {
   const openCategoryModal = (cat?: CategoryRow) => {
     if (cat) {
       setEditId(cat.id);
-      setCatForm({ name: cat.name, type: cat.type, description: cat.description || '', icon: cat.icon || '🏕️', color: cat.color || '#a78bfa', sort_order: cat.sort_order });
+      setCatForm({ name: cat.name, type: cat.type, description: cat.description || '', icon: cat.icon || '🏕️', color: cat.color || '#a78bfa', sort_order: cat.sort_order, show_in_tasks: (cat as any).show_in_tasks ?? 1, show_in_finance: (cat as any).show_in_finance ?? 0, show_in_booking: (cat as any).show_in_booking ?? 1, show_in_investor: (cat as any).show_in_investor ?? 0 });
     } else {
       setEditId(null);
-      setCatForm({ name: '', type: 'glamping', description: '', icon: '🏕️', color: '#a78bfa', sort_order: categories.length });
+      setCatForm({ name: '', type: 'glamping', description: '', icon: '🏕️', color: '#a78bfa', sort_order: categories.length, show_in_tasks: 1, show_in_finance: 0, show_in_booking: 1, show_in_investor: 0 });
     }
     setModal('category');
   };
@@ -625,6 +637,18 @@ export default function SettingsPropertiesPage() {
                     }}>
                       {catUnits.length}
                     </span>
+                    {VISIBILITY_FLAGS.map(flag => {
+                      const val = (cat as any)[flag.key];
+                      return val ? (
+                        <span key={flag.key} style={{
+                          fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                          background: `${flag.color}18`, color: flag.color,
+                          fontWeight: 600, letterSpacing: '0.3px',
+                        }}>
+                          {flag.label}
+                        </span>
+                      ) : null;
+                    })}
                   </div>
                   <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                     <button className="btn btn-sm btn-ghost" title="Додати корпус" onClick={() => openBuildingModal(cat.id)}>
@@ -784,6 +808,9 @@ export default function SettingsPropertiesPage() {
                 <option value="glamping">Glamping</option>
                 <option value="resort">Resort</option>
                 <option value="camping">Camping</option>
+                <option value="facility">Об&apos;єкт інфраструктури</option>
+                <option value="area">Зона / Територія</option>
+                <option value="zone">Ділянка</option>
               </select>
             </div>
             <div className="form-group">
@@ -804,6 +831,21 @@ export default function SettingsPropertiesPage() {
           <div className="form-group">
             <label className="form-label">Опис</label>
             <input className="form-input" value={catForm.description} onChange={e => setCatForm(p => ({ ...p, description: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Відображати в модулях</label>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+              {VISIBILITY_FLAGS.map(flag => (
+                <label key={flag.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!(catForm as any)[flag.key]}
+                    onChange={e => setCatForm(f => ({ ...f, [flag.key]: e.target.checked ? 1 : 0 }))}
+                  />
+                  <span style={{ color: flag.color }}>{flag.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </Modal>
 
