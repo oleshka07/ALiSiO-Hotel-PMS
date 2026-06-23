@@ -56,7 +56,7 @@ export async function syncPriceLabsFromCron(request: NextRequest): Promise<NextR
         conflictNote,
         errorNote,
       ].filter(Boolean).join('\n');
-      await sendTelegramMessage(lines);
+      await sendTelegramMessage(lines, undefined, { ownerOnly: true });
     } catch (tgErr: any) {
       console.error('[PL cron] TG notify failed (non-fatal):', tgErr.message);
     }

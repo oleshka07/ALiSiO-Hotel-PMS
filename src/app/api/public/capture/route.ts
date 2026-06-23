@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
             messageId: createdMessage.id,
             conversationId,
             leadId: lead.id,
-            accountId: 'web_form',
+            accountId: 'gmail', // Send from kempcarlsbad@gmail.com
             guestName: fullName || firstName,
             guestEmail: email,
             subject: 'Заявка з сайту / Форма зворотного зв\'язку',

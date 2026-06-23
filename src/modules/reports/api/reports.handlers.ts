@@ -97,3 +97,66 @@ export async function getReport(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 });
   }
 }
+
+export async function getGlampingReport(request: NextRequest) {
+  try {
+    const db = getDb();
+    const { searchParams } = new URL(request.url);
+    const from = searchParams.get('from') || new Date().toISOString().split('T')[0];
+    const to = searchParams.get('to') || new Date().toISOString().split('T')[0];
+
+    const targetUnitIds = ['u_mr1', 'u_mr2', 'u_st1', 'u_st2', 'u_st3', 'u_st4'];
+    const results = [];
+    
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const days = Math.max(1, Math.ceil((toDate.getTime() - fromDate.getTime()) / 86400000));
+
+    for (const unitId of targetUnitIds) {
+      const unit = db.prepare('SELECT name FROM units WHERE id = ?').get(unitId) as any;
+      if (!unit) continue;
+
+      let occupiedDays = 0;
+      for (let d = 0; d < days; d++) {
+        const curDate = new Date(fromDate);
+        curDate.setDate(curDate.getDate() + d);
+        const dateStr = curDate.toISOString().split('T')[0];
+        
+        const occ = db.prepare(`
+          SELECT COUNT(*) as cnt FROM reservations
+          WHERE unit_id = ? AND check_in <= ? AND check_out > ?
+            AND status NOT IN ('cancelled', 'no_show', 'draft')
+        `).get(unitId, dateStr, dateStr) as any;
+        if (occ.cnt > 0) occupiedDays++;
+      }
+      
+      const occPct = Math.round((occupiedDays / days) * 100);
+
+      const stats = db.prepare(`
+        SELECT 
+          COUNT(DISTINCT r.id) as bookings_count,
+          ROUND(COALESCE(SUM(r.total_price), 0), 2) as total_revenue,
+          r.currency
+        FROM reservations r
+        WHERE r.unit_id = ?
+          AND r.check_in <= ? AND r.check_out > ?
+          AND r.status NOT IN ('cancelled', 'no_show', 'draft')
+      `).get(unitId, to, from) as any;
+
+      results.push({
+        unitId,
+        name: unit.name,
+        occupiedDays,
+        occPct,
+        bookings: stats.bookings_count,
+        revenue: stats.total_revenue,
+        currency: stats.currency || 'CZK'
+      });
+    }
+
+    return NextResponse.json({ period: { from, to, days }, houses: results });
+  } catch (error) {
+    console.error('GET /api/reports/glamping error:', error);
+    return NextResponse.json({ error: 'Failed to generate glamping report' }, { status: 500 });
+  }
+}

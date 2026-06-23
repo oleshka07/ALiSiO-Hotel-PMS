@@ -48,7 +48,21 @@ export interface EmailClassification {
 export function getEmailAccounts(): EmailAccountConfig[] {
   const accounts: EmailAccountConfig[] = [];
 
-  // Account 1: email.cz (Seznam)
+  // Account 1: Gmail (kempcarlsbad@gmail.com) — PRIMARY / DEFAULT
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    accounts.push({
+      id: 'gmail',
+      label: 'Gmail',
+      user: process.env.GMAIL_USER,
+      password: process.env.GMAIL_APP_PASSWORD,
+      imap: { host: 'imap.gmail.com', port: 993 },
+      smtp: { host: 'smtp.gmail.com', port: 587 },
+      folder: 'INBOX',
+      fromName: 'Carlsbad Wellness & Camping Resort',
+    });
+  }
+
+  // Account 2: email.cz (QA Glamping) — secondary, used only when explicitly selected
   if (process.env.EMAIL_CZ_USER && process.env.EMAIL_CZ_PASSWORD) {
     accounts.push({
       id: 'emailcz',
@@ -65,20 +79,6 @@ export function getEmailAccounts(): EmailAccountConfig[] {
       },
       folder: process.env.EMAIL_POLL_FOLDER || 'INBOX',
       fromName: 'QA Glamping',
-    });
-  }
-
-  // Account 2: Gmail
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    accounts.push({
-      id: 'gmail',
-      label: 'Gmail',
-      user: process.env.GMAIL_USER,
-      password: process.env.GMAIL_APP_PASSWORD,
-      imap: { host: 'imap.gmail.com', port: 993 },
-      smtp: { host: 'smtp.gmail.com', port: 587 },
-      folder: 'INBOX',
-      fromName: 'Carlsbad Wellness & Camping Resort',
     });
   }
 

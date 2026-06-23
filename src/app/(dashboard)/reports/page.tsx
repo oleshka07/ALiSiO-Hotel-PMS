@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
-import { BarChart3, TrendingUp, Calendar, Users, Wallet, RefreshCw, Loader2 } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Users, Wallet, RefreshCw, Loader2, Tent } from 'lucide-react';
+import GlampingReportModal from '@/components/reports/GlampingReportModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -89,6 +90,7 @@ export default function ReportsPage() {
   const [activePreset, setActivePreset] = useState('thisMonth');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isGlampingModalOpen, setIsGlampingModalOpen] = useState(false);
   const onMenuClick = useMobileMenu();
 
   const fetchReport = useCallback(async () => {
@@ -128,6 +130,9 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <button className="btn btn-secondary" onClick={() => setIsGlampingModalOpen(true)}>
+              <Tent size={16} /> Глемпінг по будинках
+            </button>
             <button className="btn btn-secondary" onClick={fetchReport} title="Оновити">
               <RefreshCw size={16} />
             </button>
@@ -355,6 +360,13 @@ export default function ReportsPage() {
           </>
         )}
       </div>
+
+      <GlampingReportModal 
+        isOpen={isGlampingModalOpen} 
+        onClose={() => setIsGlampingModalOpen(false)} 
+        from={from} 
+        to={to} 
+      />
     </>
   );
 }

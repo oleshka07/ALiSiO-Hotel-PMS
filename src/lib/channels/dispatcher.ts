@@ -68,7 +68,7 @@ async function dispatchEmail(
   let subject = 'Carlsbad Wellness & Camping Resort';
   let inReplyTo: string | undefined;
   let references: string | undefined;
-  let accountId: string | undefined;
+  let accountId: string | undefined = 'gmail'; // Default: kempcarlsbad@gmail.com
 
   if (lastInbound?.metadata_json) {
     try {

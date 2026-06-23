@@ -30,7 +30,8 @@ interface TelegramResult {
    ──────────────────────────────────────────────────────── */
 export async function sendTelegramMessage(
   text: string,
-  inlineKeyboard?: { text: string; callback_data: string }[][]
+  inlineKeyboard?: { text: string; callback_data: string }[][],
+  options?: { ownerOnly?: boolean },
 ): Promise<number | null> {
   if (!BOT_TOKEN || !CHAT_ID) {
     console.warn('[Telegram] Bot not configured — skipping');
@@ -40,11 +41,13 @@ export async function sendTelegramMessage(
   // Send to primary CHAT_ID
   const primaryMsgId = await sendToChat(CHAT_ID, text, inlineKeyboard);
 
-  // Send copies to admin chats (fire-and-forget, don't block on errors)
-  for (const adminId of ADMIN_CHAT_IDS) {
-    sendToChat(adminId, text, inlineKeyboard).catch(err =>
-      console.error(`[Telegram] Admin send to ${adminId} failed:`, err.message)
-    );
+  // Send copies to admin chats (unless ownerOnly)
+  if (!options?.ownerOnly) {
+    for (const adminId of ADMIN_CHAT_IDS) {
+      sendToChat(adminId, text, inlineKeyboard).catch(err =>
+        console.error(`[Telegram] Admin send to ${adminId} failed:`, err.message)
+      );
+    }
   }
 
   return primaryMsgId;
