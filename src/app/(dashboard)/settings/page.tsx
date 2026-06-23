@@ -18,7 +18,6 @@ import {
   Code2,
   Sparkles,
   Brain,
-  MapPin,
 } from 'lucide-react';
 
 const settingsItems = [
@@ -70,13 +69,6 @@ const settingsItems = [
     icon: <Brain size={22} />,
     href: '/settings/ai-knowledge',
     color: 'purple',
-  },
-  {
-    title: 'Реєстр об\'єктів',
-    desc: 'Єдиний список будівель, юнітів, зон — master data',
-    icon: <MapPin size={22} />,
-    href: '/settings/locations',
-    color: 'green',
   },
   {
     title: 'Шаблони документів',
