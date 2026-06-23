@@ -4683,6 +4683,43 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.log('[DB] country migration note:', e.message);
   }
+
+  // --- Migration: create locations table (unified Locations Registry) ---
+  const locExists = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'").get();
+  if (!locExists) {
+    database.exec(`
+      CREATE TABLE locations (
+        id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL DEFAULT 'org_alisio_001',
+        parent_id TEXT REFERENCES locations(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'unit' CHECK (type IN ('property','building','unit','area','facility','zone')),
+        code TEXT,
+        icon TEXT,
+        color TEXT DEFAULT '#6c7086',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        show_in_tasks INTEGER NOT NULL DEFAULT 1,
+        show_in_finance INTEGER NOT NULL DEFAULT 0,
+        show_in_booking INTEGER NOT NULL DEFAULT 0,
+        show_in_investor INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    try {
+      const bus = database.prepare('SELECT id, name, unit_type, sort_order, parent_id FROM business_units WHERE is_active = 1').all() as any[];
+      const insertLoc = database.prepare(`INSERT OR IGNORE INTO locations (id, name, type, code, sort_order, show_in_tasks, show_in_finance, show_in_investor) VALUES (?, ?, ?, ?, ?, 1, 1, 0)`);
+      for (const bu of bus) {
+        const type = bu.parent_id ? 'unit' : (['Ресторан','Сауна','Купель'].some((n: string) => bu.name.includes(n)) ? 'facility' : 'building');
+        insertLoc.run(`loc_${bu.id}`, bu.name, type, null, bu.sort_order || 0);
+      }
+      console.log(`[DB] Created locations table, seeded ${bus.length} locations from business_units`);
+    } catch (e: any) {
+      console.log('[DB] locations seed note:', e.message);
+    }
+  }
 }
 
 
