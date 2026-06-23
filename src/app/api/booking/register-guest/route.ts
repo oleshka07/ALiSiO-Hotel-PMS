@@ -66,25 +66,31 @@ export async function POST(req: Request) {
       }
     }
 
-    // Fallback to booking guest if OCR found nothing
+    // If OCR found nothing usable, don't save incomplete records
     if (ocrResults.length === 0) {
-      ocrResults.push({
-        firstName: reservation.booking_first_name || 'Guest',
-        lastName: reservation.booking_last_name || '',
-        dateOfBirth: null,
-        documentNumber: null,
-        documentType: 'id_card' as const,
-        nationality: null,
-        address: null,
-        confidence: 5,
-      });
+      return NextResponse.json(
+        { error: 'Could not read document data. Please register manually through the guest page.', ocr_failed: true },
+        { status: 422, headers: CORS_HEADERS }
+      );
+    }
+
+    // Validate that OCR results have required fields before saving
+    const validResults = ocrResults.filter(r =>
+      r.firstName && r.lastName && r.dateOfBirth && r.documentNumber
+    );
+
+    if (validResults.length === 0) {
+      return NextResponse.json(
+        { error: 'Document was read but required fields are missing (name, date of birth, document number). Please register manually.', ocr_failed: true },
+        { status: 422, headers: CORS_HEADERS }
+      );
     }
 
     // Save to PMS guests + reservation_guests + guest_registrations
     const saved = saveRegistrations(
       reservation_id,
       reservation.organization_id,
-      ocrResults.map(r => ({
+      validResults.map(r => ({
         firstName: r.firstName,
         lastName: r.lastName,
         dateOfBirth: r.dateOfBirth ?? undefined,
