@@ -37,6 +37,7 @@ const amenityNames: ContentDict = {
   'Косметика':           { en: 'Toiletries', de: 'Pflegeprodukte', cs: 'Kosmetika', pl: 'Kosmetyki', nl: 'Toiletartikelen', fr: 'Produits de toilette' },
   'Сейф':                { en: 'Safe', de: 'Safe', cs: 'Trezor', pl: 'Sejf', nl: 'Kluis', fr: 'Coffre-fort' },
   'Місце для намету':    { en: 'Tent pitch', de: 'Zeltplatz', cs: 'Místo pro stan', pl: 'Miejsce na namiot', nl: 'Tentplaats', fr: 'Emplacement tente' },
+  'Місце для намету/автобудинку': { en: 'Tent/RV pitch', de: 'Zelt-/Wohnmobilstellplatz', cs: 'Místo pro stan/karavan', pl: 'Miejsce na namiot/kamper', nl: 'Tent/camperplaats', fr: 'Emplacement tente/camping-car' },
   'Електрика 220V':      { en: 'Power supply 220V', de: 'Stromanschluss 220V', cs: 'Elektřina 220V', pl: 'Prąd 220V', nl: 'Stroom 220V', fr: 'Électricité 220V' },
   'Спільний душ':        { en: 'Shared shower', de: 'Gemeinschaftsdusche', cs: 'Společná sprcha', pl: 'Wspólny prysznic', nl: 'Gedeelde douche', fr: 'Douche commune' },
   'Спільний туалет':     { en: 'Shared toilet', de: 'Gemeinschaftstoilette', cs: 'Společné WC', pl: 'Wspólna toaleta', nl: 'Gedeeld toilet', fr: 'Toilettes communes' },
