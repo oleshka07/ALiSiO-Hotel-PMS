@@ -175,11 +175,18 @@ export async function createWidgetReservation(request: NextRequest) {
     let priceOverride: number | null = null;
     let thankYouUrl: string | null = null;
     let siteName: string = 'widget';
+    let siteRequiresModeration = false;
 
     if (siteId) {
       if (existingTables.has('booking_sites')) {
-        const site = db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any;
-        if (site) siteName = `widget:${siteId}`; // unified format: widget:<siteId>
+        const site = db.prepare('SELECT name, widget_config FROM booking_sites WHERE id = ?').get(siteId) as any;
+        if (site) {
+          siteName = `widget:${siteId}`; // unified format: widget:<siteId>
+          try {
+            const wCfg = JSON.parse(site.widget_config || '{}');
+            siteRequiresModeration = wCfg.moderation_required === true;
+          } catch { /* ignore */ }
+        }
       }
       if (existingTables.has('site_listings')) {
         const listing = db.prepare('SELECT price_override, thank_you_url FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId) as any;
@@ -193,7 +200,7 @@ export async function createWidgetReservation(request: NextRequest) {
     const isBooked = db.prepare(`
       SELECT 1 FROM reservations r
       WHERE r.unit_id = ?
-        AND r.status NOT IN ('cancelled', 'no_show')
+        AND r.status NOT IN ('cancelled', 'no_show', 'pending_review')
         AND r.check_in < ? AND r.check_out > ?
       LIMIT 1
     `).get(unitId, checkOut, checkIn);
@@ -373,7 +380,9 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     const resId = `r_${Date.now()}`;
-    const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
+    // Widget reservations: if the site has moderation_required = true → pending_review
+    // Otherwise use normal tentative flow. Free bookings always go straight to confirmed.
+    const resStatus = finalPrice === 0 ? 'confirmed' : (siteRequiresModeration ? 'pending_review' : 'tentative');
     const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
     // Generate a unique guest_page_token — retries on collision (UNIQUE index exists)
     let guestPageToken = Math.random().toString(36).slice(2, 14);
@@ -608,7 +617,13 @@ export async function createWidgetReservation(request: NextRequest) {
       }
     }
 
-    notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
+    notifyReservationCreated(resId, {
+      sourceLabel: 'Widget · публічне бронювання',
+      emoji: siteRequiresModeration ? '⏳' : '🌐',
+      ...(siteRequiresModeration ? {
+        extraFooter: '\n📋 <b>Потребує модерації</b> — підтвердіть або відхиліть заявку в PMS (Бронювання → фільтр «На модерацію»)',
+      } : {}),
+    });
 
     if (conversationId) {
       try {

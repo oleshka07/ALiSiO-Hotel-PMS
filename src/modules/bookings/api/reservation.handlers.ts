@@ -133,7 +133,7 @@ export async function updateReservation(request: NextRequest, { params }: { para
         if (!targetUnitRow?.is_pool) {
           const overlap = db.prepare(`
             SELECT id FROM reservations
-            WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show')
+            WHERE unit_id = ? AND id <> ? AND status NOT IN ('cancelled', 'no_show', 'pending_review')
               AND check_in < ? AND check_out > ?
             LIMIT 1
           `).get(targetUnit, id, targetOut, targetIn) as { id: string } | undefined;
