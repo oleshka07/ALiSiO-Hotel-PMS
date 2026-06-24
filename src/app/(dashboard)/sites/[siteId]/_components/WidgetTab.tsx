@@ -197,22 +197,6 @@ export function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Widg
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Якщо порожньо — використовується текст за замовчуванням з налаштувань мови</div>
       </Step>
 
-      <Step n={8} title="Модерація заявок">
-        <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Якщо увімкнено — всі заявки з цього віджету потраплятимуть на модерацію (статус <strong>«⏳ На модерацію»</strong>) замість одразу в очікувані. Менеджер має вручну підтвердити або відхилити кожну заявку в PMS.
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 14px', borderRadius: 8, border: `1px solid ${cfg.moderation_required ? 'rgba(245,158,11,0.4)' : 'var(--border-primary)'}`, background: cfg.moderation_required ? 'rgba(245,158,11,0.06)' : 'var(--bg-secondary)', transition: 'all .2s' }}>
-          <input type="checkbox" checked={!!cfg.moderation_required}
-            onChange={e => setCfg(c => ({ ...c, moderation_required: e.target.checked }))}
-            style={{ width: 16, height: 16, accentColor: '#f59e0b' }} />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Вимагати модерацію перед підтвердженням</div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Заявки не з&apos;являються в календарі до ручного підтвердження</div>
-          </div>
-        </label>
-      </Step>
-
-
       <button className="btn btn-primary" onClick={save} disabled={saving}>
         {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
         {saved ? 'Збережено!' : 'Зберегти налаштування'}
