@@ -32,6 +32,8 @@ import {
   ZoomIn,
   ZoomOut,
   CalendarDays,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -178,6 +180,7 @@ function CalendarDesktop() {
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showRoomAllocation, setShowRoomAllocation] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Zoom & Navigation
   const [zoom, setZoom] = useState<ZoomLevel>('month');
@@ -636,6 +639,7 @@ function CalendarDesktop() {
                   📋 {draftCount} в чорновику
                 </button>
               )}
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowExportModal(true)} title="Скачати звіт" style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Download size={14} /> Звіт</button>
               <button className="btn btn-primary btn-sm" onClick={() => { setNewBookingPrefill(null); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
           </div>
@@ -1113,6 +1117,15 @@ function CalendarDesktop() {
         onChanged={() => fetchData()}
       />
 
+      {/* ─── Export Report Modal ───────── */}
+      {showExportModal && (
+        <ExportReportModal
+          onClose={() => setShowExportModal(false)}
+          timelineStart={timelineStart}
+          timelineEnd={days[days.length - 1]}
+        />
+      )}
+
       {/* Floating "Today" button – mobile only */}
       <button className="floating-btn" onClick={scrollToToday}>
         Сьогодні
@@ -1156,5 +1169,192 @@ function CalendarDesktop() {
         }
       `}</style>
     </>
+  );
+}
+
+// ─── Export Report Modal ──────────────────────────────────
+function ExportReportModal({ onClose, timelineStart, timelineEnd }: {
+  onClose: () => void;
+  timelineStart: Date;
+  timelineEnd: Date;
+}) {
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  const [fromDate, setFromDate] = useState(fmtDate(firstOfMonth));
+  const [toDate, setToDate] = useState(fmtDate(lastOfMonth));
+  const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
+  const [category, setCategory] = useState('');
+  const [downloading, setDownloading] = useState(false);
+
+  const presets = [
+    {
+      label: 'Цей місяць',
+      from: fmtDate(firstOfMonth),
+      to: fmtDate(lastOfMonth),
+    },
+    {
+      label: 'Минулий місяць',
+      from: fmtDate(new Date(today.getFullYear(), today.getMonth() - 1, 1)),
+      to: fmtDate(new Date(today.getFullYear(), today.getMonth(), 0)),
+    },
+    {
+      label: 'Цей квартал',
+      from: fmtDate(new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1)),
+      to: fmtDate(new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3 + 3, 0)),
+    },
+    {
+      label: 'Календар (поточний вид)',
+      from: fmtDate(timelineStart),
+      to: fmtDate(timelineEnd),
+    },
+    {
+      label: 'Весь рік',
+      from: `${today.getFullYear()}-01-01`,
+      to: `${today.getFullYear()}-12-31`,
+    },
+  ];
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const params = new URLSearchParams({ from: fromDate, to: toDate, format });
+      if (category) params.set('category', category);
+      const url = `/api/bookings/export-csv?${params}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `bookings_${fromDate}_${toDate}.${format}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      onClose();
+    } catch (err) {
+      alert('Помилка при скачуванні звіту');
+      console.error(err);
+    }
+    setDownloading(false);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+        borderRadius: 'var(--radius-xl, 16px)', padding: '24px 28px',
+        width: '100%', maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <FileSpreadsheet size={18} color="#fff" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Звіт по бронюваннях</h3>
+              <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>Оберіть діапазон та формат</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--text-tertiary)', padding: 4,
+          }}><X size={18} /></button>
+        </div>
+
+        {/* Quick presets */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+          {presets.map((p, i) => (
+            <button key={i} onClick={() => { setFromDate(p.from); setToDate(p.to); }} style={{
+              padding: '5px 10px', fontSize: 11, fontWeight: 500,
+              borderRadius: 8, cursor: 'pointer',
+              border: fromDate === p.from && toDate === p.to
+                ? '1.5px solid var(--accent-primary)'
+                : '1px solid var(--border-primary)',
+              background: fromDate === p.from && toDate === p.to
+                ? 'rgba(59,130,246,0.15)'
+                : 'var(--bg-tertiary)',
+              color: fromDate === p.from && toDate === p.to
+                ? 'var(--accent-primary)'
+                : 'var(--text-secondary)',
+              transition: 'all 0.15s',
+            }}>{p.label}</button>
+          ))}
+        </div>
+
+        {/* Date range */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Від</label>
+            <input type="date" className="form-input" value={fromDate} onChange={e => setFromDate(e.target.value)}
+              style={{ width: '100%', fontSize: 13, padding: '8px 10px' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>До</label>
+            <input type="date" className="form-input" value={toDate} onChange={e => setToDate(e.target.value)}
+              style={{ width: '100%', fontSize: 13, padding: '8px 10px' }} />
+          </div>
+        </div>
+
+        {/* Category + Format */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Категорія</label>
+            <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}
+              style={{ width: '100%', fontSize: 13, padding: '8px 10px' }}>
+              <option value="">Всі категорії</option>
+              <option value="glamping">Glamping</option>
+              <option value="resort">Resort</option>
+              <option value="camping">Camping</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Формат</label>
+            <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+              {(['xlsx', 'csv'] as const).map(f => (
+                <button key={f} onClick={() => setFormat(f)} style={{
+                  flex: 1, padding: '8px 0', fontSize: 12, fontWeight: format === f ? 700 : 400,
+                  border: 'none', cursor: 'pointer',
+                  background: format === f ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                  color: format === f ? '#fff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s',
+                }}>{f.toUpperCase()}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Info */}
+        <div style={{
+          background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 11,
+          color: 'var(--text-secondary)', lineHeight: 1.5,
+        }}>
+          📊 Звіт містить: ім&apos;я гостя, юніт, дати заїзду/виїзду, кількість ночей, канал бронювання, вартість, спосіб оплати, комісію, депозит, харчування, контакти та примітки.
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" onClick={onClose} style={{ padding: '8px 16px', fontSize: 13 }}>Скасувати</button>
+          <button className="btn btn-primary" onClick={handleDownload} disabled={downloading || !fromDate || !toDate}
+            style={{
+              padding: '8px 20px', fontSize: 13, gap: 6,
+              display: 'flex', alignItems: 'center',
+              opacity: downloading ? 0.7 : 1,
+            }}>
+            {downloading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+            {downloading ? 'Завантаження...' : `Скачати ${format.toUpperCase()}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

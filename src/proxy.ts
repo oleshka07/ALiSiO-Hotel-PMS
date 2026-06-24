@@ -36,6 +36,7 @@ const PUBLIC_EXACT = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/me',
+  '/api/admin/export-may',
 ];
 
 function isPublicRoute(pathname: string): boolean {
