@@ -5,7 +5,11 @@ import { getDb } from '@core/db';
 const OP_TYPES = ['income', 'expense', 'transfer', 'other'] as const;
 type OpType = typeof OP_TYPES[number];
 
-const CLASSIFIERS = ['cogs', 'variable', 'operational', 'capex', 'tax', 'financing', 'other'] as const;
+const CLASSIFIERS = [
+  'cogs', 'variable', 'operational', 'capex', 'tax', 'financing', 
+  'accommodation_revenue', 'service_revenue', 'other_operating_revenue', 'financial_revenue', 'non_operating_revenue',
+  'other'
+] as const;
 type Classifier = typeof CLASSIFIERS[number];
 
 interface CategoryRow {

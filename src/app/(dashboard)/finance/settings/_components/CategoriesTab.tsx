@@ -6,7 +6,10 @@ import CategoryModal, { CategoryFormValues } from './CategoryModal';
 import CategoryTreeRow from './CategoryTreeRow';
 
 export type OpType = 'income' | 'expense' | 'transfer' | 'other';
-export type Classifier = 'cogs' | 'variable' | 'operational' | 'capex' | 'tax' | 'financing' | 'other';
+export type Classifier = 
+  | 'cogs' | 'variable' | 'operational' | 'capex' | 'tax' | 'financing'
+  | 'accommodation_revenue' | 'service_revenue' | 'other_operating_revenue' | 'financial_revenue' | 'non_operating_revenue'
+  | 'other';
 
 export interface Category {
   id: string;

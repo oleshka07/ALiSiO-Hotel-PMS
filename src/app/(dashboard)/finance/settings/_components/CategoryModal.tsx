@@ -28,14 +28,27 @@ const OP_TYPE_OPTIONS: { value: OpType; label: string }[] = [
   { value: 'transfer', label: 'Переказ' },
 ];
 
-const CLASSIFIER_OPTIONS: { value: Classifier; label: string; hint: string }[] = [
+const EXPENSE_CLASSIFIERS: { value: Classifier; label: string; hint: string }[] = [
   { value: 'cogs',        label: 'Собівартість (COGS)', hint: 'Прямі витрати на виробництво доходу' },
-  { value: 'variable',    label: 'Змінні',              hint: 'Коливаються з об’ємом діяльності' },
-  { value: 'operational', label: 'Операційні',          hint: 'Постійні витрати на ведення бізнесу' },
+  { value: 'variable',    label: 'Змінні витрати',              hint: 'Коливаються з об’ємом діяльності' },
+  { value: 'operational', label: 'Операційні витрати',          hint: 'Постійні витрати на ведення бізнесу' },
   { value: 'capex',       label: 'Капітальні (CapEx)',  hint: 'Основні засоби, амортизовані' },
   { value: 'tax',         label: 'Податки',             hint: 'ПДВ, податок на прибуток тощо' },
-  { value: 'financing',   label: 'Фінансові',           hint: 'Кредити, інвестиції, відсотки' },
-  { value: 'other',       label: 'Інше',                hint: 'Жодне з вище перерахованих' },
+  { value: 'financing',   label: 'Фінансові витрати',           hint: 'Кредити, інвестиції, відсотки' },
+  { value: 'other',       label: 'Інші витрати',                hint: 'Жодне з вище перерахованих' },
+];
+
+const INCOME_CLASSIFIERS: { value: Classifier; label: string; hint: string }[] = [
+  { value: 'accommodation_revenue',   label: 'Дохід від проживання',  hint: 'Надходження від здачі номерів' },
+  { value: 'service_revenue',         label: 'Дохід від послуг',      hint: 'Додаткові послуги (їжа, спа, тощо)' },
+  { value: 'other_operating_revenue', label: 'Інший опер. дохід',     hint: 'Штрафи, скасування, інша діяльність' },
+  { value: 'financial_revenue',       label: 'Фінансовий дохід',      hint: 'Курсові різниці, відсотки на залишок' },
+  { value: 'non_operating_revenue',   label: 'Позаопераційний дохід', hint: 'Продаж активів, інші непрямі доходи' },
+  { value: 'other',                   label: 'Інше',                  hint: 'Інші види доходу' },
+];
+
+const DEFAULT_CLASSIFIERS: { value: Classifier; label: string; hint: string }[] = [
+  { value: 'other', label: 'Інше', hint: 'Інше' }
 ];
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#0ea5e9', '#64748b', '#dc2626', '#059669', '#94a3b8'];
@@ -60,6 +73,8 @@ export default function CategoryModal({ initial, parent, defaultOpType, onClose,
   const [error, setError] = useState<string | null>(null);
 
   const isEditingSubcategory = initial && initial.parent_id !== null;
+
+  const currentClassifiers = opType === 'income' ? INCOME_CLASSIFIERS : opType === 'expense' ? EXPENSE_CLASSIFIERS : DEFAULT_CLASSIFIERS;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -165,7 +180,13 @@ export default function CategoryModal({ initial, parent, defaultOpType, onClose,
           <Field label="Тип операції">
             <select
               value={opType}
-              onChange={(e) => setOpType(e.target.value as OpType)}
+              onChange={(e) => {
+                const newType = e.target.value as OpType;
+                setOpType(newType);
+                if (newType === 'income') setClassifier('accommodation_revenue');
+                else if (newType === 'expense') setClassifier('operational');
+                else setClassifier('other');
+              }}
               style={inputStyle}
               disabled={isSubcategory || isEditingSubcategory}
             >
@@ -182,12 +203,12 @@ export default function CategoryModal({ initial, parent, defaultOpType, onClose,
               style={inputStyle}
               disabled={isSubcategory || isEditingSubcategory}
             >
-              {CLASSIFIER_OPTIONS.map((o) => (
+              {currentClassifiers.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
             {!(isSubcategory || isEditingSubcategory) && (
-              <div style={hintStyle}>{CLASSIFIER_OPTIONS.find((o) => o.value === classifier)?.hint}</div>
+              <div style={hintStyle}>{currentClassifiers.find((o) => o.value === classifier)?.hint}</div>
             )}
             {(isSubcategory || isEditingSubcategory) && (
               <div style={hintStyle}>Успадковано від батька</div>

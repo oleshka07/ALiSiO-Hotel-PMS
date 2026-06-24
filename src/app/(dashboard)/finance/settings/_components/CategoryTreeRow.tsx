@@ -24,6 +24,11 @@ const CLASSIFIER_LABELS: Record<Classifier, string> = {
   capex: 'Капекс',
   tax: 'Податки',
   financing: 'Фінансові',
+  accommodation_revenue: 'Дохід від проживання',
+  service_revenue: 'Дохід від послуг',
+  other_operating_revenue: 'Інший опер. дохід',
+  financial_revenue: 'Фінансовий дохід',
+  non_operating_revenue: 'Позаопераційний дохід',
   other: 'Інше',
 };
 
