@@ -48,6 +48,8 @@ export interface WidgetConfig {
   ga4_id?: string;
   tiktok_pixel_id?: string;
   return_url?: string;
+  // Moderation — if true, widget bookings go to pending_review instead of tentative
+  moderation_required?: boolean;
 }
 
 export interface Listing {
