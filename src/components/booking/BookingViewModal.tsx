@@ -31,6 +31,7 @@ function Modal({ open, onClose, title, children, footer, size, hideTitle }: {
 
 const STATUS_MAP: Record<string, { label: string; badge: string }> = {
   draft: { label: 'Чернетка', badge: 'badge-info' },
+  pending_review: { label: '⏳ На модерацію', badge: 'badge-warning' },
   tentative: { label: 'Очікується', badge: 'badge-warning' },
   confirmed: { label: 'Підтверджено', badge: 'badge-success' },
   checked_in: { label: 'Заселено', badge: 'badge-primary' },
@@ -247,10 +248,23 @@ export default function BookingViewModal({
   return (
     <Modal open={true} onClose={onClose} title="Бронювання" size="lg" hideTitle={true}
       footer={<>
-        <button className="btn btn-secondary" style={{ color: '#ef4444' }}
-          onClick={() => { if (confirm('Точно скасувати бронь? Гість буде повідомлений.')) onChangeStatus(b.id, 'cancelled'); }}>
-          <X size={13} /> Скасувати бронь
-        </button>
+        {b.status === 'pending_review' ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" style={{ background: 'var(--accent-success)' }}
+              onClick={() => { if (confirm('Прийняти заявку? Бронювання перейде в очікувані (тентативне).')) onChangeStatus(b.id, 'tentative'); }}>
+              ✅ Прийняти заявку
+            </button>
+            <button className="btn btn-secondary" style={{ color: '#ef4444' }}
+              onClick={() => { if (confirm('Відхилити заявку? Бронювання буде скасовано.')) onChangeStatus(b.id, 'cancelled'); }}>
+              ❌ Відхилити
+            </button>
+          </div>
+        ) : (
+          <button className="btn btn-secondary" style={{ color: '#ef4444' }}
+            onClick={() => { if (confirm('Точно скасувати бронь? Гість буде повідомлений.')) onChangeStatus(b.id, 'cancelled'); }}>
+            <X size={13} /> Скасувати бронь
+          </button>
+        )}
         <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
           <button className="btn btn-secondary" onClick={onClose}>Закрити</button>
           {b.guest_page_token && (

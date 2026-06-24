@@ -182,7 +182,7 @@ export async function getAvailability(request: NextRequest) {
         const isBooked = db.prepare(`
           SELECT 1 FROM reservations r
           WHERE r.unit_id = ?
-            AND r.status NOT IN ('cancelled', 'no_show')
+            AND r.status NOT IN ('cancelled', 'no_show', 'pending_review')
             AND r.check_in < ? AND r.check_out > ?
           LIMIT 1
         `).get(unit.id, checkOut, checkIn);

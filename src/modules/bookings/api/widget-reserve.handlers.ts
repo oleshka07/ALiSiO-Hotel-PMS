@@ -192,7 +192,7 @@ export async function createWidgetReservation(request: NextRequest) {
     const isBooked = db.prepare(`
       SELECT 1 FROM reservations r
       WHERE r.unit_id = ?
-        AND r.status NOT IN ('cancelled', 'no_show')
+        AND r.status NOT IN ('cancelled', 'no_show', 'pending_review')
         AND r.check_in < ? AND r.check_out > ?
       LIMIT 1
     `).get(unitId, checkOut, checkIn);
@@ -372,7 +372,9 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     const resId = `r_${Date.now()}`;
-    const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
+    // Widget reservations always start as 'pending_review' (awaiting staff moderation).
+    // Only free (fully-discounted) bookings skip moderation and go straight to 'confirmed'.
+    const resStatus = finalPrice === 0 ? 'confirmed' : 'pending_review';
     const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
     // Generate a unique guest_page_token — retries on collision (UNIQUE index exists)
     let guestPageToken = Math.random().toString(36).slice(2, 14);
@@ -580,7 +582,11 @@ export async function createWidgetReservation(request: NextRequest) {
       }
     }
 
-    notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
+    notifyReservationCreated(resId, {
+      sourceLabel: 'Widget · публічне бронювання',
+      emoji: '⏳',
+      extraFooter: '\n📋 <b>Потребує модерації</b> — підтвердіть або відхиліть заявку в PMS (Бронювання → фільтр «На модерацію»)',
+    });
 
     return NextResponse.json({
       success: true,

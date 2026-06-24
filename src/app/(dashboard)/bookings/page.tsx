@@ -118,6 +118,7 @@ interface UnitRow {
    ================================================================ */
 const STATUS_MAP: Record<string, { label: string; badge: string }> = {
   draft: { label: 'Чернетка', badge: 'badge-info' },
+  pending_review: { label: '⏳ На модерацію', badge: 'badge-warning' },
   tentative: { label: 'Очікується', badge: 'badge-warning' },
   confirmed: { label: 'Підтверджено', badge: 'badge-success' },
   checked_in: { label: 'Заселено', badge: 'badge-primary' },
@@ -564,6 +565,7 @@ function BookingsDesktop() {
             </div>
             <select className="form-select" style={{ width: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">Всі статуси</option>
+              <option value="pending_review">⏳ На модерацію</option>
               <option value="draft">Чернетка</option>
               <option value="tentative">Очікується</option>
               <option value="confirmed">Підтверджено</option>
@@ -620,6 +622,7 @@ function BookingsDesktop() {
         <MobileFilterBar
           tabs={[
             { key: '', label: 'Всі' },
+            { key: 'pending_review', label: '⏳ Модерація' },
             { key: 'confirmed', label: 'Підтверджено' },
             { key: 'tentative', label: 'Очікується' },
             { key: 'checked_in', label: 'Заселено' },
@@ -887,10 +890,16 @@ function BookingsDesktop() {
                         <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>▼</div>
                         <div>{b.check_out}</div>
                       </div>
+                      {b.status === 'pending_review' && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="mobile-action-btn" style={{ background: 'var(--accent-success)', color: '#fff' }} onClick={(e) => { e.stopPropagation(); changeStatus(b.id, 'tentative'); }}>✅ Прийняти</button>
+                          <button className="mobile-action-btn" style={{ background: 'var(--accent-danger)', color: '#fff' }} onClick={(e) => { e.stopPropagation(); changeStatus(b.id, 'cancelled'); }}>❌ Відхилити</button>
+                        </div>
+                      )}
                       {(b.status === 'confirmed' || b.status === 'tentative') && (
                         <button className="mobile-action-btn" onClick={(e) => { e.stopPropagation(); changeStatus(b.id, 'checked_in'); }}>Реєстрація</button>
                       )}
-                      {b.status !== 'confirmed' && b.status !== 'tentative' && (
+                      {b.status !== 'confirmed' && b.status !== 'tentative' && b.status !== 'pending_review' && (
                         <span className={`badge ${STATUS_MAP[b.status]?.badge || 'badge-info'}`}>{STATUS_MAP[b.status]?.label || b.status}</span>
                       )}
                       {b.guest_page_token && (
