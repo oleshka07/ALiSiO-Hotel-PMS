@@ -744,6 +744,23 @@ function runMigrations(database: any) {
     try { database.exec("ALTER TABLE reservation_guests ADD COLUMN guest_id TEXT REFERENCES guests(id)"); } catch { /* already exists */ }
   }
 
+  // --- Migration: add reg_status and doc_photo_url to guest_registrations ---
+  // reg_status tracks per-guest registration progress: not_started / draft / completed
+  // doc_photo_url stores the local path to the uploaded document photo
+  try {
+    const grCols2 = database.prepare("PRAGMA table_info(guest_registrations)").all().map((c: any) => c.name);
+    if (!grCols2.includes('reg_status')) {
+      database.exec("ALTER TABLE guest_registrations ADD COLUMN reg_status TEXT NOT NULL DEFAULT 'not_started'");
+      console.log('[DB] Added reg_status to guest_registrations');
+    }
+    if (!grCols2.includes('doc_photo_url')) {
+      database.exec("ALTER TABLE guest_registrations ADD COLUMN doc_photo_url TEXT");
+      console.log('[DB] Added doc_photo_url to guest_registrations');
+    }
+  } catch (e: any) {
+    console.log('[DB] guest_registrations reg_status migration note:', e.message);
+  }
+
   // --- Migration: add payment_id to reservations ---
   try {
     const resCols = database.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];

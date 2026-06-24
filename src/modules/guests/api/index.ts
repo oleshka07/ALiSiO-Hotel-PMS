@@ -11,6 +11,9 @@ export { getChatMessages, sendChatMessage } from './chat.handlers';
 export { translateTexts } from './translate.handlers';
 export { handleCartEvent } from './cart.handlers';
 export { getRegistry, updateRegistryEntry, exportRegistry } from './registry.handlers';
+export { getRegistrationStatus, saveDraftRegistration, handleOptions as handleRegistrationStatusOptions } from './registration-status.handlers';
+export { uploadGuestDoc, handleOptions as handleDocUploadOptions } from './doc-upload.handlers';
+
 
 // Domain types
 export type { GuestWithStats, CreateGuestInput, RegisteredGuest } from '../domain/types';
