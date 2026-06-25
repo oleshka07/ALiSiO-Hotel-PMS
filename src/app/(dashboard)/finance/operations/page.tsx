@@ -538,6 +538,30 @@ export default function OperationsPage() {
       {historyOpId && (
         <AuditHistoryModal operationId={historyOpId} onClose={() => setHistoryOpId(null)} />
       )}
+
+      <AdvancedFilterModal 
+        isOpen={filterModalOpen}
+        onClose={() => setFilterModalOpen(false)}
+        categories={categories}
+        counterparties={counterparties}
+        projects={projects}
+        tags={tags}
+        accounts={accounts}
+        initialCategoryIds={filterCategoryIds}
+        initialCounterpartyIds={filterCounterpartyIds}
+        initialProjectIds={filterProjectIds}
+        initialTagIds={filterTagIds}
+        initialAccountIds={selectedAccountIds}
+        initialOpTypes={filterOpTypes}
+        onApply={(catIds, cpIds, projIds, tIds, accIds, opTypes) => {
+          setFilterCategoryIds(catIds);
+          setFilterCounterpartyIds(cpIds);
+          setFilterProjectIds(projIds);
+          setFilterTagIds(tIds);
+          setSelectedAccountIds(accIds);
+          setFilterOpTypes(opTypes);
+        }}
+      />
     </div>
   );
 }
@@ -688,29 +712,6 @@ function AuditHistoryModal({ operationId, onClose }: { operationId: string; onCl
             })}
           </div>
         )}
-        <AdvancedFilterModal 
-          isOpen={filterModalOpen}
-          onClose={() => setFilterModalOpen(false)}
-          categories={categories}
-          counterparties={counterparties}
-          projects={projects}
-          tags={tags}
-          accounts={accounts}
-          initialCategoryIds={filterCategoryIds}
-          initialCounterpartyIds={filterCounterpartyIds}
-          initialProjectIds={filterProjectIds}
-          initialTagIds={filterTagIds}
-          initialAccountIds={selectedAccountIds}
-          initialOpTypes={filterOpTypes}
-          onApply={(catIds, cpIds, projIds, tIds, accIds, opTypes) => {
-            setFilterCategoryIds(catIds);
-            setFilterCounterpartyIds(cpIds);
-            setFilterProjectIds(projIds);
-            setFilterTagIds(tIds);
-            setSelectedAccountIds(accIds);
-            setFilterOpTypes(opTypes);
-          }}
-        />
       </div>
     </div>
   );
