@@ -328,7 +328,11 @@ export default function OperationsPage() {
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={input} />
             
             <button 
-              onClick={() => setFilterModalOpen(true)}
+              type="button"
+              onClick={() => {
+                console.log('Filter button clicked!');
+                setFilterModalOpen(true);
+              }}
               style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
             >
               <Filter size={14} /> Фільтр
