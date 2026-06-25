@@ -396,8 +396,28 @@ export async function createWidgetReservation(request: NextRequest) {
       countryCode = countryCode.toUpperCase().slice(0, 2);
     }
 
-    // For group bookings (quantity > 1): shared group_id links all reservations
-    const groupId = bookingQuantity > 1 ? `grp_${Date.now()}` : null;
+    // For group bookings (quantity > 1): create a reservation_groups record first
+    // so that group_id satisfies the FK → reservation_groups(id)
+    let groupId: string | null = null;
+    if (bookingQuantity > 1) {
+      groupId = `grp_${Date.now()}`;
+      try {
+        db.prepare(`
+          INSERT INTO reservation_groups
+            (id, property_id, guest_id, group_type, check_in, check_out, nights,
+             total_price, currency, source, status, payment_status)
+          VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          groupId, unit.property_id, guestId,
+          checkIn, checkOut, nights,
+          finalPrice * bookingQuantity, resCurrency,
+          siteName, resStatus, payStatus
+        );
+      } catch (grpErr: any) {
+        console.error('[Reserve] Failed to create reservation_group:', grpErr.message);
+        groupId = null; // non-fatal — reservations will have no group link
+      }
+    }
 
     // Helper to generate a unique guest_page_token
     const generateToken = (): string => {
@@ -483,7 +503,6 @@ export async function createWidgetReservation(request: NextRequest) {
         total: finalPrice,
         currency: resCurrency,
         source: siteName,
-        groupId,
       }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
 
       createdReservations.push({
