@@ -117,9 +117,19 @@ export async function createWidgetReservation(request: NextRequest) {
       utmParams: rawUtmParams,
       lang: rawLang,
       conversationId,
+      // Group booking: how many identical units to reserve
+      quantity = 1,
+      // Passport / doc data for primary guest — saved as pending registration
+      documentType,
+      documentNumber,
+      dateOfBirth,
+      guestCountry,
+      // Payment method (cash | terminal) — informational, stored in notes
+      paymentMethod,
     } = body;
 
     const lang: string = ['en', 'uk', 'cs', 'de'].includes(rawLang) ? rawLang : 'en';
+    const bookingQuantity = Math.max(1, Math.min(Number(quantity) || 1, 20)); // cap at 20
 
     // Validate & sanitise UTM params — allowlist keys, cap value length
     const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
@@ -158,7 +168,7 @@ export async function createWidgetReservation(request: NextRequest) {
       SELECT u.id, u.name, u.code, u.property_id, u.unit_type_id
       FROM units u
       JOIN categories c ON u.category_id = c.id
-      WHERE u.id = ? AND u.is_active = 1 AND u.room_status = 'available' AND c.type = 'glamping'
+      WHERE u.id = ? AND u.is_active = 1 AND u.room_status = 'available'
     `).get(unitId) as any;
 
     if (unit && siteId && existingTables.has('site_listings')) {
@@ -372,63 +382,122 @@ export async function createWidgetReservation(request: NextRequest) {
       ).run(guestId, org.id, firstName, lastName, phone || null);
     }
 
-    const resId = `r_${Date.now()}`;
     const resStatus = finalPrice === 0 ? 'confirmed' : 'tentative';
     const payStatus = finalPrice === 0 ? 'paid' : 'unpaid';
-    // Generate a unique guest_page_token — retries on collision (UNIQUE index exists)
-    let guestPageToken = Math.random().toString(36).slice(2, 14);
-    for (let i = 0; i < 5; i++) {
-      const existing = db.prepare('SELECT 1 FROM reservations WHERE guest_page_token = ?').get(guestPageToken);
-      if (!existing) break;
-      guestPageToken = Math.random().toString(36).slice(2, 14);
-    }
 
     const utmSource = utmParams['utm_source'] || null;
     const utmMedium = utmParams['utm_medium'] || null;
     const utmCampaign = utmParams['utm_campaign'] || null;
     const utmContent = utmParams['utm_content'] || null;
     const utmTerm = utmParams['utm_term'] || null;
-    
     const session_id_to_store = body.widget_session_id || body.widgetSessionId || null;
     let countryCode = request.headers.get('cf-ipcountry') || request.headers.get('x-vercel-ip-country') || null;
     if (countryCode && typeof countryCode === 'string') {
       countryCode = countryCode.toUpperCase().slice(0, 2);
     }
 
-    db.prepare(`
-      INSERT INTO reservations (
-        id, property_id, unit_id, guest_id, check_in, check_out,
-        nights, adults, children, status, payment_status, source,
-        total_price, currency, payment_id, promotions_applied, guest_page_token,
-        utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-        booking_lang, country_code, widget_session_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      resId, unit.property_id, unitId, guestId,
-      checkIn, checkOut, nights, adults, children,
-      resStatus, payStatus, siteName, finalPrice, resCurrency, null,
-      JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
-      guestPageToken,
-      utmSource,
-      utmMedium,
-      utmCampaign,
-      utmContent,
-      utmTerm,
-      lang,
-      countryCode,
-      session_id_to_store
-    );
+    // For group bookings (quantity > 1): shared group_id links all reservations
+    const groupId = bookingQuantity > 1 ? `grp_${Date.now()}` : null;
 
-    // --- Emit event for CRM and other modules ---
-    await eventBus.emit('booking.created', {
-      bookingId: resId,
-      guestId,
-      unitId,
-      total: finalPrice,
-      currency: resCurrency,
-      source: siteName
-    }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
+    // Helper to generate a unique guest_page_token
+    const generateToken = (): string => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const t = Math.random().toString(36).slice(2, 14);
+        const existing = db.prepare('SELECT 1 FROM reservations WHERE guest_page_token = ?').get(t);
+        if (!existing) return t;
+      }
+      return `${Math.random().toString(36).slice(2)}_${Date.now()}`;
+    };
+
+    // Ensure guest_registrations table has the group_id column (graceful migration)
+    try {
+      db.prepare('ALTER TABLE guest_registrations ADD COLUMN group_id TEXT').run();
+    } catch { /* column already exists */ }
+
+    const createdReservations: { reservationId: string; guestPageToken: string; unitName: string; slot: number }[] = [];
+
+    for (let slot = 1; slot <= bookingQuantity; slot++) {
+      const resId = `r_${Date.now()}_${slot}`;
+      const guestPageToken = generateToken();
+
+      const paymentNote = paymentMethod ? `payment_method:${paymentMethod}` : null;
+
+      db.prepare(`
+        INSERT INTO reservations (
+          id, property_id, unit_id, guest_id, check_in, check_out,
+          nights, adults, children, status, payment_status, source,
+          total_price, currency, payment_id, promotions_applied, guest_page_token,
+          utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+          booking_lang, country_code, widget_session_id, group_id, notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        resId, unit.property_id, unitId, guestId,
+        checkIn, checkOut, nights, adults, children,
+        resStatus, payStatus, siteName, finalPrice, resCurrency, null,
+        JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
+        guestPageToken,
+        utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
+        lang, countryCode, session_id_to_store, groupId,
+        paymentNote
+      );
+
+      // Save passport data as a pending guest_registration for the primary guest
+      // Staff will confirm/complete at check-in. Only for slot=1 (primary guest).
+      if (slot === 1 && documentNumber) {
+        try {
+          const grId = `gr_${Date.now()}_widget`;
+          db.prepare(`
+            INSERT OR IGNORE INTO guest_registrations
+              (id, reservation_id, guest_id, is_primary, reg_status, purpose_of_stay, group_id)
+            VALUES (?, ?, ?, 1, 'pending', 'Tourism', ?)
+          `).run(grId, resId, guestId, groupId);
+
+          // Also enrich the guest record with passport data
+          db.prepare(`
+            UPDATE guests
+            SET document_type    = COALESCE(?, document_type),
+                document_number  = COALESCE(?, document_number),
+                date_of_birth    = COALESCE(?, date_of_birth),
+                country          = COALESCE(?, country),
+                updated_at       = datetime('now')
+            WHERE id = ?
+          `).run(
+            documentType || null,
+            documentNumber || null,
+            dateOfBirth   || null,
+            guestCountry  || null,
+            guestId
+          );
+        } catch (grErr: any) {
+          console.error('[Reserve] Failed to save guest_registration draft:', grErr.message);
+          // Non-fatal — reservation already created
+        }
+      }
+
+      // Emit event for CRM and other modules
+      await eventBus.emit('booking.created', {
+        bookingId: resId,
+        guestId,
+        unitId,
+        total: finalPrice,
+        currency: resCurrency,
+        source: siteName,
+        groupId,
+      }).catch(e => console.error('[EventBus] booking.created emit failed:', e));
+
+      createdReservations.push({
+        reservationId: resId,
+        guestPageToken,
+        unitName: unit.name,
+        slot,
+      });
+    }
+
+    // Use first reservation as the primary for emails/notifications
+    const primaryRes = createdReservations[0];
+    const resId = primaryRes.reservationId;
+    const guestPageToken = primaryRes.guestPageToken;
 
     let testEmailStatus = 'not_sent';
     if (email) {
@@ -637,6 +706,7 @@ export async function createWidgetReservation(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      // Primary reservation (for backwards compat with old widget)
       reservationId: resId,
       unitName: unit.name,
       checkIn,
@@ -650,6 +720,10 @@ export async function createWidgetReservation(request: NextRequest) {
       thankYouUrl,
       guestPageToken,
       testEmailStatus,
+      // Group booking — all reservations with their individual tokens
+      quantity: bookingQuantity,
+      groupId,
+      reservations: createdReservations,
     }, { status: 201, headers: dynamicHeaders });
   } catch (error: any) {
     const msg = error?.message || String(error);
