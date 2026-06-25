@@ -20,11 +20,18 @@ const ensureSubscribers = async () => {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Handshake-Token',
 };
 
-export async function createWidgetReservationOptions() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+export async function createWidgetReservationOptions(request: NextRequest) {
+  const origin = request.headers.get('origin') || '*';
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      ...CORS_HEADERS,
+      'Access-Control-Allow-Origin': origin,
+    },
+  });
 }
 
 export async function createWidgetReservation(request: NextRequest) {
