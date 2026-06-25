@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 
 interface NamedRow { id: string; name: string; }
