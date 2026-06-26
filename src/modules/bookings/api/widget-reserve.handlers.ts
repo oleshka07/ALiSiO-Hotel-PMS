@@ -563,13 +563,23 @@ export async function createWidgetReservation(request: NextRequest) {
         }
 
         // ── Localized email defaults ──────────────────────────────────────
-        const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string; docWarning: string }> = {
+        const EMAIL_TEMPLATES: Record<string, any> = {
           en: {
             subject: 'Booking Confirmed — {propertyName}',
             body: 'Thank you for booking with us! Your reservation is confirmed.',
             header: 'Booking Confirmed',
             btnText: 'Guest Portal →',
             docWarning: '⚠️ IMPORTANT: You must complete your online guest registration and provide passport details via the link below before arrival.',
+            greeting: 'Hi {firstName}!',
+            bookingId: 'Booking ID',
+            accommodation: 'Accommodation',
+            checkIn: 'Check-in',
+            checkOut: 'Check-out',
+            nights: 'Nights',
+            total: 'Total',
+            payment: 'Payment',
+            paymentReception: 'Cash/Terminal at Reception',
+            paymentOnline: 'Online Paid',
           },
           uk: {
             subject: 'Бронювання підтверджено — {propertyName}',
@@ -577,6 +587,16 @@ export async function createWidgetReservation(request: NextRequest) {
             header: 'Бронювання підтверджено',
             btnText: 'Особистий кабінет →',
             docWarning: '⚠️ ВАЖЛИВО: До вашого приїзду обов\'язково потрібно заповнити паспортні дані для онлайн-реєстрації за посиланням нижче.',
+            greeting: 'Привіт, {firstName}!',
+            bookingId: 'Номер броні',
+            accommodation: 'Розміщення',
+            checkIn: 'Заїзд',
+            checkOut: 'Виїзд',
+            nights: 'Ночей',
+            total: 'Разом',
+            payment: 'Оплата',
+            paymentReception: 'На місці на рецепції',
+            paymentOnline: 'Оплачено онлайн',
           },
           cs: {
             subject: 'Rezervace potvrzena — {propertyName}',
@@ -584,6 +604,16 @@ export async function createWidgetReservation(request: NextRequest) {
             header: 'Rezervace potvrzena',
             btnText: 'Osobní stránka →',
             docWarning: '⚠️ DŮLEŽITÉ: Před příjezdem musíte nutně vyplnit údaje z pasu pro online registraci hostů na odkazu níže.',
+            greeting: 'Dobrý den, {firstName}!',
+            bookingId: 'Číslo rezervace',
+            accommodation: 'Ubytování',
+            checkIn: 'Příjezd',
+            checkOut: 'Odjezd',
+            nights: 'Počet nocí',
+            total: 'Celkem',
+            payment: 'Platba',
+            paymentReception: 'Hotově/kartou na recepci',
+            paymentOnline: 'Zaplaceno online',
           },
           de: {
             subject: 'Buchung bestätigt — {propertyName}',
@@ -591,6 +621,16 @@ export async function createWidgetReservation(request: NextRequest) {
             header: 'Buchung bestätigt',
             btnText: 'Persönliche Seite →',
             docWarning: '⚠️ WICHTIG: Sie müssen Ihre Passdaten für die Online-Gästeregistrierung über den unten stehenden Link vor der Anreise zwingend ausfüllen.',
+            greeting: 'Hallo {firstName}!',
+            bookingId: 'Buchungsnummer',
+            accommodation: 'Unterkunft',
+            checkIn: 'Check-in',
+            checkOut: 'Check-out',
+            nights: 'Nächte',
+            total: 'Gesamt',
+            payment: 'Zahlung',
+            paymentReception: 'Bar/Karte an der Rezeption',
+            paymentOnline: 'Online bezahlt',
           },
         };
         const emailTpl = EMAIL_TEMPLATES[lang] || EMAIL_TEMPLATES.en;
@@ -636,20 +676,20 @@ export async function createWidgetReservation(request: NextRequest) {
   <div style="background:#fff;border-radius:12px;padding:24px 20px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:26px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
     <div style="font-size:14px;color:#666;margin-bottom:24px;">${emailTpl.header}</div>
-    <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
+    <p style="font-size:16px;margin:0 0 16px;">${emailTpl.greeting.replace('{firstName}', firstName || '')}</p>
     <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">${customizedBody}</p>
     ${docWarningHtml}
     <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px;margin:20px 0;">
-      <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Booking ID</div>
+      <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">${emailTpl.bookingId}</div>
       <div style="font-size:20px;font-weight:700;color:#2E6B4F;margin-top:2px;">${resId}</div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:8px 0;color:#666;">Accommodation</td><td style="text-align:right;font-weight:600;">${unitName}</td></tr>
-      <tr><td style="padding:8px 0;color:#666;">Check-in</td><td style="text-align:right;font-weight:600;">${checkIn}</td></tr>
-      <tr><td style="padding:8px 0;color:#666;">Check-out</td><td style="text-align:right;font-weight:600;">${checkOut}</td></tr>
-      <tr><td style="padding:8px 0;color:#666;">Nights</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
-      <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
-      <tr><td style="padding:8px 0;color:#666;">Payment</td><td style="text-align:right;font-weight:600;color:${paymentMethod === 'reception' ? '#b45309' : '#2E6B4F'};">${paymentMethod === 'reception' ? 'Cash/Terminal at Reception' : 'Online Paid'}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">${emailTpl.accommodation}</td><td style="text-align:right;font-weight:600;">${unitName}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">${emailTpl.checkIn}</td><td style="text-align:right;font-weight:600;">${checkIn}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">${emailTpl.checkOut}</td><td style="text-align:right;font-weight:600;">${checkOut}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">${emailTpl.nights}</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
+      <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>${emailTpl.total}</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">${emailTpl.payment}</td><td style="text-align:right;font-weight:600;color:${paymentMethod === 'reception' ? '#b45309' : '#2E6B4F'};">${paymentMethod === 'reception' ? emailTpl.paymentReception : emailTpl.paymentOnline}</td></tr>
     </table>
     <div style="margin-top:28px;text-align:center;">
       <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
