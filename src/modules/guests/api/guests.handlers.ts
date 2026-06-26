@@ -7,9 +7,11 @@ export async function listGuests(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const country = searchParams.get('country') || '';
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    const rows = guestsRepo.listGuests({ search: search || undefined, country: country || undefined });
-    return NextResponse.json(rows);
+    const result = guestsRepo.listGuests({ search: search || undefined, country: country || undefined }, page, limit);
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error('GET /api/guests error:', error);
     return NextResponse.json({ error: 'Failed to fetch guests' }, { status: 500 });

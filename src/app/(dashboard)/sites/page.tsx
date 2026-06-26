@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
-  Globe, Plus, Search, Trash2, ExternalLink,
+  Globe, Plus, Search, Trash2, ExternalLink, BarChart,
   Loader2, X, ToggleLeft, ToggleRight, Settings, Info
   
 } from 'lucide-react';
@@ -207,9 +207,14 @@ export default function SitesPage() {
                 </button>
               </h2>
             </div>
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Новий сайт
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button className="btn btn-secondary" onClick={() => router.push('/sites/all')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <BarChart size={16} /> Всі джерела (Аналітика)
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                <Plus size={16} /> Новий сайт
+              </button>
+            </div>
           </div>
         ) : (
           <div style={{
@@ -250,9 +255,14 @@ export default function SitesPage() {
                   ))}
                 </div>
               </div>
-              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                <Plus size={16} /> Новий сайт
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button className="btn btn-secondary" onClick={() => router.push('/sites/all')} style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                  <BarChart size={16} /> Всі джерела (Аналітика)
+                </button>
+                <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                  <Plus size={16} /> Новий сайт
+                </button>
+              </div>
             </div>
           </div>
         )}

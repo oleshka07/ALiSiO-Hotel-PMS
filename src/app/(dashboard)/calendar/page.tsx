@@ -161,7 +161,14 @@ function CalendarDesktop() {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('resort');
+  const [categoryFilter, setCategoryFilter] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('calendar_categoryFilter') || 'resort';
+    return 'resort';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('calendar_categoryFilter', categoryFilter);
+  }, [categoryFilter]);
   const [statusFilter, setStatusFilter] = useState('');
   const [cleaningFilter, setCleaningFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
@@ -776,6 +783,7 @@ function CalendarDesktop() {
             <div ref={leftRef} style={{
               width: LEFT_W, minWidth: LEFT_W, overflowY: 'hidden', overflowX: 'hidden',
               borderRight: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
+              display: 'flex', flexDirection: 'column', justifyContent: 'flex-start'
             }}>
               {groups.map(group => (
                 <div key={group.key}>
@@ -826,7 +834,7 @@ function CalendarDesktop() {
               onScroll={handleScroll}
               style={{ flex: 1, overflow: 'auto' }}
             >
-              <div style={{ width: totalW, position: 'relative' }}>
+              <div style={{ width: totalW, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
                 {groups.map(group => (
                   <div key={group.key}>
                     {/* Group spacer */}

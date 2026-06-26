@@ -62,6 +62,18 @@ export default function SiteDetailPage() {
   const formsCountCb = useCallback((n: number) => setTabCounts(prev => ({ ...prev, forms: n })), []);
 
   const fetchSite = useCallback(async () => {
+    if (siteId === 'all') {
+      setSite({
+        id: 'all',
+        name: 'Всі джерела',
+        type: 'widget',
+        currency: 'CZK',
+        status: 'active',
+        created_at: new Date().toISOString()
+      } as unknown as Site);
+      setLoading(false);
+      return;
+    }
     const res = await fetch(`/api/booking-sites/${siteId}`);
     const d = await res.json();
     if (d.site) setSite(d.site);
@@ -73,15 +85,17 @@ export default function SiteDetailPage() {
     fetchSite();
 
     // Pre-fetch counts for tabs so badges display immediately
-    Promise.all([
-      fetch(`/api/coupons?site_id=${siteId}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/package-offers?site_id=${siteId}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/booking-sites/${siteId}/rate-plans`).then(r => r.json()).catch(() => null),
-    ]).then(([couponData, bundleData, ratePlanData]) => {
-      if (couponData && Array.isArray(couponData)) couponCountCb(couponData.length);
-      if (bundleData?.bundles) packageCountCb(bundleData.bundles.length);
-      if (ratePlanData?.ratePlans) ratePlanCountCb(ratePlanData.ratePlans.length);
-    });
+    if (siteId !== 'all') {
+      Promise.all([
+        fetch(`/api/coupons?site_id=${siteId}`).then(r => r.json()).catch(() => null),
+        fetch(`/api/package-offers?site_id=${siteId}`).then(r => r.json()).catch(() => null),
+        fetch(`/api/booking-sites/${siteId}/rate-plans`).then(r => r.json()).catch(() => null),
+      ]).then(([couponData, bundleData, ratePlanData]) => {
+        if (couponData && Array.isArray(couponData)) couponCountCb(couponData.length);
+        if (bundleData?.bundles) packageCountCb(bundleData.bundles.length);
+        if (ratePlanData?.ratePlans) ratePlanCountCb(ratePlanData.ratePlans.length);
+      });
+    }
   }, [fetchSite, siteId, couponCountCb, packageCountCb, ratePlanCountCb, formsCountCb]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -126,7 +140,7 @@ export default function SiteDetailPage() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-primary)', marginBottom: 24, overflowX: 'auto' }}>
-          {TABS.map(tab => (
+          {(siteId === 'all' ? TABS.filter(t => t.id === 'analytics') : TABS).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: 13,
