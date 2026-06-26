@@ -133,6 +133,7 @@ export async function createWidgetReservation(request: NextRequest) {
       guestCountry,
       // Payment method (cash | terminal) — informational, stored in notes
       paymentMethod,
+      documentStrategy, // 'now' | 'portal' | 'reception'
     } = body;
 
     const lang: string = ['en', 'uk', 'cs', 'de'].includes(rawLang) ? rawLang : 'en';
@@ -451,7 +452,10 @@ export async function createWidgetReservation(request: NextRequest) {
       const resId = `r_${Date.now()}_${slot}`;
       const guestPageToken = generateToken();
 
-      const paymentNote = paymentMethod ? `payment_method:${paymentMethod}` : null;
+      const notesArr = [];
+      if (paymentMethod) notesArr.push(`payment_method:${paymentMethod}`);
+      if (documentStrategy) notesArr.push(`document_strategy:${documentStrategy}`);
+      const finalNotes = notesArr.length > 0 ? notesArr.join(' | ') : null;
 
       db.prepare(`
         INSERT INTO reservations (
@@ -470,7 +474,7 @@ export async function createWidgetReservation(request: NextRequest) {
         guestPageToken,
         utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
         lang, countryCode, session_id_to_store, groupId,
-        paymentNote
+        finalNotes
       );
 
       // Save passport data as a pending guest_registration for the primary guest
@@ -695,13 +699,22 @@ export async function createWidgetReservation(request: NextRequest) {
 
     if (conversationId) {
       try {
+        const docStatus = documentStrategy === 'reception' 
+          ? 'Заповнять на рецепції ⚠️' 
+          : documentStrategy === 'portal' 
+            ? 'Заповнять онлайн 💻'
+            : documentStrategy === 'now'
+              ? 'Заповнили зараз ✅'
+              : 'Не вказано';
+
         const content = [
           `✅ <b>Бронювання завершено (через віджет)!</b>`,
           `🆔 Бронювання ID: <code>${resId}</code>`,
           `🏕️ Тип: ${unit.name}`,
           `📅 Дати: ${checkIn} — ${checkOut} (${nights} ночей)`,
           `👥 Гості: Дорослих ${adults}, Дітей ${children}${hasPet ? ', Тварина 🐾' : ''}`,
-          `💳 Сума: ${finalPrice} ${resCurrency}`
+          `💳 Сума: ${finalPrice} ${resCurrency}`,
+          `📋 Документи: ${docStatus}`
         ].join('\n');
 
         const { executeCreateMessage } = await import('@crm');
