@@ -181,7 +181,11 @@ export async function createWidgetReservation(request: NextRequest) {
     if (unit && siteId && existingTables.has('site_listings')) {
       const allowed = db.prepare('SELECT 1 FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId);
       if (!allowed) {
-        return NextResponse.json({ error: 'Unit not available for this site' }, { status: 403, headers: CORS_HEADERS });
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[DEV BYPASS] Allowing unmapped unit ${unitId} for site ${siteId}`);
+        } else {
+          return NextResponse.json({ error: 'Unit not available for this site' }, { status: 403, headers: CORS_HEADERS });
+        }
       }
     }
 
@@ -566,27 +570,27 @@ export async function createWidgetReservation(request: NextRequest) {
         // ── Localized email defaults ──────────────────────────────────────
         const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string }> = {
           en: {
-            subject: 'Complete your registration — {propertyName}',
-            body: 'Your booking is registered. To secure your dates, please complete your booking on your personal page.',
-            header: 'Complete your registration',
-            btnText: 'Personal page →',
+            subject: 'Booking Confirmed — {propertyName}',
+            body: 'Thank you for booking with us! Your reservation is confirmed. To speed up your check-in, please fill out your passport details on your personal page.',
+            header: 'Booking Confirmed',
+            btnText: 'Guest Portal →',
           },
           uk: {
-            subject: 'Завершіть реєстрацію — {propertyName}',
-            body: 'Ваше бронювання зареєстроване. Щоб зберегти обрані дати, потрібно завершити бронювання на вашій персональній сторінці.',
-            header: 'Завершіть реєстрацію',
-            btnText: 'Персональна сторінка →',
+            subject: 'Бронювання підтверджено — {propertyName}',
+            body: 'Дякуємо за бронювання! Ваше бронювання підтверджено. Щоб пришвидшити заселення, будь ласка, заповніть паспортні дані на вашій персональній сторінці.',
+            header: 'Бронювання підтверджено',
+            btnText: 'Гостьовий портал →',
           },
           cs: {
-            subject: 'Dokončete registraci — {propertyName}',
-            body: 'Vaše rezervace je registrována. Pro zachování termínu prosím dokončete rezervaci na vaší osobní stránce.',
-            header: 'Dokončete registraci',
+            subject: 'Rezervace potvrzena — {propertyName}',
+            body: 'Děkujeme za rezervaci! Vaše rezervace je potvrzena. Pro urychlení check-inu prosím vyplňte údaje z pasu na vaší osobní stránce.',
+            header: 'Rezervace potvrzena',
             btnText: 'Osobní stránka →',
           },
           de: {
-            subject: 'Schließen Sie Ihre Registrierung ab — {propertyName}',
-            body: 'Ihre Buchung ist registriert. Um Ihre Termine zu sichern, schließen Sie bitte die Buchung auf Ihrer persönlichen Seite ab.',
-            header: 'Registrierung abschließen',
+            subject: 'Buchung bestätigt — {propertyName}',
+            body: 'Vielen Dank für Ihre Buchung! Ihre Reservierung ist bestätigt. Um den Check-in zu beschleunigen, füllen Sie bitte Ihre Passdaten auf Ihrer persönlichen Seite aus.',
+            header: 'Buchung bestätigt',
             btnText: 'Persönliche Seite →',
           },
         };
@@ -619,26 +623,13 @@ export async function createWidgetReservation(request: NextRequest) {
         const customizedSubject = replacePlaceholders(rawSubject, replaceDict);
         const customizedBody = replacePlaceholders(rawBody, replaceDict);
 
-        testEmailStatus = 'scheduled';
-        const delayMs = 10 * 60 * 1000;
-        setTimeout(async () => {
-          try {
-            const currentDb = getDb();
-            const currentRes = currentDb.prepare('SELECT payment_status FROM reservations WHERE id = ?').get(resId) as any;
-            if (!currentRes) {
-              console.log(`[Widget Reserve Delay] Reservation ${resId} not found, skipping email`);
-              return;
-            }
-            if (currentRes.payment_status === 'paid' || currentRes.payment_status === 'prepaid') {
-              console.log(`[Widget Reserve Delay] Reservation ${resId} is already paid (${currentRes.payment_status}), skipping "Complete registration" email`);
-              return;
-            }
-
-            const { sendEmail } = await import('@/lib/email');
-            await sendEmail({
-              to: email,
-              subject: customizedSubject,
-              html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
+        // Fire-and-forget immediate email sending via standard ALiSiO mail (email.cz)
+        // We use import() dynamically so we don't have to await it, preventing UI freezing
+        import('@/lib/email').then(({ sendEmail }) => {
+          sendEmail({
+            to: email,
+            subject: customizedSubject,
+            html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
   <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
@@ -655,18 +646,15 @@ export async function createWidgetReservation(request: NextRequest) {
       <tr><td style="padding:8px 0;color:#666;">Check-out</td><td style="text-align:right;font-weight:600;">${checkOut}</td></tr>
       <tr><td style="padding:8px 0;color:#666;">Nights</td><td style="text-align:right;font-weight:600;">${nights}</td></tr>
       <tr><td style="padding:12px 0 0;color:#2E6B4F;font-size:15px;"><strong>Total</strong></td><td style="text-align:right;padding:12px 0 0;color:#2E6B4F;font-weight:700;font-size:15px;">${finalPrice} ${resCurrency}</td></tr>
+      <tr><td style="padding:8px 0;color:#666;">Payment</td><td style="text-align:right;font-weight:600;color:${paymentMethod === 'reception' ? '#b45309' : '#2E6B4F'};">${paymentMethod === 'reception' ? 'Cash/Terminal at Reception' : 'Online Paid'}</td></tr>
     </table>
     <div style="margin-top:28px;text-align:center;">
-      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
+      <a href="${primaryUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
     </div>
   </div>
 </body></html>`,
-            });
-            console.log(`[Widget Reserve Delay] Confirmation email sent to ${email} for ${resId}`);
-          } catch (emailErr: any) {
-            console.error('[Widget Reserve Delay] Email failed:', emailErr.message);
-          }
-        }, delayMs);
+          }).catch(err => console.error('[Widget Reserve] Immediate email failed:', err));
+        });
       } catch (err: any) {
         testEmailStatus = `failed: ${err.message}`;
         console.error('[Widget Reserve] Setup failed:', err.message);
