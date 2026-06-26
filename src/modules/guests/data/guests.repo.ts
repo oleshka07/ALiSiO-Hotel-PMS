@@ -2,7 +2,27 @@
 import { getDb } from '@core/db';
 import type { CreateGuestInput } from '../domain/types';
 
-export function listGuests(filters: { search?: string; country?: string } = {}) {
+export function listGuests(filters: { search?: string; country?: string } = {}, page: number = 1, limit: number = 50) {
+  const db = getDb();
+  let where = 'WHERE 1=1';
+  const params: string[] = [];
+
+  if (filters.search) {
+    where += ` AND (g.first_name LIKE ? OR g.last_name LIKE ? OR (g.first_name || ' ' || g.last_name) LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)`;
+    const like = `%${filters.search}%`;
+    params.push(like, like, like, like, like);
+  }
+  if (filters.country) {
+    where += ' AND g.country = ?';
+    params.push(filters.country);
+  }
+
+  const countQuery = `SELECT COUNT(*) as total FROM guests g ${where}`;
+  const totalRow = db.prepare(countQuery).get(...params) as { total: number };
+  const total = totalRow.total;
+
+  const offset = (page - 1) * limit;
+
   let query = `
     SELECT
       g.*,
@@ -11,22 +31,20 @@ export function listGuests(filters: { search?: string; country?: string } = {}) 
       (SELECT MAX(r.check_in) FROM reservations r WHERE r.guest_id = g.id) as last_check_in,
       (SELECT r.status FROM reservations r WHERE r.guest_id = g.id ORDER BY r.check_in DESC LIMIT 1) as last_booking_status
     FROM guests g
-    WHERE 1=1
+    ${where}
+    ORDER BY g.last_name, g.first_name
+    LIMIT ? OFFSET ?
   `;
-  const params: string[] = [];
+  params.push(limit.toString(), offset.toString());
+  const data = db.prepare(query).all(...params);
 
-  if (filters.search) {
-    query += ` AND (g.first_name LIKE ? OR g.last_name LIKE ? OR (g.first_name || ' ' || g.last_name) LIKE ? OR g.email LIKE ? OR g.phone LIKE ?)`;
-    const like = `%${filters.search}%`;
-    params.push(like, like, like, like, like);
-  }
-  if (filters.country) {
-    query += ' AND g.country = ?';
-    params.push(filters.country);
-  }
-
-  query += ' ORDER BY g.last_name, g.first_name';
-  return getDb().prepare(query).all(...params);
+  return {
+    data,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit)
+  };
 }
 
 export function getGuestWithReservations(id: string) {

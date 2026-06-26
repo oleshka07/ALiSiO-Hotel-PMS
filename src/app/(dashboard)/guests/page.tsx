@@ -131,6 +131,10 @@ function DesktopGuests() {
   /* ── data state ──────────────────────────────────── */
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
 
   /* ── filters ─────────────────────────────────────── */
   const [search, setSearch] = useState('');
@@ -154,15 +158,28 @@ function DesktopGuests() {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (countryFilter) params.set('country', countryFilter);
+      params.set('page', page.toString());
+      params.set('limit', limit.toString());
 
       const res = await fetch(`/api/guests?${params}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setGuests(data);
+      const result = await res.json();
+      if (result && Array.isArray(result.data)) {
+        setGuests(result.data);
+        setTotal(result.total || 0);
+        setTotalPages(result.totalPages || 1);
+      } else if (Array.isArray(result)) {
+        setGuests(result); // Fallback
+      }
     } catch (e) {
       console.error('Failed to fetch guests', e);
     } finally {
       setLoading(false);
     }
+  }, [search, countryFilter, page, limit]);
+
+  // Reset to page 1 on filter change
+  useEffect(() => {
+    setPage(1);
   }, [search, countryFilter]);
 
   useEffect(() => {
@@ -411,7 +428,7 @@ function DesktopGuests() {
         <div className="page-header">
           <div>
             <h2 className="page-title">База гостей</h2>
-            <div className="page-subtitle">{guests.length} записів</div>
+            <div className="page-subtitle">{total > 0 ? `${total} записів` : `${guests.length} записів`}</div>
           </div>
           <div className="flex gap-2">
             <button className="btn btn-secondary" onClick={fetchGuests} title="Оновити">
@@ -562,6 +579,15 @@ function DesktopGuests() {
           </table>
         </div>
 
+        {/* Desktop Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="desktop-only" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginTop: 16, marginBottom: 32 }}>
+            <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Назад</button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Сторінка {page} з {totalPages}</span>
+            <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Вперед</button>
+          </div>
+        )}
+
         {/* Mobile Card List */}
         <div className="mobile-only">
           {loading && (
@@ -609,6 +635,15 @@ function DesktopGuests() {
               </div>
             ))}
           </div>
+
+          {/* Mobile Pagination */}
+          {!loading && totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 24 }}>
+              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Назад</button>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{page} / {totalPages}</span>
+              <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Вперед</button>
+            </div>
+          )}
         </div>
 
         {/* ═══════════════════════════════════════════════════

@@ -16,17 +16,35 @@ function calculateDelta(current: number, prev: number): number {
   return Math.round(((current - prev) / prev) * 100 * 10) / 10;
 }
 
-function getReservationsStats(db: any, siteId: string, from: string, to: string, dateType: string) {
-  const source = `widget:${siteId}`;
+function getSitePropertyId(db: any, siteId: string): string | null {
+  if (siteId === 'all') return null;
+  const row = db.prepare('SELECT property_id FROM booking_sites WHERE id = ?').get(siteId) as any;
+  return row ? row.property_id : null;
+}
+
+function getSourceFilter(siteId: string, propertyId: string | null, alias = '') {
+  if (siteId === 'all') return '1=1'; 
+  const propFilter = propertyId ? `${alias}property_id = ? AND ` : '';
+  return `${propFilter}${alias}source IN (?, ?)`;
+}
+
+function getSourceParams(siteId: string, propertyId: string | null) {
+  if (siteId === 'all') return [];
+  return propertyId ? [propertyId, `widget:${siteId}`, 'widget'] : [`widget:${siteId}`, 'widget'];
+}
+
+
+function getReservationsStats(db: any, siteId: string, propertyId: string | null, from: string, to: string, dateType: string) {
   let sql = `
     SELECT 
       COUNT(*) as count,
-      COALESCE(SUM(total_price - COALESCE(commission_amount, 0)), 0) as revenue,
-      COALESCE(AVG(total_price), 0) as avg_check
+      COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END), 0) as revenue,
+      COALESCE(SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END), 0) as unpaid_revenue,
+      COALESCE(AVG(CASE WHEN payment_status = 'paid' THEN total_price ELSE NULL END), 0) as avg_check
     FROM reservations
-    WHERE source IN (?, ?) AND status != 'cancelled'
+    WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled'
   `;
-  const params = [source, 'widget'];
+  const params: any[] = getSourceParams(siteId, propertyId);
   if (dateType === 'check_in') {
     sql += ' AND check_in >= ? AND check_in <= ?';
     params.push(from, to);
@@ -34,7 +52,7 @@ function getReservationsStats(db: any, siteId: string, from: string, to: string,
     sql += ' AND created_at >= ? AND created_at <= ?';
     params.push(`${from} 00:00:00`, `${to} 23:59:59`);
   }
-  return db.prepare(sql).get(params) as { count: number; revenue: number; avg_check: number };
+  return db.prepare(sql).get(...params) as { count: number; revenue: number; unpaid_revenue: number; avg_check: number };
 }
 
 function getSessionsCount(db: any, siteId: string, from: string, to: string) {
@@ -55,13 +73,14 @@ export async function getAnalyticsOverview(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
     const dateType = searchParams.get('date_type') || 'created_at';
 
     // Current period stats
-    const currentStats = getReservationsStats(db, siteId, dateFrom, dateTo, dateType);
+    const currentStats = getReservationsStats(db, siteId, propertyId, dateFrom, dateTo, dateType);
     const currentSessions = getSessionsCount(db, siteId, dateFrom, dateTo);
     const currentConversion = currentSessions > 0 ? (currentStats.count / currentSessions) * 100 : 0;
 
@@ -80,13 +99,14 @@ export async function getAnalyticsOverview(
     const prevTo = prevToDate.toISOString().split('T')[0];
 
     // Previous period stats
-    const prevStats = getReservationsStats(db, siteId, prevFrom, prevTo, dateType);
+    const prevStats = getReservationsStats(db, siteId, propertyId, prevFrom, prevTo, dateType);
     const prevSessions = getSessionsCount(db, siteId, prevFrom, prevTo);
     const prevConversion = prevSessions > 0 ? (prevStats.count / prevSessions) * 100 : 0;
 
     return NextResponse.json({
       current: {
         revenue: Math.round(currentStats.revenue),
+        unpaidRevenue: Math.round(currentStats.unpaid_revenue),
         bookings: currentStats.count,
         avgCheck: Math.round(currentStats.avg_check),
         sessions: currentSessions,
@@ -94,6 +114,7 @@ export async function getAnalyticsOverview(
       },
       previous: {
         revenue: Math.round(prevStats.revenue),
+        unpaidRevenue: Math.round(prevStats.unpaid_revenue),
         bookings: prevStats.count,
         avgCheck: Math.round(prevStats.avg_check),
         sessions: prevSessions,
@@ -121,6 +142,7 @@ export async function getAnalyticsTraffic(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
@@ -145,11 +167,12 @@ export async function getAnalyticsTraffic(
       SELECT 
         utm_source, 
         COUNT(*) as bookings, 
-        SUM(total_price - COALESCE(commission_amount, 0)) as revenue
+        SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
-      WHERE source IN (?, ?) AND status != 'cancelled' AND utm_source IS NOT NULL
+      WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled' AND utm_source IS NOT NULL
     `;
-    const bookingsParams = [source, 'widget'];
+    const bookingsParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       bookingsSql += ' AND check_in >= ? AND check_in <= ?';
       bookingsParams.push(dateFrom, dateTo);
@@ -162,14 +185,14 @@ export async function getAnalyticsTraffic(
     const bookingsRows = db.prepare(bookingsSql).all(...bookingsParams) as any[];
 
     // Merge logic
-    const utmStatsMap = new Map<string, { utm_source: string; sessions: number; bookings: number; revenue: number }>();
+    const utmStatsMap = new Map<string, { utm_source: string; sessions: number; bookings: number; revenue: number; unpaid_revenue: number }>();
 
     for (const r of sessionsRows) {
       utmStatsMap.set(r.utm_source, {
         utm_source: r.utm_source,
         sessions: r.sessions,
         bookings: 0,
-        revenue: 0,
+        revenue: 0, unpaid_revenue: 0,
       });
     }
 
@@ -178,19 +201,20 @@ export async function getAnalyticsTraffic(
       if (existing) {
         existing.bookings = r.bookings;
         existing.revenue = r.revenue;
+        existing.unpaid_revenue = r.unpaid_revenue;
       } else {
         utmStatsMap.set(r.utm_source, {
           utm_source: r.utm_source,
           sessions: 0,
           bookings: r.bookings,
-          revenue: r.revenue,
+          revenue: r.revenue, unpaid_revenue: r.unpaid_revenue,
         });
       }
     }
 
     const allSources = Array.from(utmStatsMap.values()).map(item => ({
       ...item,
-      revenue: Math.round(item.revenue),
+      revenue: Math.round(item.revenue), unpaid_revenue: Math.round(item.unpaid_revenue || 0),
       conversion: item.sessions > 0 ? Math.round((item.bookings / item.sessions) * 100 * 100) / 100 : 0
     }));
 
@@ -223,6 +247,7 @@ export async function getAnalyticsGeo(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
@@ -244,9 +269,10 @@ export async function getAnalyticsGeo(
       SELECT 
         booking_lang as lang, 
         COUNT(*) as bookings, 
-        SUM(total_price - COALESCE(commission_amount, 0)) as revenue
+        SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
-      WHERE source IN (?, ?) AND status != 'cancelled' AND booking_lang IS NOT NULL
+      WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled' AND booking_lang IS NOT NULL
     `;
     const langParams = [source, 'widget'];
     if (dateType === 'check_in') {
@@ -261,22 +287,23 @@ export async function getAnalyticsGeo(
     const langBookings = db.prepare(langBookingsSql).all(...langParams) as any[];
 
     // Merge languages
-    const langMap = new Map<string, { lang: string; sessions: number; bookings: number; revenue: number }>();
+    const langMap = new Map<string, { lang: string; sessions: number; bookings: number; revenue: number; unpaid_revenue: number }>();
     for (const r of langSessions) {
-      langMap.set(r.lang, { lang: r.lang, sessions: r.sessions, bookings: 0, revenue: 0 });
+      langMap.set(r.lang, { lang: r.lang, sessions: r.sessions, bookings: 0, revenue: 0, unpaid_revenue: 0 });
     }
     for (const r of langBookings) {
       const existing = langMap.get(r.lang);
       if (existing) {
         existing.bookings = r.bookings;
         existing.revenue = r.revenue;
+        existing.unpaid_revenue = r.unpaid_revenue;
       } else {
-        langMap.set(r.lang, { lang: r.lang, sessions: 0, bookings: r.bookings, revenue: r.revenue });
+        langMap.set(r.lang, { lang: r.lang, sessions: 0, bookings: r.bookings, revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
       }
     }
     const languages = Array.from(langMap.values()).map(item => ({
       ...item,
-      revenue: Math.round(item.revenue),
+      revenue: Math.round(item.revenue), unpaid_revenue: Math.round(item.unpaid_revenue || 0),
       conversion: item.sessions > 0 ? Math.round((item.bookings / item.sessions) * 100 * 100) / 100 : 0
     }));
     languages.sort((a, b) => b.bookings - a.bookings || b.sessions - a.sessions);
@@ -293,9 +320,10 @@ export async function getAnalyticsGeo(
       SELECT 
         country_code, 
         COUNT(*) as bookings, 
-        SUM(total_price - COALESCE(commission_amount, 0)) as revenue
+        SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
-      WHERE source IN (?, ?) AND status != 'cancelled' AND country_code IS NOT NULL
+      WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled' AND country_code IS NOT NULL
     `;
     const countryParams = [source, 'widget'];
     if (dateType === 'check_in') {
@@ -310,17 +338,18 @@ export async function getAnalyticsGeo(
     const countryBookings = db.prepare(countrySql).all(...countryParams) as any[];
 
     // Merge countries
-    const countryMap = new Map<string, { country_code: string; sessions: number; bookings: number; revenue: number }>();
+    const countryMap = new Map<string, { country_code: string; sessions: number; bookings: number; revenue: number; unpaid_revenue: number }>();
     for (const r of countrySessions) {
-      countryMap.set(r.country_code, { country_code: r.country_code, sessions: r.sessions, bookings: 0, revenue: 0 });
+      countryMap.set(r.country_code, { country_code: r.country_code, sessions: r.sessions, bookings: 0, revenue: 0, unpaid_revenue: 0 });
     }
     for (const r of countryBookings) {
       const existing = countryMap.get(r.country_code);
       if (existing) {
         existing.bookings = r.bookings;
         existing.revenue = r.revenue;
+        existing.unpaid_revenue = r.unpaid_revenue;
       } else {
-        countryMap.set(r.country_code, { country_code: r.country_code, sessions: 0, bookings: r.bookings, revenue: r.revenue });
+        countryMap.set(r.country_code, { country_code: r.country_code, sessions: 0, bookings: r.bookings, revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
       }
     }
     const formattedCountries = Array.from(countryMap.values()).map(c => ({
@@ -345,6 +374,7 @@ export async function getAnalyticsListings(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
@@ -360,13 +390,14 @@ export async function getAnalyticsListings(
         ut.name as unit_type_name,
         ut.code as unit_type_code,
         COUNT(r.id) as bookings,
-        SUM(r.total_price - COALESCE(r.commission_amount, 0)) as revenue
+        SUM(CASE WHEN r.payment_status = 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN r.payment_status != 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations r
       JOIN units u ON r.unit_id = u.id
       JOIN unit_types ut ON u.unit_type_id = ut.id
-      WHERE r.source IN (?, ?) AND r.status != 'cancelled'
+      WHERE ${getSourceFilter(siteId, propertyId, 'r.')} AND r.status != 'cancelled'
     `;
-    const utParams = [source, 'widget'];
+    const utParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       utSql += ' AND r.check_in >= ? AND r.check_in <= ?';
       utParams.push(dateFrom, dateTo);
@@ -384,13 +415,14 @@ export async function getAnalyticsListings(
         c.name as category_name,
         c.type as category_type,
         COUNT(r.id) as bookings,
-        SUM(r.total_price - COALESCE(r.commission_amount, 0)) as revenue
+        SUM(CASE WHEN r.payment_status = 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN r.payment_status != 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations r
       JOIN units u ON r.unit_id = u.id
       JOIN categories c ON u.category_id = c.id
-      WHERE r.source IN (?, ?) AND r.status != 'cancelled'
+      WHERE ${getSourceFilter(siteId, propertyId, 'r.')} AND r.status != 'cancelled'
     `;
-    const catParams = [source, 'widget'];
+    const catParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       catSql += ' AND r.check_in >= ? AND r.check_in <= ?';
       catParams.push(dateFrom, dateTo);
@@ -403,8 +435,8 @@ export async function getAnalyticsListings(
     const categories = db.prepare(catSql).all(...catParams) as any[];
 
     return NextResponse.json({
-      unitTypes: unitTypes.map(ut => ({ ...ut, revenue: Math.round(ut.revenue) })),
-      categories: categories.map(cat => ({ ...cat, revenue: Math.round(cat.revenue) }))
+      unitTypes: unitTypes.map(ut => ({ ...ut, revenue: Math.round(ut.revenue), unpaid_revenue: Math.round(ut.unpaid_revenue || 0) })),
+      categories: categories.map(cat => ({ ...cat, revenue: Math.round(cat.revenue), unpaid_revenue: Math.round(cat.unpaid_revenue || 0) }))
     });
   } catch (error: any) {
     console.error('Error fetching site listings analytics:', error?.message || error);
@@ -420,6 +452,7 @@ export async function getAnalyticsCampaigns(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
@@ -450,11 +483,12 @@ export async function getAnalyticsCampaigns(
         COALESCE(utm_medium, '(none)') as utm_medium, 
         COALESCE(utm_campaign, '(organic)') as utm_campaign,
         COUNT(*) as bookings, 
-        SUM(total_price - COALESCE(commission_amount, 0)) as revenue
+        SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
+        SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
-      WHERE source IN (?, ?) AND status != 'cancelled'
+      WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled'
     `;
-    const bookingsParams = [source, 'widget'];
+    const bookingsParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       bookingsSql += ' AND check_in >= ? AND check_in <= ?';
       bookingsParams.push(dateFrom, dateTo);
@@ -467,7 +501,7 @@ export async function getAnalyticsCampaigns(
     const campaignsBookings = db.prepare(bookingsSql).all(...bookingsParams) as any[];
 
     // Merge campaigns
-    const campaignMap = new Map<string, { utm_source: string; utm_medium: string; utm_campaign: string; sessions: number; bookings: number; revenue: number }>();
+    const campaignMap = new Map<string, { utm_source: string; utm_medium: string; utm_campaign: string; sessions: number; bookings: number; revenue: number; unpaid_revenue: number }>();
 
     for (const r of campaignsSessions) {
       const key = `${r.utm_source}|||${r.utm_medium}|||${r.utm_campaign}`;
@@ -477,8 +511,7 @@ export async function getAnalyticsCampaigns(
         utm_campaign: r.utm_campaign,
         sessions: r.sessions,
         bookings: 0,
-        revenue: 0
-      });
+        revenue: 0, unpaid_revenue: 0 });
     }
 
     for (const r of campaignsBookings) {
@@ -487,6 +520,7 @@ export async function getAnalyticsCampaigns(
       if (existing) {
         existing.bookings = r.bookings;
         existing.revenue = r.revenue;
+        existing.unpaid_revenue = r.unpaid_revenue;
       } else {
         campaignMap.set(key, {
           utm_source: r.utm_source,
@@ -494,14 +528,13 @@ export async function getAnalyticsCampaigns(
           utm_campaign: r.utm_campaign,
           sessions: 0,
           bookings: r.bookings,
-          revenue: r.revenue
-        });
+          revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
       }
     }
 
     const campaigns = Array.from(campaignMap.values()).map(item => ({
       ...item,
-      revenue: Math.round(item.revenue),
+      revenue: Math.round(item.revenue), unpaid_revenue: Math.round(item.unpaid_revenue || 0),
       conversion: item.sessions > 0 ? Math.round((item.bookings / item.sessions) * 100 * 100) / 100 : 0
     }));
 
@@ -533,6 +566,7 @@ export async function getAnalyticsFunnel(
     const { id: siteId } = await params;
     const db = getDb();
     const { searchParams } = new URL(request.url);
+    const propertyId = getSitePropertyId(db, siteId);
 
     const dateFrom = searchParams.get('date_from') || getFirstDayOfMonth();
     const dateTo = searchParams.get('date_to') || getToday();
@@ -547,14 +581,14 @@ export async function getAnalyticsFunnel(
       let sql = `
         SELECT COUNT(DISTINCT session_id) as count 
         FROM widget_events 
-        WHERE site_id = ? AND event_type = ? AND created_at >= ? AND created_at <= ?
+        WHERE ${siteId === 'all' ? '1=1 AND ' : 'site_id = ? AND '}event_type = ? AND created_at >= ? AND created_at <= ?
       `;
-      const p = [siteId, eventType, fromTime, toTime];
+      const p: any[] = siteId === 'all' ? [eventType, fromTime, toTime] : [siteId, eventType, fromTime, toTime];
       if (eventType === 'page_view' && pageFilter && pageFilter !== 'all') {
         sql += ' AND page = ?';
         p.push(pageFilter);
       }
-      const row = db.prepare(sql).get(p) as { count: number };
+      const row = db.prepare(sql).get(...p) as { count: number };
       return row ? row.count : 0;
     };
 
@@ -574,7 +608,7 @@ export async function getAnalyticsFunnel(
       let sql = `
         SELECT COUNT(*) as count 
         FROM reservations 
-        WHERE source IN (?, ?) AND status != 'cancelled'
+        WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled'
       `;
       const p = [source, 'widget'];
       
@@ -598,7 +632,7 @@ export async function getAnalyticsFunnel(
         p.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
       }
       
-      const row = db.prepare(sql).get(p) as { count: number };
+      const row = db.prepare(sql).get(...p) as { count: number };
       return row ? row.count : 0;
     };
 
@@ -717,3 +751,8 @@ export async function getAnalyticsFunnel(
     return NextResponse.json({ error: 'Failed to fetch funnel analytics' }, { status: 500 });
   }
 }
+
+
+
+
+

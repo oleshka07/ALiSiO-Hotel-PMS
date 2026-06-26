@@ -35,9 +35,19 @@ export function saveRegistrations(reservationId: string, organizationId: string,
   const updateGuest = db.prepare(`UPDATE guests SET date_of_birth = COALESCE(?, date_of_birth), country = COALESCE(?, country), address = COALESCE(?, address), document_type = COALESCE(?, document_type), document_number = COALESCE(?, document_number), updated_at = datetime('now') WHERE id = ?`);
 
   // guest_registrations sync — so dashboard sees the data, plus GDPR consent tracking
+  // reg_status = 'completed' because this is the final submit (POST), not a draft (PATCH)
   const insertGr = db.prepare(`
-    INSERT OR IGNORE INTO guest_registrations (id, reservation_id, guest_id, is_primary, registered_at, consent_given, consent_at, consent_ip, purpose_of_stay, visa_number)
-    VALUES (?, ?, ?, ?, datetime('now'), 1, datetime('now'), ?, ?, ?)
+    INSERT INTO guest_registrations (id, reservation_id, guest_id, is_primary, reg_status, registered_at, consent_given, consent_at, consent_ip, purpose_of_stay, visa_number)
+    VALUES (?, ?, ?, ?, 'completed', datetime('now'), 1, datetime('now'), ?, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `);
+  const updateGrCompleted = db.prepare(`
+    UPDATE guest_registrations
+    SET guest_id = ?, reg_status = 'completed', consent_given = 1, consent_at = datetime('now'), consent_ip = ?, purpose_of_stay = ?, visa_number = ?, registered_at = datetime('now')
+    WHERE reservation_id = ? AND is_primary = ?
+  `);
+  const findExistingGr = db.prepare(`
+    SELECT id FROM guest_registrations WHERE reservation_id = ? AND is_primary = ?
   `);
 
   db.transaction(() => {
@@ -83,8 +93,14 @@ export function saveRegistrations(reservationId: string, organizationId: string,
 
       // Write to guest_registrations (dashboard view) — syncs data to PMS
       if (guestId) {
-        const grId = crypto.randomUUID();
-        insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null);
+        const existingGr = findExistingGr.get(reservationId, isPrimary) as any;
+        if (existingGr) {
+          // Draft exists — upgrade to completed
+          updateGrCompleted.run(guestId, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null, reservationId, isPrimary);
+        } else {
+          const grId = crypto.randomUUID();
+          insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
+        }
         isPrimary = 0; // only first guest is primary
       }
     }

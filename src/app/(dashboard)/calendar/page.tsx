@@ -34,6 +34,8 @@ import {
   CalendarDays,
   Download,
   FileSpreadsheet,
+  Banknote,
+  FileText,
 } from 'lucide-react';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -60,6 +62,7 @@ interface BookingRow {
   parent_id?: string | null;
   hostex_channel_type?: string;
   hostex_reservation_code?: string;
+  registration_status?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────
@@ -158,7 +161,14 @@ function CalendarDesktop() {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('resort');
+  const [categoryFilter, setCategoryFilter] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('calendar_categoryFilter') || 'resort';
+    return 'resort';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('calendar_categoryFilter', categoryFilter);
+  }, [categoryFilter]);
   const [statusFilter, setStatusFilter] = useState('');
   const [cleaningFilter, setCleaningFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
@@ -773,6 +783,7 @@ function CalendarDesktop() {
             <div ref={leftRef} style={{
               width: LEFT_W, minWidth: LEFT_W, overflowY: 'hidden', overflowX: 'hidden',
               borderRight: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
+              display: 'flex', flexDirection: 'column', justifyContent: 'flex-start'
             }}>
               {groups.map(group => (
                 <div key={group.key}>
@@ -823,7 +834,7 @@ function CalendarDesktop() {
               onScroll={handleScroll}
               style={{ flex: 1, overflow: 'auto' }}
             >
-              <div style={{ width: totalW, position: 'relative' }}>
+              <div style={{ width: totalW, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
                 {groups.map(group => (
                   <div key={group.key}>
                     {/* Group spacer */}
@@ -905,6 +916,20 @@ function CalendarDesktop() {
                                   transition: 'transform 0.15s, box-shadow 0.15s',
                                 }}
                               >
+                                {/* Top-left alert badges */}
+                                <div style={{ position: 'absolute', top: -4, left: -4, display: 'flex', gap: 2, zIndex: 10 }}>
+                                  {(booking.payment_status === 'unpaid' || booking.payment_status === 'partial') && (
+                                    <div title="Не оплачено / Борг" style={{ background: '#ef4444', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+                                      <Banknote size={10} />
+                                    </div>
+                                  )}
+                                  {booking.registration_status !== 'registered' && (
+                                    <div title="Немає документів / Не зареєстровано" style={{ background: '#ef4444', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+                                      <FileText size={10} />
+                                    </div>
+                                  )}
+                                </div>
+
                                 <span style={{ fontWeight: 700, fontSize: 11, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {booking.first_name} {booking.last_name}
                                 </span>
