@@ -538,7 +538,7 @@ export async function createWidgetReservation(request: NextRequest) {
     let testEmailStatus = 'not_sent';
     if (email) {
       try {
-        const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://kemp-carlsbad.cz';
+        const alisioAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
         const { sendEmail } = await import('@/lib/email');
         const propertyInfo = db.prepare(`
           SELECT p.name, u.name as unit_name
@@ -549,19 +549,8 @@ export async function createWidgetReservation(request: NextRequest) {
         const unitName = propertyInfo?.unit_name || '';
 
         // ── Build primary CTA URL ─────────────────────────────────────
-        // Priority: thank_you_url (from site_listings) > guest portal
-        // Append guest_token + UTM params to thank-you URL for FB Pixel tracking
-        const guestPortalUrl = `${origin}/guest/${guestPageToken}`;
-        let primaryUrl: string;
-        if (thankYouUrl) {
-          const sep = thankYouUrl.includes('?') ? '&' : '?';
-          const utmString = Object.entries(utmParams)
-            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-            .join('&');
-          primaryUrl = `${thankYouUrl}${sep}guest_token=${guestPageToken}${utmString ? '&' + utmString : ''}`;
-        } else {
-          primaryUrl = guestPortalUrl;
-        }
+        // The email CTA should always lead to the Guest Portal.
+        const guestPortalUrl = `${alisioAppUrl}/guest/${guestPageToken}`;
 
         let widgetConfig: any = {};
         if (siteId) {
@@ -574,33 +563,40 @@ export async function createWidgetReservation(request: NextRequest) {
         }
 
         // ── Localized email defaults ──────────────────────────────────────
-        const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string }> = {
+        const EMAIL_TEMPLATES: Record<string, { subject: string; body: string; header: string; btnText: string; docWarning: string }> = {
           en: {
             subject: 'Booking Confirmed — {propertyName}',
-            body: 'Thank you for booking with us! Your reservation is confirmed. To speed up your check-in, please fill out your passport details on your personal page.',
+            body: 'Thank you for booking with us! Your reservation is confirmed.',
             header: 'Booking Confirmed',
             btnText: 'Guest Portal →',
+            docWarning: '⚠️ IMPORTANT: You must complete your online guest registration and provide passport details via the link below before arrival.',
           },
           uk: {
             subject: 'Бронювання підтверджено — {propertyName}',
-            body: 'Дякуємо за бронювання! Ваше бронювання підтверджено. Щоб пришвидшити заселення, будь ласка, заповніть паспортні дані на вашій персональній сторінці.',
+            body: 'Дякуємо за бронювання! Ваше бронювання підтверджено.',
             header: 'Бронювання підтверджено',
-            btnText: 'Гостьовий портал →',
+            btnText: 'Особистий кабінет →',
+            docWarning: '⚠️ ВАЖЛИВО: До вашого приїзду обов\'язково потрібно заповнити паспортні дані для онлайн-реєстрації за посиланням нижче.',
           },
           cs: {
             subject: 'Rezervace potvrzena — {propertyName}',
-            body: 'Děkujeme za rezervaci! Vaše rezervace je potvrzena. Pro urychlení check-inu prosím vyplňte údaje z pasu na vaší osobní stránce.',
+            body: 'Děkujeme za rezervaci! Vaše rezervace je potvrzena.',
             header: 'Rezervace potvrzena',
             btnText: 'Osobní stránka →',
+            docWarning: '⚠️ DŮLEŽITÉ: Před příjezdem musíte nutně vyplnit údaje z pasu pro online registraci hostů na odkazu níže.',
           },
           de: {
             subject: 'Buchung bestätigt — {propertyName}',
-            body: 'Vielen Dank für Ihre Buchung! Ihre Reservierung ist bestätigt. Um den Check-in zu beschleunigen, füllen Sie bitte Ihre Passdaten auf Ihrer persönlichen Seite aus.',
+            body: 'Vielen Dank für Ihre Buchung! Ihre Reservierung ist bestätigt.',
             header: 'Buchung bestätigt',
             btnText: 'Persönliche Seite →',
+            docWarning: '⚠️ WICHTIG: Sie müssen Ihre Passdaten für die Online-Gästeregistrierung über den unten stehenden Link vor der Anreise zwingend ausfüllen.',
           },
         };
         const emailTpl = EMAIL_TEMPLATES[lang] || EMAIL_TEMPLATES.en;
+        
+        const needsDocs = !documentNumber;
+        const docWarningHtml = needsDocs ? `<div style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:16px 0;border-radius:0 8px 8px 0;color:#856404;font-size:14px;font-weight:600;line-height:1.5;">${emailTpl.docWarning}</div>` : '';
 
         const rawSubject = widgetConfig.email_received_subject || emailTpl.subject;
         const rawBody = widgetConfig.email_received_body || emailTpl.body;
@@ -636,13 +632,14 @@ export async function createWidgetReservation(request: NextRequest) {
             to: email,
             subject: customizedSubject,
             html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:560px;margin:0 auto;padding:24px;background:#f7f7f9;">
-  <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
-    <div style="font-size:28px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a2e;max-width:600px;margin:0 auto;padding:12px;background:#f7f7f9;">
+  <div style="background:#fff;border-radius:12px;padding:24px 20px;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="font-size:26px;color:#2E6B4F;font-weight:700;margin-bottom:8px;">${propertyName}</div>
     <div style="font-size:14px;color:#666;margin-bottom:24px;">${emailTpl.header}</div>
     <p style="font-size:16px;margin:0 0 16px;">Hi ${firstName}!</p>
     <p style="font-size:15px;line-height:1.5;margin:0 0 20px;">${customizedBody}</p>
-    <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px 18px;margin:20px 0;">
+    ${docWarningHtml}
+    <div style="background:#f0f9f4;border:1px solid #d4e9da;border-radius:12px;padding:16px;margin:20px 0;">
       <div style="font-size:12px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Booking ID</div>
       <div style="font-size:20px;font-weight:700;color:#2E6B4F;margin-top:2px;">${resId}</div>
     </div>
@@ -655,7 +652,7 @@ export async function createWidgetReservation(request: NextRequest) {
       <tr><td style="padding:8px 0;color:#666;">Payment</td><td style="text-align:right;font-weight:600;color:${paymentMethod === 'reception' ? '#b45309' : '#2E6B4F'};">${paymentMethod === 'reception' ? 'Cash/Terminal at Reception' : 'Online Paid'}</td></tr>
     </table>
     <div style="margin-top:28px;text-align:center;">
-      <a href="${primaryUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
+      <a href="${guestPortalUrl}" style="display:inline-block;background:#2E6B4F;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;">${emailTpl.btnText}</a>
     </div>
   </div>
 </body></html>`,
