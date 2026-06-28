@@ -18,7 +18,8 @@ export default function BookingWidgetSettingsPage() {
   const onMenuClick = useMobileMenu();
   const [sites, setSites] = useState<any[]>([]);
   const [selectedSite, setSelectedSite] = useState('');
-  const [units, setUnits] = useState<any[]>([]);
+  const [listings, setListings] = useState<any[]>([]);
+  const [loadingListings, setLoadingListings] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState('');
   const [widgetType, setWidgetType] = useState<WidgetType>('booking');
   const [lang, setLang] = useState('uk');
@@ -35,20 +36,21 @@ export default function BookingWidgetSettingsPage() {
         if (list.length > 0 && !selectedSite) setSelectedSite(list[0].id);
       })
       .catch(() => {});
+  }, []);
 
-    fetch('/api/properties')
+  // Load listings (models) for the selected site
+  useEffect(() => {
+    if (!selectedSite) return;
+    setLoadingListings(true);
+    setSelectedUnit('');
+    fetch(`/api/booking-sites/${selectedSite}/listings`)
       .then(r => r.json())
       .then(data => {
-        const list = data.properties || data || [];
-        if (list.length > 0) {
-          fetch(`/api/properties/${list[0].id}/units`)
-            .then(r => r.json())
-            .then(uData => setUnits(uData.units || []))
-            .catch(() => {});
-        }
+        setListings(data.listings || []);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => setListings([]))
+      .finally(() => setLoadingListings(false));
+  }, [selectedSite]);
 
   const domain = typeof window !== 'undefined' ? window.location.origin : 'https://your-pms-domain.com';
 
@@ -234,22 +236,33 @@ export default function BookingWidgetSettingsPage() {
 
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Конкретний об&apos;єкт (опціонально)
+                    Модель розміщення (опціонально)
                   </label>
                   <select
                     value={selectedUnit}
                     onChange={e => setSelectedUnit(e.target.value)}
+                    disabled={loadingListings}
                     style={{
                       width: '100%', padding: '8px 12px', borderRadius: 8,
                       border: '1px solid var(--border-primary)', fontSize: 14,
                       background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                      opacity: loadingListings ? 0.6 : 1,
                     }}
                   >
-                    <option value="">Всі об&apos;єкти</option>
-                    {units.map((u: any) => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
+                    <option value="">Всі моделі</option>
+                    {listings.map((l: any) => (
+                      <option key={l.unit_id || l.id} value={l.unit_id || ''}>
+                        {l.unit_name || l.unit_type_name || l.unit_id}
+                        {l.unit_type_code ? ` (${l.unit_type_code})` : ''}
+                      </option>
                     ))}
                   </select>
+                  {loadingListings && (
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>⏳ Завантаження моделей...</div>
+                  )}
+                  {!loadingListings && listings.length === 0 && selectedSite && (
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>ℹ️ До цього сайту не прив&apos;язано жодної моделі</div>
+                  )}
                 </div>
               </>
             )}
