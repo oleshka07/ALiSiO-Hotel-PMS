@@ -165,9 +165,6 @@ export default function DocumentsPage() {
   // ── Custom Invoice Modal state ────────────────────────────────
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customForm, setCustomForm] = useState({
-    description:   'Krátkodobé ubytování',
-    descCustom:    '',
-    amount:        '',
     currency:      'CZK',
     dueDate:       '',
     paymentMethod: 'Příkazem',
@@ -179,6 +176,11 @@ export default function DocumentsPage() {
     emailTo:       '',
     showBuyer:     false,
   });
+  // Multi-item service lines
+  type CustomItem = { description: string; descCustom: string; amount: string };
+  const [customItems, setCustomItems] = useState<CustomItem[]>([
+    { description: 'Krátkodobé ubytování', descCustom: '', amount: '' },
+  ]);
   const [customGenerating, setCustomGenerating] = useState(false);
   const [customToast,      setCustomToast]      = useState<string | null>(null);
 
@@ -192,30 +194,36 @@ export default function DocumentsPage() {
   ];
 
   const handleGenerateCustom = async (emailAfter: boolean) => {
-    const desc = customForm.description === 'Jiné (zadat ručně)'
-      ? customForm.descCustom.trim()
-      : customForm.description;
-    const amt = parseFloat(customForm.amount);
-    if (!desc) { setCustomToast('❌ Вкажіть опис фактури'); return; }
-    if (!amt || amt <= 0) { setCustomToast('❌ Вкажіть суму'); return; }
+    // Validate all items
+    const validItems = customItems
+      .map(it => ({
+        description: it.description === 'Jiné (zadat ručně)' ? it.descCustom.trim() : it.description,
+        amount: parseFloat(it.amount),
+      }))
+      .filter(it => it.description && it.amount > 0);
+
+    if (validItems.length === 0) { setCustomToast('❌ Vkajte aspoň jeden rádek z popisu a sumy'); return; }
+    const totalAmt = validItems.reduce((s, i) => s + i.amount, 0);
+    if (totalAmt <= 0) { setCustomToast('❌ Suma musí byť väčšia ako 0'); return; }
     if (emailAfter && !customForm.emailTo.trim()) {
       setCustomToast('❌ Вкажіть email для відправки'); return;
     }
     setCustomGenerating(true);
     setCustomToast(null);
     try {
-      const today = new Date();
       const defDue = customForm.dueDate || (() => {
         const d = new Date(); d.setDate(d.getDate() + 14);
         return d.toISOString().slice(0, 10);
       })();
       const body: Record<string, unknown> = {
-        description:   desc,
-        amount:        amt,
+        items:         validItems,
+        // Legacy single fields for backward compat
+        description:   validItems[0].description,
+        amount:        totalAmt,
         currency:      customForm.currency,
         dueDate:       defDue,
         paymentMethod: customForm.paymentMethod,
-        action:        emailAfter ? 'pdf' : 'pdf',
+        action:        'pdf',
       };
       if (customForm.showBuyer) {
         if (customForm.buyerName)    body.buyerName    = customForm.buyerName;
@@ -234,7 +242,6 @@ export default function DocumentsPage() {
         const err = await res.json();
         throw new Error(err.error || 'Failed');
       }
-      // Download PDF from response
       const blob = await res.blob();
       const invoiceNum = res.headers.get('X-Invoice-Number') || 'faktura';
       const url = URL.createObjectURL(blob);
@@ -244,8 +251,7 @@ export default function DocumentsPage() {
       setCustomToast(emailAfter
         ? `✅ PDF збережено і надіслано на ${customForm.emailTo}`
         : '✅ PDF згенеровано і завантажено');
-      // Refresh invoice list after short delay
-      setTimeout(() => { fetchInvoices(); }, 1000);
+      setTimeout(() => { fetchInvoices(); fetchAllInvoices(invSourceFilter, invSearch); }, 1000);
       setTimeout(() => setShowCustomModal(false), 2500);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1154,59 +1160,87 @@ export default function DocumentsPage() {
                 {/* ── TABLE ── */}
                 <div style={{ marginTop: 4 }}>
                   {/* Header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 100px 46px 100px', background: '#f0f0f0', border: '0.5px solid #aaa', padding: '4px 6px', fontSize: 10, fontWeight: 700, color: '#555' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 58px 100px 42px 100px 20px', background: '#f0f0f0', border: '0.5px solid #aaa', padding: '4px 6px', fontSize: 10, fontWeight: 700, color: '#555' }}>
                     <span>Označení dodávky</span>
                     <span style={{ textAlign: 'right' }}>Množství</span>
                     <span style={{ textAlign: 'right' }}>J.cena</span>
                     <span style={{ textAlign: 'right' }}>Sleva</span>
                     <span style={{ textAlign: 'right' }}>Kč Celkem</span>
+                    <span />
                   </div>
-                  {/* Editable row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 100px 46px 100px', border: '0.5px solid #ddd', borderTop: 'none', padding: '6px', gap: 4, alignItems: 'center' }}>
-                    <div>
-                      <select value={customForm.description} onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
-                        style={{ width: '100%', fontSize: 11, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}>
-                        {DESCRIPTION_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                      {customForm.description === 'Jiné (zadat ručně)' && (
-                        <input type="text" placeholder="Введіть опис..." value={customForm.descCustom}
-                          onChange={e => setCustomForm(f => ({ ...f, descCustom: e.target.value }))}
-                          style={{ width: '100%', fontSize: 11, border: '1px solid #4f6ef7', padding: '3px 5px', marginTop: 3, outline: 'none', fontFamily: 'inherit' }} />
-                      )}
+                  {/* Dynamic rows */}
+                  {customItems.map((item, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 58px 100px 42px 100px 20px', border: '0.5px solid #ddd', borderTop: 'none', padding: '5px 6px', gap: 4, alignItems: 'start' }}>
+                      <div>
+                        <select
+                          value={item.description}
+                          onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, description: e.target.value } : it))}
+                          style={{ width: '100%', fontSize: 11, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}
+                        >
+                          {DESCRIPTION_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        {item.description === 'Jiné (zadat ručně)' && (
+                          <input type="text" placeholder="Opište dodávku..." value={item.descCustom}
+                            onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, descCustom: e.target.value } : it))}
+                            style={{ width: '100%', fontSize: 11, border: '1px solid #4f6ef7', padding: '3px 5px', marginTop: 3, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: 11, paddingTop: 5 }}>1</div>
+                      <input type="number" min="0" step="0.01" value={item.amount}
+                        onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, amount: e.target.value } : it))}
+                        placeholder="0,00"
+                        style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', width: '100%' }}
+                      />
+                      <div style={{ textAlign: 'right', fontSize: 11, color: '#888', paddingTop: 5 }}>—</div>
+                      <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: item.amount && parseFloat(item.amount) > 0 ? '#1a1a1a' : '#aaa', paddingTop: 5 }}>
+                        {item.amount && parseFloat(item.amount) > 0
+                          ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(item.amount))
+                          : '0,00'}
+                      </div>
+                      <button
+                        onClick={() => setCustomItems(arr => arr.length > 1 ? arr.filter((_, i) => i !== idx) : arr)}
+                        disabled={customItems.length <= 1}
+                        title="Видалити рядок"
+                        style={{ background: 'none', border: 'none', cursor: customItems.length > 1 ? 'pointer' : 'default', color: customItems.length > 1 ? '#ef4444' : '#ddd', fontSize: 14, padding: '2px 0', lineHeight: 1 }}
+                      >x</button>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: 11 }}>1</div>
-                    <input type="number" min="0" step="0.01" value={customForm.amount}
-                      onChange={e => setCustomForm(f => ({ ...f, amount: e.target.value }))}
-                      placeholder="0,00"
-                      style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', width: '100%' }}
-                    />
-                    <div style={{ textAlign: 'right', fontSize: 11, color: '#888' }}>—</div>
-                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: customForm.amount && parseFloat(customForm.amount) > 0 ? '#1a1a1a' : '#aaa' }}>
-                      {customForm.amount && parseFloat(customForm.amount) > 0
-                        ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                        : '0,00'}
-                    </div>
-                  </div>
+                  ))}
+                  <button
+                    onClick={() => setCustomItems(arr => [...arr, { description: 'Krátkodobé ubytování', descCustom: '', amount: '' }])}
+                    style={{ width: '100%', border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.03)', color: '#4f6ef7', padding: '5px', fontSize: 11, cursor: 'pointer', marginTop: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: 'inherit' }}
+                  >
+                    + Přidat řádek
+                  </button>
                 </div>
 
                 {/* ── TOTALS ── */}
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginBottom: 5 }}>
-                    <span>Součet položek</span>
-                    <span>{customForm.amount && parseFloat(customForm.amount) > 0
-                      ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                      : '0,00'} {customForm.currency}
-                    </span>
-                  </div>
-                  <div style={{ borderTop: '0.5px solid #aaa', paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
-                    <span>CELKEM K ÚHRADĚ</span>
-                    <span style={{ fontSize: 15 }}>
-                      {customForm.amount && parseFloat(customForm.amount) > 0
-                        ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                        : '0,00'} {customForm.currency}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const totalAmt = customItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+                  const fmt = (n: number) => n > 0 ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(n) : '0,00';
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      {customItems.length > 1 && customItems.map((it, idx) => {
+                        const a = parseFloat(it.amount) || 0;
+                        if (a <= 0) return null;
+                        const desc = it.description === 'Jiné (zadat ručně)' ? (it.descCustom || '...') : it.description;
+                        return (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888', marginBottom: 2 }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>{desc}</span>
+                            <span>{fmt(a)} {customForm.currency}</span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginBottom: 5, borderTop: customItems.length > 1 ? '0.5px dashed #ddd' : 'none', paddingTop: customItems.length > 1 ? 4 : 0 }}>
+                        <span>Součet položek</span>
+                        <span>{fmt(totalAmt)} {customForm.currency}</span>
+                      </div>
+                      <div style={{ borderTop: '0.5px solid #aaa', paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
+                        <span>CELKEM K ÚHRADĚ</span>
+                        <span style={{ fontSize: 15 }}>{fmt(totalAmt)} {customForm.currency}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Nejsme plátci */}
                 <div style={{ marginTop: 10, fontSize: 12, color: '#1565c0', fontWeight: 700 }}>Nejsme plátci DPH</div>
