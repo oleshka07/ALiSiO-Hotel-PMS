@@ -7,6 +7,60 @@ function orgId(db: any): string {
   return row.id;
 }
 
+function mapExpense(cnameLower: string, commentLower: string, classifier: string, stdGroup: string): { rowId: string, childName: string } {
+    const is = (searchStr: string) => cnameLower.includes(searchStr) || commentLower.includes(searchStr);
+    
+    // Переменные
+    if (is('алкоголь') || is('продукти')) return { rowId: 'variable', childName: 'Алкоголь (Собівартість), Продукти (Собівартість)' };
+    if (is('прання')) return { rowId: 'variable', childName: 'Оплата прачки' };
+    if (is('адміністратор')) return { rowId: 'variable', childName: 'ЗП Админ' };
+    if (is('прибиральниця')) return { rowId: 'variable', childName: 'ЗП Уборка' };
+    if (is('завхоз')) return { rowId: 'variable', childName: 'ЗП Завхоз' };
+    if (is('маркетинг трафік')) return { rowId: 'variable', childName: 'Трафик' };
+    if (is('маркетинг зарплата')) return { rowId: 'variable', childName: 'Маркетолог' };
+    if (is('комісія airbnb/booking')) return { rowId: 'variable', childName: 'Платформы бронирования' };
+    if (is('маркетинг послуги сторонні') || is('сервіси для просування')) return { rowId: 'variable', childName: 'Прочие расходы на рекламу/фото/бренд' };
+    
+    // Постоянные
+    if (is('оренда')) return { rowId: 'fixed', childName: 'Аренда' };
+    if (is('комунальні → електрика')) return { rowId: 'fixed', childName: 'Электрика' };
+    if (is('водаква')) return { rowId: 'fixed', childName: 'Вода' };
+    if (is('сміття')) return { rowId: 'fixed', childName: 'Мусор' };
+    if (is('страхування')) return { rowId: 'fixed', childName: 'Страховка' };
+    if (is('банківські комісії kb')) return { rowId: 'fixed', childName: 'Банковские услуги' };
+    if (is('веб сервіси') || is('звязок') || is('застосунки')) return { rowId: 'fixed', childName: 'Приложения и сервисы' };
+    
+    // Management
+    if (is('фінансист наташа')) return { rowId: 'mgmt', childName: 'Управляющая компания(финансист и др)' };
+    if (is('профпослуги')) return { rowId: 'prof', childName: 'Professional services (Consulting, audit, Lawyer, Photographer)' };
+    
+    // Capex
+    if (is('будівництво → матеріали')) return { rowId: 'capex', childName: 'Материалы на строительство и ремонты' };
+    if (is('будівництво → щось для території') || is('комплектація будинків')) return { rowId: 'capex', childName: 'Инфраструктура и покупки товаров' };
+    if (is('інструмент/техніка')) return { rowId: 'capex', childName: 'Инструмент' };
+    if (is('будівництво') && is('зарплат')) return { rowId: 'capex', childName: 'ЗП (капітальні зарплати)' };
+    
+    // Taxes
+    if (is('податки') || classifier === 'tax') return { rowId: 'taxes', childName: 'Налоги' };
+    
+    // Loans
+    if (classifier === 'financing' || is('кредит')) return { rowId: 'loans', childName: 'Кредиты' };
+
+    // Fallbacks based on previous logic
+    if (is('зарплат')) {
+       if (is('будівництво') || is('покращення') || is('стройка')) return { rowId: 'capex', childName: 'ЗП (капітальні зарплати)' };
+       if (is('адміністратор') || is('прибиральниця') || is('завхоз') || is('ремонт') || is('админ')) return { rowId: 'variable', childName: 'ЗП (Інша)' };
+    }
+    
+    if (is('управл')) return { rowId: 'mgmt', childName: cnameLower };
+    if (is('professional') || is('консалтинг') || is('аудит') || is('юрист')) return { rowId: 'prof', childName: cnameLower };
+    if (classifier === 'capex') return { rowId: 'capex', childName: 'Інше капітальне' };
+    if (classifier === 'variable' || stdGroup === 'COGS') return { rowId: 'variable', childName: 'Інші змінні' };
+    
+    // Default to Fixed -> "Прочие" 
+    return { rowId: 'fixed', childName: 'Прочие' };
+}
+
 export async function getPnl2(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
@@ -28,6 +82,13 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       let vId = bu.id;
       
       const lowerName = vName.toLowerCase();
+
+      // General BU that we distribute proportionally
+      if (lowerName.includes('загальне') || lowerName.includes('kemp carlsbad')) {
+        virtualBusMap[bu.id] = 'v_general';
+        continue; // Exclude from columns
+      }
+      
       if (lowerName.includes('будова') || lowerName.includes('f/d') || lowerName === 'resort f' || lowerName === 'rfesort b') {
         vName = 'Будова F/D';
         vId = 'v_budova';
@@ -79,72 +140,136 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     const r_capex = createRow('capex', 'Капитальные затраты', 'data');
     const r_amort = createRow('amort', 'Амортизация', 'data');
 
+    const rowMap: Record<string, any> = {
+      'variable': r_var,
+      'fixed': r_fixed,
+      'mgmt': r_mgmt,
+      'prof': r_prof,
+      'taxes': r_taxes,
+      'loans': r_loans,
+      'capex': r_capex
+    };
+
+    // Pass 1: Calculate revenue ratios per Virtual BU
+    let totalValidRevenue = 0;
+    const revenuePerBu: Record<string, number> = {};
+    bus.forEach(b => revenuePerBu[b.id] = 0);
+
+    for (const op of ops) {
+      const vId = virtualBusMap[op.project_id];
+      if (!vId) continue;
+      
+      const amt = op.amount_company;
+      const cname = (op.cat_name || 'Інше').trim().toLowerCase();
+      const isInvest = cname.includes('інвест') || cname.includes('invest') || cname.includes('дофінансування');
+
+      if (op.op_type === 'income' && !isInvest) {
+         if (vId !== 'v_general') {
+            revenuePerBu[vId] += amt;
+            totalValidRevenue += amt;
+         }
+      }
+      else if (op.op_type === 'expense' && op.payment_subtype === 'refund') {
+         if (vId !== 'v_general') {
+            revenuePerBu[vId] -= amt;
+            totalValidRevenue -= amt;
+         }
+      }
+    }
+    
+    const ratioPerBu: Record<string, number> = {};
+    bus.forEach(b => {
+      if (totalValidRevenue > 0) {
+        ratioPerBu[b.id] = revenuePerBu[b.id] / totalValidRevenue;
+      } else {
+        ratioPerBu[b.id] = 1 / bus.length; // distribute equally if no revenue
+      }
+    });
+
     // Add depreciation
     for (const d of depRows) {
       const vId = virtualBusMap[d.business_unit_id];
-      if (vId && r_amort.buValues[vId] !== undefined) {
-        r_amort.buValues[vId] += d.total;
-        r_amort.total += d.total;
+      if (!vId) continue;
+
+      if (vId === 'v_general') {
+         bus.forEach(b => {
+            const pAmt = d.total * ratioPerBu[b.id];
+            r_amort.buValues[b.id] += pAmt;
+            r_amort.total += pAmt;
+         });
+      } else {
+         if (r_amort.buValues[vId] !== undefined) {
+            r_amort.buValues[vId] += d.total;
+            r_amort.total += d.total;
+         }
       }
     }
 
+    // Pass 2: Distribute operations
     for (const op of ops) {
-      const buId = virtualBusMap[op.project_id];
-      if (!buId || r_rev.buValues[buId] === undefined) continue;
+      const vId = virtualBusMap[op.project_id];
+      if (!vId) continue;
 
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
       const commentLower = (op.comment || '').toLowerCase();
+      const isGeneral = vId === 'v_general';
 
       // Income
       if (op.op_type === 'income') {
-        if (cnameLower.includes('інвест') || cnameLower.includes('invest') || cnameLower.includes('дофінансування')) {
-          r_invest.buValues[buId] += amt;
-          r_invest.total += amt;
+        const isInvest = cnameLower.includes('інвест') || cnameLower.includes('invest') || cnameLower.includes('дофінансування');
+        const targetRow = isInvest ? r_invest : r_rev;
+        
+        if (isGeneral) {
+           bus.forEach(b => {
+              const pAmt = amt * ratioPerBu[b.id];
+              targetRow.buValues[b.id] += pAmt;
+              targetRow.total += pAmt;
+           });
         } else {
-          r_rev.buValues[buId] += amt;
-          r_rev.total += amt;
-          // Notice: We don't add to r_rev.details anymore to disable expandability
+           if (targetRow.buValues[vId] !== undefined) {
+             targetRow.buValues[vId] += amt;
+             targetRow.total += amt;
+           }
         }
       } 
       // Refunds
       else if (op.op_type === 'expense' && op.payment_subtype === 'refund') {
-        r_rev.buValues[buId] -= amt;
-        r_rev.total -= amt;
+        if (isGeneral) {
+           bus.forEach(b => {
+              const pAmt = amt * ratioPerBu[b.id];
+              r_rev.buValues[b.id] -= pAmt;
+              r_rev.total -= pAmt;
+           });
+        } else {
+           if (r_rev.buValues[vId] !== undefined) {
+             r_rev.buValues[vId] -= amt;
+             r_rev.total -= amt;
+           }
+        }
       }
       // Expenses
       else if (op.op_type === 'expense') {
-        let targetRow = null;
+        const mapped = mapExpense(cnameLower, commentLower, op.classifier, op.std_group);
+        const targetRow = rowMap[mapped.rowId];
+        const childName = mapped.childName;
         
-        // Зарплати check
-        if (cnameLower.includes('зарплат')) {
-           const isOpex = cnameLower.includes('адміністратор') || cnameLower.includes('прибиральниця') || cnameLower.includes('завхоз') || cnameLower.includes('ремонт') || cnameLower.includes('админ') ||
-                          commentLower.includes('адміністратор') || commentLower.includes('прибиральниця') || commentLower.includes('завхоз') || commentLower.includes('ремонт');
-           
-           const isCapex = cnameLower.includes('будівництво') || cnameLower.includes('покращення') || cnameLower.includes('стройка') ||
-                           commentLower.includes('будівництво') || commentLower.includes('покращення') || commentLower.includes('стройка');
-           
-           if (isCapex) targetRow = r_capex;
-           else if (isOpex) targetRow = r_var;
-           // If neither specific match, fallback to default logic below
-        }
-
-        if (!targetRow) {
-          if (cnameLower.includes('управл')) targetRow = r_mgmt;
-          else if (cnameLower.includes('professional') || cnameLower.includes('консалтинг') || cnameLower.includes('аудит') || cnameLower.includes('юрист')) targetRow = r_prof;
-          else if (op.classifier === 'tax' || op.std_group === 'Taxes') targetRow = r_taxes;
-          else if (op.classifier === 'financing' || cnameLower.includes('кредит')) targetRow = r_loans;
-          else if (op.classifier === 'capex') targetRow = r_capex;
-          else if (op.classifier === 'variable' || op.std_group === 'COGS') targetRow = r_var;
-          else targetRow = r_fixed;
-        }
-
-        if (targetRow) {
-          targetRow.buValues[buId] += amt;
-          targetRow.total += amt;
-          targetRow.details[cname] = targetRow.details[cname] || {};
-          targetRow.details[cname][buId] = (targetRow.details[cname][buId] || 0) + amt;
+        if (isGeneral) {
+           bus.forEach(b => {
+              const pAmt = amt * ratioPerBu[b.id];
+              targetRow.buValues[b.id] += pAmt;
+              targetRow.total += pAmt;
+              targetRow.details[childName] = targetRow.details[childName] || {};
+              targetRow.details[childName][b.id] = (targetRow.details[childName][b.id] || 0) + pAmt;
+           });
+        } else {
+           if (targetRow.buValues[vId] !== undefined) {
+              targetRow.buValues[vId] += amt;
+              targetRow.total += amt;
+              targetRow.details[childName] = targetRow.details[childName] || {};
+              targetRow.details[childName][vId] = (targetRow.details[childName][vId] || 0) + amt;
+           }
         }
       }
     }
