@@ -9,7 +9,7 @@ import {
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
   XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
-  Sparkles, Send, Building2, FileDown, Loader2, Search, Trash2, Trash2,
+  Sparkles, Send, Building2, FileDown, Loader2, Search, Trash2,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -163,26 +163,6 @@ export default function DocumentsPage() {
   const [emailToast, setEmailToast]   = useState<string | null>(null);
 
   // ── Delete confirmation state ──────────────────────────────────────────────
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; number: string } | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
-  const handleDeleteInvoice = async (id: string) => {
-    setDeleteLoading(true);
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json()).error || 'Error');
-      setDeleteConfirm(null);
-      // Refresh both lists
-      fetchInvoices();
-      fetchAllInvoices(invSourceFilter, invSearch);
-    } catch (e: unknown) {
-      alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-    // ── Delete confirmation state ──────────────────────────────────────────────
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; number: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
