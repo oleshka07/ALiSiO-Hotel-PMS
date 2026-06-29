@@ -243,17 +243,19 @@ function getBookingsDigest(): BookingsDigest {
     GROUP BY source ORDER BY cnt DESC
   `).all(today) as any[];
 
-  // Occupancy — all active bookings covering tonight
+  // Occupancy — all active bookings covering tonight (exclude pool units)
   const occupied = (db.prepare(`
-    SELECT COUNT(DISTINCT unit_id) as cnt FROM reservations
-    WHERE check_in <= ? AND check_out > ?
-      AND status NOT IN ('cancelled', 'no_show', 'draft')
+    SELECT COUNT(DISTINCT r.unit_id) as cnt FROM reservations r
+    JOIN units u ON u.id = r.unit_id
+    WHERE r.check_in <= ? AND r.check_out > ?
+      AND r.status NOT IN ('cancelled', 'no_show', 'draft')
+      AND u.is_pool = 0
   `).get(today, today) as any).cnt;
 
   const totalUnits = (db.prepare(
-    `SELECT COUNT(*) as cnt FROM units WHERE is_active = 1`
+    `SELECT COUNT(*) as cnt FROM units WHERE is_active = 1 AND is_pool = 0`
   ).get() as any)?.cnt || (db.prepare(
-    `SELECT COUNT(*) as cnt FROM units`
+    `SELECT COUNT(*) as cnt FROM units WHERE is_pool = 0`
   ).get() as any).cnt;
 
   // Group check-ins by category
