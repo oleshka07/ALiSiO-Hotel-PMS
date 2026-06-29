@@ -4653,6 +4653,9 @@ function runMigrations(database: any) {
     if (!colNames.includes('utm_term')) {
       database.exec("ALTER TABLE reservations ADD COLUMN utm_term TEXT");
     }
+    if (!colNames.includes('ga_client_id')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN ga_client_id TEXT");
+    }
     if (!colNames.includes('booking_lang')) {
       database.exec("ALTER TABLE reservations ADD COLUMN booking_lang TEXT");
     }

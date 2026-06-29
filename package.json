@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "NODE_OPTIONS='--max-old-space-size=3072' ./node_modules/.bin/next build",
+    "build:win": "next build",
     "start": "next start",
     "lint": "eslint"
   },
