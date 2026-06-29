@@ -502,7 +502,7 @@ export default function DocumentsPage() {
         </div>
 
         {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            TAB: INVOICES â€” All invoices with search + source filter
+            TAB: INVOICES — All invoices with search + source filter
         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {activeTab === 'invoices' && (() => {
           // Source badge config
@@ -510,15 +510,15 @@ export default function DocumentsPage() {
             airbnb:  { label: 'Airbnb',  color: '#e61e4d', bg: 'rgba(230,30,77,0.1)'   },
             booking: { label: 'Booking', color: '#003580', bg: 'rgba(0,53,128,0.1)'     },
             teya:    { label: 'Teya',    color: '#00a699', bg: 'rgba(0,166,153,0.1)'    },
-            manual:  { label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
+            manual:  { label: 'Вручну',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
             pms:     { label: 'PMS',     color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
           };
           const sourcePills = [
-            { id: 'all',     label: 'Ð£ÑÑ–'     },
+            { id: 'all',     label: 'Усі'     },
             { id: 'airbnb',  label: 'Airbnb'  },
             { id: 'booking', label: 'Booking' },
             { id: 'teya',    label: 'Teya'    },
-            { id: 'manual',  label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ'  },
+            { id: 'manual',  label: 'Вручну'  },
             { id: 'pms',     label: 'PMS'     },
           ] as const;
           return (
@@ -530,7 +530,7 @@ export default function DocumentsPage() {
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(79,110,247,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Receipt size={18} color="var(--accent-primary)" />
                     </div>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Ð’ÑÑŒÐ¾Ð³Ð¾ Ñ„Ð°ÐºÑ‚ÑƒÑ€</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Всього фактур</span>
                   </div>
                   <div style={{ fontSize: 28, fontWeight: 700 }}>{allInvoices.length}</div>
                 </div>
@@ -564,7 +564,7 @@ export default function DocumentsPage() {
                   <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
                   <input
                     type="text"
-                    placeholder="ÐŸÐ¾ÑˆÑƒÐº: Ñ–Ð¼'Ñ, Ð½Ð¾Ð¼ÐµÑ€ Ñ„Ð°ÐºÑ‚ÑƒÑ€Ð¸, ÑÑƒÐ¼Ð°â€¦"
+                    placeholder="Пошук: ім'я, номер фактури, сума…"
                     value={invSearch}
                     onChange={e => setInvSearch(e.target.value)}
                     style={{
@@ -609,10 +609,10 @@ export default function DocumentsPage() {
                 <div className="card" style={{ padding: 56, textAlign: 'center' }}>
                   <Receipt size={40} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
                   <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
-                    {invSearch || invSourceFilter !== 'all' ? 'ÐÑ–Ñ‡Ð¾Ð³Ð¾ Ð½Ðµ Ð·Ð½Ð°Ð¹Ð´ÐµÐ½Ð¾' : 'Ð¤Ð°ÐºÑ‚ÑƒÑ€ Ñ‰Ðµ Ð½ÐµÐ¼Ð°Ñ”'}
+                    {invSearch || invSourceFilter !== 'all' ? 'Нічого не знайдено' : 'Фактур ще немає'}
                   </div>
                   <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                    {invSearch ? `Ð—Ð° Ð·Ð°Ð¿Ð¸Ñ‚Ð¾Ð¼ Â«${invSearch}Â»` : 'Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶Ñ‚Ðµ Ð²Ð¸Ð¿Ð¸ÑÐºÐ¸ Ñƒ Ð²ÐºÐ»Ð°Ð´Ñ†Ñ– Â«Ð’Ð¸Ð¿Ð¸ÑÐºÐ¸Â»'}
+                    {invSearch ? `За запитом «${invSearch}»` : 'Завантажте виписки у вкладці «Виписки»'}
                   </div>
                 </div>
               ) : (
@@ -620,11 +620,11 @@ export default function DocumentsPage() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Ð¤Ð°ÐºÑ‚ÑƒÑ€Ð° â„–</th>
-                        <th>Ð”Ð¶ÐµÑ€ÐµÐ»Ð¾</th>
-                        <th>ÐŸÐ¾ÐºÑƒÐ¿ÐµÑ†ÑŒ / ÐŸÑ€Ð¸Ð·Ð½Ð°Ñ‡ÐµÐ½Ð½Ñ</th>
-                        <th>Ð¡ÑƒÐ¼Ð°</th>
-                        <th>Ð”Ð°Ñ‚Ð°</th>
+                        <th>Фактура №</th>
+                        <th>Джерело</th>
+                        <th>Покупець / Призначення</th>
+                        <th>Сума</th>
+                        <th>Дата</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -646,7 +646,7 @@ export default function DocumentsPage() {
                               </span>
                             </td>
                             <td>
-                              <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.buyer_name || 'â€”'}</div>
+                              <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.buyer_name || '—'}</div>
                               {(inv.custom_description || inv.unit_name) && (
                                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
                                   {inv.custom_description || inv.unit_name}
