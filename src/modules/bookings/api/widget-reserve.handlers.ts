@@ -141,7 +141,7 @@ export async function createWidgetReservation(request: NextRequest) {
     const bookingQuantity = Math.max(1, Math.min(Number(quantity) || 1, 20)); // cap at 20
 
     // Validate & sanitise UTM params — allowlist keys, cap value length
-    const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid'];
+    const ALLOWED_UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid','gclid','ttclid','ga_client_id'];
     const utmParams: Record<string, string> = {};
     if (rawUtmParams && typeof rawUtmParams === 'object') {
       for (const key of ALLOWED_UTM_KEYS) {
@@ -404,6 +404,7 @@ export async function createWidgetReservation(request: NextRequest) {
     const utmCampaign = utmParams['utm_campaign'] || null;
     const utmContent = utmParams['utm_content'] || null;
     const utmTerm = utmParams['utm_term'] || null;
+    const gaClientId = utmParams['ga_client_id'] || null;
     const session_id_to_store = body.widget_session_id || body.widgetSessionId || null;
     let countryCode = request.headers.get('cf-ipcountry') || request.headers.get('x-vercel-ip-country') || null;
     if (countryCode && typeof countryCode === 'string') {
@@ -464,17 +465,17 @@ export async function createWidgetReservation(request: NextRequest) {
           id, property_id, unit_id, guest_id, check_in, check_out,
           nights, adults, children, status, payment_status, source,
           total_price, currency, payment_id, promotions_applied, guest_page_token,
-          utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+          utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
           booking_lang, country_code, widget_session_id, group_id, notes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         resId, unit.property_id, unitId, guestId,
         checkIn, checkOut, nights, adults, children,
         resStatus, payStatus, siteName, finalPrice, resCurrency, null,
         JSON.stringify([couponCode, extraCouponCode].filter(Boolean)),
         guestPageToken,
-        utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
+        utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
         lang, countryCode, session_id_to_store, groupId,
         finalNotes
       );
