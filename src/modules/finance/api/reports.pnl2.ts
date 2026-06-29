@@ -14,15 +14,38 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
 
-    const bus = db.prepare(`
+    const originalBus = db.prepare(`
       SELECT id, name FROM business_units
       WHERE is_active = 1 AND is_shared = 0 AND name != 'На перегляд' AND organization_id = ?
       ORDER BY sort_order
     `).all(org) as any[];
 
+    const virtualBusMap: Record<string, string> = {};
+    const virtualBus: Record<string, any> = {};
+    
+    for (const bu of originalBus) {
+      let vName = bu.name;
+      let vId = bu.id;
+      
+      const lowerName = vName.toLowerCase();
+      if (lowerName.includes('будова') || lowerName.includes('f/d') || lowerName === 'resort f' || lowerName === 'rfesort b') {
+        vName = 'Будова F/D';
+        vId = 'v_budova';
+      } else if (lowerName.includes('сауна') || lowerName.includes('купель') || lowerName.includes('спа')) {
+        vName = 'СПА';
+        vId = 'v_spa';
+      }
+      
+      virtualBusMap[bu.id] = vId;
+      if (!virtualBus[vId]) {
+        virtualBus[vId] = { id: vId, name: vName };
+      }
+    }
+    const bus = Object.values(virtualBus);
+
     // Fetch operations
     const ops = db.prepare(`
-      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id,
+      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id, o.comment,
              ec.id as cat_id, ec.name as cat_name, COALESCE(ec.classifier, 'other') as classifier, ec.std_group
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON o.category_id = ec.id
@@ -58,19 +81,21 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
 
     // Add depreciation
     for (const d of depRows) {
-      if (r_amort.buValues[d.business_unit_id] !== undefined) {
-        r_amort.buValues[d.business_unit_id] += d.total;
+      const vId = virtualBusMap[d.business_unit_id];
+      if (vId && r_amort.buValues[vId] !== undefined) {
+        r_amort.buValues[vId] += d.total;
         r_amort.total += d.total;
       }
     }
 
     for (const op of ops) {
-      const buId = op.project_id;
+      const buId = virtualBusMap[op.project_id];
       if (!buId || r_rev.buValues[buId] === undefined) continue;
 
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
+      const commentLower = (op.comment || '').toLowerCase();
 
       // Income
       if (op.op_type === 'income') {
@@ -80,28 +105,40 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
         } else {
           r_rev.buValues[buId] += amt;
           r_rev.total += amt;
-          r_rev.details[cname] = r_rev.details[cname] || {};
-          r_rev.details[cname][buId] = (r_rev.details[cname][buId] || 0) + amt;
+          // Notice: We don't add to r_rev.details anymore to disable expandability
         }
       } 
       // Refunds
       else if (op.op_type === 'expense' && op.payment_subtype === 'refund') {
         r_rev.buValues[buId] -= amt;
         r_rev.total -= amt;
-        r_rev.details['Повернення'] = r_rev.details['Повернення'] || {};
-        r_rev.details['Повернення'][buId] = (r_rev.details['Повернення'][buId] || 0) - amt;
       }
       // Expenses
       else if (op.op_type === 'expense') {
         let targetRow = null;
         
-        if (cnameLower.includes('управл')) targetRow = r_mgmt;
-        else if (cnameLower.includes('professional') || cnameLower.includes('консалтинг') || cnameLower.includes('аудит') || cnameLower.includes('юрист')) targetRow = r_prof;
-        else if (op.classifier === 'tax' || op.std_group === 'Taxes') targetRow = r_taxes;
-        else if (op.classifier === 'financing' || cnameLower.includes('кредит')) targetRow = r_loans;
-        else if (op.classifier === 'capex') targetRow = r_capex;
-        else if (op.classifier === 'variable' || op.std_group === 'COGS') targetRow = r_var;
-        else targetRow = r_fixed;
+        // Зарплати check
+        if (cnameLower.includes('зарплат')) {
+           const isOpex = cnameLower.includes('адміністратор') || cnameLower.includes('прибиральниця') || cnameLower.includes('завхоз') || cnameLower.includes('ремонт') || cnameLower.includes('админ') ||
+                          commentLower.includes('адміністратор') || commentLower.includes('прибиральниця') || commentLower.includes('завхоз') || commentLower.includes('ремонт');
+           
+           const isCapex = cnameLower.includes('будівництво') || cnameLower.includes('покращення') || cnameLower.includes('стройка') ||
+                           commentLower.includes('будівництво') || commentLower.includes('покращення') || commentLower.includes('стройка');
+           
+           if (isCapex) targetRow = r_capex;
+           else if (isOpex) targetRow = r_var;
+           // If neither specific match, fallback to default logic below
+        }
+
+        if (!targetRow) {
+          if (cnameLower.includes('управл')) targetRow = r_mgmt;
+          else if (cnameLower.includes('professional') || cnameLower.includes('консалтинг') || cnameLower.includes('аудит') || cnameLower.includes('юрист')) targetRow = r_prof;
+          else if (op.classifier === 'tax' || op.std_group === 'Taxes') targetRow = r_taxes;
+          else if (op.classifier === 'financing' || cnameLower.includes('кредит')) targetRow = r_loans;
+          else if (op.classifier === 'capex') targetRow = r_capex;
+          else if (op.classifier === 'variable' || op.std_group === 'COGS') targetRow = r_var;
+          else targetRow = r_fixed;
+        }
 
         if (targetRow) {
           targetRow.buValues[buId] += amt;
@@ -124,7 +161,11 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
 
     const r_royalty = createRow('royalty', 'Роялти=30%', 'calc');
     for (const bu of bus) {
-      r_royalty.buValues[bu.id] = Math.round(r_rev.buValues[bu.id] * 0.3);
+      if (bu.name.toLowerCase().includes('glamping') || bu.name.toLowerCase().includes('глемпінг')) {
+        r_royalty.buValues[bu.id] = Math.round(r_rev.buValues[bu.id] * 0.3);
+      } else {
+        r_royalty.buValues[bu.id] = 0;
+      }
       r_royalty.total += r_royalty.buValues[bu.id];
     }
     rows.push(r_royalty);
