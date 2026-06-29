@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -190,6 +190,7 @@ export default function DocumentsPage() {
     'Dlouhodobý pronájem',
     'Ubytování skupiny',
     'Wellness & doplňkové služby',
+    'Místní poplatek z pobytu (20 Kč / osoba / noc)',
     'Jiné (zadat ručně)',
   ];
 
