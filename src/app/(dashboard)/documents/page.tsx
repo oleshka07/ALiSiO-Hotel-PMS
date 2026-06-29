@@ -9,7 +9,7 @@ import {
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
   XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
-  Sparkles, Send, Building2, FileDown, Loader2, Search,
+  Sparkles, Send, Building2, FileDown, Loader2, Search, Trash2, Trash2,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -162,7 +162,47 @@ export default function DocumentsPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailToast, setEmailToast]   = useState<string | null>(null);
 
-  // ── Custom Invoice Modal state ────────────────────────────────
+  // ── Delete confirmation state ──────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; number: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteInvoice = async (id: string) => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      setDeleteConfirm(null);
+      // Refresh both lists
+      fetchInvoices();
+      fetchAllInvoices(invSourceFilter, invSearch);
+    } catch (e: unknown) {
+      alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+    // ── Delete confirmation state ──────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; number: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteInvoice = async (id: string) => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      setDeleteConfirm(null);
+      // Refresh both lists
+      fetchInvoices();
+      fetchAllInvoices(invSourceFilter, invSearch);
+    } catch (e: unknown) {
+      alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+    // ── Custom Invoice Modal state ────────────────────────────────
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customForm, setCustomForm] = useState({
     currency:      'CZK',
@@ -583,6 +623,14 @@ export default function DocumentsPage() {
                     </button>
                   )}
                 </div>
+                {/* CSV Export button */}
+                <a
+                  href={`/api/invoices/export?source=${invSourceFilter}`}
+                  download
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--border-primary)', background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <Download size={13} /> Скачати CSV
+                </a>
               </div>
 
               {/* Source filter pills */}
@@ -1031,7 +1079,111 @@ export default function DocumentsPage() {
         </div>
       )}
 
-        {/* ════════════════ MODAL: ВІЛЬНА ФАКТУРА ════════════════ */}
+        {/* ════════════════════════════════════════════════
+            DELETE CONFIRMATION MODAL
+        ════════════════════════════════════════════════ */}
+        {deleteConfirm && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 4000,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => !deleteLoading && setDeleteConfirm(null)}>
+            <div
+              style={{ background: 'var(--surface-elevated, #1e1e2e)', borderRadius: 12, padding: '28px 32px', maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Trash2 size={20} style={{ color: '#ef4444' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Видалити фактуру?</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Цю дію неможливо скасувати.</div>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 14 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Фактура </span>
+                <strong style={{ color: '#ef4444' }}>{deleteConfirm.number}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}> буде назавжди видалена з бази даних.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-ghost"
+                  disabled={deleteLoading}
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ minWidth: 90 }}
+                >
+                  Скасувати
+                </button>
+                <button
+                  className="btn"
+                  disabled={deleteLoading}
+                  onClick={() => handleDeleteInvoice(deleteConfirm.id)}
+                  style={{ minWidth: 120, background: '#ef4444', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {deleteLoading
+                    ? <><RefreshCw size={14} className="spin" /> Видаляє...</>
+                    : <><Trash2 size={14} /> Видалити</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+                {/* ════════════════════════════════════════════════
+            DELETE CONFIRMATION MODAL
+        ════════════════════════════════════════════════ */}
+        {deleteConfirm && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 4000,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => !deleteLoading && setDeleteConfirm(null)}>
+            <div
+              style={{ background: 'var(--surface-elevated, #1e1e2e)', borderRadius: 12, padding: '28px 32px', maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Trash2 size={20} style={{ color: '#ef4444' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Видалити фактуру?</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Цю дію неможливо скасувати.</div>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 14 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Фактура </span>
+                <strong style={{ color: '#ef4444' }}>{deleteConfirm.number}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}> буде назавжди видалена з бази даних.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-ghost"
+                  disabled={deleteLoading}
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ minWidth: 90 }}
+                >
+                  Скасувати
+                </button>
+                <button
+                  className="btn"
+                  disabled={deleteLoading}
+                  onClick={() => handleDeleteInvoice(deleteConfirm.id)}
+                  style={{ minWidth: 120, background: '#ef4444', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {deleteLoading
+                    ? <><RefreshCw size={14} className="spin" /> Видаляє...</>
+                    : <><Trash2 size={14} /> Видалити</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+                {/* ════════════════ MODAL: ВІЛЬНА ФАКТУРА ════════════════ */}
         {showCustomModal && (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 3000,
