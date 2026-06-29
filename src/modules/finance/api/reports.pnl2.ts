@@ -190,6 +190,10 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim().toLowerCase();
+      
+      const isDividend = cname.includes('дивіденд') || cname.includes('дивиденд') || cname.includes('dividend');
+      if (isDividend) continue;
+      
       const isInvest = cname.includes('інвест') || cname.includes('invest') || cname.includes('дофінансування');
 
       if (op.op_type === 'income' && !isInvest) {
@@ -222,6 +226,10 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
+      
+      const isDividend = cnameLower.includes('дивіденд') || cnameLower.includes('дивиденд') || cnameLower.includes('dividend');
+      if (isDividend) continue;
+      
       const commentLower = (op.comment || '').toLowerCase();
       const isGeneral = vId === 'v_general';
 

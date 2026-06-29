@@ -74,6 +74,10 @@ export async function GET(request: NextRequest) {
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
+      
+      const isDividend = cnameLower.includes('дивіденд') || cnameLower.includes('дивиденд') || cnameLower.includes('dividend');
+      if (isDividend) continue;
+      
       const commentLower = (op.comment || '').toLowerCase();
       
       const mapped = mapExpense(cnameLower, commentLower, op.classifier, op.std_group);
