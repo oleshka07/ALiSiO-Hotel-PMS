@@ -21,6 +21,7 @@ export default function ReportsLandingPage() {
   const cards: ReportCard[] = [
     { id: 'cashflow', title: 'Гроші / Cash Flow', desc: 'Рух грошей по категоріях × місяцях', icon: <Wallet size={24} />, href: '/finance/reports/cashflow' },
     { id: 'pnl', title: 'P&L', desc: 'Прибутки та збитки з класифікатором', icon: <TrendingUp size={24} />, href: '/finance/reports/pnl' },
+    { id: 'pnl-2', title: 'PNL-2 (Фінмодель)', desc: 'Звіт за структурою фінмоделі (EBITDA, Margin)', icon: <TrendingUp size={24} />, href: '/finance/reports/pnl-2' },
     { id: 'indicators', title: 'Фінансові показники', desc: 'EBITDA, Gross Profit, Margin % за місяць', icon: <BarChart3 size={24} />, onClick: () => setShowIndicators(true) },
     { id: 'log', title: 'Історія дій', desc: 'Усі операції в хронологічному порядку', icon: <History size={24} />, href: '/finance/log' },
     { id: 'statement', title: 'Виписка за рахунком', desc: 'Звіт з банківських рахунків з running balance', icon: <FileText size={24} />, href: '/finance/reports/statement' },
