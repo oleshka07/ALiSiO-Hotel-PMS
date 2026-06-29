@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
           conversationId = conv.id;
         } else {
           // Create conversation if somehow missing
-          const convId = crypto.randomBytes(8).toString('hex');
+          const convId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
           const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
           db.prepare(`INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`)
             .run(convId, lead.id, `${lead.first_name} ${lead.last_name || ''} — повторна заявка`.trim(), now, now);

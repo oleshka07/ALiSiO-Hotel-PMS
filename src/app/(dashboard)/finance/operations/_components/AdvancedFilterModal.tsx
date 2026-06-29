@@ -192,8 +192,9 @@ function Dropdown({ title, placeholder, selectedCount, children }: { title: stri
     return React.Children.map(nodes, child => {
       if (!React.isValidElement(child)) return child;
       
-      if (child.props.searchVal) {
-        if (!child.props.searchVal.toLowerCase().includes(lowerSearch)) return null;
+      const props = child.props as any;
+      if (props.searchVal) {
+        if (!props.searchVal.toLowerCase().includes(lowerSearch)) return null;
       }
       return child;
     });
