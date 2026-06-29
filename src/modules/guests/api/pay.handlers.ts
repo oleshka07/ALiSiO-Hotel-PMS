@@ -79,14 +79,14 @@ async function handleSinglePay(
   const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const datesLabel = dates.length > 1 ? `\n📅 Дати: ${dates.join(', ')}` : `\n📅 Дата: ${dates[0]}`;
   sendTelegramMessage([
-    `📦 <b>Нове замовлення послуги</b>`, ``,
+    `🛒 <b>Замовлення · 📱 Гостьова</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
     `📅 ${reservation.check_in} — ${reservation.check_out}`,
     reservation.is_multi_room
       ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
       : '', ``,
     `✨ ${escHtml(serviceName)} × ${effectiveQty} — ${totalPrice} ${service.currency || 'CZK'}${datesLabel}`,
-    `💳 Статус: Очікує оплати`,
+    `💳 Створено замовлення · очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].filter(Boolean).join('\n')).catch((e) => console.error('[Guest Pay] TG error:', e.message));
 
@@ -250,14 +250,14 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
   });
 
   sendTelegramMessage([
-    `🛒 <b>Cart Checkout</b>`, ``,
+    `🛒 <b>Кошик · 📱 Гостьова</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
     `📅 ${reservation.check_in} — ${reservation.check_out}`,
     reservation.is_multi_room
       ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
       : '', ``,
     ...tgLines, ``,
-    `💰 Total: ${grandTotal} ${currency}`, `💳 Статус: Очікує оплати`,
+    `💰 Total: ${grandTotal} ${currency}`, `💳 Створено замовлення · очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].filter(Boolean).join('\n')).catch((e) => console.error('[Cart Pay] TG error:', e.message));
 

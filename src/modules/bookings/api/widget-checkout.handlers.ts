@@ -256,7 +256,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       }
 
       const lines = [
-        `📦 <b>Нове замовлення: ${esc(description)}</b>`,
+        `🛒 <b>Замовлення · 🌐 Віджет</b>: ${esc(description)}`,
         '',
       ];
       if (guestName) lines.push(`👤 ${esc(guestName)}`);
@@ -284,7 +284,7 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       lines.push(`💰 ${amount} ${currency}`);
       if (body.couponCode) lines.push(`🏷️ Промокод: ${esc(body.couponCode)}`);
-      lines.push(`💳 Очікує оплати`);
+      lines.push(`💳 Створено замовлення · очікує оплати`);
 
       sendTelegramMessage(lines.join('\n')).catch(() => { });
     } catch { /* */ }

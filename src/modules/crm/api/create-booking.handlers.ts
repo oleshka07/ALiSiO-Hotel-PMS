@@ -222,7 +222,7 @@ export async function convertLeadToBooking(
       const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       const lines = [
-        `✅ <b>Бронювання створено!</b>`,
+        `✅ <b>Бронювання створено · 🖥️ CRM</b>`,
         ``,
         `👤 ${esc(guestName)}`,
         `📍 ${esc(unitCodes)} · ${spots} місця`,
