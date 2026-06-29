@@ -16,28 +16,29 @@ function mapExpense(cnameLower: string, commentLower: string, classifier: string
     if (is('адміністратор')) return { rowId: 'variable', childName: 'ЗП Админ' };
     if (is('прибиральниця')) return { rowId: 'variable', childName: 'ЗП Уборка' };
     if (is('завхоз')) return { rowId: 'variable', childName: 'ЗП Завхоз' };
-    if (is('маркетинг трафік')) return { rowId: 'variable', childName: 'Трафик' };
-    if (is('маркетинг зарплата')) return { rowId: 'variable', childName: 'Маркетолог' };
-    if (is('комісія airbnb/booking')) return { rowId: 'variable', childName: 'Платформы бронирования' };
-    if (is('маркетинг послуги сторонні') || is('сервіси для просування')) return { rowId: 'variable', childName: 'Прочие расходы на рекламу/фото/бренд' };
+    if (is('трафік')) return { rowId: 'variable', childName: 'Трафик' };
+    if (is('маркетолог') || (is('маркетинг') && is('зарплата'))) return { rowId: 'variable', childName: 'Маркетолог' };
+    if (is('airbnb') || is('booking')) return { rowId: 'variable', childName: 'Платформы бронирования' };
+    if (is('реклам') || is('фото') || is('бренд') || is('просування') || is('послуги сторонні')) return { rowId: 'variable', childName: 'Прочие расходы на рекламу/фото/бренд' };
     
     // Постоянные
-    if (is('оренда')) return { rowId: 'fixed', childName: 'Аренда' };
-    if (is('комунальні → електрика')) return { rowId: 'fixed', childName: 'Электрика' };
-    if (is('водаква')) return { rowId: 'fixed', childName: 'Вода' };
-    if (is('сміття')) return { rowId: 'fixed', childName: 'Мусор' };
-    if (is('страхування')) return { rowId: 'fixed', childName: 'Страховка' };
-    if (is('банківські комісії kb')) return { rowId: 'fixed', childName: 'Банковские услуги' };
-    if (is('веб сервіси') || is('звязок') || is('застосунки')) return { rowId: 'fixed', childName: 'Приложения и сервисы' };
+    if (is('оренда') || is('аренда')) return { rowId: 'fixed', childName: 'Аренда' };
+    if (is('електрика') || is('світло') || is('свет')) return { rowId: 'fixed', childName: 'Электрика' };
+    if (is('вода') || is('аква')) return { rowId: 'fixed', childName: 'Вода' };
+    if (is('сміття') || is('мусор')) return { rowId: 'fixed', childName: 'Мусор' };
+    if (is('страхування') || is('страховка')) return { rowId: 'fixed', childName: 'Страховка' };
+    if (is('банк') || is('комісія kb') || is('комісії kb')) return { rowId: 'fixed', childName: 'Банковские услуги' };
+    if (is('веб') || is('звязок') || is('застосунки') || is('сервіс')) return { rowId: 'fixed', childName: 'Приложения и сервисы' };
+    if (is('інші витрати') || is('списання') || is('компенсація') || is('нерозподілено')) return { rowId: 'fixed', childName: 'Прочие' };
     
     // Management
-    if (is('фінансист наташа')) return { rowId: 'mgmt', childName: 'Управляющая компания(финансист и др)' };
+    if (is('фінансист') || is('наташа')) return { rowId: 'mgmt', childName: 'Управляющая компания(финансист и др)' };
     if (is('профпослуги')) return { rowId: 'prof', childName: 'Professional services (Consulting, audit, Lawyer, Photographer)' };
     
     // Capex
-    if (is('будівництво → матеріали')) return { rowId: 'capex', childName: 'Материалы на строительство и ремонты' };
-    if (is('будівництво → щось для території') || is('комплектація будинків')) return { rowId: 'capex', childName: 'Инфраструктура и покупки товаров' };
-    if (is('інструмент/техніка')) return { rowId: 'capex', childName: 'Инструмент' };
+    if (is('будівництво') && is('матеріал')) return { rowId: 'capex', childName: 'Материалы на строительство и ремонты' };
+    if ((is('будівництво') && (is('території') || is('ресторану'))) || is('комплектація')) return { rowId: 'capex', childName: 'Инфраструктура и покупки товаров' };
+    if (is('інструмент') || is('техніка')) return { rowId: 'capex', childName: 'Инструмент' };
     if (is('будівництво') && is('зарплат')) return { rowId: 'capex', childName: 'ЗП (капітальні зарплати)' };
     
     // Taxes
@@ -123,22 +124,52 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     `).all(org) as any[];
     
     // We'll return an array of rows
-    const createRow = (key: string, name: string, type: 'data' | 'calc' | 'calc_pct', isSubrow = false) => {
+    const createRow = (key: string, name: string, type: 'data' | 'calc' | 'calc_pct', childrenOrder: string[] = []) => {
       const buValues: Record<string, number> = {};
       bus.forEach(bu => buValues[bu.id] = 0);
-      return { key, name, type, buValues, total: 0, isSubrow, details: {} as Record<string, Record<string, number>> };
+      const details: Record<string, Record<string, number>> = {};
+      childrenOrder.forEach(c => {
+         details[c] = {};
+         bus.forEach(bu => details[c][bu.id] = 0);
+      });
+      return { key, name, type, buValues, total: 0, isSubrow: false, details, childrenOrder };
     };
 
     const r_rev = createRow('revenue', 'Общая выручка', 'data');
-    const r_var = createRow('variable', 'Переменные расходы', 'data');
-    const r_fixed = createRow('fixed', 'Постоянные расходы', 'data');
-    const r_mgmt = createRow('mgmt', 'Управляющая компания', 'data');
-    const r_prof = createRow('prof', 'Professional services', 'data');
+    const r_var = createRow('variable', 'Переменные расходы', 'data', [
+      'Алкоголь (Собівартість), Продукти (Собівартість)',
+      'Оплата прачки',
+      'ЗП Админ',
+      'ЗП Уборка',
+      'ЗП Завхоз',
+      'Трафик',
+      'Маркетолог',
+      'Платформы бронирования',
+      'Прочие расходы на рекламу/фото/бренд',
+      'ЗП (Інша)',
+      'Інші змінні'
+    ]);
+    const r_fixed = createRow('fixed', 'Постоянные расходы', 'data', [
+      'Аренда',
+      'Электрика',
+      'Вода',
+      'Мусор',
+      'Страховка',
+      'Банковские услуги',
+      'Приложения и сервисы',
+      'Прочие'
+    ]);
+    const r_mgmt = createRow('mgmt', 'Управляющая компания(финансист и др)', 'data');
+    const r_prof = createRow('prof', 'Professional services (Consulting, audit, Lawyer, Photographer)', 'data');
     const r_taxes = createRow('taxes', 'Налоги', 'data');
-    const r_loans = createRow('loans', 'Кредиты', 'data');
     const r_invest = createRow('invest', 'Инвест доход', 'data');
-    const r_capex = createRow('capex', 'Капитальные затраты', 'data');
-    const r_amort = createRow('amort', 'Амортизация', 'data');
+    const r_capex = createRow('capex', 'Капитальные затраты', 'data', [
+      'Материалы на строительство и ремонты',
+      'Инфраструктура и покупки товаров',
+      'Инструмент',
+      'ЗП (капітальні зарплати)',
+      'Інше капітальне'
+    ]);
 
     const rowMap: Record<string, any> = {
       'variable': r_var,
@@ -146,7 +177,6 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       'mgmt': r_mgmt,
       'prof': r_prof,
       'taxes': r_taxes,
-      'loans': r_loans,
       'capex': r_capex
     };
 
@@ -185,25 +215,6 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
         ratioPerBu[b.id] = 1 / bus.length; // distribute equally if no revenue
       }
     });
-
-    // Add depreciation
-    for (const d of depRows) {
-      const vId = virtualBusMap[d.business_unit_id];
-      if (!vId) continue;
-
-      if (vId === 'v_general') {
-         bus.forEach(b => {
-            const pAmt = d.total * ratioPerBu[b.id];
-            r_amort.buValues[b.id] += pAmt;
-            r_amort.total += pAmt;
-         });
-      } else {
-         if (r_amort.buValues[vId] !== undefined) {
-            r_amort.buValues[vId] += d.total;
-            r_amort.total += d.total;
-         }
-      }
-    }
 
     // Pass 2: Distribute operations
     for (const op of ops) {
@@ -253,6 +264,9 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       else if (op.op_type === 'expense') {
         const mapped = mapExpense(cnameLower, commentLower, op.classifier, op.std_group);
         const targetRow = rowMap[mapped.rowId];
+        
+        if (!targetRow) continue; // safety check
+        
         const childName = mapped.childName;
         
         if (isGeneral) {
@@ -282,6 +296,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     r_var_calc.buValues = r_var.buValues;
     r_var_calc.total = r_var.total;
     r_var_calc.details = r_var.details;
+    r_var_calc.childrenOrder = r_var.childrenOrder;
     rows.push(r_var_calc);
 
     const r_royalty = createRow('royalty', 'Роялти=30%', 'calc');
@@ -293,64 +308,32 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       }
       r_royalty.total += r_royalty.buValues[bu.id];
     }
-    rows.push(r_royalty);
-
-    const r_margin = createRow('margin', 'Маржинальная прибыль', 'calc');
-    for (const bu of bus) {
-      r_margin.buValues[bu.id] = r_rev.buValues[bu.id] - r_var.buValues[bu.id] - r_royalty.buValues[bu.id];
-      r_margin.total += r_margin.buValues[bu.id];
+    // Only push if there's actual royalty to show
+    if (r_royalty.total > 0) {
+        rows.push(r_royalty);
     }
-    rows.push(r_margin);
-
-    const r_margin_pct = createRow('margin_pct', 'Маржинальность, %', 'calc_pct');
-    for (const bu of bus) {
-      r_margin_pct.buValues[bu.id] = r_rev.buValues[bu.id] ? Math.round((r_margin.buValues[bu.id] / r_rev.buValues[bu.id]) * 100) : 0;
-    }
-    r_margin_pct.total = r_rev.total ? Math.round((r_margin.total / r_rev.total) * 100) : 0;
-    rows.push(r_margin_pct);
 
     rows.push(r_fixed);
 
     const r_store_ebitda = createRow('store_ebitda', 'Store-level EBITDA', 'calc');
     for (const bu of bus) {
-      r_store_ebitda.buValues[bu.id] = r_margin.buValues[bu.id] - r_fixed.buValues[bu.id];
+      r_store_ebitda.buValues[bu.id] = r_rev.buValues[bu.id] - r_var.buValues[bu.id] - r_royalty.buValues[bu.id] - r_fixed.buValues[bu.id];
       r_store_ebitda.total += r_store_ebitda.buValues[bu.id];
     }
     rows.push(r_store_ebitda);
 
     rows.push(r_mgmt);
     rows.push(r_prof);
-
-    const r_ebitda = createRow('ebitda', 'Операционная прибыль (EBITDA)', 'calc');
-    for (const bu of bus) {
-      r_ebitda.buValues[bu.id] = r_store_ebitda.buValues[bu.id] - r_mgmt.buValues[bu.id] - r_prof.buValues[bu.id];
-      r_ebitda.total += r_ebitda.buValues[bu.id];
-    }
-    rows.push(r_ebitda);
-
     rows.push(r_taxes);
-    rows.push(r_loans);
-    rows.push(r_amort);
-
-    const r_net = createRow('net', 'Чистая прибыль за период', 'calc');
-    for (const bu of bus) {
-      r_net.buValues[bu.id] = r_ebitda.buValues[bu.id] - r_taxes.buValues[bu.id] - r_loans.buValues[bu.id] - r_amort.buValues[bu.id];
-      r_net.total += r_net.buValues[bu.id];
-    }
-    rows.push(r_net);
-
-    const r_net_pct = createRow('net_pct', 'Рентабельность по операционной прибыли, %', 'calc_pct');
-    for (const bu of bus) {
-      r_net_pct.buValues[bu.id] = r_rev.buValues[bu.id] ? Math.round((r_ebitda.buValues[bu.id] / r_rev.buValues[bu.id]) * 100) : 0;
-    }
-    r_net_pct.total = r_rev.total ? Math.round((r_ebitda.total / r_rev.total) * 100) : 0;
-    rows.push(r_net_pct);
-
     rows.push(r_invest);
     rows.push(r_capex);
 
     const finalRows = rows.map(r => {
-      const children = Object.entries(r.details || {}).map(([catName, buMap]) => {
+      const childrenArr: any[] = [];
+      const usedKeys = new Set<string>();
+      
+      for (const catName of r.childrenOrder || []) {
+        const buMap = r.details[catName] || {};
         let childTotal = 0;
         const cBuValues: Record<string, number> = {};
         bus.forEach(bu => {
@@ -358,8 +341,24 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
           cBuValues[bu.id] = v;
           childTotal += v;
         });
-        return { key: r.key + '_' + catName, name: catName, type: 'data', buValues: cBuValues, total: childTotal, isSubrow: true };
-      }).sort((a, b) => b.total - a.total);
+        childrenArr.push({ key: r.key + '_' + catName, name: catName, type: 'data', buValues: cBuValues, total: childTotal, isSubrow: true });
+        usedKeys.add(catName);
+      }
+
+      const extraItems = Object.entries(r.details || {})
+        .filter(([catName]) => !usedKeys.has(catName))
+        .map(([catName, buMap]) => {
+          let childTotal = 0;
+          const cBuValues: Record<string, number> = {};
+          bus.forEach(bu => {
+            const v = (buMap as any)[bu.id] || 0;
+            cBuValues[bu.id] = v;
+            childTotal += v;
+          });
+          return { key: r.key + '_' + catName, name: catName, type: 'data', buValues: cBuValues, total: childTotal, isSubrow: true };
+        }).sort((a, b) => b.total - a.total);
+        
+      const children = [...childrenArr, ...extraItems];
 
       return {
         key: r.key,
@@ -377,3 +376,4 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
