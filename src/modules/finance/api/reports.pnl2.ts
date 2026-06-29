@@ -112,7 +112,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.status = 'completed' AND o.organization_id = ?
-        AND strftime('%Y-%m', o.accrued_at) = ?
+        AND strftime('%Y-%m', o.paid_at) = ?
     `).all(org, month) as any[];
 
     // Fetch capex depreciation
@@ -186,8 +186,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     bus.forEach(b => revenuePerBu[b.id] = 0);
 
     for (const op of ops) {
-      const vId = virtualBusMap[op.project_id];
-      if (!vId) continue;
+      const vId = (op.project_id && virtualBusMap[op.project_id]) ? virtualBusMap[op.project_id] : 'v_general';
       
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim().toLowerCase();
@@ -218,9 +217,8 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
 
     // Pass 2: Distribute operations
     for (const op of ops) {
-      const vId = virtualBusMap[op.project_id];
-      if (!vId) continue;
-
+      const vId = (op.project_id && virtualBusMap[op.project_id]) ? virtualBusMap[op.project_id] : 'v_general';
+      
       const amt = op.amount_company;
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
