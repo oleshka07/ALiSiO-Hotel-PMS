@@ -540,7 +540,7 @@ function formatDailyDigest(
   if (crm.pendingDrafts > 0) {
     lines.push(`📝 AI-чернетки на підтвердження: <b>${crm.pendingDrafts}</b>`);
   }
-  lines.push(`🔗 <a href="${BASE_URL}/crm">Відкрити CRM →</a>`);
+  lines.push(`🔗 <a href="${BASE_URL}/crm/inbox">Відкрити CRM →</a>`);
   lines.push(``);
 
   // ── Finance Block ──
@@ -610,7 +610,7 @@ function formatDailyDigest(
     const srcParts = bookings.sourceBreakdown.map(s => `${s.source}: ${s.count}`).join(', ');
     lines.push(`  📋 Джерела: ${srcParts}`);
   }
-  lines.push(`🔗 <a href="${BASE_URL}/bookings">Відкрити Бронювання →</a>`);
+  lines.push(`🔗 <a href="${BASE_URL}/calendar">Відкрити Календар →</a>`);
   lines.push(``);
 
   // ── Tasks Block ──
