@@ -734,7 +734,23 @@ export async function createWidgetReservation(request: NextRequest) {
       }
     }
 
-    notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
+    // Smart source label for Telegram notification
+    const isAdminLikely = !utmParams['utm_source'] && (paymentMethod === 'cash' || paymentMethod === 'terminal');
+    const payMethodLabel = paymentMethod === 'cash' ? '💵 готівка'
+      : paymentMethod === 'terminal' ? '💳 термінал'
+      : paymentMethod === 'reception' ? '🏨 на рецепції'
+      : '';
+    let widgetSourceLabel = '';
+    let widgetEmoji = '🌐';
+    if (isAdminLikely) {
+      widgetSourceLabel = `📋 Адмін через віджет${payMethodLabel ? ` · ${payMethodLabel}` : ''}`;
+      widgetEmoji = '📋';
+    } else if (utmParams['utm_source']) {
+      widgetSourceLabel = `🌐 Віджет · ${utmParams['utm_source']}${utmParams['utm_medium'] ? `/${utmParams['utm_medium']}` : ''}${payMethodLabel ? ` · ${payMethodLabel}` : ''}`;
+    } else {
+      widgetSourceLabel = `🌐 Віджет · прямий перехід${payMethodLabel ? ` · ${payMethodLabel}` : ''}`;
+    }
+    notifyReservationCreated(resId, { sourceLabel: widgetSourceLabel, emoji: widgetEmoji });
 
     if (conversationId) {
       try {
