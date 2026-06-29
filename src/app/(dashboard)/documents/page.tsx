@@ -1075,36 +1075,66 @@ export default function DocumentsPage() {
                   </div>
                   {/* Right — Variabilní + Odběratel box */}
                   <div style={{ padding: '8px 10px', fontSize: 11 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#555' }}>Variabilní symbol:</span>
-                      <span style={{ color: '#999', fontStyle: 'italic', fontSize: 10 }}>автоматично</span>
+                    {/* Variabilní / Konstantní / Objednávka — same label:value pattern as left */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 3, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Variabilní symbol:</span>
+                      <span style={{ color: '#999', fontStyle: 'italic', fontSize: 10 }}>automaticky</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#555' }}>Konstantní symbol:</span>
-                      <span>0308</span>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 3, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Konstantní symbol:</span>
+                      <span style={{ fontSize: 11 }}>0308</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span style={{ color: '#555' }}>Objednávka č.:</span>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Objednávka č.:</span>
                       <span style={{ color: '#888', fontSize: 10 }}>ze dne:</span>
                     </div>
-                    {/* Odběratel sub-box with editable fields */}
+
+                    {/* Odběratel sub-box — mirrors Dodavatel structure */}
                     <div style={{ border: '0.5px solid #aaa', padding: '6px 8px' }}>
-                      <div style={{ fontSize: 9, color: '#888', marginBottom: 5 }}>Odběratel: <span style={{ color: '#4f6ef7' }}>(необов'язково)</span></div>
+                      <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
+                        Odběratel: <span style={{ color: '#4f6ef7' }}>(необов&apos;язково)</span>
+                      </div>
+
+                      {/* Company name — bold 12pt like "Kemp Carlsbad s.r.o." on the left */}
                       <input type="text" value={customForm.buyerName}
                         onChange={e => setCustomForm(f => ({ ...f, buyerName: e.target.value, showBuyer: !!e.target.value }))}
                         placeholder="Назва компанії або ПІБ..."
-                        style={{ width: '100%', border: 'none', borderBottom: '1px dashed #4f6ef7', background: 'transparent', fontSize: 12, fontWeight: 700, padding: '2px 0', marginBottom: 5, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit' }}
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #4f6ef7', background: 'transparent', fontSize: 12, fontWeight: 700, padding: '1px 0', marginBottom: 5, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit' }}
                       />
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
-                        <input type="text" value={customForm.buyerIco} onChange={e => setCustomForm(f => ({ ...f, buyerIco: e.target.value }))}
-                          placeholder="IČO" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%' }} />
-                        <input type="text" value={customForm.buyerDic} onChange={e => setCustomForm(f => ({ ...f, buyerDic: e.target.value }))}
-                          placeholder="DIČ" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%' }} />
+
+                      {/* Address */}
+                      <input type="text" value={customForm.buyerAddress}
+                        onChange={e => setCustomForm(f => ({ ...f, buyerAddress: e.target.value }))}
+                        placeholder="Вулиця, будинок"
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 4, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', display: 'block' }}
+                      />
+
+                      {/* PSČ / City */}
+                      <input type="text" value={customForm.buyerCity}
+                        onChange={e => setCustomForm(f => ({ ...f, buyerCity: e.target.value }))}
+                        placeholder="PSČ Місто"
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 6, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', display: 'block' }}
+                      />
+
+                      {/* IČO — inline label:input like left side */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 3 }}>
+                        <span style={{ color: '#1565c0', fontSize: 9, minWidth: 24, flexShrink: 0 }}>IČO:</span>
+                        <input type="text" value={customForm.buyerIco}
+                          onChange={e => setCustomForm(f => ({ ...f, buyerIco: e.target.value }))}
+                          placeholder="12345678"
+                          style={{ flex: 1, border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: 0, outline: 'none', color: '#1565c0', fontFamily: 'inherit' }}
+                        />
                       </div>
-                      <input type="text" value={customForm.buyerAddress} onChange={e => setCustomForm(f => ({ ...f, buyerAddress: e.target.value }))}
-                        placeholder="Адреса" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 4, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%', display: 'block' }} />
-                      <input type="text" value={customForm.buyerCity} onChange={e => setCustomForm(f => ({ ...f, buyerCity: e.target.value }))}
-                        placeholder="Місто, PSČ" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%', display: 'block' }} />
+
+                      {/* DIČ — inline label:input */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                        <span style={{ color: '#1565c0', fontSize: 9, minWidth: 24, flexShrink: 0 }}>DIČ:</span>
+                        <input type="text" value={customForm.buyerDic}
+                          onChange={e => setCustomForm(f => ({ ...f, buyerDic: e.target.value }))}
+                          placeholder="CZ12345678"
+                          style={{ flex: 1, border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: 0, outline: 'none', color: '#1565c0', fontFamily: 'inherit' }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
