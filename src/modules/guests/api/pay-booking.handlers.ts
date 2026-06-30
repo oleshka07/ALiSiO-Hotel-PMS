@@ -94,13 +94,13 @@ export async function payForBooking(
     // ── Telegram notification ──────────────────────────────────
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
     sendTelegramMessage([
-      `💳 <b>Запит на оплату бронювання</b>`,
+      `💳 <b>Оплата бронювання · 📱 Гостьова</b>`,
       ``,
       `👤 ${esc(guestName)}`,
       `🏠 ${esc(reservation.unit_name || '')}`,
       `📅 ${reservation.check_in} — ${reservation.check_out}`,
       `💰 ${remaining} ${reservation.currency || 'CZK'} (залишок)`,
-      `💳 Очікує оплати через Teya`,
+      `💳 Створено платіж · очікує оплати через Teya`,
     ].join('\n')).catch(() => {});
 
     return NextResponse.json({

@@ -16,7 +16,7 @@ import { getDb } from '@core/db';
 // figures stay stable even if FX moves.
 
 function monthRevenueSql(month: string, db: any): number {
-  // Net revenue from reservation-linked operations (income minus refunds) for a given month
+  // Net revenue from all operations (income minus refunds) for a given month
   const row = db.prepare(`
     SELECT COALESCE(SUM(
       CASE WHEN op_type = 'income' THEN amount_company
@@ -24,21 +24,21 @@ function monthRevenueSql(month: string, db: any): number {
            ELSE 0 END
     ), 0) AS total
     FROM fin_operations
-    WHERE reservation_id IS NOT NULL AND status = 'completed'
+    WHERE status = 'completed'
       AND strftime('%Y-%m', paid_at) = ?
   `).get(month) as { total: number };
   return row.total;
 }
 
 function monthExpensesSql(month: string, db: any, includeRefunds = false): number {
-  // P&L expenses (COGS+OPEX+Taxes) — excluding reservation-linked refund ops and CAPEX
+  // P&L expenses (COGS+OPEX+Taxes) — excluding refund ops and CAPEX
   const row = db.prepare(`
     SELECT COALESCE(SUM(o.amount_company), 0) AS total
     FROM fin_operations o
     LEFT JOIN expense_categories ec ON ec.id = o.category_id
     WHERE o.op_type = 'expense'
       AND strftime('%Y-%m', o.paid_at) = ?
-      AND (o.reservation_id IS NULL ${includeRefunds ? 'OR o.payment_subtype = \'refund\'' : ''})
+      AND (${includeRefunds ? '1=1' : "COALESCE(o.payment_subtype,'') != 'refund'"})
       AND (ec.std_group IN ('COGS', 'OPEX', 'Taxes') AND ec.include_in_pnl = 1)
   `).get(month) as { total: number };
   return row.total;
@@ -103,10 +103,10 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
 
     const noProjectRows = db.prepare(`
       SELECT COUNT(*) as cnt FROM fin_operations
-      WHERE op_type = 'expense' AND project_id IS NULL AND reservation_id IS NULL
+      WHERE op_type = 'expense' AND project_id IS NULL
     `).get() as any;
     const totalExpRows = db.prepare(`
-      SELECT COUNT(*) as cnt FROM fin_operations WHERE op_type = 'expense' AND reservation_id IS NULL
+      SELECT COUNT(*) as cnt FROM fin_operations WHERE op_type = 'expense'
     `).get() as any;
 
     // Expected payments (unpaid confirmed reservations)
@@ -142,7 +142,7 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON o.category_id = ec.id
       LEFT JOIN business_units bu ON o.project_id = bu.id
-      WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+      WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
       ORDER BY o.paid_at DESC, o.created_at DESC LIMIT 10
     `).all();
 
@@ -204,52 +204,13 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
       ORDER BY sort_order
     `).all() as any[];
 
-    // Revenue by BU via reservation → unit → category mapping
-    const revByBUunit = db.prepare(`
-      SELECT c.type as category_type,
-             COALESCE(SUM(
-               CASE WHEN o.op_type = 'income' THEN o.amount_company
-                    WHEN o.op_type = 'expense' AND o.payment_subtype = 'refund' THEN -o.amount_company
-                    ELSE 0 END
-             ), 0) as total
-      FROM fin_operations o
-      JOIN reservations r ON o.reservation_id = r.id
-      JOIN units u ON r.unit_id = u.id
-      JOIN categories c ON u.category_id = c.id
-      WHERE o.status = 'completed' AND strftime('%Y-%m', o.paid_at) = ? AND COALESCE(o.payment_subtype,'') != 'service'
-      GROUP BY c.type
-    `).all(month) as any[];
-
-    const revByBU: Record<string, number> = {};
-    for (const row of revByBUunit) {
-      if (row.category_type === 'glamping') revByBU['bu_glamping'] = row.total;
-      else if (row.category_type === 'resort') revByBU['bu_budova_fd'] = row.total;
-      else if (row.category_type === 'camping') revByBU['bu_camping'] = row.total;
-    }
-
-    // Service revenue (payment_subtype = 'service')
-    const servicePayments = db.prepare(`
-      SELECT o.amount, o.amount_company, o.comment FROM fin_operations o
-      WHERE o.status = 'completed' AND o.payment_subtype = 'service' AND strftime('%Y-%m', o.paid_at) = ?
-    `).all(month) as any[];
-
-    const serviceRevenue: Record<string, number> = {};
-    for (const sp of servicePayments) {
-      const notes = (sp.comment || '').toLowerCase();
-      let pnlLine = 'Інші доходи';
-      if (notes.includes('sauna') || notes.includes('svc_sauna') || notes.includes('сауна')) pnlLine = 'Сауна';
-      else if (notes.includes('breakfast') || notes.includes('svc_breakfast') || notes.includes('сніданок')) pnlLine = 'Сніданки';
-      else if (notes.includes('restaurant') || notes.includes('ресторан') || notes.includes('menu')) pnlLine = 'Ресторан';
-      serviceRevenue[pnlLine] = (serviceRevenue[pnlLine] || 0) + sp.amount_company;
-    }
-
-    // Expenses grouped by pnl_line × project_id (using fin_operations)
-    const expByLineAndBU = db.prepare(`
-      SELECT ec.pnl_line, o.project_id AS business_unit_id, SUM(o.amount_company) as total
-      FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
-      WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+    // All operations grouped by pnl_line × project_id (using fin_operations)
+    const opsByLineAndBU = db.prepare(`
+      SELECT ec.pnl_line, o.project_id AS business_unit_id, o.op_type, COALESCE(o.payment_subtype, '') as payment_subtype, SUM(o.amount_company) as total
+      FROM fin_operations o LEFT JOIN expense_categories ec ON o.category_id = ec.id
+      WHERE o.status = 'completed'
         AND strftime('%Y-%m', o.paid_at) = ?
-      GROUP BY ec.pnl_line, o.project_id
+      GROUP BY ec.pnl_line, o.project_id, o.op_type, COALESCE(o.payment_subtype, '')
     `).all(month) as any[];
 
     const accrualsByLineAndBU = db.prepare(`
@@ -259,15 +220,15 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
     `).all(month) as any[];
 
     for (const acc of accrualsByLineAndBU) {
-      const existing = expByLineAndBU.find((e: any) => e.pnl_line === acc.pnl_line && e.business_unit_id === acc.business_unit_id);
+      const existing = opsByLineAndBU.find((e: any) => e.pnl_line === acc.pnl_line && e.business_unit_id === acc.business_unit_id && e.op_type === 'expense' && e.payment_subtype === '');
       if (existing) existing.total += acc.total;
-      else expByLineAndBU.push(acc);
+      else opsByLineAndBU.push({ pnl_line: acc.pnl_line, business_unit_id: acc.business_unit_id, op_type: 'expense', payment_subtype: '', total: acc.total });
     }
 
     const sharedByAllocMethod = db.prepare(`
       SELECT ec.alloc_method, SUM(o.amount_company) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
-      WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+      WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype, '') != 'refund'
         AND strftime('%Y-%m', o.paid_at) = ? AND o.project_id = 'bu_shared'
         AND ec.alloc_method NOT IN ('DIRECT', 'NONE')
       GROUP BY ec.alloc_method
@@ -304,17 +265,26 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
 
       if (line.type === 'direct' && line.section === 'Revenue') {
         for (const bu of bus) {
-          let val = line.key === 'Проживання' ? (revByBU[bu.id] || 0) : 0;
-          if (serviceRevenue[line.key] && bu === bus[0]) val += serviceRevenue[line.key];
-          const expMatch = expByLineAndBU.find((e: any) => e.pnl_line === line.key && e.business_unit_id === bu.id);
-          if (expMatch) val += expMatch.total;
+          let val = 0;
+          for (const op of opsByLineAndBU) {
+            const mappedLine = op.pnl_line || 'Інші доходи';
+            if (mappedLine === line.key && op.business_unit_id === bu.id) {
+              if (op.op_type === 'income') val += op.total;
+              else if (op.op_type === 'expense' && op.payment_subtype === 'refund') val -= op.total;
+            }
+          }
           buValues[bu.id] = val;
           total += val;
         }
       } else if (line.type === 'direct' && (line.section === 'Variable' || line.section === 'OPEX direct' || line.section === 'Taxes')) {
         for (const bu of bus) {
-          const expMatch = expByLineAndBU.find((e: any) => e.pnl_line === line.key && e.business_unit_id === bu.id);
-          buValues[bu.id] = expMatch ? -expMatch.total : 0;
+          let val = 0;
+          for (const op of opsByLineAndBU) {
+            if (op.pnl_line === line.key && op.business_unit_id === bu.id) {
+              if (op.op_type === 'expense' && op.payment_subtype !== 'refund') val += op.total;
+            }
+          }
+          buValues[bu.id] = -val;
           total += buValues[bu.id];
         }
       } else if (line.type === 'alloc') {
@@ -416,7 +386,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
                ELSE 0 END
         ), 0) as total
         FROM fin_operations
-        WHERE reservation_id IS NOT NULL AND status = 'completed'
+        WHERE status = 'completed'
           AND strftime('%Y-%m', paid_at) = ?
       `).get(m) as any;
       return { month: m, amount: row.total };
@@ -426,7 +396,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
       const row = db.prepare(`
         SELECT COALESCE(SUM(o.amount_company), 0) as total
         FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
-        WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+        WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
           AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
       `).get(m) as any;
       return { month: m, amount: row.total };
@@ -438,7 +408,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
                       WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
                       ELSE 0 END) as total
       FROM fin_operations o
-      WHERE o.reservation_id IS NOT NULL AND o.status = 'completed'
+      WHERE o.status = 'completed' AND (o.op_type = 'income' OR (o.op_type = 'expense' AND o.payment_subtype = 'refund'))
         AND strftime('%Y-%m', o.paid_at) = ?
       GROUP BY o.method
     `).all(month) as any[];
@@ -446,7 +416,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     const outflowsByCategory = db.prepare(`
       SELECT ec.name, ec.icon, ec.color, COALESCE(SUM(o.amount_company), 0) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
-      WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+      WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
         AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
       GROUP BY ec.id ORDER BY total DESC
     `).all(month) as any[];
@@ -455,7 +425,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
       SELECT bu.name, COALESCE(SUM(o.amount_company), 0) as total
       FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
       LEFT JOIN business_units bu ON o.project_id = bu.id
-      WHERE o.op_type = 'expense' AND o.reservation_id IS NULL
+      WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
         AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
       GROUP BY o.project_id ORDER BY total DESC
     `).all(month) as any[];

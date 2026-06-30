@@ -211,7 +211,6 @@ export default function AutoRuleModal({ initial, onClose, onSave }: Props) {
             value={actions.set_category_id || ''}
             onChange={(e) => setActions((a) => ({ ...a, set_category_id: e.target.value || undefined }))}
             style={input}
-            disabled={!actions.set_category_id && actions.set_category_id !== ''}
           >
             <option value="">— не робити —</option>
             {categories.map((c: any) => <option key={c.id} value={c.id}>{c.icon || ''} {c.name}</option>)}

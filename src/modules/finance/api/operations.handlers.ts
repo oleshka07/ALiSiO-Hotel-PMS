@@ -131,7 +131,8 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const db = getDb();
     const orgId = getOrgId(db);
     const sp = request.nextUrl.searchParams;
-    const opType = sp.get('op_type');
+    const opTypeRaw = sp.get('op_type');
+    const opTypes = opTypeRaw ? opTypeRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const from = sp.get('from');
     const to = sp.get('to');
     // account_id supports both single value and comma-separated list of
@@ -140,10 +141,14 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const accountIds = accountIdRaw
       ? accountIdRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-    const categoryId = sp.get('category_id');
-    const projectId = sp.get('project_id');
-    const counterpartyId = sp.get('counterparty_id');
-    const tagId = sp.get('tag_id');
+    const categoryIdRaw = sp.get('category_id');
+    const categoryIds = categoryIdRaw ? categoryIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const projectIdRaw = sp.get('project_id');
+    const projectIds = projectIdRaw ? projectIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const counterpartyIdRaw = sp.get('counterparty_id');
+    const counterpartyIds = counterpartyIdRaw ? counterpartyIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const tagIdRaw = sp.get('tag_id');
+    const tagIds = tagIdRaw ? tagIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const status = sp.get('status');
     const search = sp.get('search');
     const reservationId = sp.get('reservation_id');
@@ -159,7 +164,14 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const params: any[] = [orgId, orgId, orgId];
 
     if (needsReviewOnly) where.push('o.needs_review = 1');
-    if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
+    if (opTypes.length > 0) {
+      const validOps = opTypes.filter(o => (OP_TYPES as readonly string[]).includes(o));
+      if (validOps.length > 0) {
+        const ph = validOps.map(() => '?').join(',');
+        where.push(`o.op_type IN (${ph})`);
+        params.push(...validOps);
+      }
+    }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
     if (to) { where.push('o.paid_at <= ?'); params.push(to); }
     if (accountIds.length > 0) {
@@ -167,19 +179,57 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       where.push(`(o.account_from_id IN (${ph}) OR o.account_to_id IN (${ph}))`);
       params.push(...accountIds, ...accountIds);
     }
-    if (categoryId) { where.push('o.category_id = ?'); params.push(categoryId); }
-    if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
-    if (counterpartyId) { where.push('o.counterparty_id = ?'); params.push(counterpartyId); }
+    if (categoryIds.length > 0) {
+      const ph = categoryIds.map(() => '?').join(',');
+      where.push(`o.category_id IN (${ph})`);
+      params.push(...categoryIds);
+    }
+    if (projectIds.length > 0) {
+      const ph = projectIds.map(() => '?').join(',');
+      where.push(`o.project_id IN (${ph})`);
+      params.push(...projectIds);
+    }
+    if (counterpartyIds.length > 0) {
+      const ph = counterpartyIds.map(() => '?').join(',');
+      where.push(`o.counterparty_id IN (${ph})`);
+      params.push(...counterpartyIds);
+    }
     if (status && (STATUSES as readonly string[]).includes(status)) { where.push('o.status = ?'); params.push(status); }
     if (reservationId) { where.push('o.reservation_id = ?'); params.push(reservationId); }
     if (source) { where.push('o.source = ?'); params.push(source); }
-    if (tagId) {
-      where.push('o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id = ?)');
-      params.push(tagId);
+    if (tagIds.length > 0) {
+      const ph = tagIds.map(() => '?').join(',');
+      where.push(`o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id IN (${ph}))`);
+      params.push(...tagIds);
     }
     if (search) {
-      where.push('(o.comment LIKE ? OR o.source_ref LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const searchNum = parseFloat(search.replace(/\s/g, '').replace(',', '.'));
+      const isNum = !isNaN(searchNum) && searchNum > 0;
+      
+      const parts = [
+        'o.comment LIKE ?',
+        'o.source_ref LIKE ?'
+      ];
+      const p: any[] = [`%${search}%`, `%${search}%`];
+      
+      if (isNum) {
+        parts.push('ABS(o.amount) = ?');
+        p.push(searchNum);
+      } else {
+        parts.push(`EXISTS (SELECT 1 FROM expense_categories WHERE id = o.category_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM business_units WHERE id = o.project_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_counterparties WHERE id = o.counterparty_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_accounts WHERE id = o.account_from_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_accounts WHERE id = o.account_to_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+      }
+      
+      where.push(`(${parts.join(' OR ')})`);
+      params.push(...p);
     }
 
     const whereSql = where.join(' AND ');

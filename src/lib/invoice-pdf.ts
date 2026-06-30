@@ -244,7 +244,11 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
     const rOdbH = (() => {
       let h = 12; // "Odběratel:" row
       if (data.buyer?.dic)     h += 11;
-      if (data.buyer?.name)    h += 13;
+      if (data.buyer?.name) {
+        // Dynamic: allow name to wrap within the right-column width
+        const nameW = COL_RW - 14;
+        h += Math.max(13, textHeight(doc, data.buyer.name, nameW, 10) + 4);
+      }
       if (data.buyer?.address) h += 11;
       if (data.buyer?.city)    h += 11;
       if (!data.buyer?.name)   h += 11; // placeholder "—"
@@ -327,9 +331,12 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
       }
 
       if (data.buyer?.name) {
-        B(10).fillColor(BLACK).text(data.buyer.name, COL_RX + 10, y, { lineBreak: false }); y += 13;
-        if (data.buyer.address) { R(9.5).fillColor(BLACK).text(data.buyer.address, COL_RX + 10, y, { lineBreak: false }); y += 11; }
-        if (data.buyer.city)    { R(9.5).fillColor(BLACK).text(data.buyer.city,    COL_RX + 10, y, { lineBreak: false }); y += 11; }
+        const nameW = COL_RW - 14;
+        const nameH = Math.max(13, textHeight(doc, data.buyer.name, nameW, 10) + 4);
+        B(10).fillColor(BLACK).text(data.buyer.name, COL_RX + 10, y, { width: nameW, lineBreak: true });
+        y += nameH;
+        if (data.buyer.address) { R(9.5).fillColor(BLACK).text(data.buyer.address, COL_RX + 10, y, { width: nameW, lineBreak: false }); y += 11; }
+        if (data.buyer.city)    { R(9.5).fillColor(BLACK).text(data.buyer.city,    COL_RX + 10, y, { width: nameW, lineBreak: false }); y += 11; }
       } else {
         R(9).fillColor(LGRAY).text('—', COL_RX, y, { lineBreak: false }); y += 11;
       }

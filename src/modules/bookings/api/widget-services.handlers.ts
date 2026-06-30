@@ -312,9 +312,9 @@ export async function bookWidgetService(request: NextRequest) {
           if (guest) guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
         }
         const svcName = service.name_en || service.name;
-        const payStatus = paymentId ? '💳 Очікує оплати' : '✅ Без оплати';
+        const payStatus = paymentId ? '💳 Створено замовлення · очікує оплати' : '✅ Без оплати';
         const text = [
-          `📦 <b>Нове замовлення: ${esc(svcName)}</b>`,
+          `🛒 <b>Замовлення · 🌐 Віджет</b>: ${esc(svcName)}`,
           ``,
           `👤 ${guestInfo}`,
           `📅 ${date}, ${startHour}:00–${startHour + hours}:00`,

@@ -99,6 +99,8 @@ interface FinanceDigest {
   bookingPlatform: number;
   totalIncome: number;
   totalExpenses: number;
+  yesterdayIncome: number;
+  topExpenses: { comment: string; amount: number }[];
   currency: string;
 }
 
@@ -128,7 +130,25 @@ function getFinanceDigest(): FinanceDigest {
       AND date(paid_at) = ?
   `).get(today) as any;
 
+  const topExp = db.prepare(`
+    SELECT comment, amount FROM fin_operations
+    WHERE op_type = 'expense' AND status = 'completed'
+      AND date(paid_at) = ?
+    ORDER BY amount DESC LIMIT 3
+  `).all(today) as any[];
+
   const totalIncome = Object.values(methods).reduce((s, v) => s + v, 0);
+
+  // Yesterday's income for comparison
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayRow = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM fin_operations
+    WHERE op_type = 'income' AND status = 'completed'
+      AND date(paid_at) = ?
+  `).get(yesterdayStr) as any;
 
   return {
     cash: methods['cash'] || 0,
@@ -138,6 +158,8 @@ function getFinanceDigest(): FinanceDigest {
     bookingPlatform: methods['booking_platform'] || 0,
     totalIncome,
     totalExpenses: expenseRow?.total || 0,
+    yesterdayIncome: yesterdayRow?.total || 0,
+    topExpenses: topExp.map((r: any) => ({ comment: r.comment || '', amount: r.amount })),
     currency: 'CZK',
   };
 }
@@ -146,8 +168,13 @@ function getFinanceDigest(): FinanceDigest {
 
 interface BookingsDigest {
   newBookingsToday: number;
-  checkInsToday: { guestName: string; unitName: string; nights: number }[];
+  checkInsToday: { guestName: string; unitName: string; nights: number; categoryType: string }[];
   checkOutsToday: { guestName: string; unitName: string; paymentStatus: string }[];
+  checkInsTomorrow: { guestName: string; unitName: string; nights: number; categoryType: string }[];
+  unpaidToday: number;
+  sourceBreakdown: { source: string; count: number }[];
+  categoryCheckIns: { category: string; count: number }[];
+  categoryCheckInsTomorrow: { category: string; count: number }[];
   occupiedUnits: number;
   totalUnits: number;
   occupancyPct: number;
@@ -163,14 +190,16 @@ function getBookingsDigest(): BookingsDigest {
     WHERE date(created_at) = ? AND status NOT IN ('cancelled', 'draft')
   `).get(today) as any).cnt;
 
-  // Check-ins today
+  // Check-ins today (with category)
   const checkIns = db.prepare(`
-    SELECT g.first_name, g.last_name, u.name as unit_name, r.nights
+    SELECT g.first_name, g.last_name, u.name as unit_name, r.nights,
+           COALESCE(c.name, c.type, 'інше') as category_name
     FROM reservations r
     JOIN guests g ON g.id = r.guest_id
     JOIN units u ON u.id = r.unit_id
+    LEFT JOIN categories c ON c.id = u.category_id
     WHERE r.check_in = ? AND r.status IN ('confirmed', 'checked_in')
-    ORDER BY u.name
+    ORDER BY category_name, u.name
   `).all(today) as any[];
 
   // Check-outs today
@@ -183,17 +212,63 @@ function getBookingsDigest(): BookingsDigest {
     ORDER BY u.name
   `).all(today) as any[];
 
-  // Occupancy — currently checked in
+  // Tomorrow's check-ins
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const checkInsTmrw = db.prepare(`
+    SELECT g.first_name, g.last_name, u.name as unit_name, r.nights,
+           COALESCE(c.name, c.type, 'інше') as category_name
+    FROM reservations r
+    JOIN guests g ON g.id = r.guest_id
+    JOIN units u ON u.id = r.unit_id
+    LEFT JOIN categories c ON c.id = u.category_id
+    WHERE r.check_in = ? AND r.status IN ('confirmed', 'checked_in')
+    ORDER BY category_name, u.name
+  `).all(tomorrowStr) as any[];
+
+  // Unpaid bookings currently in-house or arriving today
+  const unpaidRow = db.prepare(`
+    SELECT COUNT(*) as cnt FROM reservations
+    WHERE check_in <= ? AND check_out > ?
+      AND status NOT IN ('cancelled', 'no_show', 'draft')
+      AND payment_status != 'paid'
+  `).get(today, today) as any;
+
+  // Today's new bookings by source
+  const sourceRows = db.prepare(`
+    SELECT COALESCE(source, 'direct') as source, COUNT(*) as cnt
+    FROM reservations
+    WHERE date(created_at) = ? AND status NOT IN ('cancelled', 'draft')
+    GROUP BY source ORDER BY cnt DESC
+  `).all(today) as any[];
+
+  // Occupancy — all active bookings covering tonight (exclude pool units)
   const occupied = (db.prepare(`
-    SELECT COUNT(DISTINCT unit_id) as cnt FROM reservations
-    WHERE status = 'checked_in'
-  `).get() as any).cnt;
+    SELECT COUNT(DISTINCT r.unit_id) as cnt FROM reservations r
+    JOIN units u ON u.id = r.unit_id
+    WHERE r.check_in <= ? AND r.check_out > ?
+      AND r.status NOT IN ('cancelled', 'no_show', 'draft')
+      AND u.is_pool = 0
+  `).get(today, today) as any).cnt;
 
   const totalUnits = (db.prepare(
-    `SELECT COUNT(*) as cnt FROM units WHERE is_active = 1`
+    `SELECT COUNT(*) as cnt FROM units WHERE is_active = 1 AND is_pool = 0`
   ).get() as any)?.cnt || (db.prepare(
-    `SELECT COUNT(*) as cnt FROM units`
+    `SELECT COUNT(*) as cnt FROM units WHERE is_pool = 0`
   ).get() as any).cnt;
+
+  // Group check-ins by category
+  const catGroupToday: Record<string, number> = {};
+  for (const ci of checkIns) {
+    const cat = ci.category_name || 'інше';
+    catGroupToday[cat] = (catGroupToday[cat] || 0) + 1;
+  }
+  const catGroupTmrw: Record<string, number> = {};
+  for (const ci of checkInsTmrw) {
+    const cat = ci.category_name || 'інше';
+    catGroupTmrw[cat] = (catGroupTmrw[cat] || 0) + 1;
+  }
 
   return {
     newBookingsToday: newBookings,
@@ -201,12 +276,23 @@ function getBookingsDigest(): BookingsDigest {
       guestName: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
       unitName: r.unit_name,
       nights: r.nights,
+      categoryType: r.category_name || 'інше',
     })),
     checkOutsToday: checkOuts.map((r: any) => ({
       guestName: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
       unitName: r.unit_name,
       paymentStatus: r.payment_status,
     })),
+    checkInsTomorrow: checkInsTmrw.map((r: any) => ({
+      guestName: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+      unitName: r.unit_name,
+      nights: r.nights,
+      categoryType: r.category_name || 'інше',
+    })),
+    unpaidToday: unpaidRow?.cnt || 0,
+    sourceBreakdown: sourceRows.map((r: any) => ({ source: r.source, count: r.cnt })),
+    categoryCheckIns: Object.entries(catGroupToday).map(([category, count]) => ({ category, count })),
+    categoryCheckInsTomorrow: Object.entries(catGroupTmrw).map(([category, count]) => ({ category, count })),
     occupiedUnits: occupied,
     totalUnits,
     occupancyPct: totalUnits > 0 ? Math.round((occupied / totalUnits) * 100) : 0,
@@ -217,6 +303,7 @@ function getBookingsDigest(): BookingsDigest {
 
 interface TasksSummary {
   overdue: number;
+  overdueNames: string[];
   today: number;
   inProgress: number;
   total: number;
@@ -231,6 +318,13 @@ function getTasksSummary(): TasksSummary {
     WHERE status NOT IN ('done', 'cancelled')
       AND due_date IS NOT NULL AND due_date < ?
   `).get(today) as any).cnt;
+
+  const overdueList = db.prepare(`
+    SELECT title FROM tasks
+    WHERE status NOT IN ('done', 'cancelled')
+      AND due_date IS NOT NULL AND due_date < ?
+    ORDER BY due_date ASC LIMIT 3
+  `).all(today) as any[];
 
   const todayTasks = (db.prepare(`
     SELECT COUNT(*) as cnt FROM tasks
@@ -248,7 +342,7 @@ function getTasksSummary(): TasksSummary {
     WHERE status NOT IN ('done', 'cancelled')
   `).get() as any).cnt;
 
-  return { overdue, today: todayTasks, inProgress, total };
+  return { overdue, overdueNames: overdueList.map((t: any) => t.title || ''), today: todayTasks, inProgress, total };
 }
 
 // ─── Detailed Property/BU Breakdown ──────────────────────
@@ -432,6 +526,7 @@ function formatDailyDigest(
   finance: FinanceDigest,
   bookings: BookingsDigest,
   tasks: TasksSummary,
+  breakdown: BuBreakdown[],
 ): string {
   const today = new Date().toLocaleDateString('uk-UA', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -450,8 +545,16 @@ function formatDailyDigest(
   if (crm.unansweredLeads.length > 0) {
     lines.push(`⚠️ Без відповіді: <b>${crm.unansweredLeads.length}</b>`);
     for (const lead of crm.unansweredLeads.slice(0, 5)) {
+      // Calculate wait time
+      let waitLabel = '';
+      if (lead.waitingSince) {
+        const diffMs = Date.now() - new Date(lead.waitingSince).getTime();
+        const diffH = Math.floor(diffMs / 3600000);
+        const diffD = Math.floor(diffH / 24);
+        waitLabel = diffD > 0 ? ` (${diffD} дн.)` : diffH > 0 ? ` (${diffH} год.)` : ' (щойно)';
+      }
       const preview = lead.lastMessage ? ` — "${escapeHtml(lead.lastMessage)}..."` : '';
-      lines.push(`  • ${escapeHtml(lead.name)}${preview}`);
+      lines.push(`  • ${escapeHtml(lead.name)}${waitLabel}${preview}`);
     }
     if (crm.unansweredLeads.length > 5) {
       lines.push(`  <i>...та ще ${crm.unansweredLeads.length - 5}</i>`);
@@ -462,7 +565,7 @@ function formatDailyDigest(
   if (crm.pendingDrafts > 0) {
     lines.push(`📝 AI-чернетки на підтвердження: <b>${crm.pendingDrafts}</b>`);
   }
-  lines.push(`🔗 <a href="${BASE_URL}/crm">Відкрити CRM →</a>`);
+  lines.push(`🔗 <a href="${BASE_URL}/crm/inbox">Відкрити CRM →</a>`);
   lines.push(``);
 
   // ── Finance Block ──
@@ -473,45 +576,100 @@ function formatDailyDigest(
     if (finance.bankTransfer > 0) lines.push(`  🏦 Банк: <b>${formatAmount(finance.bankTransfer)}</b>`);
     if (finance.online > 0) lines.push(`  🌐 Онлайн: <b>${formatAmount(finance.online)}</b>`);
     if (finance.bookingPlatform > 0) lines.push(`  📱 Платформи: <b>${formatAmount(finance.bookingPlatform)}</b>`);
-    lines.push(`  📊 <b>Загальний дохід: ${formatAmount(finance.totalIncome)}</b>`);
+    let incomeLabel = `  📊 <b>Загальний дохід: ${formatAmount(finance.totalIncome)}</b>`;
+    if (finance.yesterdayIncome > 0) {
+      const diff = finance.totalIncome - finance.yesterdayIncome;
+      const pct = Math.round((diff / finance.yesterdayIncome) * 100);
+      const arrow = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
+      incomeLabel += ` ${arrow} ${pct > 0 ? '+' : ''}${pct}% vs вчора`;
+    }
+    lines.push(incomeLabel);
   } else {
     lines.push(`  Сьогодні надходжень не було`);
   }
   if (finance.totalExpenses > 0) {
     lines.push(`  📉 Витрати: ${formatAmount(finance.totalExpenses)}`);
+    if (finance.topExpenses.length > 0) {
+      for (const exp of finance.topExpenses) {
+        if (exp.comment) lines.push(`    • ${formatAmount(exp.amount)} — ${escapeHtml(exp.comment)}`);
+      }
+    }
   }
   lines.push(`🔗 <a href="${BASE_URL}/finance">Відкрити Фінанси →</a>`);
+
+  // ── Per-BU Income Breakdown ──
+  if (breakdown.length > 0) {
+    lines.push(``);
+    for (const bu of breakdown) {
+      const parts: string[] = [];
+      if (bu.cash > 0) parts.push(`💵 ${formatAmount(bu.cash)} нал.`);
+      if (bu.card > 0) parts.push(`💳 ${formatAmount(bu.card)} картка`);
+      if (bu.other > 0) parts.push(`🌐 ${formatAmount(bu.other)} інше`);
+      if (parts.length > 0) {
+        lines.push(`<b>${escapeHtml(bu.buName)}</b>`);
+        lines.push(`  ${parts.join(' / ')}`);
+        if (bu.cashExpenses > 0) {
+          lines.push(`  📉 Витрати: ${formatAmount(bu.cashExpenses)}`);
+          for (const exp of bu.expenseDetails) {
+            if (exp.comment) lines.push(`    • ${formatAmount(exp.amount)} — ${escapeHtml(exp.comment)}`);
+          }
+        }
+      }
+    }
+  }
   lines.push(``);
 
   // ── Bookings Block ──
   lines.push(`━━━ 🏨 <b>Бронювання</b> ━━━`);
   lines.push(`  ✅ Нових бронювань: <b>${bookings.newBookingsToday}</b>`);
 
-  if (bookings.checkInsToday.length > 0) {
+  if (bookings.categoryCheckIns.length > 0) {
     lines.push(`  🔑 Заїзди (${bookings.checkInsToday.length}):`);
-    for (const ci of bookings.checkInsToday) {
-      lines.push(`    • ${escapeHtml(ci.guestName)} → ${escapeHtml(ci.unitName)} (${ci.nights} н.)`);
+    for (const cat of bookings.categoryCheckIns) {
+      lines.push(`    • ${escapeHtml(cat.category)} — ${cat.count}`);
     }
   } else {
     lines.push(`  🔑 Заїздів сьогодні немає`);
   }
 
   if (bookings.checkOutsToday.length > 0) {
-    lines.push(`  🚪 Виїзди (${bookings.checkOutsToday.length}):`);
-    for (const co of bookings.checkOutsToday) {
-      const paid = co.paymentStatus === 'paid' ? '✅' : '⚠️';
-      lines.push(`    • ${escapeHtml(co.guestName)} ← ${escapeHtml(co.unitName)} ${paid}`);
+    const unpaidOuts = bookings.checkOutsToday.filter(co => co.paymentStatus !== 'paid');
+    if (unpaidOuts.length > 0) {
+      lines.push(`  🚪 Виїзди (${bookings.checkOutsToday.length}), ⚠️ неоплачених: ${unpaidOuts.length}`);
+      for (const co of unpaidOuts) {
+        lines.push(`    • ${escapeHtml(co.guestName)} ← ${escapeHtml(co.unitName)} ⚠️`);
+      }
+    } else {
+      lines.push(`  🚪 Виїзди (${bookings.checkOutsToday.length}) — всі оплачені ✅`);
+    }
+  }
+
+  if (bookings.categoryCheckInsTomorrow.length > 0) {
+    lines.push(`  📅 Завтра заїзди (${bookings.checkInsTomorrow.length}):`);
+    for (const cat of bookings.categoryCheckInsTomorrow) {
+      lines.push(`    • ${escapeHtml(cat.category)} — ${cat.count}`);
     }
   }
 
   lines.push(`  📈 Зайнятість: <b>${bookings.occupancyPct}%</b> (${bookings.occupiedUnits}/${bookings.totalUnits})`);
-  lines.push(`🔗 <a href="${BASE_URL}/bookings">Відкрити Бронювання →</a>`);
+
+  if (bookings.unpaidToday > 0) {
+    lines.push(`  ⚠️ Неоплачених бронювань: <b>${bookings.unpaidToday}</b>`);
+  }
+  if (bookings.sourceBreakdown.length > 0) {
+    const srcParts = bookings.sourceBreakdown.map(s => `${s.source}: ${s.count}`).join(', ');
+    lines.push(`  📋 Джерела: ${srcParts}`);
+  }
+  lines.push(`🔗 <a href="${BASE_URL}/calendar">Відкрити Календар →</a>`);
   lines.push(``);
 
   // ── Tasks Block ──
   if (tasks.total > 0) {
     lines.push(`━━━ 📋 <b>Задачі</b> ━━━`);
-    if (tasks.overdue > 0) lines.push(`  🔴 Прострочені: <b>${tasks.overdue}</b>`);
+    if (tasks.overdue > 0) {
+      const names = tasks.overdueNames.length > 0 ? ` — ${tasks.overdueNames.map(n => `"${escapeHtml(n)}"`).join(', ')}` : '';
+      lines.push(`  🔴 Прострочені: <b>${tasks.overdue}</b>${names}`);
+    }
     if (tasks.today > 0) lines.push(`  📅 На сьогодні: <b>${tasks.today}</b>`);
     if (tasks.inProgress > 0) lines.push(`  🔄 В роботі: <b>${tasks.inProgress}</b>`);
     lines.push(`  📊 Всього активних: ${tasks.total}`);
@@ -562,10 +720,8 @@ export async function sendDailyOperationalDigest(): Promise<{
   const finance = getFinanceDigest();
   const bookings = getBookingsDigest();
   const tasks = getTasksSummary();
-  const text = formatDailyDigest(crm, finance, bookings, tasks);
-
-  // Detailed breakdown by business unit
   const breakdown = getDetailedBreakdown();
+  const text = formatDailyDigest(crm, finance, bookings, tasks, breakdown);
   const detailedText = formatDetailedDigest(breakdown);
 
   let sent = false;

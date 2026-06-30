@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -9,7 +9,7 @@ import {
   CheckCircle, AlertCircle, Calendar, User,
   GitCompare, Filter, ChevronLeft, ChevronRight,
   XCircle, AlertTriangle, Banknote, Plus, Mail, FileCode, Package,
-  Sparkles, Send, Building2, FileDown, Loader2, Search,
+  Sparkles, Send, Building2, FileDown, Loader2, Search, Trash2,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -162,12 +162,29 @@ export default function DocumentsPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailToast, setEmailToast]   = useState<string | null>(null);
 
-  // ── Custom Invoice Modal state ────────────────────────────────
+  // ── Delete confirmation state ──────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; number: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteInvoice = async (id: string) => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      setDeleteConfirm(null);
+      // Refresh both lists
+      fetchInvoices();
+      fetchAllInvoices(invSourceFilter, invSearch);
+    } catch (e: unknown) {
+      alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+    // ── Custom Invoice Modal state ────────────────────────────────
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customForm, setCustomForm] = useState({
-    description:   'Krátkodobé ubytování',
-    descCustom:    '',
-    amount:        '',
     currency:      'CZK',
     dueDate:       '',
     paymentMethod: 'Příkazem',
@@ -179,6 +196,11 @@ export default function DocumentsPage() {
     emailTo:       '',
     showBuyer:     false,
   });
+  // Multi-item service lines
+  type CustomItem = { description: string; descCustom: string; amount: string };
+  const [customItems, setCustomItems] = useState<CustomItem[]>([
+    { description: 'Krátkodobé ubytování', descCustom: '', amount: '' },
+  ]);
   const [customGenerating, setCustomGenerating] = useState(false);
   const [customToast,      setCustomToast]      = useState<string | null>(null);
 
@@ -188,34 +210,41 @@ export default function DocumentsPage() {
     'Dlouhodobý pronájem',
     'Ubytování skupiny',
     'Wellness & doplňkové služby',
+    'Místní poplatek z pobytu (20 Kč / osoba / noc)',
     'Jiné (zadat ručně)',
   ];
 
   const handleGenerateCustom = async (emailAfter: boolean) => {
-    const desc = customForm.description === 'Jiné (zadat ručně)'
-      ? customForm.descCustom.trim()
-      : customForm.description;
-    const amt = parseFloat(customForm.amount);
-    if (!desc) { setCustomToast('❌ Вкажіть опис фактури'); return; }
-    if (!amt || amt <= 0) { setCustomToast('❌ Вкажіть суму'); return; }
+    // Validate all items
+    const validItems = customItems
+      .map(it => ({
+        description: it.description === 'Jiné (zadat ručně)' ? it.descCustom.trim() : it.description,
+        amount: parseFloat(it.amount),
+      }))
+      .filter(it => it.description && it.amount > 0);
+
+    if (validItems.length === 0) { setCustomToast('❌ Vkajte aspoň jeden rádek z popisu a sumy'); return; }
+    const totalAmt = validItems.reduce((s, i) => s + i.amount, 0);
+    if (totalAmt <= 0) { setCustomToast('❌ Suma musí byť väčšia ako 0'); return; }
     if (emailAfter && !customForm.emailTo.trim()) {
       setCustomToast('❌ Вкажіть email для відправки'); return;
     }
     setCustomGenerating(true);
     setCustomToast(null);
     try {
-      const today = new Date();
       const defDue = customForm.dueDate || (() => {
         const d = new Date(); d.setDate(d.getDate() + 14);
         return d.toISOString().slice(0, 10);
       })();
       const body: Record<string, unknown> = {
-        description:   desc,
-        amount:        amt,
+        items:         validItems,
+        // Legacy single fields for backward compat
+        description:   validItems[0].description,
+        amount:        totalAmt,
         currency:      customForm.currency,
         dueDate:       defDue,
         paymentMethod: customForm.paymentMethod,
-        action:        emailAfter ? 'pdf' : 'pdf',
+        action:        'pdf',
       };
       if (customForm.showBuyer) {
         if (customForm.buyerName)    body.buyerName    = customForm.buyerName;
@@ -234,7 +263,6 @@ export default function DocumentsPage() {
         const err = await res.json();
         throw new Error(err.error || 'Failed');
       }
-      // Download PDF from response
       const blob = await res.blob();
       const invoiceNum = res.headers.get('X-Invoice-Number') || 'faktura';
       const url = URL.createObjectURL(blob);
@@ -244,8 +272,7 @@ export default function DocumentsPage() {
       setCustomToast(emailAfter
         ? `✅ PDF збережено і надіслано на ${customForm.emailTo}`
         : '✅ PDF згенеровано і завантажено');
-      // Refresh invoice list after short delay
-      setTimeout(() => { fetchInvoices(); }, 1000);
+      setTimeout(() => { fetchInvoices(); fetchAllInvoices(invSourceFilter, invSearch); }, 1000);
       setTimeout(() => setShowCustomModal(false), 2500);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -495,7 +522,7 @@ export default function DocumentsPage() {
         </div>
 
         {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            TAB: INVOICES â€” All invoices with search + source filter
+            TAB: INVOICES — All invoices with search + source filter
         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {activeTab === 'invoices' && (() => {
           // Source badge config
@@ -503,15 +530,15 @@ export default function DocumentsPage() {
             airbnb:  { label: 'Airbnb',  color: '#e61e4d', bg: 'rgba(230,30,77,0.1)'   },
             booking: { label: 'Booking', color: '#003580', bg: 'rgba(0,53,128,0.1)'     },
             teya:    { label: 'Teya',    color: '#00a699', bg: 'rgba(0,166,153,0.1)'    },
-            manual:  { label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
+            manual:  { label: 'Вручну',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
             pms:     { label: 'PMS',     color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
           };
           const sourcePills = [
-            { id: 'all',     label: 'Ð£ÑÑ–'     },
+            { id: 'all',     label: 'Усі'     },
             { id: 'airbnb',  label: 'Airbnb'  },
             { id: 'booking', label: 'Booking' },
             { id: 'teya',    label: 'Teya'    },
-            { id: 'manual',  label: 'Ð’Ñ€ÑƒÑ‡Ð½Ñƒ'  },
+            { id: 'manual',  label: 'Вручну'  },
             { id: 'pms',     label: 'PMS'     },
           ] as const;
           return (
@@ -523,7 +550,7 @@ export default function DocumentsPage() {
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(79,110,247,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Receipt size={18} color="var(--accent-primary)" />
                     </div>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Ð’ÑÑŒÐ¾Ð³Ð¾ Ñ„Ð°ÐºÑ‚ÑƒÑ€</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Всього фактур</span>
                   </div>
                   <div style={{ fontSize: 28, fontWeight: 700 }}>{allInvoices.length}</div>
                 </div>
@@ -557,7 +584,7 @@ export default function DocumentsPage() {
                   <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
                   <input
                     type="text"
-                    placeholder="ÐŸÐ¾ÑˆÑƒÐº: Ñ–Ð¼'Ñ, Ð½Ð¾Ð¼ÐµÑ€ Ñ„Ð°ÐºÑ‚ÑƒÑ€Ð¸, ÑÑƒÐ¼Ð°â€¦"
+                    placeholder="Пошук: ім'я, номер фактури, сума…"
                     value={invSearch}
                     onChange={e => setInvSearch(e.target.value)}
                     style={{
@@ -576,6 +603,14 @@ export default function DocumentsPage() {
                     </button>
                   )}
                 </div>
+                {/* CSV Export button */}
+                <a
+                  href={`/api/invoices/export?source=${invSourceFilter}`}
+                  download
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--border-primary)', background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <Download size={13} /> Скачати CSV
+                </a>
               </div>
 
               {/* Source filter pills */}
@@ -602,10 +637,10 @@ export default function DocumentsPage() {
                 <div className="card" style={{ padding: 56, textAlign: 'center' }}>
                   <Receipt size={40} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
                   <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
-                    {invSearch || invSourceFilter !== 'all' ? 'ÐÑ–Ñ‡Ð¾Ð³Ð¾ Ð½Ðµ Ð·Ð½Ð°Ð¹Ð´ÐµÐ½Ð¾' : 'Ð¤Ð°ÐºÑ‚ÑƒÑ€ Ñ‰Ðµ Ð½ÐµÐ¼Ð°Ñ”'}
+                    {invSearch || invSourceFilter !== 'all' ? 'Нічого не знайдено' : 'Фактур ще немає'}
                   </div>
                   <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                    {invSearch ? `Ð—Ð° Ð·Ð°Ð¿Ð¸Ñ‚Ð¾Ð¼ Â«${invSearch}Â»` : 'Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶Ñ‚Ðµ Ð²Ð¸Ð¿Ð¸ÑÐºÐ¸ Ñƒ Ð²ÐºÐ»Ð°Ð´Ñ†Ñ– Â«Ð’Ð¸Ð¿Ð¸ÑÐºÐ¸Â»'}
+                    {invSearch ? `За запитом «${invSearch}»` : 'Завантажте виписки у вкладці «Виписки»'}
                   </div>
                 </div>
               ) : (
@@ -613,11 +648,11 @@ export default function DocumentsPage() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Ð¤Ð°ÐºÑ‚ÑƒÑ€Ð° â„–</th>
-                        <th>Ð”Ð¶ÐµÑ€ÐµÐ»Ð¾</th>
-                        <th>ÐŸÐ¾ÐºÑƒÐ¿ÐµÑ†ÑŒ / ÐŸÑ€Ð¸Ð·Ð½Ð°Ñ‡ÐµÐ½Ð½Ñ</th>
-                        <th>Ð¡ÑƒÐ¼Ð°</th>
-                        <th>Ð”Ð°Ñ‚Ð°</th>
+                        <th>Фактура №</th>
+                        <th>Джерело</th>
+                        <th>Покупець / Призначення</th>
+                        <th>Сума</th>
+                        <th>Дата</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -639,7 +674,7 @@ export default function DocumentsPage() {
                               </span>
                             </td>
                             <td>
-                              <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.buyer_name || 'â€”'}</div>
+                              <div style={{ fontWeight: 500, fontSize: 13 }}>{inv.buyer_name || '—'}</div>
                               {(inv.custom_description || inv.unit_name) && (
                                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
                                   {inv.custom_description || inv.unit_name}
@@ -1024,7 +1059,111 @@ export default function DocumentsPage() {
         </div>
       )}
 
-        {/* ════════════════ MODAL: ВІЛЬНА ФАКТУРА ════════════════ */}
+        {/* ════════════════════════════════════════════════
+            DELETE CONFIRMATION MODAL
+        ════════════════════════════════════════════════ */}
+        {deleteConfirm && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 4000,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => !deleteLoading && setDeleteConfirm(null)}>
+            <div
+              style={{ background: 'var(--surface-elevated, #1e1e2e)', borderRadius: 12, padding: '28px 32px', maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Trash2 size={20} style={{ color: '#ef4444' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Видалити фактуру?</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Цю дію неможливо скасувати.</div>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 14 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Фактура </span>
+                <strong style={{ color: '#ef4444' }}>{deleteConfirm.number}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}> буде назавжди видалена з бази даних.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-ghost"
+                  disabled={deleteLoading}
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ minWidth: 90 }}
+                >
+                  Скасувати
+                </button>
+                <button
+                  className="btn"
+                  disabled={deleteLoading}
+                  onClick={() => handleDeleteInvoice(deleteConfirm.id)}
+                  style={{ minWidth: 120, background: '#ef4444', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {deleteLoading
+                    ? <><RefreshCw size={14} className="spin" /> Видаляє...</>
+                    : <><Trash2 size={14} /> Видалити</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+                {/* ════════════════════════════════════════════════
+            DELETE CONFIRMATION MODAL
+        ════════════════════════════════════════════════ */}
+        {deleteConfirm && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 4000,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => !deleteLoading && setDeleteConfirm(null)}>
+            <div
+              style={{ background: 'var(--surface-elevated, #1e1e2e)', borderRadius: 12, padding: '28px 32px', maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Trash2 size={20} style={{ color: '#ef4444' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Видалити фактуру?</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Цю дію неможливо скасувати.</div>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 14 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Фактура </span>
+                <strong style={{ color: '#ef4444' }}>{deleteConfirm.number}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}> буде назавжди видалена з бази даних.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-ghost"
+                  disabled={deleteLoading}
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ minWidth: 90 }}
+                >
+                  Скасувати
+                </button>
+                <button
+                  className="btn"
+                  disabled={deleteLoading}
+                  onClick={() => handleDeleteInvoice(deleteConfirm.id)}
+                  style={{ minWidth: 120, background: '#ef4444', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {deleteLoading
+                    ? <><RefreshCw size={14} className="spin" /> Видаляє...</>
+                    : <><Trash2 size={14} /> Видалити</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+                {/* ════════════════ MODAL: ВІЛЬНА ФАКТУРА ════════════════ */}
         {showCustomModal && (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 3000,
@@ -1068,36 +1207,66 @@ export default function DocumentsPage() {
                   </div>
                   {/* Right — Variabilní + Odběratel box */}
                   <div style={{ padding: '8px 10px', fontSize: 11 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#555' }}>Variabilní symbol:</span>
-                      <span style={{ color: '#999', fontStyle: 'italic', fontSize: 10 }}>автоматично</span>
+                    {/* Variabilní / Konstantní / Objednávka — same label:value pattern as left */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 3, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Variabilní symbol:</span>
+                      <span style={{ color: '#999', fontStyle: 'italic', fontSize: 10 }}>automaticky</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#555' }}>Konstantní symbol:</span>
-                      <span>0308</span>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 3, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Konstantní symbol:</span>
+                      <span style={{ fontSize: 11 }}>0308</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span style={{ color: '#555' }}>Objednávka č.:</span>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'baseline' }}>
+                      <span style={{ color: '#888', fontSize: 9, minWidth: 108, flexShrink: 0 }}>Objednávka č.:</span>
                       <span style={{ color: '#888', fontSize: 10 }}>ze dne:</span>
                     </div>
-                    {/* Odběratel sub-box with editable fields */}
+
+                    {/* Odběratel sub-box — mirrors Dodavatel structure */}
                     <div style={{ border: '0.5px solid #aaa', padding: '6px 8px' }}>
-                      <div style={{ fontSize: 9, color: '#888', marginBottom: 5 }}>Odběratel: <span style={{ color: '#4f6ef7' }}>(необов'язково)</span></div>
+                      <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
+                        Odběratel: <span style={{ color: '#4f6ef7' }}>(необов&apos;язково)</span>
+                      </div>
+
+                      {/* Company name — bold 12pt like "Kemp Carlsbad s.r.o." on the left */}
                       <input type="text" value={customForm.buyerName}
                         onChange={e => setCustomForm(f => ({ ...f, buyerName: e.target.value, showBuyer: !!e.target.value }))}
                         placeholder="Назва компанії або ПІБ..."
-                        style={{ width: '100%', border: 'none', borderBottom: '1px dashed #4f6ef7', background: 'transparent', fontSize: 12, fontWeight: 700, padding: '2px 0', marginBottom: 5, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit' }}
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #4f6ef7', background: 'transparent', fontSize: 12, fontWeight: 700, padding: '1px 0', marginBottom: 5, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit' }}
                       />
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
-                        <input type="text" value={customForm.buyerIco} onChange={e => setCustomForm(f => ({ ...f, buyerIco: e.target.value }))}
-                          placeholder="IČO" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%' }} />
-                        <input type="text" value={customForm.buyerDic} onChange={e => setCustomForm(f => ({ ...f, buyerDic: e.target.value }))}
-                          placeholder="DIČ" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%' }} />
+
+                      {/* Address */}
+                      <input type="text" value={customForm.buyerAddress}
+                        onChange={e => setCustomForm(f => ({ ...f, buyerAddress: e.target.value }))}
+                        placeholder="Вулиця, будинок"
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 4, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', display: 'block' }}
+                      />
+
+                      {/* PSČ / City */}
+                      <input type="text" value={customForm.buyerCity}
+                        onChange={e => setCustomForm(f => ({ ...f, buyerCity: e.target.value }))}
+                        placeholder="PSČ Місто"
+                        style={{ width: '100%', boxSizing: 'border-box', border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 6, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', display: 'block' }}
+                      />
+
+                      {/* IČO — inline label:input like left side */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 3 }}>
+                        <span style={{ color: '#1565c0', fontSize: 9, minWidth: 24, flexShrink: 0 }}>IČO:</span>
+                        <input type="text" value={customForm.buyerIco}
+                          onChange={e => setCustomForm(f => ({ ...f, buyerIco: e.target.value }))}
+                          placeholder="12345678"
+                          style={{ flex: 1, border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: 0, outline: 'none', color: '#1565c0', fontFamily: 'inherit' }}
+                        />
                       </div>
-                      <input type="text" value={customForm.buyerAddress} onChange={e => setCustomForm(f => ({ ...f, buyerAddress: e.target.value }))}
-                        placeholder="Адреса" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', marginBottom: 4, outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%', display: 'block' }} />
-                      <input type="text" value={customForm.buyerCity} onChange={e => setCustomForm(f => ({ ...f, buyerCity: e.target.value }))}
-                        placeholder="Місто, PSČ" style={{ border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: '1px 0', outline: 'none', color: '#1a1a1a', fontFamily: 'inherit', width: '100%', display: 'block' }} />
+
+                      {/* DIČ — inline label:input */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                        <span style={{ color: '#1565c0', fontSize: 9, minWidth: 24, flexShrink: 0 }}>DIČ:</span>
+                        <input type="text" value={customForm.buyerDic}
+                          onChange={e => setCustomForm(f => ({ ...f, buyerDic: e.target.value }))}
+                          placeholder="CZ12345678"
+                          style={{ flex: 1, border: 'none', borderBottom: '1px dashed #ccc', background: 'transparent', fontSize: 11, padding: 0, outline: 'none', color: '#1565c0', fontFamily: 'inherit' }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1154,59 +1323,87 @@ export default function DocumentsPage() {
                 {/* ── TABLE ── */}
                 <div style={{ marginTop: 4 }}>
                   {/* Header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 100px 46px 100px', background: '#f0f0f0', border: '0.5px solid #aaa', padding: '4px 6px', fontSize: 10, fontWeight: 700, color: '#555' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 58px 100px 42px 100px 20px', background: '#f0f0f0', border: '0.5px solid #aaa', padding: '4px 6px', fontSize: 10, fontWeight: 700, color: '#555' }}>
                     <span>Označení dodávky</span>
                     <span style={{ textAlign: 'right' }}>Množství</span>
                     <span style={{ textAlign: 'right' }}>J.cena</span>
                     <span style={{ textAlign: 'right' }}>Sleva</span>
                     <span style={{ textAlign: 'right' }}>Kč Celkem</span>
+                    <span />
                   </div>
-                  {/* Editable row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 100px 46px 100px', border: '0.5px solid #ddd', borderTop: 'none', padding: '6px', gap: 4, alignItems: 'center' }}>
-                    <div>
-                      <select value={customForm.description} onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
-                        style={{ width: '100%', fontSize: 11, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}>
-                        {DESCRIPTION_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                      {customForm.description === 'Jiné (zadat ručně)' && (
-                        <input type="text" placeholder="Введіть опис..." value={customForm.descCustom}
-                          onChange={e => setCustomForm(f => ({ ...f, descCustom: e.target.value }))}
-                          style={{ width: '100%', fontSize: 11, border: '1px solid #4f6ef7', padding: '3px 5px', marginTop: 3, outline: 'none', fontFamily: 'inherit' }} />
-                      )}
+                  {/* Dynamic rows */}
+                  {customItems.map((item, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 58px 100px 42px 100px 20px', border: '0.5px solid #ddd', borderTop: 'none', padding: '5px 6px', gap: 4, alignItems: 'start' }}>
+                      <div>
+                        <select
+                          value={item.description}
+                          onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, description: e.target.value } : it))}
+                          style={{ width: '100%', fontSize: 11, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}
+                        >
+                          {DESCRIPTION_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        {item.description === 'Jiné (zadat ručně)' && (
+                          <input type="text" placeholder="Opište dodávku..." value={item.descCustom}
+                            onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, descCustom: e.target.value } : it))}
+                            style={{ width: '100%', fontSize: 11, border: '1px solid #4f6ef7', padding: '3px 5px', marginTop: 3, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: 11, paddingTop: 5 }}>1</div>
+                      <input type="number" min="0" step="0.01" value={item.amount}
+                        onChange={e => setCustomItems(arr => arr.map((it, i) => i === idx ? { ...it, amount: e.target.value } : it))}
+                        placeholder="0,00"
+                        style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', width: '100%' }}
+                      />
+                      <div style={{ textAlign: 'right', fontSize: 11, color: '#888', paddingTop: 5 }}>—</div>
+                      <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: item.amount && parseFloat(item.amount) > 0 ? '#1a1a1a' : '#aaa', paddingTop: 5 }}>
+                        {item.amount && parseFloat(item.amount) > 0
+                          ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(item.amount))
+                          : '0,00'}
+                      </div>
+                      <button
+                        onClick={() => setCustomItems(arr => arr.length > 1 ? arr.filter((_, i) => i !== idx) : arr)}
+                        disabled={customItems.length <= 1}
+                        title="Видалити рядок"
+                        style={{ background: 'none', border: 'none', cursor: customItems.length > 1 ? 'pointer' : 'default', color: customItems.length > 1 ? '#ef4444' : '#ddd', fontSize: 14, padding: '2px 0', lineHeight: 1 }}
+                      >x</button>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: 11 }}>1</div>
-                    <input type="number" min="0" step="0.01" value={customForm.amount}
-                      onChange={e => setCustomForm(f => ({ ...f, amount: e.target.value }))}
-                      placeholder="0,00"
-                      style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.04)', padding: '3px 5px', outline: 'none', fontFamily: 'inherit', width: '100%' }}
-                    />
-                    <div style={{ textAlign: 'right', fontSize: 11, color: '#888' }}>—</div>
-                    <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: customForm.amount && parseFloat(customForm.amount) > 0 ? '#1a1a1a' : '#aaa' }}>
-                      {customForm.amount && parseFloat(customForm.amount) > 0
-                        ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                        : '0,00'}
-                    </div>
-                  </div>
+                  ))}
+                  <button
+                    onClick={() => setCustomItems(arr => [...arr, { description: 'Krátkodobé ubytování', descCustom: '', amount: '' }])}
+                    style={{ width: '100%', border: '1px dashed #4f6ef7', background: 'rgba(79,110,247,0.03)', color: '#4f6ef7', padding: '5px', fontSize: 11, cursor: 'pointer', marginTop: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: 'inherit' }}
+                  >
+                    + Přidat řádek
+                  </button>
                 </div>
 
                 {/* ── TOTALS ── */}
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginBottom: 5 }}>
-                    <span>Součet položek</span>
-                    <span>{customForm.amount && parseFloat(customForm.amount) > 0
-                      ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                      : '0,00'} {customForm.currency}
-                    </span>
-                  </div>
-                  <div style={{ borderTop: '0.5px solid #aaa', paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
-                    <span>CELKEM K ÚHRADĚ</span>
-                    <span style={{ fontSize: 15 }}>
-                      {customForm.amount && parseFloat(customForm.amount) > 0
-                        ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(parseFloat(customForm.amount))
-                        : '0,00'} {customForm.currency}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const totalAmt = customItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+                  const fmt = (n: number) => n > 0 ? new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2 }).format(n) : '0,00';
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      {customItems.length > 1 && customItems.map((it, idx) => {
+                        const a = parseFloat(it.amount) || 0;
+                        if (a <= 0) return null;
+                        const desc = it.description === 'Jiné (zadat ručně)' ? (it.descCustom || '...') : it.description;
+                        return (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888', marginBottom: 2 }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>{desc}</span>
+                            <span>{fmt(a)} {customForm.currency}</span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#555', marginBottom: 5, borderTop: customItems.length > 1 ? '0.5px dashed #ddd' : 'none', paddingTop: customItems.length > 1 ? 4 : 0 }}>
+                        <span>Součet položek</span>
+                        <span>{fmt(totalAmt)} {customForm.currency}</span>
+                      </div>
+                      <div style={{ borderTop: '0.5px solid #aaa', paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
+                        <span>CELKEM K ÚHRADĚ</span>
+                        <span style={{ fontSize: 15 }}>{fmt(totalAmt)} {customForm.currency}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Nejsme plátci */}
                 <div style={{ marginTop: 10, fontSize: 12, color: '#1565c0', fontWeight: 700 }}>Nejsme plátci DPH</div>
