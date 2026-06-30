@@ -676,6 +676,7 @@ export default function BookingWizard() {
             onAdminConfirm={handleAdminConfirm}
             onAdminEurConfirm={handleAdminEurConfirm}
             onTerminalConfirm={handleTerminalConfirm}
+            onSuccess={handleQrPaid}
           />
         )}
       </div>
