@@ -5,10 +5,12 @@
 import { getInvoiceHtml } from '@finance';
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requireOwner } from '@core/security/route-guard';
 
 export const GET = getInvoiceHtml;
 
-export async function DELETE(
+export const DELETE = requireOwner(_DELETE);
+async function _DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {

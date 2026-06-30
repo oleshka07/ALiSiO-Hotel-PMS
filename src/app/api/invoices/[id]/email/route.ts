@@ -10,8 +10,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
 import { sendEmail } from '@/lib/email';
+import { requirePermission } from '@core/security/route-guard';
 
-export async function POST(
+export const POST = requirePermission('manage_documents', _POST);
+async function _POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
