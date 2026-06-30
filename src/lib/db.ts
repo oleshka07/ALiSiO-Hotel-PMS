@@ -520,6 +520,29 @@ function runMigrations(database: any) {
     )
   `);
 
+  // --- Finance security: opt-in step-up passphrase ---------------------------
+  // Second password protecting the finance module. Stored as a bcrypt hash plus
+  // a KDF salt reserved for at-rest encryption (future phase). Per-session unlock
+  // state lives in sessions.finance_unlocked_until.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_security (
+      user_id TEXT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+      passphrase_hash TEXT NOT NULL,
+      kdf_salt TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try {
+    const sessCols = database.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+    if (!sessCols.some((c: any) => c.name === 'finance_unlocked_until')) {
+      database.exec("ALTER TABLE sessions ADD COLUMN finance_unlocked_until TEXT");
+      console.log('[DB] Added finance_unlocked_until to sessions');
+    }
+  } catch (e: any) {
+    console.log('[DB] finance_unlocked_until migration note:', e.message);
+  }
+
   // --- Migration: create user_permissions table if not exists ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS user_permissions (

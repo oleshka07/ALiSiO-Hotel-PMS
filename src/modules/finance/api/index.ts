@@ -24,6 +24,14 @@
 
 import { withPermission, withFinanceRead } from './_guard';
 
+// ─── Finance step-up passphrase (security) — self-guarded, owner-only ─────────
+// These must stay reachable while finance is locked, so they are NOT wrapped
+// with withFinanceRead/withPermission (which require an unlocked session).
+export {
+  getFinanceSecurityStatus, setupFinancePassphrase,
+  unlockFinanceHandler, lockFinanceHandler,
+} from './security.handlers';
+
 // ─── Reports & matrices (read) ────────────────────────────────
 import {
   getFinanceOverview as _getFinanceOverview, getPnl as _getPnl, getCashflow as _getCashflow,

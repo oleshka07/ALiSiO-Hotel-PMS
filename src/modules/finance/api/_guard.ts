@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getSessionUser, type SessionUser } from '@/lib/auth';
 import { hasPermission, type Permission } from '@/lib/permissions';
+import { hasFinancePassphrase, isFinanceUnlocked } from './_finance-unlock';
 
 export type FinanceHandler<TCtx = unknown> = (
   request: NextRequest,
@@ -31,10 +32,10 @@ export function isFinanceAuthorized(user: SessionUser): boolean {
   return user.role === 'owner' || FINANCE_ALLOWLIST.has(user.id);
 }
 
-async function getCurrentUser(): Promise<SessionUser | null> {
+async function getSession(): Promise<{ sessionId: string | undefined; user: SessionUser | null }> {
   const store = await cookies();
   const sessionId = store.get('session_id')?.value;
-  return getSessionUser(sessionId);
+  return { sessionId, user: getSessionUser(sessionId) };
 }
 
 function unauthenticated(): NextResponse {
@@ -59,12 +60,34 @@ function forbidden(message: string, extra: Record<string, unknown> = {}): NextRe
  * cookie presence) — so a forged or expired cookie is rejected here.
  */
 async function requireFinanceUser(): Promise<SessionUser | NextResponse> {
-  const user = await getCurrentUser();
+  const { sessionId, user } = await getSession();
   if (!user) return unauthenticated();
   if (!isFinanceAuthorized(user)) {
     return forbidden('Доступ до фінансів лише для власника');
   }
+  // Opt-in step-up: once a finance passphrase is set, every session must unlock.
+  if (hasFinancePassphrase(user.id) && !isFinanceUnlocked(sessionId)) {
+    return forbidden('Фінансовий розділ заблоковано. Введіть пароль фінансів.', {
+      code: 'FINANCE_LOCKED',
+    });
+  }
   return user;
+}
+
+/**
+ * Resolve + authorize the finance OWNER without enforcing the step-up unlock.
+ * Used by the security endpoints themselves (status / setup / unlock / lock),
+ * which must remain reachable while finance is locked.
+ */
+export async function resolveFinanceOwner(): Promise<
+  { user: SessionUser; sessionId: string } | NextResponse
+> {
+  const { sessionId, user } = await getSession();
+  if (!user || !sessionId) return unauthenticated();
+  if (!isFinanceAuthorized(user)) {
+    return forbidden('Доступ до фінансів лише для власника');
+  }
+  return { user, sessionId };
 }
 
 /**
