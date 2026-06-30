@@ -14,6 +14,12 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('');
+  const [sortField, setSortField] = useState<'created_at' | 'check_in' | 'total_price' | 'guest'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date();
@@ -81,14 +87,40 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
 
   const filtered = bookings.filter(b => {
     const q = search.toLowerCase();
+    
+    if (statusFilter && b.status !== statusFilter) return false;
+    if (paymentFilter && b.payment_status !== paymentFilter) return false;
+
     return (
       b.first_name?.toLowerCase().includes(q) ||
       b.last_name?.toLowerCase().includes(q) ||
       b.unit_name?.toLowerCase().includes(q) ||
       b.utm_source?.toLowerCase().includes(q) ||
-      b.utm_campaign?.toLowerCase().includes(q)
+      b.utm_campaign?.toLowerCase().includes(q) ||
+      b.utm_content?.toLowerCase().includes(q) ||
+      b.utm_term?.toLowerCase().includes(q)
     );
+  }).sort((a, b) => {
+    let valA, valB;
+    if (sortField === 'created_at') { valA = new Date(a.created_at).getTime(); valB = new Date(b.created_at).getTime(); }
+    else if (sortField === 'check_in') { valA = new Date(a.check_in).getTime(); valB = new Date(b.check_in).getTime(); }
+    else if (sortField === 'total_price') { valA = a.total_price; valB = b.total_price; }
+    else { valA = (a.first_name + ' ' + a.last_name).toLowerCase(); valB = (b.first_name + ' ' + b.last_name).toLowerCase(); }
+    
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
   });
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => { setPage(1); }, [search, statusFilter, paymentFilter, sortField, sortOrder, dateFrom, dateTo]);
+
+  const handleSort = (field: 'created_at' | 'check_in' | 'total_price' | 'guest') => {
+    if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortOrder('desc'); }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -116,6 +148,20 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
               style={{ paddingLeft: 32, height: 32 }} 
             />
           </div>
+          <select className="form-input" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 32, padding: '4px 10px', fontSize: 13, width: 140 }}>
+            <option value="">Всі статуси</option>
+            <option value="confirmed">Підтверджені</option>
+            <option value="tentative">Попередні</option>
+            <option value="cancelled">Скасовані</option>
+            <option value="checked_in">Заселені</option>
+            <option value="checked_out">Виселені</option>
+          </select>
+          <select className="form-input" value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} style={{ height: 32, padding: '4px 10px', fontSize: 13, width: 140 }}>
+            <option value="">Всі оплати</option>
+            <option value="paid">Оплачено</option>
+            <option value="unpaid">Не оплачено</option>
+            <option value="payment_requested">Запит оплати</option>
+          </select>
         </div>
 
         <button className="btn btn-secondary" onClick={fetchBookings} style={{ padding: '6px 12px', height: 32 }}>
@@ -139,15 +185,16 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
             <table className="table">
               <thead>
                 <tr>
-                  <th>ID / Створено</th>
-                  <th>Гість</th>
-                  <th>Будинок / Дати</th>
-                  <th>Сума</th>
+                  <th onClick={() => handleSort('created_at')} style={{ cursor: 'pointer', userSelect: 'none' }}>ID / Створено {sortField === 'created_at' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                  <th onClick={() => handleSort('guest')} style={{ cursor: 'pointer', userSelect: 'none' }}>Гість {sortField === 'guest' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                  <th onClick={() => handleSort('check_in')} style={{ cursor: 'pointer', userSelect: 'none' }}>Будинок / Дати {sortField === 'check_in' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                  <th onClick={() => handleSort('total_price')} style={{ cursor: 'pointer', userSelect: 'none' }}>Сума {sortField === 'total_price' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
                   <th>Джерело (UTM)</th>
+                  <th>Деталі (Креатив/Ключ)</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(b => (
+                {paginated.map(b => (
                   <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => handleRowClick(b)}>
                     <td>
                       <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-tertiary)' }}>{b.id.substring(0, 12)}...</div>
@@ -185,10 +232,46 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
                         <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{b.source || 'direct'}</span>
                       )}
                     </td>
+                    <td>
+                      {(b.utm_content || b.utm_term || b.gclid || b.fbclid) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {b.utm_content && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>crtv: {b.utm_content}</span>}
+                          {b.utm_term && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>term: {b.utm_term}</span>}
+                          {b.gclid && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>gclid: {b.gclid}</span>}
+                          {b.fbclid && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>fbclid: {b.fbclid}</span>}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: '16px 0', borderTop: '1px solid var(--border-color)' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  disabled={page === 1} 
+                  onClick={() => setPage(p => p - 1)}
+                  style={{ padding: '6px 12px' }}
+                >
+                  Попередня
+                </button>
+                <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                  Сторінка {page} з {totalPages}
+                </span>
+                <button 
+                  className="btn btn-secondary" 
+                  disabled={page === totalPages} 
+                  onClick={() => setPage(p => p + 1)}
+                  style={{ padding: '6px 12px' }}
+                >
+                  Наступна
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
