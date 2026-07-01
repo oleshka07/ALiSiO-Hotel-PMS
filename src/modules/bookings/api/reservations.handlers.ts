@@ -44,7 +44,10 @@ export async function listReservations(request: NextRequest) {
       query += ' AND r.parent_id IS NULL';
     }
 
-    if (status) {
+    const excludeCancelled = searchParams.get('exclude_cancelled') === '1';
+    if (excludeCancelled) {
+      query += " AND r.status NOT IN ('cancelled', 'no_show')";
+    } else if (status) {
       query += ' AND r.status = ?';
       params.push(status);
     }
