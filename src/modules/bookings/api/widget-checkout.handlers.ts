@@ -300,7 +300,11 @@ export async function createWidgetCheckoutSession(req: Request) {
       try {
         const allowedHost = new URL(site.site_url).hostname;
         const targetHost = new URL(returnTo).hostname;
-        if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
+        // Allow: same site host, any alisio.eu subdomain, kemp-carlsbad.cz (partner domain)
+        const isAllowed = allowedHost === targetHost
+          || targetHost.includes('alisio.eu')
+          || targetHost.includes('kemp-carlsbad.cz');
+        if (!isAllowed) {
           returnTo = site.site_url;
         }
       } catch { /* invalid URL — keep returnTo */ }
