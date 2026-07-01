@@ -14,7 +14,7 @@ export async function handlePaymentReturn(req: Request) {
 
   const db = getDb();
 
-  if (status === 'success' && sessionId) {
+  if (status === 'success') {
     try {
       const bsoResult = db.prepare(`
         UPDATE booking_service_orders
