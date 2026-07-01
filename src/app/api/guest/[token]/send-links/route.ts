@@ -38,9 +38,13 @@ export const POST = async (
 
     const guestName = [reservation.first_name, reservation.last_name].filter(Boolean).join(' ') || 'Host';
     const portalUrl = `https://alisio.swipescape.eu/guest/${token}`;
+    const kempCabinetUrl = `https://www.kemp-carlsbad.cz/my-bookings`;
+    const kempRegUrl    = `https://www.kemp-carlsbad.cz/registration?token=${token}`;
     const checkIn  = reservation.check_in  || '';
     const checkOut = reservation.check_out || '';
     const unitName = reservation.unit_type_name || reservation.property_name || 'Kemp Carlsbad';
+    const totalPrice = reservation.total_price ? `${Number(reservation.total_price).toLocaleString('cs')} Kč` : null;
+    const isPaid = ['paid', 'prepaid'].includes(reservation.payment_status || '');
 
     const html = `
 <!DOCTYPE html>
@@ -54,17 +58,19 @@ export const POST = async (
         <tr>
           <td style="background:#1a6b3c;padding:28px 32px;text-align:center;">
             <p style="margin:0;color:#fff;font-size:22px;font-weight:700;">🏕️ Kemp Carlsbad</p>
-            <p style="margin:6px 0 0;color:#a8e6c3;font-size:14px;">Vaše rezervace — osobní odkaz</p>
+            <p style="margin:6px 0 0;color:#a8e6c3;font-size:14px;">${isPaid ? '✅ Rezervace potvrzena' : '📋 Rezervace zaregistrována'}</p>
           </td>
         </tr>
         <!-- Body -->
         <tr>
           <td style="padding:32px;">
             <p style="color:#333;font-size:15px;margin:0 0 16px;">Dobrý den, <strong>${guestName}</strong>,</p>
-            <p style="color:#555;font-size:14px;margin:0 0 24px;">
-              Zasíláme vám odkaz na váš osobní portál, kde si můžete zkontrolovat stav
-              rezervace, provést platbu a zaregistrovat hosty.
+            <p style="color:#555;font-size:14px;margin:0 0 16px;">
+              ${isPaid
+                ? 'Vaše rezervace je potvrzena a platba přijata. Těšíme se na vás!'
+                : 'Vaše rezervace je zaregistrována. Platbu prosím proveďte na recepci při příjezdu.'}
             </p>
+            ${totalPrice ? `<p style="color:#1a6b3c;font-size:15px;font-weight:700;margin:0 0 20px;">💰 Celkem: ${totalPrice} ${isPaid ? '(zaplaceno)' : '(platba na místě)'}</p>` : ''}
 
             <!-- Booking info box -->
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fdf9;border:1px solid #d1f5e0;border-radius:8px;margin-bottom:24px;">
@@ -73,23 +79,36 @@ export const POST = async (
                   <p style="margin:0 0 6px;font-size:13px;color:#888;text-transform:uppercase;letter-spacing:.5px;">Ubytování</p>
                   <p style="margin:0;font-size:16px;font-weight:700;color:#1a1a1a;">${unitName}</p>
                   ${checkIn ? `<p style="margin:6px 0 0;font-size:13px;color:#555;">📅 ${checkIn} – ${checkOut}</p>` : ''}
+                  ${totalPrice ? `<p style="margin:8px 0 0;font-size:13px;color:#1a6b3c;font-weight:600;">💰 ${totalPrice} ${isPaid ? '· zaplaceno' : '· platba na recepci'}</p>` : ''}
                 </td>
               </tr>
             </table>
 
-            <!-- CTA button -->
-            <table width="100%" cellpadding="0" cellspacing="0">
+            <!-- Primary CTA: fill documents -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
               <tr>
-                <td align="center" style="padding:8px 0 24px;">
-                  <a href="${portalUrl}"
+                <td align="center">
+                  <a href="${kempRegUrl}"
                      style="display:inline-block;background:#1a6b3c;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:700;">
-                    Otevřít osobní portál →
+                    📋 Vyplnit doklady hostů →
                   </a>
                 </td>
               </tr>
             </table>
 
-            <p style="color:#999;font-size:12px;margin:0 0 4px;">Nebo zkopírujte tento odkaz:</p>
+            <!-- Secondary CTA: my bookings cabinet -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${kempCabinetUrl}"
+                     style="display:inline-block;background:#fff;color:#1a6b3c;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;border:2px solid #1a6b3c;">
+                    🏠 Osobní kabinet Kemp Carlsbad
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="color:#999;font-size:12px;margin:0 0 4px;">Alternativně — plný portál rezervace:</p>
             <p style="color:#1a6b3c;font-size:12px;word-break:break-all;margin:0;">
               <a href="${portalUrl}" style="color:#1a6b3c;">${portalUrl}</a>
             </p>
@@ -109,9 +128,13 @@ export const POST = async (
 </body>
 </html>`.trim();
 
+    const subject = isPaid
+      ? `✅ Rezervace potvrzena — Kemp Carlsbad – ${unitName}`
+      : `📋 Rezervace zaregistrována — Kemp Carlsbad – ${unitName}`;
+
     await sendEmail({
       to: guestEmail,
-      subject: `🏕️ Vaše rezervace v Kemp Carlsbad – ${unitName}`,
+      subject,
       html,
     });
 
