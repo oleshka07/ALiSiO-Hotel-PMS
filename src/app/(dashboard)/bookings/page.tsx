@@ -203,8 +203,8 @@ function BookingsDesktop() {
 
   /* ── filters ──────────────────────────────────────── */
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('resort');
+  const [statusFilter, setStatusFilter] = useState('active'); // 'active' = exclude cancelled
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
   const [dateFrom, setDateFrom] = useState(() => new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState('');
@@ -349,7 +349,11 @@ function BookingsDesktop() {
       const params = new URLSearchParams();
       params.set('exclude_children', '1');
       if (search) params.set('search', search);
-      if (statusFilter) params.set('status', statusFilter);
+      if (statusFilter === 'active') {
+        params.set('exclude_cancelled', '1');
+      } else if (statusFilter) {
+        params.set('status', statusFilter);
+      }
       if (categoryFilter) params.set('category', categoryFilter);
       if (paymentFilter) params.set('payment_status', paymentFilter);
       if (dateFrom) params.set('date_from', dateFrom);
@@ -562,20 +566,21 @@ function BookingsDesktop() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <select className="form-select" style={{ width: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select className="form-select" style={{ width: 180 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="active">🚫 Без скасованих</option>
               <option value="">Всі статуси</option>
               <option value="draft">Чернетка</option>
               <option value="tentative">Очікується</option>
               <option value="confirmed">Підтверджено</option>
               <option value="checked_in">Заселено</option>
               <option value="checked_out">Виселено</option>
-              <option value="cancelled">Скасовано</option>
+              <option value="cancelled">Тільки скасовані</option>
             </select>
             <select className="form-select" style={{ width: 150 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="">Всі категорії</option>
-              <option value="glamping">Glamping</option>
-              <option value="resort">Resort</option>
-              <option value="camping">Camping</option>
+              <option value="">🏕️ Всі типи</option>
+              <option value="glamping">⛺ Glamping</option>
+              <option value="resort">🏨 Resort</option>
+              <option value="camping">🌲 Camping</option>
             </select>
             <select className="form-select" style={{ width: 170 }} value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
               <option value="">Всі оплати</option>

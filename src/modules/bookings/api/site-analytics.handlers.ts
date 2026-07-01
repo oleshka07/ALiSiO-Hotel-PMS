@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 
@@ -56,12 +56,13 @@ function getReservationsStats(db: any, siteId: string, propertyId: string | null
 }
 
 function getSessionsCount(db: any, siteId: string, from: string, to: string) {
-  const sql = `
-    SELECT COUNT(DISTINCT session_id) as count
-    FROM widget_events
-    WHERE site_id = ? AND created_at >= ? AND created_at <= ?
-  `;
-  const row = db.prepare(sql).get(siteId, `${from}T00:00:00Z`, `${to}T23:59:59Z`) as { count: number };
+  if (siteId === 'all') {
+    const sql = `SELECT COUNT(DISTINCT session_id) as count FROM widget_events WHERE created_at >= ? AND created_at <= ?`;
+    const row = db.prepare(sql).get(`T00:00:00Z`, `T23:59:59Z`) as { count: number };
+    return row ? row.count : 0;
+  }
+  const sql = `SELECT COUNT(DISTINCT session_id) as count FROM widget_events WHERE site_id = ? AND created_at >= ? AND created_at <= ?`;
+  const row = db.prepare(sql).get(siteId, `T00:00:00Z`, `T23:59:59Z`) as { count: number };
   return row ? row.count : 0;
 }
 
@@ -155,12 +156,19 @@ export async function getAnalyticsTraffic(
     const source = `widget:${siteId}`;
 
     // Query 1: sessions by utm_source
-    const sessionsRows = db.prepare(`
-      SELECT utm_source, COUNT(DISTINCT session_id) as sessions
-      FROM widget_events
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND utm_source IS NOT NULL
-      GROUP BY utm_source
-    `).all(siteId, fromTime, toTime) as any[];
+    const sessionsRows = siteId === 'all'
+      ? db.prepare(`
+          SELECT utm_source, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE created_at >= ? AND created_at <= ? AND utm_source IS NOT NULL
+          GROUP BY utm_source
+        `).all(fromTime, toTime) as any[]
+      : db.prepare(`
+          SELECT utm_source, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND utm_source IS NOT NULL
+          GROUP BY utm_source
+        `).all(siteId, fromTime, toTime) as any[];
 
     // Query 2: bookings by utm_source
     let bookingsSql = `
@@ -258,12 +266,19 @@ export async function getAnalyticsGeo(
     const source = `widget:${siteId}`;
 
     // 1. Language analytics
-    const langSessions = db.prepare(`
-      SELECT lang, COUNT(DISTINCT session_id) as sessions
-      FROM widget_events
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND lang IS NOT NULL
-      GROUP BY lang
-    `).all(siteId, fromTime, toTime) as any[];
+    const langSessions = siteId === 'all'
+      ? db.prepare(`
+          SELECT lang, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE created_at >= ? AND created_at <= ? AND lang IS NOT NULL
+          GROUP BY lang
+        `).all(fromTime, toTime) as any[]
+      : db.prepare(`
+          SELECT lang, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND lang IS NOT NULL
+          GROUP BY lang
+        `).all(siteId, fromTime, toTime) as any[];
 
     let langBookingsSql = `
       SELECT 
@@ -309,12 +324,19 @@ export async function getAnalyticsGeo(
     languages.sort((a, b) => b.bookings - a.bookings || b.sessions - a.sessions);
 
     // 2. Country analytics
-    const countrySessions = db.prepare(`
-      SELECT country as country_code, COUNT(DISTINCT session_id) as sessions
-      FROM widget_events
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND country IS NOT NULL
-      GROUP BY country
-    `).all(siteId, fromTime, toTime) as any[];
+    const countrySessions = siteId === 'all'
+      ? db.prepare(`
+          SELECT country as country_code, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE created_at >= ? AND created_at <= ? AND country IS NOT NULL
+          GROUP BY country
+        `).all(fromTime, toTime) as any[]
+      : db.prepare(`
+          SELECT country as country_code, COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE site_id = ? AND created_at >= ? AND created_at <= ? AND country IS NOT NULL
+          GROUP BY country
+        `).all(siteId, fromTime, toTime) as any[];
 
     let countrySql = `
       SELECT 
@@ -465,16 +487,27 @@ export async function getAnalyticsCampaigns(
     const source = `widget:${siteId}`;
 
     // 1. Sessions by Campaign keys
-    const campaignsSessions = db.prepare(`
-      SELECT 
-        COALESCE(utm_source, '(direct)') as utm_source, 
-        COALESCE(utm_medium, '(none)') as utm_medium, 
-        COALESCE(utm_campaign, '(organic)') as utm_campaign, 
-        COUNT(DISTINCT session_id) as sessions
-      FROM widget_events
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ?
-      GROUP BY utm_source, utm_medium, utm_campaign
-    `).all(siteId, fromTime, toTime) as any[];
+    const campaignsSessions = siteId === 'all'
+      ? db.prepare(`
+          SELECT 
+            COALESCE(utm_source, '(direct)') as utm_source, 
+            COALESCE(utm_medium, '(none)') as utm_medium, 
+            COALESCE(utm_campaign, '(organic)') as utm_campaign, 
+            COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE created_at >= ? AND created_at <= ?
+          GROUP BY utm_source, utm_medium, utm_campaign
+        `).all(fromTime, toTime) as any[]
+      : db.prepare(`
+          SELECT 
+            COALESCE(utm_source, '(direct)') as utm_source, 
+            COALESCE(utm_medium, '(none)') as utm_medium, 
+            COALESCE(utm_campaign, '(organic)') as utm_campaign, 
+            COUNT(DISTINCT session_id) as sessions
+          FROM widget_events
+          WHERE site_id = ? AND created_at >= ? AND created_at <= ?
+          GROUP BY utm_source, utm_medium, utm_campaign
+        `).all(siteId, fromTime, toTime) as any[];
 
     // 2. Bookings by Campaign keys
     let bookingsSql = `
