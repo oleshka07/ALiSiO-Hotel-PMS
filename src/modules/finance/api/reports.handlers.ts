@@ -497,6 +497,7 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
     const basis = searchParams.get('basis') === 'accrued' ? 'accrued_at' : 'paid_at';
     const accountId = searchParams.get('account_id');
     const projectId = searchParams.get('project_id');
+    const tagIds = (searchParams.get('tag_ids') || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const months = generateMonthList(from, to);
     const fromDate = `${from}-01`;
@@ -510,6 +511,10 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
     const params: any[] = [from, to, org];
     if (accountId) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(accountId, accountId); }
     if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
+    if (tagIds.length > 0) {
+      where.push(`o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id IN (${tagIds.map(() => '?').join(',')}))`);
+      params.push(...tagIds);
+    }
 
     const rows = db.prepare(`
       SELECT
@@ -636,8 +641,13 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
     const from = searchParams.get('from') || defaultFrom;
     const to = searchParams.get('to') || defaultTo;
     const basis = searchParams.get('basis') === 'paid' ? 'paid_at' : 'accrued_at';
+    const tagIds = (searchParams.get('tag_ids') || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const months = generateMonthList(from, to);
+
+    const tagFilter = tagIds.length > 0
+      ? `AND o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id IN (${tagIds.map(() => '?').join(',')}))`
+      : '';
 
     const rows = db.prepare(`
       SELECT
@@ -652,8 +662,9 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
         AND strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?
         AND o.organization_id = ?
         AND o.op_type != 'transfer'
+        ${tagFilter}
       GROUP BY COALESCE(ec.id, ''), o.op_type, month
-    `).all(from, to, org) as any[];
+    `).all(from, to, org, ...tagIds) as any[];
 
     // Classify
     const byClassifier: Record<string, MatrixRow[]> = {
@@ -1080,6 +1091,11 @@ export async function getOperationsForDrillDown(request: NextRequest): Promise<N
       params.push(categoryId, categoryId);
     }
     if (opType) { where.push('o.op_type = ?'); params.push(opType); }
+    const tagIds = (searchParams.get('tag_ids') || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (tagIds.length > 0) {
+      where.push(`o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id IN (${tagIds.map(() => '?').join(',')}))`);
+      params.push(...tagIds);
+    }
 
     const rows = db.prepare(`
       SELECT o.*, ec.name AS category_name, ec.icon AS category_icon,

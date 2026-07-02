@@ -1597,6 +1597,28 @@ function runMigrations(database: any) {
     console.log('[DB] expense_categories hierarchy migration note:', e.message);
   }
 
+  // --- Every-startup backfill: categories created via the legacy CRUD used to
+  // get NULL op_type/classifier, making them invisible to matrix reports.
+  // Idempotent — only touches rows that are still unclassified.
+  try {
+    const fixes: string[] = [
+      "UPDATE expense_categories SET op_type='income',   classifier=COALESCE(NULLIF(classifier,''),'revenue')     WHERE std_group='Revenue'   AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='expense',  classifier=COALESCE(NULLIF(classifier,''),'cogs')        WHERE std_group='COGS'      AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='expense',  classifier=COALESCE(NULLIF(classifier,''),'operational') WHERE std_group='OPEX'      AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='expense',  classifier=COALESCE(NULLIF(classifier,''),'tax')         WHERE std_group='Taxes'     AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='expense',  classifier=COALESCE(NULLIF(classifier,''),'capex')       WHERE std_group='CAPEX'     AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='expense',  classifier=COALESCE(NULLIF(classifier,''),'financing')   WHERE std_group='Financing' AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='transfer', classifier=COALESCE(NULLIF(classifier,''),'other')       WHERE std_group='Transfer'  AND (op_type IS NULL OR op_type='')",
+      "UPDATE expense_categories SET op_type='other',    classifier=COALESCE(NULLIF(classifier,''),'other')       WHERE op_type IS NULL OR op_type=''",
+      "UPDATE expense_categories SET classifier='other' WHERE classifier IS NULL OR classifier=''",
+    ];
+    let fixed = 0;
+    for (const sql of fixes) fixed += database.prepare(sql).run().changes;
+    if (fixed > 0) console.log(`[DB] Classified ${fixed} legacy expense_categories rows (op_type/classifier backfill)`);
+  } catch (e: any) {
+    console.log('[DB] expense_categories classifier backfill note:', e.message);
+  }
+
   // --- Migration: create expenses table (skipped after fin_operations migration) ---
   if (!finOpsMigrated) {
     database.exec(`
