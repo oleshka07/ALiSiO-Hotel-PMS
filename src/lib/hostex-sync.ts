@@ -686,7 +686,7 @@ function logSync(db: any, syncType: string, status: string, count: number, error
 
 // ─── Property map seeding ─────────────────────────────────
 
-export async function seedPropertyMap(): Promise<void> {
+export async function seedPropertyMap(): Promise<{ unmapped: { id: number; title: string; channels: string[] }[] }> {
   const db = getDb();
   ensureHostexColumns(db);
 
@@ -696,15 +696,21 @@ export async function seedPropertyMap(): Promise<void> {
     VALUES (?, ?, ?, ?)
   `);
 
+  const unmapped: { id: number; title: string; channels: string[] }[] = [];
+
   for (const prop of properties) {
     const unitId = PROPERTY_MAP[prop.id];
     if (unitId) {
       upsert.run(prop.id, prop.title, unitId, JSON.stringify(prop.channels));
       console.log(`[Hostex] Mapped: ${prop.title} (${prop.id}) → ${unitId}`);
     } else {
-      console.warn(`[Hostex] UNMAPPED PROPERTY: "${prop.title}" (id=${prop.id}) channels=${JSON.stringify(prop.channels?.map((c: any) => c.channel_type))}`);
+      const channelTypes = (prop.channels || []).map((c: any) => c.channel_type);
+      console.warn(`[Hostex] UNMAPPED PROPERTY: "${prop.title}" (id=${prop.id}) channels=${JSON.stringify(channelTypes)}`);
+      unmapped.push({ id: prop.id, title: prop.title, channels: channelTypes });
     }
   }
+
+  return { unmapped };
 }
 
 // ─── Get sync status ──────────────────────────────────────

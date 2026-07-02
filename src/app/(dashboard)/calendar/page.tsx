@@ -625,9 +625,15 @@ function CalendarDesktop() {
                 onClick={async () => {
                   setSyncing(true);
                   try {
-                    await fetch('/api/hostex/sync', { method: 'POST' });
+                    const res = await fetch('/api/hostex/sync', { method: 'POST' });
+                    const data = await res.json();
                     await fetchData();
-                    showToast('✅ Hostex синхронізовано');
+                    let msg = `✅ Hostex: +${data.created || 0} нових, ${data.updated || 0} оновлено`;
+                    if (data.unmappedProperties?.length) {
+                      msg += `\n⚠️ ${data.unmappedProperties.length} непривʼязаних: ${data.unmappedProperties.map((p: any) => `${p.title} (id:${p.id})`).join(', ')}`;
+                    }
+                    if (data.error) msg = `❌ ${data.error}`;
+                    showToast(msg);
                   } catch { showToast('❌ Помилка синхронізації'); }
                   setSyncing(false);
                 }}
