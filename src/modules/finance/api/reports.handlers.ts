@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { getMonthMoney } from '../data/money-metrics';
 
 // Helpers: SQL fragments that filter fin_operations by semantic slice.
 // A "payment" operation = income or refund tied to a reservation (source IN ('booking_widget','teia','hostex','manual') with reservation_id).
@@ -15,33 +16,17 @@ import { getDb } from '@core/db';
 // computeAmountCompany locks the rate at op-creation time, so historical
 // figures stay stable even if FX moves.
 
+// Canonical revenue/expense definitions live in data/money-metrics.ts —
+// every cash report must use them so the numbers agree across pages.
+// revenue = income (non-financing) − refunds; expenses include tax and
+// uncategorized spending, exclude capex/financing (separate buckets).
 function monthRevenueSql(month: string, db: any): number {
-  // Net revenue from all operations (income minus refunds) for a given month
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(
-      CASE WHEN op_type = 'income' THEN amount_company
-           WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
-           ELSE 0 END
-    ), 0) AS total
-    FROM fin_operations
-    WHERE status = 'completed'
-      AND strftime('%Y-%m', paid_at) = ?
-  `).get(month) as { total: number };
-  return row.total;
+  return getMonthMoney(db, month).revenue;
 }
 
-function monthExpensesSql(month: string, db: any, includeRefunds = false): number {
-  // P&L expenses (COGS+OPEX+Taxes) — excluding refund ops and CAPEX
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(o.amount_company), 0) AS total
-    FROM fin_operations o
-    LEFT JOIN expense_categories ec ON ec.id = o.category_id
-    WHERE o.op_type = 'expense'
-      AND strftime('%Y-%m', o.paid_at) = ?
-      AND (${includeRefunds ? '1=1' : "COALESCE(o.payment_subtype,'') != 'refund'"})
-      AND (ec.std_group IN ('COGS', 'OPEX', 'Taxes') AND ec.include_in_pnl = 1)
-  `).get(month) as { total: number };
-  return row.total;
+function monthExpensesSql(month: string, db: any): number {
+  const m = getMonthMoney(db, month);
+  return m.expenses_operating + m.tax;
 }
 
 export async function getFinanceOverview(request: NextRequest): Promise<NextResponse> {
@@ -82,8 +67,13 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
 
     const buBreakdown = db.prepare(`
       SELECT bu.id, bu.name,
-             COALESCE(SUM(CASE WHEN o.op_type = 'income' THEN o.amount_company ELSE 0 END), 0) as revenue,
-             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND (ec.std_group IN ('COGS','OPEX','Taxes')) THEN o.amount_company ELSE 0 END), 0) as expenses,
+             COALESCE(SUM(CASE WHEN o.op_type = 'income' AND COALESCE(ec.classifier, ec.std_group) NOT IN ('financing', 'Financing') THEN o.amount_company
+                              WHEN o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') = 'refund' THEN -o.amount_company
+                              ELSE 0 END), 0) as revenue,
+             COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
+                                AND COALESCE(ec.is_capex, 0) = 0
+                                AND COALESCE(ec.classifier, ec.std_group, 'x') NOT IN ('financing', 'Financing', 'capex', 'CAPEX')
+                               THEN o.amount_company ELSE 0 END), 0) as expenses,
              COALESCE(SUM(CASE WHEN o.op_type = 'expense' AND ec.is_capex = 1 THEN o.amount_company ELSE 0 END), 0) as capex
       FROM business_units bu
       LEFT JOIN fin_operations o ON o.project_id = bu.id AND strftime('%Y-%m', o.paid_at) = ? AND o.status = 'completed'
@@ -92,9 +82,12 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
       GROUP BY bu.id ORDER BY bu.sort_order
     `).all(month) as any[];
 
+    // Only PENDING accruals are added on top of cash expenses. Paid accruals
+    // are already (or will be) real fin_operations — adding them here counted
+    // the same expense twice.
     const buAccruals = db.prepare(`
       SELECT a.business_unit_id, COALESCE(SUM(ABS(a.amount)), 0) as total
-      FROM accruals a WHERE a.month = ? AND a.status IN ('pending', 'paid') GROUP BY a.business_unit_id
+      FROM accruals a WHERE a.month = ? AND a.status = 'pending' GROUP BY a.business_unit_id
     `).all(month) as any[];
     for (const acc of buAccruals) {
       const bu = buBreakdown.find((b: any) => b.id === acc.business_unit_id);
@@ -583,8 +576,14 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
     const accountIds = accountsRows.map((a) => a.id);
     const initialBalSum = accountsRows.reduce((s, a) => s + (a.initial_balance || 0), 0);
 
+    // Balances always live on the PAID basis (money on accounts is a cash
+    // fact) — independent of the flows basis above, so "ending = opening +
+    // net" stays true only when basis='paid'; on accrued basis the balance
+    // rows still show real account state instead of a fictional equation.
     const monthBalances: Record<string, { opening: number; ending: number }> = {};
     let runningBalance = initialBalSum;
+    const paidDeltaByMonth: Record<string, number> = {};
+    for (const m of months) paidDeltaByMonth[m] = 0;
     if (accountIds.length > 0) {
       const plh = accountIds.map(() => '?').join(',');
       const prior = db.prepare(`
@@ -594,9 +593,19 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
           AS delta
       `).get(...accountIds, fromDate, ...accountIds, fromDate) as { delta: number };
       runningBalance += prior.delta;
+
+      const deltas = db.prepare(`
+        SELECT strftime('%Y-%m', paid_at) AS m,
+          COALESCE(SUM(CASE WHEN account_to_id IN (${plh}) THEN amount_company ELSE 0 END), 0)
+          - COALESCE(SUM(CASE WHEN account_from_id IN (${plh}) THEN amount_company ELSE 0 END), 0) AS delta
+        FROM fin_operations
+        WHERE status = 'completed' AND strftime('%Y-%m', paid_at) BETWEEN ? AND ?
+        GROUP BY strftime('%Y-%m', paid_at)
+      `).all(...accountIds, ...accountIds, months[0], months[months.length - 1]) as { m: string; delta: number }[];
+      for (const d of deltas) if (d.m in paidDeltaByMonth) paidDeltaByMonth[d.m] = d.delta;
     }
     for (const m of months) {
-      monthBalances[m] = { opening: runningBalance, ending: runningBalance + netByMonth[m] };
+      monthBalances[m] = { opening: runningBalance, ending: runningBalance + paidDeltaByMonth[m] };
       runningBalance = monthBalances[m].ending;
     }
 
@@ -679,10 +688,14 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
       root.children = children.filter((c) => c.parent_id === root.category_id).sort((a, b) => b.total - a.total);
     }
 
-    // Bucket into classifier sections
+    // Bucket into classifier sections. Financing inflows (investor
+    // contributions, loans) are NOT revenue — they get their own section.
+    const financingIncome: MatrixRow[] = [];
     for (const r of roots) {
-      if (r.op_type === 'income') byClassifier.revenue.push(r);
-      else {
+      if (r.op_type === 'income') {
+        if ((r.classifier || '') === 'financing') financingIncome.push(r);
+        else byClassifier.revenue.push(r);
+      } else {
         const cls = r.classifier || 'other';
         if (byClassifier[cls]) byClassifier[cls].push(r);
         else byClassifier.other.push(r);
@@ -717,14 +730,25 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
       return out;
     }
 
+    const finInSum = sumByMonth(financingIncome);
+
     const gpByMonth = subtract(revSum.byMonth, cogsSum.byMonth);
     const gpTotal = revSum.total - cogsSum.total;
     const miByMonth = subtract(gpByMonth, variableSum.byMonth);
     const miTotal = gpTotal - variableSum.total;
     const ebitdaByMonth = subtract(miByMonth, opSum.byMonth);
     const ebitdaTotal = miTotal - opSum.total;
-    const netByMonth = subtract(subtract(subtract(ebitdaByMonth, taxSum.byMonth), capexSum.byMonth), otherSum.byMonth);
-    const netTotal = ebitdaTotal - taxSum.total - capexSum.total - otherSum.total;
+    // P&L net result: EBITDA − taxes − other. CapEx and financing are NOT
+    // P&L lines — they feed the separate cash result below.
+    const netByMonth = subtract(subtract(ebitdaByMonth, taxSum.byMonth), otherSum.byMonth);
+    const netTotal = ebitdaTotal - taxSum.total - otherSum.total;
+    // Cash result: what actually stayed in the till after capex & financing.
+    const cashByMonth: Record<string, number> = {};
+    for (const m of months) {
+      cashByMonth[m] = (netByMonth[m] || 0) - (capexSum.byMonth[m] || 0)
+        - (finSum.byMonth[m] || 0) + (finInSum.byMonth[m] || 0);
+    }
+    const cashTotal = netTotal - capexSum.total - finSum.total + finInSum.total;
 
     const pct = (v: number, base: number) => base > 0 ? Math.round((v / base) * 1000) / 10 : null;
 
@@ -739,10 +763,12 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
         { key: 'operational', name: 'Операційні',           rows: byClassifier.operational, byMonth: opSum.byMonth,      total: opSum.total,      sign: -1 },
         { key: 'ebitda',      name: 'EBITDA',               byMonth: ebitdaByMonth,         total: ebitdaTotal,          margin_pct: pct(ebitdaTotal, revSum.total), isDerived: true, highlight: true },
         { key: 'tax',         name: 'Податки',              rows: byClassifier.tax,         byMonth: taxSum.byMonth,     total: taxSum.total,     sign: -1 },
-        { key: 'capex',       name: 'CapEx',                rows: byClassifier.capex,       byMonth: capexSum.byMonth,   total: capexSum.total,   sign: -1 },
-        { key: 'financing',   name: 'Фінансові',            rows: byClassifier.financing,   byMonth: finSum.byMonth,     total: finSum.total,     sign: -1 },
         { key: 'other',       name: 'Інше',                 rows: byClassifier.other,       byMonth: otherSum.byMonth,   total: otherSum.total,   sign: -1 },
         { key: 'net',         name: 'Чистий результат',     byMonth: netByMonth,            total: netTotal,             margin_pct: pct(netTotal, revSum.total), isDerived: true, highlight: true },
+        { key: 'capex',       name: 'CapEx',                rows: byClassifier.capex,       byMonth: capexSum.byMonth,   total: capexSum.total,   sign: -1 },
+        { key: 'financing',   name: 'Фінансові (виплати)',  rows: byClassifier.financing,   byMonth: finSum.byMonth,     total: finSum.total,     sign: -1 },
+        { key: 'financing_in',name: 'Фінансові (надходження)', rows: financingIncome,       byMonth: finInSum.byMonth,   total: finInSum.total },
+        { key: 'cash_result', name: 'Грошовий результат',   byMonth: cashByMonth,           total: cashTotal,            isDerived: true, highlight: true },
       ],
     });
   } catch (error: any) {
@@ -756,30 +782,13 @@ export async function getFinancialIndicators(request: NextRequest): Promise<Next
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
 
-    const sumClassifier = (cls: string, opType?: string): number => {
-      const where = opType
-        ? `o.op_type = ? AND ec.classifier = ?`
-        : `ec.classifier = ?`;
-      const params = opType ? [opType, cls] : [cls];
-      const row = db.prepare(`
-        SELECT COALESCE(SUM(o.amount_company), 0) AS total FROM fin_operations o
-        LEFT JOIN expense_categories ec ON ec.id = o.category_id
-        WHERE o.status = 'completed'
-          AND strftime('%Y-%m', o.paid_at) = ?
-          AND ${where}
-      `).get(month, ...params) as { total: number };
-      return row.total;
-    };
-
-    const revRow = db.prepare(`
-      SELECT COALESCE(SUM(amount_company), 0) AS total FROM fin_operations
-      WHERE status = 'completed' AND op_type = 'income' AND strftime('%Y-%m', paid_at) = ?
-    `).get(month) as { total: number };
-    const revenue = revRow.total;
-
-    const cogs = sumClassifier('cogs', 'expense');
-    const variable = sumClassifier('variable', 'expense');
-    const operational = sumClassifier('operational', 'expense');
+    // Canonical definitions (money-metrics): revenue nets refunds and
+    // excludes financing inflows — same number as the overview shows.
+    const mm = getMonthMoney(db, month);
+    const revenue = mm.revenue;
+    const cogs = mm.cogs;
+    const variable = mm.variable;
+    const operational = mm.operational + mm.other_expense + mm.uncategorized_expense;
 
     const grossProfit = revenue - cogs;
     const marginalIncome = grossProfit - variable;

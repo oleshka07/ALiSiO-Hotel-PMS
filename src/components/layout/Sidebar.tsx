@@ -82,7 +82,7 @@ const navigation: NavSection[] = [
     title: 'Управління',
     items: [
       { label: 'Ціноутворення', href: '/pricing', icon: <DollarSign size={20} />, permission: 'nav:pricing' },
-      { label: 'Звіти', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
+      { label: 'Аналітика продажів', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
       { label: 'Гості', href: '/guests', icon: <Users size={20} />, permission: 'nav:guests' },
       { label: 'Evidenční kniha', href: '/guest-registry', icon: <ClipboardList size={20} />, permission: 'nav:guests' },
       { label: 'Документи', href: '/documents', icon: <FileText size={20} />, permission: 'nav:documents' },
