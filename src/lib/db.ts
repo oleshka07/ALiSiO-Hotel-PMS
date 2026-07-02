@@ -1619,6 +1619,35 @@ function runMigrations(database: any) {
     console.log('[DB] expense_categories classifier backfill note:', e.message);
   }
 
+  // --- One-shot: attribute reservation income to the STAY period ------------
+  // Historically accrued_at defaulted to paid_at, so the "accrual" P&L basis
+  // was a fiction. Point reservation-linked income at check_in (stay month)
+  // and fill period_from/to. paid_at (cash truth) is untouched. Guarded via
+  // fin_system_state so it runs once.
+  try {
+    const done = database.prepare(
+      "SELECT value FROM fin_system_state WHERE key = 'accrued_at_stay_backfilled'"
+    ).get() as { value: string } | undefined;
+    if (!done) {
+      const r = database.prepare(`
+        UPDATE fin_operations SET
+          accrued_at = (SELECT r.check_in FROM reservations r WHERE r.id = fin_operations.reservation_id),
+          period_from = COALESCE(period_from, (SELECT r.check_in FROM reservations r WHERE r.id = fin_operations.reservation_id)),
+          period_to = COALESCE(period_to, (SELECT r.check_out FROM reservations r WHERE r.id = fin_operations.reservation_id))
+        WHERE op_type = 'income'
+          AND reservation_id IS NOT NULL
+          AND accrued_at = paid_at
+          AND EXISTS (SELECT 1 FROM reservations r WHERE r.id = fin_operations.reservation_id AND r.check_in IS NOT NULL)
+      `).run();
+      database.prepare(
+        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('accrued_at_stay_backfilled', ?, datetime('now'))"
+      ).run(`re-attributed ${r.changes} reservation income ops to stay period`);
+      if (r.changes > 0) console.log(`[DB] Accrual backfill: ${r.changes} reservation income ops now accrue on check-in date`);
+    }
+  } catch (e: any) {
+    console.log('[DB] accrued_at stay backfill note:', e.message);
+  }
+
   // --- Migration: create expenses table (skipped after fin_operations migration) ---
   if (!finOpsMigrated) {
     database.exec(`

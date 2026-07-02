@@ -206,10 +206,12 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
       GROUP BY ec.pnl_line, o.project_id, o.op_type, COALESCE(o.payment_subtype, '')
     `).all(month) as any[];
 
+    // Only PENDING accruals overlay the cash figures: a paid accrual is (or
+    // will be) a real fin_operation — counting both doubled the expense.
     const accrualsByLineAndBU = db.prepare(`
       SELECT ec.pnl_line, a.business_unit_id, SUM(a.amount) as total
       FROM accruals a LEFT JOIN expense_categories ec ON a.category_id = ec.id
-      WHERE a.month = ? AND a.status IN ('pending', 'paid') GROUP BY ec.pnl_line, a.business_unit_id
+      WHERE a.month = ? AND a.status = 'pending' GROUP BY ec.pnl_line, a.business_unit_id
     `).all(month) as any[];
 
     for (const acc of accrualsByLineAndBU) {
@@ -230,7 +232,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
     const sharedAccrualsByMethod = db.prepare(`
       SELECT ec.alloc_method, SUM(a.amount) as total
       FROM accruals a LEFT JOIN expense_categories ec ON a.category_id = ec.id
-      WHERE a.month = ? AND a.business_unit_id = 'bu_shared' AND a.status IN ('pending', 'paid')
+      WHERE a.month = ? AND a.business_unit_id = 'bu_shared' AND a.status = 'pending'
             AND ec.alloc_method NOT IN ('DIRECT', 'NONE')
       GROUP BY ec.alloc_method
     `).all(month) as any[];
@@ -833,7 +835,12 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
         (
           fa.initial_balance
           + COALESCE((SELECT SUM(
-              CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+              CASE
+                WHEN o.op_type = 'transfer' AND o.currency_to IS NOT NULL AND o.currency_to = fa.currency
+                  THEN COALESCE(o.amount_to, o.amount)
+                WHEN o.currency = fa.currency THEN o.amount
+                ELSE o.amount_company
+              END
             ) FROM fin_operations o
             WHERE o.account_to_id = fa.id AND o.status = 'completed' AND o.paid_at <= ?), 0)
           - COALESCE((SELECT SUM(
@@ -853,6 +860,32 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
       return { ...a, section: 'liabilities', debt, available };
     });
 
+    // OTA receivables: money the platforms owe us (CZK)
+    const otaReceivables = db.prepare(`
+      SELECT COALESCE(SUM(COALESCE(expected_net, expected_gross, 0)), 0) AS total, COUNT(*) AS cnt
+      FROM fin_channel_receivables
+      WHERE status IN ('expected', 'in_statement')
+    `).get() as { total: number; cnt: number };
+
+    // Guest prepayments for FUTURE stays: money received, service not yet
+    // delivered — a liability until check-in (CZK)
+    const guestPrepayments = db.prepare(`
+      SELECT COALESCE(SUM(o.amount_company), 0) AS total, COUNT(DISTINCT o.reservation_id) AS cnt
+      FROM fin_operations o
+      JOIN reservations r ON r.id = o.reservation_id
+      WHERE o.op_type = 'income' AND o.status = 'completed'
+        AND o.paid_at <= ? AND r.check_in > ?
+        AND r.status IN ('confirmed', 'tentative')
+    `).get(asOf, asOf) as { total: number; cnt: number };
+
+    // Fixed assets: capex purchase cost minus straight-line depreciation
+    const fixedAssets = db.prepare(`
+      SELECT COALESCE(SUM(MAX(0, amount - COALESCE(depreciation_monthly, 0) *
+        MAX(0, (julianday(?) - julianday(month || '-01')) / 30.44))), 0) AS total,
+        COUNT(*) AS cnt
+      FROM capex_items WHERE status = 'active'
+    `).get(asOf) as { total: number; cnt: number };
+
     const byCurrency: Record<string, { assets: number; liabilities: number; net: number }> = {};
     for (const a of assets) {
       if (!byCurrency[a.currency]) byCurrency[a.currency] = { assets: 0, liabilities: 0, net: 0 };
@@ -862,11 +895,19 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
       if (!byCurrency[l.currency]) byCurrency[l.currency] = { assets: 0, liabilities: 0, net: 0 };
       byCurrency[l.currency].liabilities += l.debt;
     }
+    if (!byCurrency['CZK']) byCurrency['CZK'] = { assets: 0, liabilities: 0, net: 0 };
+    byCurrency['CZK'].assets += otaReceivables.total + fixedAssets.total;
+    byCurrency['CZK'].liabilities += guestPrepayments.total;
     for (const cur of Object.keys(byCurrency)) {
       byCurrency[cur].net = byCurrency[cur].assets - byCurrency[cur].liabilities;
     }
 
-    return NextResponse.json({ as_of: asOf, assets, liabilities, byCurrency });
+    return NextResponse.json({
+      as_of: asOf, assets, liabilities, byCurrency,
+      ota_receivables: { total: otaReceivables.total, count: otaReceivables.cnt, currency: 'CZK' },
+      guest_prepayments: { total: guestPrepayments.total, count: guestPrepayments.cnt, currency: 'CZK' },
+      fixed_assets: { total: fixedAssets.total, count: fixedAssets.cnt, currency: 'CZK' },
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -887,15 +928,25 @@ export async function getProjectProfitability(request: NextRequest): Promise<Nex
 
     const months = generateMonthList(from, to);
 
+    // Operating view: refunds net against income; CapEx and financing flows
+    // are separated so a build-out year doesn't read as operating loss.
     const rows = db.prepare(`
       SELECT bu.id AS project_id, bu.name AS project_name, bu.is_shared,
-             o.op_type, strftime('%Y-%m', o.${basis}) AS month, SUM(o.amount_company) AS total
+             CASE
+               WHEN o.op_type = 'income' AND COALESCE(ec.classifier, '') = 'financing' THEN 'financing_in'
+               WHEN o.op_type = 'income' THEN 'income'
+               WHEN COALESCE(o.payment_subtype, '') = 'refund' THEN 'refund'
+               WHEN COALESCE(ec.classifier, '') IN ('capex', 'financing') OR COALESCE(ec.is_capex, 0) = 1 THEN 'capex_fin'
+               ELSE 'expense'
+             END AS bucket,
+             strftime('%Y-%m', o.${basis}) AS month, SUM(o.amount_company) AS total
       FROM fin_operations o
       JOIN business_units bu ON bu.id = o.project_id
+      LEFT JOIN expense_categories ec ON ec.id = o.category_id
       WHERE o.status = 'completed' AND o.organization_id = ?
         AND strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?
         AND o.op_type != 'transfer'
-      GROUP BY bu.id, o.op_type, month
+      GROUP BY bu.id, bucket, month
     `).all(org, from, to) as any[];
 
     const projectMap = new Map<string, any>();
@@ -905,15 +956,23 @@ export async function getProjectProfitability(request: NextRequest): Promise<Nex
           project_id: r.project_id, project_name: r.project_name, is_shared: r.is_shared,
           income_by_month: {}, expense_by_month: {},
           income_total: 0, expense_total: 0,
+          capex_fin_total: 0, financing_in_total: 0,
         });
       }
       const p = projectMap.get(r.project_id)!;
-      if (r.op_type === 'income') {
+      if (r.bucket === 'income') {
         p.income_by_month[r.month] = (p.income_by_month[r.month] || 0) + r.total;
         p.income_total += r.total;
-      } else if (r.op_type === 'expense') {
+      } else if (r.bucket === 'refund') {
+        p.income_by_month[r.month] = (p.income_by_month[r.month] || 0) - r.total;
+        p.income_total -= r.total;
+      } else if (r.bucket === 'expense') {
         p.expense_by_month[r.month] = (p.expense_by_month[r.month] || 0) + r.total;
         p.expense_total += r.total;
+      } else if (r.bucket === 'capex_fin') {
+        p.capex_fin_total += r.total;
+      } else if (r.bucket === 'financing_in') {
+        p.financing_in_total += r.total;
       }
     }
 
@@ -1146,13 +1205,21 @@ export async function getExpectedPayments(request: NextRequest): Promise<NextRes
 
     const items = bookings.map(b => {
       const netPaid = b.paid_amount - b.refunded_amount;
-      const outstanding = b.total_price - netPaid;
+      // Channel-collect OTAs pay out NET of their commission — expecting the
+      // gross total_price overstated the forecast by the commission amount.
+      const commission = b.commission_amount || (b.total_price * (b.commission_percent || 0) / 100);
+      const expectedTotal = b.total_price - commission;
+      const outstanding = expectedTotal - netPaid;
       const daysUntilCheckIn = Math.ceil((new Date(b.check_in).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
       let urgency: 'overdue' | 'urgent' | 'soon' | 'upcoming' = 'upcoming';
       if (daysUntilCheckIn < 0) urgency = 'overdue';
       else if (daysUntilCheckIn <= 3) urgency = 'urgent';
       else if (daysUntilCheckIn <= 14) urgency = 'soon';
-      return { ...b, guest_name: `${b.first_name} ${b.last_name}`, net_paid: netPaid, outstanding, days_until: daysUntilCheckIn, urgency };
+      return {
+        ...b, guest_name: `${b.first_name} ${b.last_name}`, net_paid: netPaid,
+        commission, expected_total: expectedTotal, outstanding,
+        days_until: daysUntilCheckIn, urgency,
+      };
     }).filter(b => b.outstanding > 0);
 
     const summary = {
