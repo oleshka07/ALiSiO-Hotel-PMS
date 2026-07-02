@@ -11,8 +11,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requirePermission } from '@core/security/route-guard';
 
-export async function PATCH(
+export const PATCH = requirePermission('manage_documents', _PATCH);
+async function _PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {

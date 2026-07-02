@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
+import { requireOwner } from '@core/security/route-guard';
 import type { InvoiceData } from '@/lib/invoice-template';
 import JSZip from 'jszip';
 
@@ -38,7 +39,8 @@ function buildDescription(data: {
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export const GET = requireOwner(_GET);
+async function _GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month') || new Date().toISOString().slice(0, 7);

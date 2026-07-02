@@ -27,7 +27,7 @@ const moreItems = [
   ]},
   { section: 'Фінанси', items: [
     { label: 'Огляд', href: '/finance', icon: Wallet },
-    { label: 'Журнал транзакцій', href: '/finance/log', icon: List },
+    { label: 'Журнал транзакцій', href: '/finance/operations', icon: List },
     { label: 'Витрати', href: '/finance/expenses', icon: Receipt },
     { label: 'Cash Flow', href: '/finance/cashflow', icon: TrendingUp },
   ]},

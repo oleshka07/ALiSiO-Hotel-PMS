@@ -7,8 +7,10 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requireOwner } from '@core/security/route-guard';
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = requireOwner(_GET);
+async function _GET(req: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(req.url);
     const source  = searchParams.get('source')  || 'all';

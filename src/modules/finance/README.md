@@ -408,15 +408,21 @@ API згруповано за бізнес-доменами. Мутації за
 
 ## Схема даних
 
-**Основні таблиці:** `fin_operations`, `fin_categories`, `fin_accounts`, `fin_counterparties`, `fin_tags`, `fin_budgets`, `fin_auto_rules`, `fin_recurring_templates`
+**Головна таблиця:** `fin_operations` — єдиний реєстр фактичного руху коштів
+(income / expense / transfer; всі джерела: ручні, банк-імпорт, Telegram,
+Teya, OTA, recurring). Запис ТІЛЬКИ через `createOperationInTx()`.
 
-**Банк:** `bank_statements`, `bank_transactions`, `bank_inboxes`
+**Довідники:** `expense_categories` (дерево, op_type + classifier),
+`business_units` (проєкти), `finance_counterparties`, `finance_tags` +
+`fin_operation_tags`, `finance_accounts`, `finance_exchange_rates`.
 
-**Legacy:** `payments`, `expenses`, `expense_categories`, `business_units`, `capex`, `accruals`
+**Допоміжні:** `fin_budgets`, `fin_recurring_templates`, `bank_statements` +
+`bank_transactions` (staging виписок), `fin_bank_inboxes`,
+`fin_channel_receivables` (дебіторка OTA), `capex_items`, `accruals`,
+`invoices`, `fin_operation_audit`.
 
-**Інвестори:** `investors`, `investments`, `investor_monthly_metrics`, `investor_payouts`, `investor_properties`, `investor_monthly_reports`, `investor_documents`, `investor_monthly_notes`, `forecast_scenarios`
-
-**Інше:** `invoices`, `clearing_accounts`, `receivables`, `statement_uploads`, `receipt_inboxes`, `pending_receipts`, `fin_attachments`, `import_formats`, `import_runs`
+> Legacy-таблиці `payments`, `expenses`, `income`, `transfers` ВИДАЛЕНІ
+> (міграція PR #6 перелила їх у fin_operations). Не посилатися.
 
 ## Структура файлів
 

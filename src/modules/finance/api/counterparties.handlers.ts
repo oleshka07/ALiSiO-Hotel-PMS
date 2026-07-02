@@ -392,18 +392,15 @@ export async function getAliasSuggestions(_request: NextRequest): Promise<NextRe
     const db = getDb();
     const orgId = getOrgId(db);
     const rows = db.prepare(`
-      SELECT counterparty AS txt, COUNT(*) AS n FROM expenses
-        WHERE organization_id = ? AND counterparty IS NOT NULL AND TRIM(counterparty) != ''
-        GROUP BY counterparty
-      UNION ALL
-      SELECT counterparty AS txt, COUNT(*) AS n FROM income
-        WHERE organization_id = ? AND counterparty IS NOT NULL AND TRIM(counterparty) != ''
-        GROUP BY counterparty
+      SELECT comment AS txt, COUNT(*) AS n FROM fin_operations
+        WHERE organization_id = ? AND counterparty_id IS NULL
+          AND comment IS NOT NULL AND TRIM(comment) != ''
+        GROUP BY comment
       UNION ALL
       SELECT counterparty AS txt, COUNT(*) AS n FROM bank_transactions
         WHERE organization_id = ? AND counterparty IS NOT NULL AND TRIM(counterparty) != ''
         GROUP BY counterparty
-    `).all(orgId, orgId, orgId) as { txt: string; n: number }[];
+    `).all(orgId, orgId) as { txt: string; n: number }[];
 
     const agg = new Map<string, number>();
     for (const r of rows) {

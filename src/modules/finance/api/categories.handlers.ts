@@ -39,7 +39,7 @@ function getOrgId(db: any): string {
 }
 
 function countLinkedExpenseOps(db: any, categoryId: string): number {
-  const row = db.prepare("SELECT COUNT(*) AS n FROM expenses WHERE category_id = ?").get(categoryId) as { n: number };
+  const row = db.prepare("SELECT COUNT(*) AS n FROM fin_operations WHERE category_id = ?").get(categoryId) as { n: number };
   return row.n;
 }
 

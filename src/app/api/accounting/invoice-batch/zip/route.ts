@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
+import { requireOwner } from '@core/security/route-guard';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 
 // ─── Pure-JS ZIP builder (STORE method — no compression, no deps) ─────────────
@@ -258,7 +259,8 @@ async function buildPdfBytes(row: any): Promise<Uint8Array> {
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export const POST = requireOwner(_POST);
+async function _POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json() as {
       invoice_ids?: string[];

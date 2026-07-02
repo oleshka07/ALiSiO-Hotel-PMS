@@ -123,7 +123,7 @@ export default function ReportsPage() {
       <div className="app-content">
         <div className="page-header">
           <div>
-            <h2 className="page-title">Звіти та аналітика</h2>
+            <h2 className="page-title">Аналітика продажів</h2>
             <div className="page-subtitle">
               {from === to ? from : `${from} — ${to}`}
               {data?.period?.days && ` (${data.period.days} днів)`}
@@ -180,7 +180,7 @@ export default function ReportsPage() {
                 <div className="stat-icon green"><BarChart3 size={22} /></div>
                 <div>
                   <div className="stat-value">{(summary.totalRevenue || 0).toLocaleString()}</div>
-                  <div className="stat-label">Дохід (CZK) ≈ {toEur(summary.totalRevenue || 0)} EUR</div>
+                  <div className="stat-label">Вартість бронювань (CZK, по заїзду) ≈ {toEur(summary.totalRevenue || 0)} EUR</div>
                 </div>
               </div>
               <div className="stat-card">
@@ -197,7 +197,7 @@ export default function ReportsPage() {
             <div className="reports-two-col">
               {/* Revenue by category */}
               <div className="card">
-                <div className="card-header"><h3 className="card-title">Дохід по категоріях</h3></div>
+                <div className="card-header"><h3 className="card-title">Бронювання по категоріях</h3></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {Object.entries(catData).length === 0 ? (
                     <div style={{ color: 'var(--text-tertiary)', fontSize: 13, textAlign: 'center', padding: 24 }}>Немає даних</div>
@@ -280,7 +280,7 @@ export default function ReportsPage() {
                       <th>Категорія</th>
                       <th>Бронювань</th>
                       <th>Ночей</th>
-                      <th>Дохід (CZK)</th>
+                      <th>Вартість бронювань (CZK)</th>
                       <th>≈ EUR</th>
                       <th>Сер. чек</th>
                     </tr>

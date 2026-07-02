@@ -6,8 +6,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
 import type { InvoiceData } from '@/lib/invoice-template';
+import { requirePermission } from '@core/security/route-guard';
 
-export async function GET(
+export const GET = requirePermission('manage_documents', _GET);
+async function _GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {

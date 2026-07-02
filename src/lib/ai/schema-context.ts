@@ -171,12 +171,22 @@ FROM reservations r
 JOIN guests g ON g.id = r.guest_id
 JOIN units u ON u.id = r.unit_id
 
--- Revenue for a period:
-SELECT SUM(total_price) AS revenue, COUNT(*) AS bookings, currency
+-- Booking value for a period (SALES analytics, NOT financial revenue —
+-- includes unpaid bookings, basis = check-in date):
+SELECT SUM(total_price) AS booking_value, COUNT(*) AS bookings, currency
 FROM reservations
 WHERE status NOT IN ('cancelled', 'no_show')
   AND check_in >= '2025-01-01' AND check_in < '2026-01-01'
 GROUP BY currency
+
+-- ACTUAL financial revenue for a period (real money received, CZK):
+-- fin_operations is the single source of truth for money movement.
+SELECT SUM(CASE WHEN op_type = 'income' THEN amount_company
+                WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN -amount_company
+                ELSE 0 END) AS revenue_czk
+FROM fin_operations
+WHERE status = 'completed' AND op_type != 'transfer'
+  AND paid_at >= '2025-01-01' AND paid_at < '2026-01-01'
 
 -- Occupancy rate (active units vs booked):
 SELECT COUNT(DISTINCT unit_id) AS occupied_units,

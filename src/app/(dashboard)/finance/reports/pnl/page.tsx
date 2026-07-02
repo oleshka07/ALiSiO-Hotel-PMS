@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import DrillDownModal from '../_components/DrillDownModal';
 import ExportButton from '../../_components/ExportButton';
 import Sparkline from '../../_components/Sparkline';
+import TagFilter from '../../_components/TagFilter';
 
 interface MatrixRow {
   category_id: string | null;
@@ -61,6 +62,7 @@ export default function PnlMatrixPage() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(defaultRange());
   const [basis, setBasis] = useState<'paid' | 'accrued'>('accrued');
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drillDown, setDrillDown] = useState<{ month: string; categoryId: string | null; categoryName: string } | null>(null);
 
@@ -68,11 +70,12 @@ export default function PnlMatrixPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ from: range.from, to: range.to, basis });
+      if (tagIds.length > 0) params.set('tag_ids', tagIds.join(','));
       const res = await fetch(`/api/finance/pnl-matrix?${params}`);
       setData(await res.json());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [range, basis]);
+  }, [range, basis, tagIds]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -96,6 +99,7 @@ export default function PnlMatrixPage() {
         <input type="month" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
         <span style={{ color: 'var(--text-secondary)' }}>—</span>
         <input type="month" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
+        <TagFilter selected={tagIds} onChange={setTagIds} />
         <ExportButton
           endpoint="/api/finance/export/pnl"
           params={{ from: range.from, to: range.to, basis }}

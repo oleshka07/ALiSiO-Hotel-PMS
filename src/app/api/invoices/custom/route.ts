@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requirePermission } from '@core/security/route-guard';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { generateIsdocXml }   from '@/lib/isdoc';
 import { sendEmail }           from '@/lib/email';
@@ -44,7 +45,8 @@ function getNextInvoiceNumber(db: ReturnType<typeof getDb>): string {
   return `${prefix}${String(next).padStart(3, '0')}`;
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = requirePermission('manage_documents', _POST);
+async function _POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body  = await req.json();
     const {
