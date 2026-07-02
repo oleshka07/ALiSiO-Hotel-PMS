@@ -253,7 +253,11 @@ function reconcileSingleTransaction(
       source: 'teya_sync',
       source_ref: txn.id,
       comment: txn.description || (txn.reference ? `Teya ${txn.reference}` : 'Teya POS / API sync'),
-      status: 'completed',
+      // Money sits on Teya's merchant account until the weekly sweep; the fact
+      // lands via the bank statement (bank_import). Keep sync ops as pending so
+      // completed-based reports don't double-count the same money.
+      status: 'pending',
+      needs_review: 1,
     });
     result.created++;
     result.outcomes.push({

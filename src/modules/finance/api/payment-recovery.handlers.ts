@@ -59,10 +59,13 @@ export async function listOrphanPayments(): Promise<NextResponse> {
         AND bso.reservation_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM fin_operations o
-          WHERE o.reservation_id = bso.reservation_id
-            AND o.source = 'teia'
-            AND (o.source_ref = bso.payment_id
-                 OR o.source_ref = bso.reservation_id)
+          WHERE o.op_type = 'income'
+            AND (
+              (o.reservation_id = bso.reservation_id
+               AND (o.source_ref = bso.payment_id OR o.source_ref = bso.reservation_id))
+              OR (o.reservation_id = bso.reservation_id
+                  AND o.source IN ('bank_import', 'teya_sync', 'teia'))
+            )
         )
       ORDER BY bso.created_at DESC
     `).all() as OrphanRow[];
@@ -92,10 +95,13 @@ export async function listOrphanPayments(): Promise<NextResponse> {
         AND so.reservation_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM fin_operations o
-          WHERE o.reservation_id = so.reservation_id
-            AND o.source = 'teia'
-            AND (o.source_ref = so.payment_id
-                 OR o.source_ref = so.reservation_id)
+          WHERE o.op_type = 'income'
+            AND (
+              (o.reservation_id = so.reservation_id
+               AND (o.source_ref = so.payment_id OR o.source_ref = so.reservation_id))
+              OR (o.reservation_id = so.reservation_id
+                  AND o.source IN ('bank_import', 'teya_sync', 'teia'))
+            )
         )
       ORDER BY so.created_at DESC
     `).all() as OrphanRow[];

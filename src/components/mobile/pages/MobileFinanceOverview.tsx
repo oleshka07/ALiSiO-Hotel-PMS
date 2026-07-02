@@ -166,7 +166,7 @@ export default function MobileFinanceOverview() {
 
       {/* Quick actions */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16 }}>
-        <Link href="/finance/log" style={{ textDecoration: 'none' }}>
+        <Link href="/finance/operations" style={{ textDecoration: 'none' }}>
           <div style={{ background: 'rgba(99,102,241,0.12)', borderRadius: 14, padding: '12px 8px', textAlign: 'center', cursor: 'pointer' }}>
             <FileText size={20} color="#6366f1" style={{ marginBottom: 4 }} />
             <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1' }}>Журнал</div>
@@ -191,7 +191,7 @@ export default function MobileFinanceOverview() {
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
           Останні транзакції
         </div>
-        <Link href="/finance/log" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
+        <Link href="/finance/operations" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
           Всі <ArrowRight size={12} />
         </Link>
       </div>

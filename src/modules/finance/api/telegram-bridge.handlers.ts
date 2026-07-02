@@ -161,8 +161,10 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       ? commentParts.join(' ')
       : (opType === 'income' ? 'Дохід (бот)' : opType === 'expense' ? 'Витрата (бот)' : 'Переміщення (бот)');
 
-    const fxRate = body.fx_rate || (currency !== 'CZK' ? 24 : null);
-    const amountCompany = fxRate ? amount * fxRate : amount;
+    // No hardcoded fallback rate: without an explicit fx_rate the operation
+    // voronka (createOperationInTx → computeAmountCompany) resolves the rate
+    // from finance_exchange_rates and errors loudly if none exists.
+    const fxRate = body.fx_rate || null;
 
     const operationId = createOperationInTx(db, orgId, {
       op_type: opType as 'income' | 'expense' | 'transfer',

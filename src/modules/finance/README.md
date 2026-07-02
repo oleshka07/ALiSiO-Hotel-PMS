@@ -94,7 +94,21 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 
 ## Схема даних
 
-**Таблиці:** `payments`, `expenses`, `expense_categories`, `business_units`, `capex`, `accruals`, `bank_statements`, `bank_transactions`
+**Головна таблиця:** `fin_operations` — єдиний реєстр фактичного руху коштів
+(income / expense / transfer; всі джерела: ручні, банк-імпорт, Telegram,
+Teya, OTA, recurring). Запис ТІЛЬКИ через `createOperationInTx()`.
+
+**Довідники:** `expense_categories` (дерево, op_type + classifier),
+`business_units` (проєкти), `finance_counterparties`, `finance_tags` +
+`fin_operation_tags`, `finance_accounts`, `finance_exchange_rates`.
+
+**Допоміжні:** `fin_budgets`, `fin_recurring_templates`, `bank_statements` +
+`bank_transactions` (staging виписок), `fin_bank_inboxes`,
+`fin_channel_receivables` (дебіторка OTA), `capex_items`, `accruals`,
+`invoices`, `fin_operation_audit`.
+
+> Legacy-таблиці `payments`, `expenses`, `income`, `transfers` ВИДАЛЕНІ
+> (міграція PR #6 перелила їх у fin_operations). Не посилатися.
 
 ## Структура файлів
 

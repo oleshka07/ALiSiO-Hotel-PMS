@@ -3444,60 +3444,18 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Finance PR #A: is_pms_signal flag on fin_operations
-  //
-  // Splits "PMS-internal payment signals" (Hostex auto-payment from
-  // Booking/Airbnb prepaid bookings, Teya widget callbacks) from real
-  // money movements (bank import, cash, manual entry).
-  //
-  // Why: a Booking prepaid reservation arrives from Hostex with a fin_op
-  // marking the reservation as paid (so PMS allows check-in), BUT the
-  // real money is at the platform — we'll only see it on our bank when
-  // Booking pays us out a week later. Same for Teya widget — guest paid,
-  // money is at Teya, comes to bank later.
-  //
-  // is_pms_signal=1 → "expected income, money not on bank yet". These
-  // operations stay in DB so PMS check-in works (recalcReservationPaymentStatus
-  // sums them as paid), but they're hidden from /finance/operations,
-  // cashflow, and the default P&L view. P&L forecast mode adds them back.
-  //
-  // is_pms_signal=0 → real money. Bank imports, cash, manual entries.
-  // ═══════════════════════════════════════════════════════════════════
+  // Finance PR #A (is_pms_signal) was retired in clean-3: all readers are
+  // gone, so new databases no longer get the column. Existing databases may
+  // still carry it — harmless, ignored everywhere.
   try {
     const cols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
-    if (!cols.some((c) => c.name === 'is_pms_signal')) {
-      database.exec("ALTER TABLE fin_operations ADD COLUMN is_pms_signal INTEGER NOT NULL DEFAULT 0");
-      database.exec("CREATE INDEX IF NOT EXISTS idx_fop_is_pms_signal ON fin_operations(is_pms_signal)");
-    }
     // PR #C: needs_review flag for ops where the channel→account resolver
     // had to fall back. Surfaces a queue for the admin to triage.
     if (!cols.some((c) => c.name === 'needs_review')) {
       database.exec("ALTER TABLE fin_operations ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
       database.exec("CREATE INDEX IF NOT EXISTS idx_fop_needs_review ON fin_operations(needs_review)");
     }
-  } catch (e: any) { console.log('[DB] PR #A/C fin_operations columns:', e.message); }
-
-  // Retro-migrate: existing operations from Hostex / Teya / widget paths
-  // are by definition signals (money was at platform, may or may not yet
-  // be on bank). One-shot via fin_system_state guard.
-  try {
-    const already = database.prepare(
-      "SELECT value FROM fin_system_state WHERE key = 'pr_A_pms_signal_backfilled'"
-    ).get() as { value: string } | undefined;
-    if (!already) {
-      const r = database.prepare(`
-        UPDATE fin_operations
-        SET is_pms_signal = 1
-        WHERE source IN ('hostex', 'teia', 'teya', 'booking_widget', 'guest_page')
-          AND is_pms_signal = 0
-      `).run();
-      database.prepare(
-        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('pr_A_pms_signal_backfilled', ?, datetime('now'))"
-      ).run(`tagged ${r.changes} rows as PMS signals`);
-      if (r.changes > 0) console.log(`[DB] PR #A: tagged ${r.changes} legacy fin_operations as is_pms_signal=1`);
-    }
-  } catch (e: any) { console.log('[DB] PR #A backfill:', e.message); }
+  } catch (e: any) { console.log('[DB] PR #C fin_operations columns:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
   // PR #36: supabase_id columns on investor tables for idempotent re-import
@@ -3727,72 +3685,6 @@ function runMigrations(database: any) {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // Finance PR #G: payment_webhook_log — audit trail for every Teya
-  // webhook call. Captures raw payload + outcome so that when a payment
-  // doesn't show up in the system, the admin can look here to see whether
-  // the webhook was received, parsed, matched to an order, and recorded.
-  // ═══════════════════════════════════════════════════════════════════
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS payment_webhook_log (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      provider TEXT NOT NULL,
-      event_type TEXT,
-      session_id TEXT,
-      transaction_id TEXT,
-      payment_ref TEXT,
-      amount REAL,
-      currency TEXT,
-      result TEXT NOT NULL CHECK (result IN ('recorded','no_match','duplicate','signature_invalid','parse_error','unhandled','error')),
-      error_message TEXT,
-      reservation_id TEXT,
-      operation_id TEXT,
-      raw_payload TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_created ON payment_webhook_log(created_at DESC)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Cleanup #D: backfill needs_review on legacy null-account ops.
-  //
-  // The migrations from `income`, `expenses`, `transfers`, `payments`
-  // copied rows into fin_operations even when account_id was NULL.
-  // createOperationInTx now rejects such rows on creation (see
-  // operations.handlers.ts:185-192), but the historical leftovers stay
-  // invisible — they don't show up in /finance/reconcile because their
-  // needs_review flag was never set, and their balance impact is hidden
-  // by PR #signals-filter (the latest fix).
-  //
-  // Mark them needs_review=1 so the operator sees them in the existing
-  // triage queue (`/finance/operations?needs_review=1`) and can either
-  // assign an account or archive them. Idempotent: only flips rows
-  // currently at 0.
-  // ═══════════════════════════════════════════════════════════════════
-  try {
-    const result = database.prepare(`
-      UPDATE fin_operations
-      SET needs_review = 1
-      WHERE needs_review = 0
-        AND (
-          (op_type = 'income'   AND account_to_id   IS NULL) OR
-          (op_type = 'expense'  AND account_from_id IS NULL) OR
-          (op_type = 'transfer' AND (account_from_id IS NULL OR account_to_id IS NULL))
-        )
-    `).run();
-    if (result.changes > 0) {
-      console.log(`[DB] Cleanup #D: flagged ${result.changes} legacy null-account fin_operations as needs_review=1`);
-    }
-  } catch (e: any) {
-    console.log('[DB] Cleanup #D needs_review backfill:', e.message);
-  }
-
-  // (Cleanup #E lived here — deleted legacy Hostex signal fin_operations.
-  //  It served its purpose during clean-2 deploy. Since clean-3 drops the
-  //  is_pms_signal column entirely, the migration is a no-op and was
-  //  removed to avoid noisy «no such column» errors on every startup.)
-
   // (Cleanup #H copy-2 REMOVED 2026-05-28: duplicate of the block above,
   //  same root-cause issue — see comment near line 3586.)
 

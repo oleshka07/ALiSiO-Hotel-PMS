@@ -250,8 +250,11 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
 
     const allocRules = db.prepare(`
       SELECT alloc_method, business_unit_id, percentage FROM cost_allocations
-      WHERE month = ? OR month = (SELECT MAX(month) FROM cost_allocations WHERE month <= ?)
-    `).all(month, month) as any[];
+      WHERE month = COALESCE(
+        (SELECT MAX(month) FROM cost_allocations WHERE month <= ?),
+        (SELECT MIN(month) FROM cost_allocations)
+      )
+    `).all(month) as any[];
 
     const allocMap: Record<string, Record<string, number>> = {};
     for (const rule of allocRules) {
@@ -395,9 +398,11 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     const outflows = months.map(m => {
       const row = db.prepare(`
         SELECT COALESCE(SUM(o.amount_company), 0) as total
-        FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
+        FROM fin_operations o LEFT JOIN expense_categories ec ON o.category_id = ec.id
         WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
-          AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
+          AND o.status = 'completed'
+          AND strftime('%Y-%m', o.paid_at) = ?
+          AND COALESCE(ec.include_in_cash, 1) = 1
       `).get(m) as any;
       return { month: m, amount: row.total };
     });
@@ -414,19 +419,24 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
     `).all(month) as any[];
 
     const outflowsByCategory = db.prepare(`
-      SELECT ec.name, ec.icon, ec.color, COALESCE(SUM(o.amount_company), 0) as total
-      FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
+      SELECT COALESCE(ec.name, 'Без категорії') as name, ec.icon, ec.color,
+             COALESCE(SUM(o.amount_company), 0) as total
+      FROM fin_operations o LEFT JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
-        AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
-      GROUP BY ec.id ORDER BY total DESC
+        AND o.status = 'completed'
+        AND strftime('%Y-%m', o.paid_at) = ?
+        AND COALESCE(ec.include_in_cash, 1) = 1
+      GROUP BY o.category_id ORDER BY total DESC
     `).all(month) as any[];
 
     const outflowsByBU = db.prepare(`
       SELECT bu.name, COALESCE(SUM(o.amount_company), 0) as total
-      FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
+      FROM fin_operations o LEFT JOIN expense_categories ec ON o.category_id = ec.id
       LEFT JOIN business_units bu ON o.project_id = bu.id
       WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype,'') != 'refund'
-        AND strftime('%Y-%m', o.paid_at) = ? AND ec.include_in_cash = 1
+        AND o.status = 'completed'
+        AND strftime('%Y-%m', o.paid_at) = ?
+        AND COALESCE(ec.include_in_cash, 1) = 1
       GROUP BY o.project_id ORDER BY total DESC
     `).all(month) as any[];
 
@@ -979,14 +989,24 @@ export async function getPlanFactReport(request: NextRequest): Promise<NextRespo
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
 
     const budgets = db.prepare(`SELECT * FROM fin_budgets WHERE organization_id = ? AND year = ? AND month = ?`).all(org, year, month) as any[];
-    const keyCol = by === 'project' ? 'project_id' : 'category_id';
-    const facts = db.prepare(`
-      SELECT ${keyCol} AS key, o.op_type, SUM(o.amount_company) AS total
-      FROM fin_operations o
-      WHERE o.status = 'completed' AND o.organization_id = ?
-        AND strftime('%Y-%m', o.paid_at) = ? AND o.op_type != 'transfer'
-      GROUP BY ${keyCol}, o.op_type
-    `).all(org, monthStr) as any[];
+    // Facts on child categories roll up to their root parent so they match the
+    // root-level budget rows (entities below are parent_id IS NULL only).
+    const facts = by === 'project'
+      ? db.prepare(`
+          SELECT o.project_id AS key, o.op_type, SUM(o.amount_company) AS total
+          FROM fin_operations o
+          WHERE o.status = 'completed' AND o.organization_id = ?
+            AND strftime('%Y-%m', o.paid_at) = ? AND o.op_type != 'transfer'
+          GROUP BY o.project_id, o.op_type
+        `).all(org, monthStr) as any[]
+      : db.prepare(`
+          SELECT COALESCE(ec.parent_id, o.category_id) AS key, o.op_type, SUM(o.amount_company) AS total
+          FROM fin_operations o
+          LEFT JOIN expense_categories ec ON o.category_id = ec.id
+          WHERE o.status = 'completed' AND o.organization_id = ?
+            AND strftime('%Y-%m', o.paid_at) = ? AND o.op_type != 'transfer'
+          GROUP BY COALESCE(ec.parent_id, o.category_id), o.op_type
+        `).all(org, monthStr) as any[];
 
     const factMap = new Map<string, { income: number; expense: number }>();
     for (const f of facts) {
