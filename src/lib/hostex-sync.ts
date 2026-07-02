@@ -230,7 +230,11 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
   // Map property → unit
   const unitId = PROPERTY_MAP[res.property_id];
-  if (!unitId) { result.skipped++; return; }
+  if (!unitId) {
+    console.warn(`[Hostex] UNMAPPED property_id=${res.property_id} guest="${res.guest_name}" stay_code="${res.stay_code}" channel="${res.channel_type}" listing="${res.listing_id}" check_in=${res.check_in_date}`);
+    result.skipped++;
+    return;
+  }
 
   // Calculate financial data
   const totalEur = res.rates?.total_rate?.amount || 0;
@@ -697,6 +701,8 @@ export async function seedPropertyMap(): Promise<void> {
     if (unitId) {
       upsert.run(prop.id, prop.title, unitId, JSON.stringify(prop.channels));
       console.log(`[Hostex] Mapped: ${prop.title} (${prop.id}) → ${unitId}`);
+    } else {
+      console.warn(`[Hostex] UNMAPPED PROPERTY: "${prop.title}" (id=${prop.id}) channels=${JSON.stringify(prop.channels?.map((c: any) => c.channel_type))}`);
     }
   }
 }
