@@ -1,14 +1,17 @@
 /**
  * Hostex Sync Cron Job
  * Runs every 10 minutes to pull reservations from Hostex
+ * Also registers webhook on startup for real-time updates
  */
 import { syncReservations, seedPropertyMap } from '../hostex-sync';
+import { ensureWebhookRegistered } from '../hostex';
 
 let cronInterval: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
 let initialized = false;
 
 const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
 
 export function startHostexCron() {
   if (cronInterval) return;
@@ -24,6 +27,13 @@ export function startHostexCron() {
         console.log('[Hostex Cron] Property map seeded');
       } catch (e: any) {
         console.error('[Hostex Cron] Failed to seed property map:', e.message);
+      }
+
+      // Register webhook with Hostex (idempotent — skips if already registered)
+      try {
+        await ensureWebhookRegistered(PMS_BASE_URL);
+      } catch (e: any) {
+        console.error('[Hostex Cron] Webhook registration failed:', e.message);
       }
     }
     await runSync();

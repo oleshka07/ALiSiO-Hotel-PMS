@@ -328,6 +328,77 @@ export async function updateReservationCustomField(
   }
 }
 
+// ─── Webhook management ───────────────────────────────────
+
+export interface HostexWebhookConfig {
+  id: number;
+  url: string;
+  events: string[];
+  secret_token: string;
+  status: string;
+}
+
+/** List all registered webhooks */
+export async function listWebhooks(): Promise<HostexWebhookConfig[]> {
+  await rateLimitWait();
+  const res = await hostexRequest<{ webhooks: HostexWebhookConfig[] }>('GET', '/webhooks');
+  return res.data?.webhooks || [];
+}
+
+/** Register a new webhook */
+export async function createWebhook(url: string, events: string[], secretToken?: string): Promise<HostexWebhookConfig | null> {
+  await rateLimitWait();
+  const body: any = { url, events };
+  if (secretToken) body.secret_token = secretToken;
+  const res = await hostexRequest<HostexWebhookConfig>('POST', '/webhooks', body);
+  if (res.error_code !== 0 && res.error_code !== 200) {
+    console.error(`[Hostex] Webhook registration failed:`, res.error_msg);
+    return null;
+  }
+  return res.data || null;
+}
+
+/** Delete a webhook by ID */
+export async function deleteWebhook(webhookId: number): Promise<boolean> {
+  await rateLimitWait();
+  try {
+    const res = await hostexRequest<any>('DELETE', `/webhooks/${webhookId}`);
+    return res.error_code === 0 || res.error_code === 200;
+  } catch (e: any) {
+    console.error(`[Hostex] Failed to delete webhook ${webhookId}:`, e.message);
+    return false;
+  }
+}
+
+/**
+ * Ensure our webhook is registered with Hostex.
+ * If not registered, creates it. If already registered, verifies it.
+ */
+export async function ensureWebhookRegistered(baseUrl: string): Promise<void> {
+  const webhookUrl = `${baseUrl}/api/webhooks/hostex`;
+  const events = ['reservation_created', 'reservation_updated', 'reservation_cancelled'];
+
+  try {
+    const existing = await listWebhooks();
+    const ours = existing.find(w => w.url === webhookUrl);
+    
+    if (ours) {
+      console.log(`[Hostex] Webhook already registered: ${webhookUrl} (id=${ours.id}, events=${ours.events.join(',')})`);
+      return;
+    }
+
+    console.log(`[Hostex] Registering webhook: ${webhookUrl}`);
+    const created = await createWebhook(webhookUrl, events);
+    if (created) {
+      console.log(`[Hostex] ✅ Webhook registered: id=${created.id} url=${webhookUrl}`);
+    } else {
+      console.error(`[Hostex] ❌ Failed to register webhook`);
+    }
+  } catch (e: any) {
+    console.error(`[Hostex] Webhook registration error:`, e.message);
+  }
+}
+
 
 // ─── Exchange rate (ČNB mid-rate EUR/CZK) ─────────────────
 
