@@ -20,7 +20,7 @@ import * as crypto from 'crypto';
 import { createOperationInTx, getOptionalActor } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
-import { getAutoRevenueAllProjects, getAutoRevenue } from '../data/auto-revenue-engine';
+import { getAutoRevenueAllProjects, getAutoRevenue, autoFillMonthlyMetrics } from '../data/auto-revenue-engine';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -689,6 +689,26 @@ export async function getAutoRevenueForMonth(request: NextRequest): Promise<Next
       return NextResponse.json({ items: [getAutoRevenue(db, orgId, projectId, yearMonth)] });
     }
     return NextResponse.json({ items: getAutoRevenueAllProjects(db, orgId, yearMonth) });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// POST /api/finance/investor-monthly-metrics/autofill  { year_month, overwrite? }
+// Fills property_monthly_metrics from the fin_operations ledger + occupancy
+// engine. Manual rows are never overwritten unless overwrite=true.
+export async function autoFillMetricsHandler(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json().catch(() => ({}));
+    const yearMonth = body?.year_month;
+    const overwrite = body?.overwrite === true;
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'year_month=YYYY-MM required' }, { status: 400 });
+    }
+    const result = autoFillMonthlyMetrics(db, orgId, yearMonth, overwrite);
+    return NextResponse.json({ year_month: yearMonth, overwrite, ...result });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

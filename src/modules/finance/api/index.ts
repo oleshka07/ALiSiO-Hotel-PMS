@@ -419,6 +419,9 @@ export const getMonthlyDigest       = withFinanceRead(_getMonthlyDigest);
 export const getTelegramStatus      = withFinanceRead(_getTelegramStatus);
 export const getAutoRevenueForMonth = withFinanceRead(_getAutoRevenueForMonth);
 
+import { autoFillMetricsHandler as _autoFillMetricsHandler } from './investors.handlers';
+export const autoFillMetricsHandler = withPermission('manage_investors', _autoFillMetricsHandler);
+
 import {
   getInvestorAudit as _getInvestorAudit, previewCascadeDelete as _previewCascadeDelete,
   relinkProjectToUnit as _relinkProjectToUnit, executeCascadeDelete as _executeCascadeDelete,
