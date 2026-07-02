@@ -15,10 +15,10 @@ export async function getDashboard() {
       "SELECT COUNT(*) as cnt FROM reservations WHERE check_out = ? AND status IN ('checked_in')"
     ).get(today) as any;
 
-    const totalUnits = db.prepare('SELECT COUNT(*) as cnt FROM units WHERE is_active = 1').get() as any;
+    const totalUnits = db.prepare('SELECT COUNT(*) as cnt FROM units WHERE is_active = 1 AND is_pool = 0').get() as any;
 
     const occupied = db.prepare(
-      "SELECT COUNT(DISTINCT unit_id) as cnt FROM reservations WHERE check_in <= ? AND check_out > ? AND status IN ('checked_in', 'confirmed')"
+      "SELECT COUNT(DISTINCT r.unit_id) as cnt FROM reservations r JOIN units u ON u.id = r.unit_id WHERE r.check_in <= ? AND r.check_out > ? AND r.status IN ('checked_in', 'confirmed') AND u.is_pool = 0"
     ).get(today, today) as any;
 
     const totalCount = totalUnits?.cnt || 0;

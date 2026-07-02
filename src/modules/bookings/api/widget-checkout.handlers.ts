@@ -256,7 +256,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       }
 
       const lines = [
-        `📦 <b>Нове замовлення: ${esc(description)}</b>`,
+        `🛒 <b>Замовлення · 🌐 Віджет</b>: ${esc(description)}`,
         '',
       ];
       if (guestName) lines.push(`👤 ${esc(guestName)}`);
@@ -284,7 +284,7 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       lines.push(`💰 ${amount} ${currency}`);
       if (body.couponCode) lines.push(`🏷️ Промокод: ${esc(body.couponCode)}`);
-      lines.push(`💳 Очікує оплати`);
+      lines.push(`💳 Створено замовлення · очікує оплати`);
 
       sendTelegramMessage(lines.join('\n')).catch(() => { });
     } catch { /* */ }
@@ -300,7 +300,11 @@ export async function createWidgetCheckoutSession(req: Request) {
       try {
         const allowedHost = new URL(site.site_url).hostname;
         const targetHost = new URL(returnTo).hostname;
-        if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
+        // Allow: same site host, any alisio.eu subdomain, kemp-carlsbad.cz (partner domain)
+        const isAllowed = allowedHost === targetHost
+          || targetHost.includes('alisio.eu')
+          || targetHost.includes('kemp-carlsbad.cz');
+        if (!isAllowed) {
           returnTo = site.site_url;
         }
       } catch { /* invalid URL — keep returnTo */ }

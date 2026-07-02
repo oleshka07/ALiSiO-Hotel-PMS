@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   let outLeadId: string | undefined;
   let outConvId: string | undefined;
 
-  // ── Also create a CRM lead so the submission appears in CRM → Leads ──
+  // ── Create or merge into existing CRM lead ──
   try {
     const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as any;
     if (org) {
@@ -141,24 +141,72 @@ export async function POST(req: NextRequest) {
 
       // Site name for context
       const siteName = (db.prepare('SELECT name FROM booking_sites WHERE id = ?').get(siteId) as any)?.name ?? '';
-      const notesText = message ? `Повідомлення: ${message}${siteName ? `\n\nДжерело: ${siteName}` : ''}` : (siteName ? `Джерело: ${siteName}` : null);
 
-      const leadData = {
-        firstName,
-        lastName,
-        email: email ?? undefined,
-        phone: phone ?? undefined,
-        source: 'web_form',
-        notes: notesText,
-        skipDedup: true // We insert web leads unconditionally to avoid blocking public form
-      };
+      // ── Try to find existing lead by email or phone ──
+      let existingLead: any = null;
+      if (email) {
+        existingLead = db.prepare('SELECT * FROM crm_leads WHERE email = ? COLLATE NOCASE').get(email);
+      }
+      if (!existingLead && phone && phone.length >= 8) {
+        // Normalize phone for matching: strip spaces and leading +
+        const phoneDigits = phone.replace(/[\s\-()]/g, '');
+        existingLead = db.prepare(
+          'SELECT * FROM crm_leads WHERE phone = ? OR phone = ? OR whatsapp = ? OR whatsapp = ?'
+        ).get(phone, phoneDigits, phone, phoneDigits);
+      }
 
-      const { lead, conversationId } = executeCreateLead(db, leadData);
+      let lead: any;
+      let conversationId: string;
+
+      if (existingLead) {
+        // ── MERGE: use existing lead ──
+        lead = existingLead;
+        console.log(`[capture] Merging into existing lead ${lead.id} (${lead.first_name} ${lead.email || lead.phone})`);
+
+        // Enrich lead with missing data
+        const updates: string[] = [];
+        const updateVals: any[] = [];
+        if (!lead.email && email) { updates.push('email = ?'); updateVals.push(email); }
+        if (!lead.phone && phone) { updates.push('phone = ?'); updateVals.push(phone); }
+        if (!lead.last_name && lastName) { updates.push('last_name = ?'); updateVals.push(lastName); }
+        if (updates.length > 0) {
+          updates.push("updated_at = datetime('now')");
+          db.prepare(`UPDATE crm_leads SET ${updates.join(', ')} WHERE id = ?`).run(...updateVals, lead.id);
+        }
+
+        // Find existing conversation
+        const conv = db.prepare('SELECT id FROM crm_conversations WHERE lead_id = ? ORDER BY created_at DESC LIMIT 1').get(lead.id) as any;
+        if (conv) {
+          conversationId = conv.id;
+        } else {
+          // Create conversation if somehow missing
+          const convId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+          const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+          db.prepare(`INSERT INTO crm_conversations (id, lead_id, subject, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`)
+            .run(convId, lead.id, `${lead.first_name} ${lead.last_name || ''} — повторна заявка`.trim(), now, now);
+          conversationId = convId;
+        }
+      } else {
+        // ── NEW LEAD ──
+        const leadData = {
+          firstName,
+          lastName,
+          email: email ?? undefined,
+          phone: phone ?? undefined,
+          source: 'web_form',
+          notes: message ? `Повідомлення: ${message}${siteName ? `\n\nДжерело: ${siteName}` : ''}` : (siteName ? `Джерело: ${siteName}` : null),
+        };
+        const result = executeCreateLead(db, leadData);
+        lead = result.lead;
+        conversationId = result.conversationId;
+      }
+
       outLeadId = lead.id;
       outConvId = conversationId;
 
-      // ── Add first message so the dialog is not empty ──
+      // ── Add message to the conversation ──
       const lines: string[] = [];
+      if (existingLead) lines.push('🔄 Повторна заявка з сайту');
       if (fullName) lines.push(`👤 Ім'я: ${fullName}`);
       if (email) lines.push(`✉️ Email: ${email}`);
       if (phone) lines.push(`📞 Телефон: ${phone}`);
@@ -176,27 +224,25 @@ export async function POST(req: NextRequest) {
         contentType: 'text'
       });
 
-      // ── Trigger AI Auto-Response ──
-      if (email && process.env.OPENAI_API_KEY) {
-        // We import dynamically to avoid slowing down the synchronous DB response
+      // ── Trigger AI Auto-Response (only for new leads) ──
+      if (!existingLead && email && process.env.OPENAI_API_KEY) {
         import('@/lib/ai/auto-response').then(({ generateAutoResponse }) => {
           generateAutoResponse({
             messageId: createdMessage.id,
             conversationId,
             leadId: lead.id,
-            accountId: 'gmail', // Send from kempcarlsbad@gmail.com
+            accountId: 'gmail',
             guestName: fullName || firstName,
             guestEmail: email,
             subject: 'Заявка з сайту / Форма зворотного зв\'язку',
             content: msgContent,
-            language: 'uk', // Base language, AI translation prompt handles the rest
+            language: 'uk',
           }).catch(err => console.error('[capture] AutoResponse error:', err.message));
         });
       }
     }
   } catch (crmErr: any) {
     console.error('[capture] CRM lead creation failed:', crmErr?.message);
-    // Don't fail the request — raw log already saved
   }
 
   const headers = new Headers({ 'Access-Control-Allow-Origin': origin || '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });

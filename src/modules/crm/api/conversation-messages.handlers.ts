@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { dispatchMessage } from '@/lib/channels/dispatcher'; // TODO: replace with eventBus
 import { editTelegramMessage } from '@/lib/channels/telegram-bot';
+import { onOutboundReply } from '@/lib/crm/stage-transitions';
 import crypto from 'crypto';
 
 export async function executeCreateMessage(db: any, conversationId: string, body: any) {
@@ -86,6 +87,18 @@ export async function executeCreateMessage(db: any, conversationId: string, body
     closePendingDrafts(db, conv.lead_id, channelType).catch(err =>
       console.error('[CRM Message] Draft close error:', err.message)
     );
+  }
+
+  // ── Auto-transition lead stage on outbound reply ──
+  if (direction === 'outbound' && (status === 'delivered' || status === 'sent')) {
+    try {
+      const lead = db.prepare('SELECT stage FROM crm_leads WHERE id = ?').get(conv.lead_id) as any;
+      if (lead) {
+        onOutboundReply(conv.lead_id, lead.stage, content);
+      }
+    } catch (stageErr: any) {
+      console.error('[CRM Message] Stage transition error:', stageErr.message);
+    }
   }
 
   return db.prepare('SELECT * FROM crm_messages WHERE id = ?').get(msgId);

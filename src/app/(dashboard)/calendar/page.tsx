@@ -34,7 +34,7 @@ import {
   CalendarDays,
   Download,
   FileSpreadsheet,
-  Banknote,
+  Coins,
   FileText,
 } from 'lucide-react';
 
@@ -586,7 +586,7 @@ function CalendarDesktop() {
   return (
     <>
       <Header title="Календар" onMenuClick={onMenuClick} />
-      <div className="app-content" style={{ padding: '16px 24px', paddingTop: 'calc(var(--header-height) + 16px)', display: 'grid', gridTemplateRows: 'auto 1fr', height: 'calc(100vh - 16px)', overflow: 'hidden' }}>
+      <div className="app-content" style={{ padding: '16px 24px', paddingTop: 'calc(var(--header-height) + 16px)', display: 'grid', gridTemplateRows: 'auto auto 1fr', height: 'calc(100vh - 16px)', overflow: 'hidden' }}>
 
         {/* ─── Toolbar ───────────────────── */}
         <div style={{
@@ -625,9 +625,15 @@ function CalendarDesktop() {
                 onClick={async () => {
                   setSyncing(true);
                   try {
-                    await fetch('/api/hostex/sync', { method: 'POST' });
+                    const res = await fetch('/api/hostex/sync', { method: 'POST' });
+                    const data = await res.json();
                     await fetchData();
-                    showToast('✅ Hostex синхронізовано');
+                    let msg = `✅ Hostex: +${data.created || 0} нових, ${data.updated || 0} оновлено`;
+                    if (data.unmappedProperties?.length) {
+                      msg += `\n⚠️ ${data.unmappedProperties.length} непривʼязаних: ${data.unmappedProperties.map((p: any) => `${p.title} (id:${p.id})`).join(', ')}`;
+                    }
+                    if (data.error) msg = `❌ ${data.error}`;
+                    showToast(msg);
                   } catch { showToast('❌ Помилка синхронізації'); }
                   setSyncing(false);
                 }}
@@ -919,12 +925,12 @@ function CalendarDesktop() {
                                 {/* Top-left alert badges */}
                                 <div style={{ position: 'absolute', top: -4, left: -4, display: 'flex', gap: 2, zIndex: 10 }}>
                                   {(booking.payment_status === 'unpaid' || booking.payment_status === 'partial') && (
-                                    <div title="Не оплачено / Борг" style={{ background: '#ef4444', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
-                                      <Banknote size={10} />
+                                    <div title="Не оплачено / Борг" style={{ background: '#3b82f6', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+                                      <Coins size={10} />
                                     </div>
                                   )}
                                   {booking.registration_status !== 'registered' && (
-                                    <div title="Немає документів / Не зареєстровано" style={{ background: '#ef4444', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+                                    <div title="Немає документів / Не зареєстровано" style={{ background: '#3b82f6', color: '#fff', width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
                                       <FileText size={10} />
                                     </div>
                                   )}

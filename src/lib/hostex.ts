@@ -198,11 +198,10 @@ export async function getReservations(params?: {
 }
 
 /**
- * Get all reservations by fetching per property_id.
+ * Get all reservations by fetching per property_id WITH PAGINATION.
  *
- * Hostex API has a hard limit of ~20 records per response regardless of per_page/page params.
- * Without property_id filter it returns only the 20 most-recently-updated records globally.
- * Fetching per property (6 properties × up to 20) gives the full picture.
+ * Hostex API has a hard limit of ~20 records per response.
+ * We fetch per property AND paginate through all pages to get everything.
  * Deduplicates by reservation_code.
  */
 export async function getAllReservations(): Promise<HostexReservation[]> {
@@ -214,7 +213,6 @@ export async function getAllReservations(): Promise<HostexReservation[]> {
   const cutoffStr = cutoff.toISOString().split('T')[0];
 
   // All known Hostex property IDs (from /properties endpoint)
-  // We fetch each property individually to bypass the global 20-record cap
   let propertyIds: number[] = [];
   try {
     await rateLimitWait();
@@ -223,20 +221,34 @@ export async function getAllReservations(): Promise<HostexReservation[]> {
     console.log(`[Hostex] Found ${propertyIds.length} properties: ${propertyIds.join(', ')}`);
   } catch (e: any) {
     console.error('[Hostex] Failed to fetch properties:', e.message);
-    // Fallback to known IDs
     propertyIds = [12446083, 12558043, 12590381, 12590382, 12446084, 12565124];
   }
 
   for (const propertyId of propertyIds) {
-    await rateLimitWait();
-    const result = await getReservations({ property_id: propertyId, per_page: 50 });
-    let added = 0;
-    for (const r of result.reservations) {
-      if (r.check_out_date < cutoffStr) continue;
-      all.set(r.reservation_code, r);
-      added++;
+    let page = 1;
+    let totalAdded = 0;
+    const MAX_PAGES = 10; // Safety limit
+
+    while (page <= MAX_PAGES) {
+      await rateLimitWait();
+      const result = await getReservations({ property_id: propertyId, per_page: 50, page });
+      
+      let pageAdded = 0;
+      for (const r of result.reservations) {
+        if (r.check_out_date < cutoffStr) continue;
+        all.set(r.reservation_code, r);
+        pageAdded++;
+      }
+      totalAdded += pageAdded;
+
+      // If we got fewer than 20 records, we've reached the last page
+      if (result.reservations.length < 20) {
+        console.log(`[Hostex] Property ${propertyId}: ${totalAdded} total (${page} page${page > 1 ? 's' : ''})`);
+        break;
+      }
+
+      page++;
     }
-    console.log(`[Hostex] Property ${propertyId}: ${result.reservations.length} returned, ${added} added`);
   }
 
   const reservations = Array.from(all.values());
@@ -325,6 +337,77 @@ export async function updateReservationCustomField(
   } catch (e: any) {
     console.error(`[Hostex] Failed to set custom fields for ${stayCode}:`, e.message);
     return false;
+  }
+}
+
+// ─── Webhook management ───────────────────────────────────
+
+export interface HostexWebhookConfig {
+  id: number;
+  url: string;
+  events: string[];
+  secret_token: string;
+  status: string;
+}
+
+/** List all registered webhooks */
+export async function listWebhooks(): Promise<HostexWebhookConfig[]> {
+  await rateLimitWait();
+  const res = await hostexRequest<{ webhooks: HostexWebhookConfig[] }>('GET', '/webhooks');
+  return res.data?.webhooks || [];
+}
+
+/** Register a new webhook */
+export async function createWebhook(url: string, events: string[], secretToken?: string): Promise<HostexWebhookConfig | null> {
+  await rateLimitWait();
+  const body: any = { url, events };
+  if (secretToken) body.secret_token = secretToken;
+  const res = await hostexRequest<HostexWebhookConfig>('POST', '/webhooks', body);
+  if (res.error_code !== 0 && res.error_code !== 200) {
+    console.error(`[Hostex] Webhook registration failed:`, res.error_msg);
+    return null;
+  }
+  return res.data || null;
+}
+
+/** Delete a webhook by ID */
+export async function deleteWebhook(webhookId: number): Promise<boolean> {
+  await rateLimitWait();
+  try {
+    const res = await hostexRequest<any>('DELETE', `/webhooks/${webhookId}`);
+    return res.error_code === 0 || res.error_code === 200;
+  } catch (e: any) {
+    console.error(`[Hostex] Failed to delete webhook ${webhookId}:`, e.message);
+    return false;
+  }
+}
+
+/**
+ * Ensure our webhook is registered with Hostex.
+ * If not registered, creates it. If already registered, verifies it.
+ */
+export async function ensureWebhookRegistered(baseUrl: string): Promise<void> {
+  const webhookUrl = `${baseUrl}/api/webhooks/hostex`;
+  const events = ['reservation_created', 'reservation_updated', 'reservation_cancelled'];
+
+  try {
+    const existing = await listWebhooks();
+    const ours = existing.find(w => w.url === webhookUrl);
+    
+    if (ours) {
+      console.log(`[Hostex] Webhook already registered: ${webhookUrl} (id=${ours.id}, events=${ours.events.join(',')})`);
+      return;
+    }
+
+    console.log(`[Hostex] Registering webhook: ${webhookUrl}`);
+    const created = await createWebhook(webhookUrl, events);
+    if (created) {
+      console.log(`[Hostex] ✅ Webhook registered: id=${created.id} url=${webhookUrl}`);
+    } else {
+      console.error(`[Hostex] ❌ Failed to register webhook`);
+    }
+  } catch (e: any) {
+    console.error(`[Hostex] Webhook registration error:`, e.message);
   }
 }
 

@@ -21,7 +21,7 @@ export function notifyReservationCreated(reservationId: string, options: NotifyO
       SELECT r.id, r.check_in, r.check_out, r.nights,
              r.adults, r.children,
              r.total_price, r.currency, r.status, r.payment_status, r.source,
-             r.is_multi_room, r.multi_room_marker,
+             r.is_multi_room, r.multi_room_marker, r.internal_notes,
              g.first_name, g.last_name, g.email, g.phone,
              u.name AS unit_name, u.code AS unit_code,
              c.type AS category_type
@@ -51,7 +51,18 @@ export function notifyReservationCreated(reservationId: string, options: NotifyO
       `🏠 ${unit}${r.category_type ? ` · ${escHtml(r.category_type)}` : ''}`,
       `📅 ${r.check_in} → ${r.check_out}${r.nights ? ` (${r.nights}н)` : ''}`,
       r.adults ? `👥 ${r.adults} дорослих${r.children ? ` + ${r.children} дітей` : ''}` : '',
-      r.total_price ? `💰 ${r.total_price} ${r.currency || 'CZK'} · ${escHtml(r.payment_status || 'unpaid')}` : '',
+      r.total_price ? (() => {
+        const payLabel = r.payment_status === 'paid' ? '✅ оплачено'
+          : r.payment_status === 'prepaid' ? '💳 передплата'
+          : '⏳ не оплачено';
+        // Parse payment method from internal_notes (e.g. payment_method:cash)
+        const pmMatch = r.internal_notes?.match?.(/payment_method:(\w+)/);
+        const pmLabel = pmMatch?.[1] === 'cash' ? ' · 💵 готівка'
+          : pmMatch?.[1] === 'terminal' ? ' · 💳 термінал'
+          : pmMatch?.[1] === 'reception' ? ' · 🏨 рецепція'
+          : '';
+        return `💰 ${r.total_price} ${r.currency || 'CZK'} · ${payLabel}${pmLabel}`;
+      })() : '',
       // Multi-cabin Booking.com group bookings need manual review — Hostex
       // collapses them into one reservation_code with the aggregated total.
       r.is_multi_room

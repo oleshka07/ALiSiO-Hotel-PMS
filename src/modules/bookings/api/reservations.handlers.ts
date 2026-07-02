@@ -23,6 +23,7 @@ export async function listReservations(request: NextRequest) {
         r.city_tax_amount, r.city_tax_included, r.city_tax_paid,
         r.registration_status, r.hostex_channel_type, r.hostex_reservation_code,
         r.is_multi_room, r.multi_room_marker,
+        r.utm_source, r.utm_medium, r.utm_campaign, r.utm_term, r.utm_content,
         (SELECT COUNT(*) FROM reservation_sub_bookings WHERE reservation_id = r.id) as sub_booking_count,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone, g.nationality,
         u.id as unit_id, u.name as unit_name, u.code as unit_code, u.is_pool as unit_is_pool,
@@ -43,7 +44,10 @@ export async function listReservations(request: NextRequest) {
       query += ' AND r.parent_id IS NULL';
     }
 
-    if (status) {
+    const excludeCancelled = searchParams.get('exclude_cancelled') === '1';
+    if (excludeCancelled) {
+      query += " AND r.status NOT IN ('cancelled', 'no_show')";
+    } else if (status) {
       query += ' AND r.status = ?';
       params.push(status);
     }

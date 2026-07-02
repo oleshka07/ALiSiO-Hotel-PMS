@@ -7,6 +7,7 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { Globe, ArrowLeft, Loader2 } from 'lucide-react';
 import { TABS } from './_components/SiteHelpers';
 import { AnalyticsTab } from './_components/AnalyticsTab';
+import { BookingsTab } from './_components/BookingsTab';
 import { ListingsTab }   from './_components/ListingsTab';
 import { ServicesTab }   from './_components/ServicesTab';
 import { DesignTab }     from './_components/DesignTab';
@@ -140,7 +141,7 @@ export default function SiteDetailPage() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-primary)', marginBottom: 24, overflowX: 'auto' }}>
-          {(siteId === 'all' ? TABS.filter(t => t.id === 'analytics') : TABS).map(tab => (
+          {(siteId === 'all' ? TABS.filter(t => t.id === 'analytics' || t.id === 'bookings') : TABS).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: 13,
@@ -167,6 +168,7 @@ export default function SiteDetailPage() {
 
         {/* Tab content */}
         {activeTab === 'analytics'   && <AnalyticsTab siteId={siteId} siteCurrency={site?.currency || 'CZK'} />}
+        {activeTab === 'bookings'    && <BookingsTab siteId={siteId} />}
         {activeTab === 'listings'    && <ListingsTab siteId={siteId} siteSlug={site.slug} siteCurrency={site.currency} />}
         {activeTab === 'services'    && <ServicesTab siteId={siteId} siteCurrency={site.currency} />}
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, design_config: cfg } : s)} />}

@@ -230,7 +230,11 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
   // Map property → unit
   const unitId = PROPERTY_MAP[res.property_id];
-  if (!unitId) { result.skipped++; return; }
+  if (!unitId) {
+    console.warn(`[Hostex] UNMAPPED property_id=${res.property_id} guest="${res.guest_name}" stay_code="${res.stay_code}" channel="${res.channel_type}" listing="${res.listing_id}" check_in=${res.check_in_date}`);
+    result.skipped++;
+    return;
+  }
 
   // Calculate financial data
   const totalEur = res.rates?.total_rate?.amount || 0;
@@ -682,7 +686,7 @@ function logSync(db: any, syncType: string, status: string, count: number, error
 
 // ─── Property map seeding ─────────────────────────────────
 
-export async function seedPropertyMap(): Promise<void> {
+export async function seedPropertyMap(): Promise<{ unmapped: { id: number; title: string; channels: string[] }[] }> {
   const db = getDb();
   ensureHostexColumns(db);
 
@@ -692,13 +696,21 @@ export async function seedPropertyMap(): Promise<void> {
     VALUES (?, ?, ?, ?)
   `);
 
+  const unmapped: { id: number; title: string; channels: string[] }[] = [];
+
   for (const prop of properties) {
     const unitId = PROPERTY_MAP[prop.id];
     if (unitId) {
       upsert.run(prop.id, prop.title, unitId, JSON.stringify(prop.channels));
       console.log(`[Hostex] Mapped: ${prop.title} (${prop.id}) → ${unitId}`);
+    } else {
+      const channelTypes = (prop.channels || []).map((c: any) => c.channel_type);
+      console.warn(`[Hostex] UNMAPPED PROPERTY: "${prop.title}" (id=${prop.id}) channels=${JSON.stringify(channelTypes)}`);
+      unmapped.push({ id: prop.id, title: prop.title, channels: channelTypes });
     }
   }
+
+  return { unmapped };
 }
 
 // ─── Get sync status ──────────────────────────────────────

@@ -216,6 +216,14 @@ export async function createBookingDraft(req: Request) {
     const reservationId = genId('r');
     const guestPageToken = genToken(32);
 
+    const utmParams = body.utm_params || {};
+    const utmSource = utmParams['utm_source'] || null;
+    const utmMedium = utmParams['utm_medium'] || null;
+    const utmCampaign = utmParams['utm_campaign'] || null;
+    const utmContent = utmParams['utm_content'] || null;
+    const utmTerm = utmParams['utm_term'] || null;
+    const gaClientId = utmParams['ga_client_id'] || null;
+
     db.prepare(`
       INSERT INTO reservations (
         id, property_id, unit_id, guest_id, source,
@@ -224,6 +232,7 @@ export async function createBookingDraft(req: Request) {
         total_price, currency,
         status, payment_status,
         guest_page_token,
+        utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
         notes, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, 'widget_kemp',
@@ -232,6 +241,7 @@ export async function createBookingDraft(req: Request) {
         ?, 'CZK',
         'tentative', 'unpaid',
         ?,
+        ?, ?, ?, ?, ?, ?,
         ?, datetime('now'), datetime('now')
       )
     `).run(
@@ -246,6 +256,7 @@ export async function createBookingDraft(req: Request) {
       body.accommodation_data?.children || 0,
       body.total_price || 0,
       guestPageToken,
+      utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
       body.accommodation_data ? `Type: ${accommodationType}, Options: ${JSON.stringify(body.accommodation_data)}` : null,
     );
 

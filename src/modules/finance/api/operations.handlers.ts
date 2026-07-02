@@ -210,7 +210,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         'o.comment LIKE ?',
         'o.source_ref LIKE ?'
       ];
-      const p = [`%${search}%`, `%${search}%`];
+      const p: any[] = [`%${search}%`, `%${search}%`];
       
       if (isNum) {
         parts.push('ABS(o.amount) = ?');
