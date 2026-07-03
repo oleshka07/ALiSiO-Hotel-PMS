@@ -210,6 +210,30 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   const totalResChanges = result3.changes + result4.changes + result5.changes;
   console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: totalResChanges });
 
+  // Emit payment status change events for TG notification editing
+  if (totalResChanges > 0) {
+    try {
+      // Find all reservations that were just updated
+      const affectedRes = db.prepare(`
+        SELECT id FROM reservations WHERE payment_id = ? AND payment_status = 'paid'
+        UNION
+        SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL
+      `).all(paymentRef, paymentRef) as any[];
+      import('@core/event-bus').then(({ eventBus }) => {
+        for (const r of affectedRes) {
+          const resId = r.id || r.reservation_id;
+          if (resId) {
+            eventBus.emit('booking.payment_status_changed', {
+              bookingId: resId,
+              oldStatus: 'unpaid',
+              newStatus: 'paid',
+            });
+          }
+        }
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+
   // Track changes from BOTH primary + fallback paths so the gates below
   // fire even when Teya labelled the order with transactionId rather than
   // sessionId. Previously only result1/result2 were checked, so fallback

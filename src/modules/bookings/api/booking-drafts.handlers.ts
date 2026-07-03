@@ -380,8 +380,16 @@ export async function updateBookingDraft(req: Request) {
       try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
       try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
 
-      // First-time confirmation: create fin_operation + send email.
+      // First-time confirmation: create fin_operation + send email + notify TG.
       if (confirmResult.changes > 0) {
+        // Emit payment status change for TG notification editing
+        import('@core/event-bus').then(({ eventBus }) => {
+          eventBus.emit('booking.payment_status_changed', {
+            bookingId: rid,
+            oldStatus: 'unpaid',
+            newStatus: 'paid',
+          });
+        }).catch(() => {});
         // ─── Create fin_operation ONLY for CASH payments ──────────────────
         // Terminal payments do NOT get a fin_operation here — the money
         // arrives via bank statement and will be recorded through bank import.

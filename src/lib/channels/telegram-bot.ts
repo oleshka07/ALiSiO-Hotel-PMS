@@ -20,11 +20,11 @@ const BOT_TOKEN = IS_DEV
   ? (process.env.TELEGRAM_BOT_TOKEN_DEV || process.env.TELEGRAM_BOT_TOKEN || '')
   : (process.env.TELEGRAM_BOT_TOKEN || '');
 
-const CHAT_ID = IS_DEV
+export const CHAT_ID = IS_DEV
   ? (process.env.TELEGRAM_CHAT_ID_DEV || process.env.TELEGRAM_CHAT_ID || '')
   : (process.env.TELEGRAM_CHAT_ID || '');
 
-const ADMIN_CHAT_IDS: string[] = IS_DEV
+export const ADMIN_CHAT_IDS: string[] = IS_DEV
   ? (process.env.TELEGRAM_ADMIN_CHAT_IDS_DEV || '')
       .split(',').map(id => id.trim()).filter(id => id.length > 0 && id !== CHAT_ID)
   : (process.env.TELEGRAM_ADMIN_CHAT_IDS || '')
@@ -141,7 +141,7 @@ export async function editTelegramMessage(
 }
 
 /** Low-level: edit a message in a specific chat */
-async function editInChat(
+export async function editInChat(
   chatId: string,
   messageId: number,
   text: string,

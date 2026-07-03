@@ -754,5 +754,21 @@ export function recalcReservationPaymentStatus(db: any, reservationId: string): 
   let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid';
   if (total > 0 && net >= total - 0.005) paymentStatus = 'paid';
   else if (net > 0) paymentStatus = 'partial';
+
+  // Read old status before update for TG notification editing
+  const oldRow = db.prepare('SELECT payment_status FROM reservations WHERE id = ?').get(reservationId) as any;
+  const oldPaymentStatus = oldRow?.payment_status || 'unpaid';
+
   db.prepare('UPDATE reservations SET payment_status = ? WHERE id = ?').run(paymentStatus, reservationId);
+
+  // Emit event if status changed
+  if (oldPaymentStatus !== paymentStatus) {
+    import('@core/event-bus').then(({ eventBus }) => {
+      eventBus.emit('booking.payment_status_changed', {
+        bookingId: reservationId,
+        oldStatus: oldPaymentStatus,
+        newStatus: paymentStatus,
+      });
+    }).catch(() => {});
+  }
 }

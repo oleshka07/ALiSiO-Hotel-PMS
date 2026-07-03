@@ -4725,8 +4725,25 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.log('[DB] categories expansion note:', e.message);
   }
-  }
 
+  // --- Migration: tg_booking_messages table for notification tracking ---
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS tg_booking_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reservation_id TEXT NOT NULL,
+        chat_id TEXT NOT NULL,
+        message_id INTEGER NOT NULL,
+        sent_payment_status TEXT,
+        sent_text TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_tg_booking_msgs_res ON tg_booking_messages(reservation_id);
+    `);
+  } catch (e: any) {
+    console.log('[DB] tg_booking_messages migration note:', e.message);
+  }
+  }
 
 // Generate a cryptographically secure random token for guest pages
 export function generateGuestToken(): string {

@@ -36,4 +36,14 @@ export function registerBookingsSubscribers() {
       console.error('[Bookings Subscriber] Error processing payment.completed:', e.message);
     }
   });
+
+  // Edit Telegram notification when payment_status changes
+  eventBus.on('booking.payment_status_changed', async (payload) => {
+    try {
+      const { updateBookingPaymentNotification } = await import('@/modules/notifications/data/tg-message-updater');
+      await updateBookingPaymentNotification(payload.bookingId, payload.newStatus);
+    } catch (e: any) {
+      console.error('[Bookings Subscriber] TG payment edit error:', e.message);
+    }
+  });
 }

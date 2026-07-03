@@ -14,7 +14,7 @@ function escHtml(s: unknown): string {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function notifyReservationCreated(reservationId: string, options: NotifyOptions = {}): void {
+export async function notifyReservationCreated(reservationId: string, options: NotifyOptions = {}): Promise<void> {
   try {
     const db = getDb();
     const r = db.prepare(`
@@ -72,9 +72,19 @@ export function notifyReservationCreated(reservationId: string, options: NotifyO
       options.extraFooter ? options.extraFooter : '',
     ].filter(Boolean).join('\n');
 
-    sendTelegramMessage(lines).catch((e: any) =>
-      console.error('[TG notify] send error:', e?.message || e),
-    );
+    // Send and store message_id for live-editing on payment status change
+    try {
+      const msgId = await sendTelegramMessage(lines);
+      if (msgId) {
+        const { storeTgBookingMessage } = await import('@/modules/notifications/data/tg-message-updater');
+        const { CHAT_ID: ownerChatId } = await import('@/lib/channels/telegram-bot');
+        if (ownerChatId) {
+          storeTgBookingMessage(reservationId, ownerChatId, msgId, r.payment_status || 'unpaid', lines);
+        }
+      }
+    } catch (storeErr: any) {
+      console.error('[TG notify] store message_id error:', storeErr?.message);
+    }
   } catch (e: any) {
     console.error('[TG notify] notifyReservationCreated error:', e?.message);
   }
