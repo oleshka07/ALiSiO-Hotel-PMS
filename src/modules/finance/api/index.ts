@@ -232,6 +232,7 @@ import {
   getOperationAudit as _getOperationAudit,
   createOperation as _createOperation, updateOperation as _updateOperation,
   deleteOperation as _deleteOperation, duplicateOperation as _duplicateOperation,
+  mergeOperations as _mergeOperations,
   applyRecurringSuggestion as _applyRecurringSuggestion,
 } from './operations.handlers';
 export const listOperations    = withFinanceRead(_listOperations);
@@ -240,6 +241,7 @@ export const getOperationAudit = withFinanceRead(_getOperationAudit);
 export const createOperation    = withPermission('manage_payments', _createOperation);
 export const updateOperation    = withPermission('manage_payments', _updateOperation);
 export const deleteOperation    = withPermission('manage_payments', _deleteOperation);
+export const mergeOperations    = withPermission('manage_payments', _mergeOperations);
 export const duplicateOperation = withPermission('manage_payments', _duplicateOperation);
 export const applyRecurringSuggestion = withPermission('manage_payments', _applyRecurringSuggestion);
 

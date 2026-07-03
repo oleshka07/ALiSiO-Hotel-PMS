@@ -97,6 +97,37 @@ export default function OperationsPage() {
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
 
+  const [selectedOpsForMerge, setSelectedOpsForMerge] = useState<Set<string>>(new Set());
+  const [isMerging, setIsMerging] = useState(false);
+
+  const handleMerge = async () => {
+    if (selectedOpsForMerge.size !== 2) return;
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/finance/operations/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedOpsForMerge) })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to merge');
+      setSelectedOpsForMerge(new Set());
+      await fetchOps();
+    } catch (err: any) {
+      alert("Помилка об'єднання: " + err.message);
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const toggleMergeSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSet = new Set(selectedOpsForMerge);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedOpsForMerge(newSet);
+  };
+
   const fetchOps = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ from, to, pageSize: '5000' });
@@ -374,9 +405,22 @@ export default function OperationsPage() {
             </div>
           ) : (
             <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
+              {selectedOpsForMerge.size === 2 && (
+                <div style={{ padding: 12, background: 'rgba(99,102,241,0.1)', borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 500, color: '#4f46e5' }}>Вибрано 2 операції для об'єднання.</span>
+                  <button 
+                    onClick={handleMerge}
+                    disabled={isMerging}
+                    style={{ background: '#4f46e5', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontWeight: 500, cursor: isMerging ? 'not-allowed' : 'pointer', opacity: isMerging ? 0.7 : 1 }}
+                  >
+                    {isMerging ? "Об'єднання..." : "З'єднати в переміщення"}
+                  </button>
+                </div>
+              )}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
+                    <th style={{ ...th, width: 30, textAlign: 'center' }}></th>
                     <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
                     <SortableTh label="Рахунок / залишок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
@@ -403,14 +447,23 @@ export default function OperationsPage() {
                           .map((c) => ({ id: c.id, name: c.name, icon: c.icon }));
                     const projectOptions: InlinePickerOption[] = projects.map((p) => ({ id: p.id, name: p.name }));
                     const counterpartyOptions: InlinePickerOption[] = counterparties.map((c) => ({ id: c.id, name: c.name }));
+                    const isSelected = selectedOpsForMerge.has(o.id);
                     return (
                       <tr
                         key={o.id}
                         onClick={openModal}
-                        style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer', background: isSelected ? 'rgba(99,102,241,0.08)' : 'transparent' }}
+                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                       >
+                        <td style={{ ...td, textAlign: 'center' }} onClick={(e) => toggleMergeSelect(o.id, e)}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => {}} 
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
                         <td style={td}>{o.paid_at?.substring(0, 10)}</td>
                         <td style={{ ...td, textAlign: 'right', color: amountColor, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                           {sign} {Math.abs(o.amount).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {o.currency}

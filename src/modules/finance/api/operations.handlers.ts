@@ -588,6 +588,73 @@ export async function deleteOperation(
   }
 }
 
+export async function mergeOperations(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    if (!Array.isArray(body.ids) || body.ids.length !== 2) {
+      return NextResponse.json({ error: 'Очікується рівно 2 ідентифікатори' }, { status: 400 });
+    }
+
+    const [id1, id2] = body.ids;
+    const op1 = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id1) as any;
+    const op2 = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id2) as any;
+
+    if (!op1 || !op2) {
+      return NextResponse.json({ error: 'Операції не знайдено' }, { status: 404 });
+    }
+
+    if (op1.op_type === 'transfer' || op2.op_type === 'transfer') {
+      return NextResponse.json({ error: "Неможливо об'єднати вже існуюче переміщення" }, { status: 400 });
+    }
+
+    // Determine which is expense and which is income
+    let expOp, incOp;
+    if (op1.op_type === 'expense' && op2.op_type === 'income') {
+      expOp = op1; incOp = op2;
+    } else if (op1.op_type === 'income' && op2.op_type === 'expense') {
+      expOp = op2; incOp = op1;
+    } else {
+      return NextResponse.json({ error: "Для об'єднання виберіть одну витрату та один дохід" }, { status: 400 });
+    }
+
+    const actor = await getOptionalActor();
+    
+    // We keep the expense operation, turn it into a transfer, and delete the income operation.
+    // The amount will be exactly the amount of the expense.
+    const updatedExp = {
+      ...expOp,
+      op_type: 'transfer',
+      account_to_id: incOp.account_to_id,
+      category_id: null
+    };
+
+    db.prepare(`
+      UPDATE fin_operations 
+      SET op_type = 'transfer', account_to_id = ?, category_id = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(incOp.account_to_id, expOp.id);
+
+    // Audit the conversion
+    writeOperationAudit(db, expOp.id, 'convert', actor, expOp, updatedExp);
+
+    // Re-link bank transactions from the deleted income operation to the new transfer operation
+    db.prepare('UPDATE bank_transactions SET matched_operation_id = ? WHERE matched_operation_id = ?').run(expOp.id, incOp.id);
+    
+    // Audit and delete the income operation
+    writeOperationAudit(db, incOp.id, 'delete', actor, incOp, null);
+    db.prepare('DELETE FROM fin_operations WHERE id = ?').run(incOp.id);
+
+    if (incOp.reservation_id) recalcReservationPaymentStatus(db, incOp.reservation_id);
+    if (expOp.reservation_id) recalcReservationPaymentStatus(db, expOp.reservation_id);
+
+    return NextResponse.json({ ok: true, merged_into: expOp.id });
+
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 /**
  * GET /api/finance/operations/[id]/audit
  * Returns the full change history for one operation, newest first.
