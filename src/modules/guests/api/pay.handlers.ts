@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as actionsRepo from '../data/guest-actions.repo';
-import { createPaymentSession } from '@payments';
+import { createPaymentSession, resolveCredentialsForReservation } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ async function handleSinglePay(
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
+    const siteCredentials = resolveCredentialsForReservation(reservation.id);
     const session = await createPaymentSession({
       kind: 'service_standalone',
       amount: totalPrice,
@@ -99,6 +100,7 @@ async function handleSinglePay(
       description: `${serviceName} × ${effectiveQty} — ${guestName}`,
       lineItems: [{ description: serviceName, quantity: effectiveQty, unitPriceMajor: service.price }],
       metadata: { order_ids: orderIds.join(','), reservation_id: reservation.id, service_id: serviceId, source: 'guest_page' },
+      credentials: siteCredentials,
       successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
       cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });
@@ -263,6 +265,7 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
+    const siteCredentials = resolveCredentialsForReservation(reservation.id);
     const session = await createPaymentSession({
       kind: 'service_cart',
       amount: grandTotal,
@@ -284,6 +287,7 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
         reservation_id: reservation.id,
         source: 'guest_cart',
       },
+      credentials: siteCredentials,
       successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
       cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });

@@ -224,6 +224,8 @@ export async function createBookingDraft(req: Request) {
     const utmTerm = utmParams['utm_term'] || null;
     const gaClientId = utmParams['ga_client_id'] || null;
 
+    const draftSource = body.site_id ? `widget:${body.site_id}` : 'widget_kemp';
+
     db.prepare(`
       INSERT INTO reservations (
         id, property_id, unit_id, guest_id, source,
@@ -235,7 +237,7 @@ export async function createBookingDraft(req: Request) {
         utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
         notes, created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, 'widget_kemp',
+        ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?,
         ?, 'CZK',
@@ -249,6 +251,7 @@ export async function createBookingDraft(req: Request) {
       property.id,
       unitId,
       guestId,
+      draftSource,
       body.check_in || null,
       body.check_out || null,
       nights,

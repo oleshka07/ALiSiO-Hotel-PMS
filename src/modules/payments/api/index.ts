@@ -13,6 +13,10 @@ export { teyaBotWebhook } from './webhook-teya-bot.handlers';
 // Returns null when no per-site config is set — callers fall back to global ENV.
 export { resolveSiteCredentials, isGlobalTeyaConfigured } from '../data/site-credentials.repo';
 
+// Resolve per-site Teya credentials from a reservation's source field.
+// Used by guest-page payment handlers so payments match the store used at checkout.
+export { resolveCredentialsForReservation } from '../data/resolve-reservation-credentials';
+
 // Low-level Teya primitives — still exported so the webhook handlers and
 // existing call-sites keep working during migration. New code should prefer
 // createPaymentSession over calling createCheckoutSession directly.
