@@ -14,6 +14,7 @@ import BankInboxesTab from './_components/BankInboxesTab';
 import TeyaSyncTab from './_components/TeyaSyncTab';
 import ReceiptInboxesTab from './_components/ReceiptInboxesTab';
 import FinmapImportTab from './_components/FinmapImportTab';
+import FinanceUsersTab from './_components/FinanceUsersTab';
 
 type TabId =
   | 'accounts'
@@ -50,7 +51,7 @@ const TABS: TabDef[] = [
   { id: 'receipt-inboxes', label: 'Receipt inbox (чеки)', icon: <Mail size={16} />, enabled: true },
   { id: 'teya-sync', label: 'Teya sync', icon: <CreditCard size={16} />, enabled: true },
   { id: 'finmap-import', label: 'Finmap import', icon: <CreditCard size={16} />, enabled: true },
-  { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: false },
+  { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: true },
 ];
 
 export default function FinanceSettingsPage() {
@@ -134,6 +135,7 @@ export default function FinanceSettingsPage() {
           {activeTab === 'receipt-inboxes' && <ReceiptInboxesTab />}
           {activeTab === 'teya-sync' && <TeyaSyncTab />}
           {activeTab === 'finmap-import' && <FinmapImportTab />}
+          {activeTab === 'users' && <FinanceUsersTab />}
         </main>
       </div>
     </div>

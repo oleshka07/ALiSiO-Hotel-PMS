@@ -142,13 +142,57 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // Finance access restrictions for non-owner users
+  const [financeAccess, setFinanceAccess] = useState<{
+    is_owner: boolean; allowed_tabs: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!user || user.role === 'owner') return;
+    fetch('/api/finance/access/my')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setFinanceAccess(data); })
+      .catch(() => {});
+  }, [user]);
+
+  // Map finance route paths to tab IDs for filtering
+  const FINANCE_TAB_MAP: Record<string, string> = {
+    '/finance': 'overview',
+    '/finance/operations': 'operations',
+    '/finance/reports': 'reports',
+    '/finance/bank': 'bank',
+    '/finance/clearing': 'clearing',
+    '/finance/receipts': 'receipts',
+    '/finance/calendar': 'calendar',
+    '/finance/expected-payments': 'expected-payments',
+    '/finance/capex': 'capex',
+    '/finance/accruals': 'accruals',
+    '/finance/history': 'history',
+    '/finance/import': 'import',
+    '/finance/reconcile': 'reconcile',
+    '/finance/investors': 'investors',
+    '/finance/settings': 'settings',
+  };
+
   // Filter navigation based on user permissions
   const filteredNavigation = navigation
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
         if (!user || !item.permission) return true;
-        return hasPermission(user.permissions, item.permission);
+        if (!hasPermission(user.permissions, item.permission)) return false;
+
+        // For non-owner finance users: filter by allowed_tabs
+        if (financeAccess && !financeAccess.is_owner && item.href.startsWith('/finance')) {
+          const tabId = FINANCE_TAB_MAP[item.href];
+          if (tabId && tabId !== 'overview') {
+            return financeAccess.allowed_tabs.includes(tabId);
+          }
+          // Overview is always visible if user has finance access
+          if (tabId === 'overview') return true;
+        }
+
+        return true;
       }),
     }))
     .filter((section) => section.items.length > 0);

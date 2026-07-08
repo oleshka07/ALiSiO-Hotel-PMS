@@ -33,13 +33,21 @@ function forbidden(message: string): NextResponse {
   return NextResponse.json({ error: message, code: 'FORBIDDEN' }, { status: 403 });
 }
 
-/** Owner-only (plus FINANCE_EXTRA_USER_IDS allow-list). */
+/** Owner-only (plus FINANCE_EXTRA_USER_IDS allow-list + finance_user_access table). */
 export function requireOwner<C = any>(handler: RouteHandler<C>): RouteHandler<C> {
   return async (request, context) => {
     const u = await currentUser();
     if (!u) return unauthenticated();
     if (u.role !== 'owner' && !FINANCE_ALLOWLIST.has(u.id)) {
-      return forbidden('Доступ лише для власника');
+      // Check DB-based access as a fallback
+      try {
+        const { isFinanceUserEnabled } = await import('@/modules/finance/api/finance-access.handlers');
+        if (!isFinanceUserEnabled(u.id)) {
+          return forbidden('Доступ лише для власника');
+        }
+      } catch {
+        return forbidden('Доступ лише для власника');
+      }
     }
     return handler(request, context);
   };

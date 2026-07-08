@@ -517,3 +517,18 @@ export const deleteReceiptInbox    = withPermission('import_bank_data', _deleteR
 export const runReceiptInboxNow    = withPermission('import_bank_data', _runReceiptInboxNow);
 export const attachPendingReceipt  = withPermission('manage_payments', _attachPendingReceipt);
 export const archivePendingReceipt = withPermission('manage_payments', _archivePendingReceipt);
+
+// ─── Finance user access (owner-only management + self-read) ──
+import {
+  listFinanceAccess as _listFinanceAccess,
+  upsertFinanceAccess as _upsertFinanceAccess,
+  deleteFinanceAccess as _deleteFinanceAccess,
+  getMyFinanceAccess as _getMyFinanceAccess,
+} from './finance-access.handlers';
+export const listFinanceAccess    = withPermission('manage_users', _listFinanceAccess);
+export const upsertFinanceAccess  = withPermission('manage_users', _upsertFinanceAccess);
+export const deleteFinanceAccess  = withPermission('manage_users', _deleteFinanceAccess);
+export const getMyFinanceAccess   = withFinanceRead(_getMyFinanceAccess);
+
+// Re-export auth helpers for use in _guard.ts and other modules
+export { isFinanceUserEnabled, getFinanceAccessForUser } from './finance-access.handlers';

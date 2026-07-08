@@ -4743,6 +4743,22 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.log('[DB] tg_booking_messages migration note:', e.message);
   }
+
+  // --- Migration: finance_user_access — per-user finance access control ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_user_access (
+      user_id          TEXT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+      is_enabled       INTEGER NOT NULL DEFAULT 0,
+      period_mode      TEXT NOT NULL DEFAULT 'month' CHECK (period_mode IN ('all', 'month')),
+      allowed_tabs     TEXT NOT NULL DEFAULT '["operations"]',
+      allowed_accounts TEXT NOT NULL DEFAULT '[]',
+      can_export       INTEGER NOT NULL DEFAULT 0,
+      read_only        INTEGER NOT NULL DEFAULT 1,
+      created_at       TEXT DEFAULT (datetime('now')),
+      updated_at       TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  console.log('[DB] finance_user_access table ready');
   }
 
 // Generate a cryptographically secure random token for guest pages

@@ -28,8 +28,10 @@ const FINANCE_ALLOWLIST: ReadonlySet<string> = new Set(
     .filter(Boolean),
 );
 
+import { isFinanceUserEnabled } from './finance-access.handlers';
+
 export function isFinanceAuthorized(user: SessionUser): boolean {
-  return user.role === 'owner' || FINANCE_ALLOWLIST.has(user.id);
+  return user.role === 'owner' || FINANCE_ALLOWLIST.has(user.id) || isFinanceUserEnabled(user.id);
 }
 
 async function getSession(): Promise<{ sessionId: string | undefined; user: SessionUser | null }> {
