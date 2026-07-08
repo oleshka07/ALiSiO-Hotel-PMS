@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
-import { createPaymentSession } from '@payments';
+import { createPaymentSession, resolveSiteCredentials, isGlobalTeyaConfigured } from '@payments';
 import { getDb } from '@core/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot'; // TODO: replace with eventBus
 
@@ -41,24 +41,26 @@ export async function createWidgetCheckoutSession(req: Request) {
     // 1. Resolve Site and Payment Config
     //    site_slug is optional — when absent, fall back to global ENV credentials
     let site: any = null;
-    let payCfg: any = {};
+    let siteCreds: any = null;
 
     if (site_slug) {
       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
-      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ? OR id = ?').get(site_slug, site_slug) as any;
+      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(site_slug, site_slug) as any;
       if (!site) {
         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
       }
-      payCfg = JSON.parse(site.payment_config || '{}');
+      siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
     } else if (clientSiteId) {
       // booking/page.tsx sends site_id instead of site_slug
-      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE id = ?').get(clientSiteId) as any;
-      if (site) payCfg = JSON.parse(site.payment_config || '{}');
+      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ?').get(clientSiteId) as any;
+      if (site) {
+        siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
+      }
     }
 
     // Check if payment is possible: either site-specific Teya config or global ENV
-    const hasSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
-    if (!hasSiteTeya && !process.env.TEYA_CLIENT_ID) {
+    const hasSiteTeya = !!siteCreds?.credentials;
+    if (!hasSiteTeya && !isGlobalTeyaConfigured()) {
       if (reservation_id) {
         // Fire email explicitly for offline/bank-transfer partner bookings
         try {
@@ -327,11 +329,7 @@ export async function createWidgetCheckoutSession(req: Request) {
         currency: currency || 'CZK',
         description,
         metadata: reservation_id ? { reservation_id, source: 'widget_service', ...(orderId && { order_id: orderId }), ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
-        credentials: hasSiteTeya ? {
-          client_id: payCfg.teya.client_id,
-          client_secret: payCfg.teya.client_secret,
-          store_id: payCfg.teya.store_id
-        } : undefined,
+        credentials: siteCreds?.credentials,
         ...(isProduction ? {
           // NOTE: Teya does NOT support {CHECKOUT_SESSION_ID} placeholder (Stripe only).
           // We use reservation_id in the return URL so payment-return can identify the booking.

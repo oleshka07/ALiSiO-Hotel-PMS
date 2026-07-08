@@ -3,7 +3,7 @@
 // Import via: import { ... } from '@payments'
 
 // Universal session factory (new). Callers build a PaymentIntent and pass it here.
-export { createPaymentSession } from '../domain/checkout-session';
+export { createPaymentSession, getEnvStore } from '../api/create-payment-session';
 
 // Webhook handlers — route /api/webhooks/teya and /api/webhooks/teya-bot point here.
 export { teyaWebhook } from './webhook-teya.handlers';
