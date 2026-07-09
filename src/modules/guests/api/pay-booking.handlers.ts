@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { createPaymentSession } from '@payments';
+import { createPaymentSession, resolveCredentialsForReservation } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 export async function payForBooking(
@@ -61,6 +61,11 @@ export async function payForBooking(
 
     console.log(`[Guest Pay Booking] ${guestName} | ${description} | remaining: ${remaining} ${reservation.currency}`);
 
+    // ── Resolve per-site Teya credentials ────────────────────────
+    // If this reservation was booked via a widget site (source = 'widget:<siteId>'),
+    // route the payment to that site's Teya store. Otherwise fall back to ENV globals.
+    const siteCredentials = resolveCredentialsForReservation(reservation.id);
+
     // ── Create Teya session ────────────────────────────────────
     // NOTE: We do NOT pass successUrl/cancelUrl to Teya because their v2 API
     // rejects `{CHECKOUT_SESSION_ID}` template variables in URLs. Instead we
@@ -81,6 +86,7 @@ export async function payForBooking(
         source: 'guest_booking_payment',
         token,
       },
+      credentials: siteCredentials,
       successUrl: `${baseUrl}/api/booking/payment-return?status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
       cancelUrl: `${baseUrl}/guest/${token}?payment=cancelled`,
     });
