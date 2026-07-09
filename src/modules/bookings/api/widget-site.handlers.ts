@@ -15,7 +15,7 @@ export async function getWidgetSiteConfigOptions() {
 export async function getWidgetSiteConfig(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const slug = searchParams.get('slug');
+    let slug = searchParams.get('slug');
     
     if (!slug) {
       return NextResponse.json({ error: 'slug is required' }, { status: 400, headers: CORS_HEADERS });
