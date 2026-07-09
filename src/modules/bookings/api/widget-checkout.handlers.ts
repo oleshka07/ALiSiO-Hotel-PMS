@@ -43,10 +43,11 @@ export async function createWidgetCheckoutSession(req: Request) {
     let site: any = null;
     let siteCreds: any = null;
 
-    if (site_slug) {
-      if (site_slug === 'kv.kemp-carlsbad.cz') site_slug = 'kemp-carlsbad';
+    let activeSiteSlug = site_slug;
+    if (activeSiteSlug) {
+      if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
-      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(site_slug, site_slug) as any;
+      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any;
       if (!site) {
         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
       }
