@@ -357,6 +357,7 @@
             return { menuItemId: id, name: (item && (item.nameEn || item.name)) || id, quantity: state.itemQty[id] };
           }),
           promoCode: (state.promoApplied && state.promoCode) ? state.promoCode : undefined,
+          site_slug: SITE_ID || undefined,
         } : {
           // Slot service (sauna/tub) payload
           amount: amount,
@@ -370,6 +371,7 @@
           hours: state.hours,
           addons: (SERVICE_TYPE === 'sauna' && state.brooms > 0) ? [{ id: 'addon_broom', quantity: state.brooms, price: state.broomPrice }] : undefined,
           promoCode: (state.promoApplied && state.promoCode) ? state.promoCode : undefined,
+          site_slug: SITE_ID || undefined,
         })
       });
       if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Payment init failed'); }

@@ -4,7 +4,8 @@ import type { ResolvedSiteCredentials } from '../domain/types';
 import { getEnvStore } from '../api/create-payment-session';
 
 export function resolveSiteCredentials(opts: { slug?: string | null; id?: string | null }): ResolvedSiteCredentials | null {
-  const slug = opts.slug || undefined;
+  let slug = opts.slug || undefined;
+  if (slug === 'kv.kemp-carlsbad.cz') slug = 'kemp-carlsbad';
   const id = opts.id || undefined;
   if (!slug && !id) return null;
 

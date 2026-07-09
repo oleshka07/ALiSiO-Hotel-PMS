@@ -20,6 +20,8 @@ export async function getWidgetSiteConfig(req: NextRequest) {
     if (!slug) {
       return NextResponse.json({ error: 'slug is required' }, { status: 400, headers: CORS_HEADERS });
     }
+    
+    if (slug === 'kv.kemp-carlsbad.cz') slug = 'kemp-carlsbad';
 
     const db = getDb();
     const site = db.prepare(`

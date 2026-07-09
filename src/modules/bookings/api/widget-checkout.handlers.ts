@@ -44,6 +44,7 @@ export async function createWidgetCheckoutSession(req: Request) {
     let siteCreds: any = null;
 
     if (site_slug) {
+      if (site_slug === 'kv.kemp-carlsbad.cz') site_slug = 'kemp-carlsbad';
       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
       site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(site_slug, site_slug) as any;
       if (!site) {

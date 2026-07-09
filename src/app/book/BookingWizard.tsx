@@ -368,6 +368,7 @@ export default function BookingWizard() {
       body: JSON.stringify({
         amount: grandTotal, currency: 'CZK', description: desc,
         reservation_id: pmsResId, return_path: returnPath,
+        site_id: resolvedSiteId,
       }),
     });
     const checkout = await checkoutRes.json();
