@@ -226,6 +226,20 @@ export async function createBookingDraft(req: Request) {
 
     const draftSource = body.site_id ? `widget:${body.site_id}` : 'widget_kemp';
 
+    const refUrl = body.source_url || 'Прямий захід';
+    const ua = body.user_agent || '';
+    const browser = ua.includes('Chrome') ? 'Chrome' : ua.includes('Safari') && !ua.includes('Chrome') ? 'Safari' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Edge') ? 'Edge' : 'Інший';
+    const device = ua.includes('Mobile') ? 'Mobile' : 'Desktop';
+    
+    let marketingNotes = `🌐 Джерело: ${refUrl}\n`;
+    marketingNotes += `💻 Пристрій: ${device} · ${browser}\n`;
+    if (body.language || body.time_zone) {
+      marketingNotes += `🌍 Мова/Локація: ${body.language || '?'} · ${body.time_zone || '?'}\n`;
+    }
+    if (body.accommodation_data) {
+      marketingNotes += `ℹ️ Опції: ${JSON.stringify(body.accommodation_data)}`;
+    }
+
     db.prepare(`
       INSERT INTO reservations (
         id, property_id, unit_id, guest_id, source,
@@ -260,7 +274,7 @@ export async function createBookingDraft(req: Request) {
       body.total_price || 0,
       guestPageToken,
       utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
-      body.accommodation_data ? `Type: ${accommodationType}, Options: ${JSON.stringify(body.accommodation_data)}` : null,
+      marketingNotes,
     );
 
     // Link draft → reservation + save token in draft

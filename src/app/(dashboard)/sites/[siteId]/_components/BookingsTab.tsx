@@ -233,8 +233,13 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
                       )}
                     </td>
                     <td>
-                      {(b.utm_content || b.utm_term || b.gclid || b.fbclid) ? (
+                      {(b.utm_content || b.utm_term || b.gclid || b.fbclid || (b.notes && b.notes.includes('Джерело'))) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {b.notes && b.notes.includes('Джерело') && (
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '1.4', paddingBottom: 4 }}>
+                              {b.notes}
+                            </div>
+                          )}
                           {b.utm_content && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>crtv: {b.utm_content}</span>}
                           {b.utm_term && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>term: {b.utm_term}</span>}
                           {b.gclid && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: 4, display: 'inline-block', width: 'fit-content' }}>gclid: {b.gclid}</span>}

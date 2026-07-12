@@ -27,6 +27,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       start_hour,
       hours,
       addons,
+      couponCode,
       // Breakfast-specific fields from service-embed.js
       breakfast_dates,
       menu_items: clientMenuItems,
@@ -67,7 +68,7 @@ export async function createWidgetCheckoutSession(req: Request) {
         // Fire email explicitly for offline/bank-transfer partner bookings
         try {
           const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-          sendBookingConfirmationEmail(reservation_id).catch(() => {});
+          sendBookingConfirmationEmail(reservation_id).catch(() => { });
         } catch (err: any) {
           console.error('[Checkout Session] Failed to trigger email:', err.message);
         }
@@ -146,7 +147,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       // Main Reservation payment
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
-      
+
       amount = res.total_price || 0;
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
@@ -330,14 +331,21 @@ export async function createWidgetCheckoutSession(req: Request) {
         amount,
         currency: currency || 'CZK',
         description,
-        metadata: reservation_id ? { reservation_id, source: 'widget_service', ...(orderId && { order_id: orderId }), ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
+        metadata: reservation_id
+          ? {
+            reservation_id,
+            source: 'widget_service',
+            ...(orderId && { order_id: orderId }),
+            ...(site?.id && { site_id: site.id })
+          }
+          : (site?.id ? { site_id: site.id } : {}),
         credentials: siteCreds?.credentials,
-        ...(isProduction ? {
-          // NOTE: Teya does NOT support {CHECKOUT_SESSION_ID} placeholder (Stripe only).
-          // We use reservation_id in the return URL so payment-return can identify the booking.
-          successUrl: `${origin}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
-          cancelUrl: `${origin}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
-        } : {}),
+
+        // NOTE: Teya does NOT support {CHECKOUT_SESSION_ID} placeholder (Stripe only).
+        // We use reservation_id in the return URL so payment-return can identify the booking.
+        // прибрав тестово перевірку чи прод чи дев версія, можливо допоможе з редіректом
+        successUrl: `${origin}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
+        cancelUrl: `${origin}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation_id || '')}&return=${encodeURIComponent(returnTo)}`,
       });
 
       if (reservation_id) {
