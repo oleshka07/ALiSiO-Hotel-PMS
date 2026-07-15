@@ -309,14 +309,16 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
               <BarChart3 size={16} />
               Загальний огляд
             </button>
-            <button
-              onClick={() => setActiveSection('funnel')}
-              className={`btn ${activeSection === 'funnel' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '12px 16px' }}
-            >
-              <Filter size={16} />
-              Воронка конверсії
-            </button>
+            {siteId !== 'all' && (
+              <button
+                onClick={() => setActiveSection('funnel')}
+                className={`btn ${activeSection === 'funnel' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '12px 16px' }}
+              >
+                <Filter size={16} />
+                Воронка конверсії
+              </button>
+            )}
             <button
               onClick={() => setActiveSection('traffic')}
               className={`btn ${activeSection === 'traffic' ? 'btn-primary' : 'btn-ghost'}`}
@@ -387,6 +389,16 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                       </div>
                       <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                         vs {formatValue(data.previous.revenue)} в минулому
+                      </span>
+                    </div>
+
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(234, 179, 8, 0.05)', borderColor: 'rgba(234, 179, 8, 0.2)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#ca8a04', textTransform: 'uppercase', letterSpacing: 0.5 }}>Очікує оплату (До оплати)</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ fontSize: 22, fontWeight: 800, color: '#ca8a04' }}>{formatValue(data.current.unpaidRevenue || 0)}</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        Сума бронювань, які ще не оплачені
                       </span>
                     </div>
 
@@ -658,6 +670,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           <th style={{ textAlign: 'right' }}>Сесії</th>
                           <th style={{ textAlign: 'right' }}>Бронювання</th>
                           <th style={{ textAlign: 'right' }}>Дохід</th>
+                          <th style={{ textAlign: 'right' }}>До оплати</th>
                           <th style={{ textAlign: 'right' }}>Конверсія %</th>
                         </tr>
                       </thead>
@@ -683,6 +696,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                               <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
                               <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
                               <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                               <td style={{ textAlign: 'right' }}>
                                 <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
                                   {item.conversion}%
@@ -757,6 +771,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                             <th style={{ textAlign: 'right' }}>Сесії</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>До оплати</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -771,6 +786,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ textAlign: 'right' }}>{item.sessions}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                               </tr>
                             ))
                           )}
@@ -790,6 +806,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                             <th style={{ textAlign: 'right' }}>Сесії</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>До оплати</th>
                             <th style={{ textAlign: 'right' }}>Конверсія %</th>
                           </tr>
                         </thead>
@@ -805,6 +822,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ textAlign: 'right' }}>{item.sessions}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                                 <td style={{ textAlign: 'right' }}>
                                   <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
                                     {item.conversion}%
@@ -834,6 +852,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                             <th>Тип</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>До оплати</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -847,6 +866,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ fontWeight: 600 }}>{item.unit_type_name} ({item.unit_type_code})</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                               </tr>
                             ))
                           )}
@@ -865,6 +885,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                             <th>Категорія</th>
                             <th style={{ textAlign: 'right' }}>Бронювання</th>
                             <th style={{ textAlign: 'right' }}>Дохід</th>
+                            <th style={{ textAlign: 'right' }}>До оплати</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -878,6 +899,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ fontWeight: 600 }}>{item.category_name} ({item.category_type})</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                               </tr>
                             ))
                           )}
@@ -925,6 +947,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           <th style={{ textAlign: 'right' }}>Сесії</th>
                           <th style={{ textAlign: 'right' }}>Бронювання</th>
                           <th style={{ textAlign: 'right' }}>Дохід</th>
+                          <th style={{ textAlign: 'right' }}>До оплати</th>
                           <th style={{ textAlign: 'right' }}>Конверсія %</th>
                         </tr>
                       </thead>
@@ -954,6 +977,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                               <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
                               <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
                               <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                               <td style={{ textAlign: 'right' }}>
                                 <span className="badge badge-primary" style={{ minWidth: 48, justifyContent: 'center' }}>
                                   {item.conversion}%

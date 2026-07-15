@@ -23,6 +23,7 @@ export async function getAvailability(request: NextRequest) {
     const ratePlanId = searchParams.get('ratePlanId') || searchParams.get('ratePlan');
     let siteId = searchParams.get('siteId');
     const siteSlug = searchParams.get('siteSlug');
+    const categoryType = searchParams.get('type');
 
     const bundleId = searchParams.get('bundleId') || '';
 
@@ -168,12 +169,16 @@ export async function getAvailability(request: NextRequest) {
       JOIN categories c ON u.category_id = c.id
       LEFT JOIN guest_page_config gpc ON gpc.unit_type_id = ut.id
       LEFT JOIN site_listings sl ON (sl.unit_id = u.id OR (sl.unit_type_id = ut.id AND sl.unit_id IS NULL))
-      WHERE c.type = 'glamping' 
-        AND u.is_active = 1 
-        AND u.room_status = 'available'
         ${siteIdObj ? 'AND sl.site_id = ?' : ''}
+      WHERE u.is_active = 1
+        AND u.room_status = 'available'
+        ${categoryType ? 'AND c.type = ?' : ''}
+      GROUP BY u.id
       ORDER BY u.sort_order, u.name
-    `).all(...(siteIdObj ? [siteIdObj] : [])) as any[];
+    `).all(...[
+      ...(siteIdObj ? [siteIdObj] : []),
+      ...(categoryType ? [categoryType] : [])
+    ]) as any[];
 
     const results = [];
 

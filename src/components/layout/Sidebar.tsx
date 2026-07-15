@@ -17,9 +17,6 @@ import {
   LogOut,
   X,
   Wallet,
-  PieChart,
-  TrendingUp,
-  Receipt,
   Landmark,
   ClipboardList,
   Upload,
@@ -82,7 +79,7 @@ const navigation: NavSection[] = [
     title: 'Управління',
     items: [
       { label: 'Ціноутворення', href: '/pricing', icon: <DollarSign size={20} />, permission: 'nav:pricing' },
-      { label: 'Звіти', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
+      { label: 'Аналітика продажів', href: '/reports', icon: <BarChart3 size={20} />, permission: 'nav:reports' },
       { label: 'Гості', href: '/guests', icon: <Users size={20} />, permission: 'nav:guests' },
       { label: 'Evidenční kniha', href: '/guest-registry', icon: <ClipboardList size={20} />, permission: 'nav:guests' },
       { label: 'Документи', href: '/documents', icon: <FileText size={20} />, permission: 'nav:documents' },
@@ -103,9 +100,6 @@ const navigation: NavSection[] = [
       { label: 'Інвестори (адмін)', href: '/finance/investors', icon: <Users size={20} />, permission: 'nav:investors' },
       { label: 'Звіти', href: '/finance/reports', icon: <BarChart3 size={20} />, permission: 'nav:finance' },
       { label: 'Календар', href: '/finance/calendar', icon: <CalendarDays size={20} />, permission: 'nav:finance' },
-      { label: 'Витрати (legacy)', href: '/finance/expenses', icon: <Receipt size={20} />, permission: 'nav:finance' },
-      { label: 'P&L (legacy)', href: '/finance/pnl', icon: <PieChart size={20} />, permission: 'nav:finance' },
-      { label: 'Cash Flow (legacy)', href: '/finance/cashflow', icon: <TrendingUp size={20} />, permission: 'nav:finance' },
       { label: 'Очікувані оплати', href: '/finance/expected-payments', icon: <Clock size={20} />, permission: 'nav:finance' },
       { label: 'CAPEX', href: '/finance/capex', icon: <Landmark size={20} />, permission: 'nav:finance' },
       { label: 'Нарахування', href: '/finance/accruals', icon: <ClipboardList size={20} />, permission: 'nav:finance' },
@@ -148,13 +142,57 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // Finance access restrictions for non-owner users
+  const [financeAccess, setFinanceAccess] = useState<{
+    is_owner: boolean; allowed_tabs: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!user || user.role === 'owner') return;
+    fetch('/api/finance/access/my')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setFinanceAccess(data); })
+      .catch(() => {});
+  }, [user]);
+
+  // Map finance route paths to tab IDs for filtering
+  const FINANCE_TAB_MAP: Record<string, string> = {
+    '/finance': 'overview',
+    '/finance/operations': 'operations',
+    '/finance/reports': 'reports',
+    '/finance/bank': 'bank',
+    '/finance/clearing': 'clearing',
+    '/finance/receipts': 'receipts',
+    '/finance/calendar': 'calendar',
+    '/finance/expected-payments': 'expected-payments',
+    '/finance/capex': 'capex',
+    '/finance/accruals': 'accruals',
+    '/finance/history': 'history',
+    '/finance/import': 'import',
+    '/finance/reconcile': 'reconcile',
+    '/finance/investors': 'investors',
+    '/finance/settings': 'settings',
+  };
+
   // Filter navigation based on user permissions
   const filteredNavigation = navigation
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
         if (!user || !item.permission) return true;
-        return hasPermission(user.permissions, item.permission);
+        if (!hasPermission(user.permissions, item.permission)) return false;
+
+        // For non-owner finance users: filter by allowed_tabs
+        if (financeAccess && !financeAccess.is_owner && item.href.startsWith('/finance')) {
+          const tabId = FINANCE_TAB_MAP[item.href];
+          if (tabId && tabId !== 'overview') {
+            return financeAccess.allowed_tabs.includes(tabId);
+          }
+          // Overview is always visible if user has finance access
+          if (tabId === 'overview') return true;
+        }
+
+        return true;
       }),
     }))
     .filter((section) => section.items.length > 0);

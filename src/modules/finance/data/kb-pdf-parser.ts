@@ -27,7 +27,7 @@ import { ensurePdfWorker } from './pdf-worker-init';
 //
 // ────────────────────────────────────────────────────────────────────
 
-const DATE_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+const DATE_RE = /^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(.+))?$/;
 const AMOUNT_RE = /^-?\s?\d{1,3}(?:[\s ]\d{3})*,\d{2}$/;
 // Type lines are all-caps Czech words; allow letters, spaces, slash and dash.
 const TYPE_RE = /^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ\s/-]{4,}$/;
@@ -154,16 +154,20 @@ function parseBlocks(lines: string[]): RawBlock[] {
   while (i < n) {
     // Find a settlement date.
     if (!DATE_RE.test(clean[i])) { i++; continue; }
-    const settlementDate = isoDate(clean[i])!;
+    const m1 = clean[i].match(DATE_RE)!;
+    const settlementDate = `${m1[3]}-${m1[2]}-${m1[1]}`;
+    let type = m1[4] ? m1[4].trim() : '';
+
     let j = i + 1;
     let transactionDate: string | null = null;
     if (j < n && DATE_RE.test(clean[j])) {
-      transactionDate = isoDate(clean[j]);
+      const m2 = clean[j].match(DATE_RE)!;
+      transactionDate = `${m2[3]}-${m2[2]}-${m2[1]}`;
+      if (!type && m2[4]) type = m2[4].trim();
       j++;
     }
     // Type line — all caps, may have / or dash. Optional.
-    let type = '';
-    if (j < n && TYPE_RE.test(clean[j])) {
+    if (!type && j < n && TYPE_RE.test(clean[j])) {
       type = clean[j];
       j++;
     }

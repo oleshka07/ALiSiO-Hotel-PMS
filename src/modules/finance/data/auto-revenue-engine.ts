@@ -33,12 +33,84 @@ export interface AutoRevenueResult {
   totals_by_currency: Record<string, number>;  // { CZK: 12000, EUR: 1237.77 }
   reservations: number;                        // count of non-zero rows
   by_source: AutoRevenuePerSource[];
+  /** ACTUAL money from fin_operations (CZK, accrual/stay-month basis):
+   *  completed income minus refunds attributed to this project. This is the
+   *  ledger truth; totals_by_currency above is the booking-value hint. */
+  actual_money_czk: number;
   // Paid-only occupancy for the month — barter / friends (total = 0) are
   // excluded so they don't inflate the rate the operator pastes into
   // property_monthly_metrics. Null when the project has no linked unit.
   occupancy_pct: number | null;
   sold_nights: number;       // nights slept inside the month, paid bookings only
   available_nights: number;  // days in month × units (1 unit per project)
+}
+
+/**
+ * ACTUAL revenue for a project-month from the fin_operations ledger (CZK):
+ * completed income minus refunds, financing excluded, attributed by
+ * accrued_at (stay month for reservation income since the step-4 backfill).
+ */
+export function getActualRevenueForProject(db: any, projectId: string, yearMonth: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN o.op_type = 'income' AND COALESCE(ec.classifier, '') != 'financing' THEN o.amount_company
+           WHEN o.op_type = 'expense' AND COALESCE(o.payment_subtype, '') = 'refund' THEN -o.amount_company
+           ELSE 0 END
+    ), 0) AS total
+    FROM fin_operations o
+    LEFT JOIN expense_categories ec ON ec.id = o.category_id
+    WHERE o.status = 'completed' AND o.op_type != 'transfer'
+      AND o.project_id = ?
+      AND strftime('%Y-%m', o.accrued_at) = ?
+  `).get(projectId, yearMonth) as { total: number };
+  return +(row.total || 0).toFixed(2);
+}
+
+/**
+ * Auto-fill property_monthly_metrics for a month from the ledger + occupancy
+ * engine. Fill-only-empty: rows already entered by the operator are NEVER
+ * overwritten (manual override wins); pass overwrite=true to refresh
+ * auto-filled values explicitly.
+ */
+export function autoFillMonthlyMetrics(
+  db: any,
+  orgId: string,
+  yearMonth: string,
+  overwrite = false,
+): { filled: number; skipped: number; items: Array<{ project_id: string; revenue: number; occupancy_pct: number | null; action: string }> } {
+  const results = getAutoRevenueAllProjects(db, orgId, yearMonth);
+  let filled = 0, skipped = 0;
+  const items: Array<{ project_id: string; revenue: number; occupancy_pct: number | null; action: string }> = [];
+
+  for (const r of results) {
+    const existing = db.prepare(
+      'SELECT id, revenue FROM property_monthly_metrics WHERE project_id = ? AND year_month = ?'
+    ).get(r.project_id, yearMonth) as { id: string; revenue: number | null } | undefined;
+
+    if (existing && !overwrite) {
+      skipped++;
+      items.push({ project_id: r.project_id, revenue: r.actual_money_czk, occupancy_pct: r.occupancy_pct, action: 'skipped_manual' });
+      continue;
+    }
+
+    if (existing) {
+      db.prepare(`
+        UPDATE property_monthly_metrics
+        SET revenue = ?, occupancy_pct = COALESCE(?, occupancy_pct),
+            notes = COALESCE(notes, 'auto: з операцій'), updated_at = datetime('now')
+        WHERE id = ?
+      `).run(r.actual_money_czk, r.occupancy_pct, existing.id);
+    } else {
+      db.prepare(`
+        INSERT INTO property_monthly_metrics (organization_id, project_id, year_month, occupancy_pct, revenue, notes)
+        VALUES (?, ?, ?, ?, ?, 'auto: з операцій')
+      `).run(orgId, r.project_id, yearMonth, r.occupancy_pct, r.actual_money_czk);
+    }
+    filled++;
+    items.push({ project_id: r.project_id, revenue: r.actual_money_czk, occupancy_pct: r.occupancy_pct, action: existing ? 'updated' : 'created' });
+  }
+
+  return { filled, skipped, items };
 }
 
 /** Normalise reservation source into one of 4 buckets shown in the UI. */
@@ -97,6 +169,7 @@ export function getAutoRevenue(
     totals_by_currency: {},
     reservations: 0,
     by_source: [],
+    actual_money_czk: getActualRevenueForProject(db, projectId, yearMonth),
     occupancy_pct: null,
     sold_nights: 0,
     available_nights: 0,

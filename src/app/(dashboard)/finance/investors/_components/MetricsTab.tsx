@@ -130,6 +130,20 @@ export default function MetricsTab() {
     fetchAll();
   }
 
+  async function autoFillFromOperations() {
+    if (!confirm(`Заповнити метрики за ${autoMonth} фактичними грошима з операцій?\nРучні записи НЕ перезаписуються.`)) return;
+    try {
+      const res = await fetch('/api/finance/investor-monthly-metrics/autofill', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year_month: autoMonth }),
+      });
+      const j = await res.json();
+      if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+      alert(`Заповнено: ${j.filled}, пропущено (ручні): ${j.skipped}`);
+      fetchAll();
+    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+  }
+
   // Auto-revenue cards (one per project) for the chosen month
   const autoCards = [...autoForMonth.values()];
 
@@ -142,6 +156,9 @@ export default function MetricsTab() {
           <h4 style={{ margin: 0, fontSize: 14, color: '#16a34a' }}>Auto-revenue з бронювань</h4>
           <input type="month" style={{ ...input, maxWidth: 150 }} value={autoMonth} onChange={(e) => setAutoMonth(e.target.value)} />
           <button onClick={fetchAll} style={btn} title="Перерахувати"><RefreshCw size={12} /></button>
+          <button onClick={autoFillFromOperations} style={{ ...btn, background: 'rgba(34,197,94,0.12)', color: '#16a34a', fontWeight: 600 }} title="Заповнити метрики місяця фактичними грошима з fin_operations (ручні записи не перезаписуються)">
+            Заповнити з операцій
+          </button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>
             Сума = з reservations.total_rate_eur (для Hostex) або reservations.total_price (для прямих). Бронювання з нульовою сумою не рахуються.
           </span>

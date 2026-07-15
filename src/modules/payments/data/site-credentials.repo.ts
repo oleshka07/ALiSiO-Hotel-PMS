@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
 import type { ResolvedSiteCredentials } from '../domain/types';
+import { getEnvStore } from '../api/create-payment-session';
 
 export function resolveSiteCredentials(opts: { slug?: string | null; id?: string | null }): ResolvedSiteCredentials | null {
-  const slug = opts.slug || undefined;
+  let slug = opts.slug || undefined;
+  if (slug === 'kv.kemp-carlsbad.cz') slug = 'kemp-carlsbad';
   const id = opts.id || undefined;
   if (!slug && !id) return null;
 
@@ -22,17 +24,32 @@ export function resolveSiteCredentials(opts: { slug?: string | null; id?: string
   }
 
   const enabled = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
-  if (!enabled) return null;
+  
+  if (enabled) {
+    return {
+      siteId: site.id,
+      siteUrl: site.site_url || undefined,
+      credentials: {
+        client_id: payCfg.teya.client_id,
+        client_secret: payCfg.teya.client_secret,
+        store_id: payCfg.teya.store_id,
+      },
+    };
+  }
 
-  return {
-    siteId: site.id,
-    siteUrl: site.site_url || undefined,
-    credentials: {
-      client_id: payCfg.teya.client_id,
-      client_secret: payCfg.teya.client_secret,
-      store_id: payCfg.teya.store_id,
-    },
-  };
+  // Fallback: If no UI config is set, but the site is Kemp Carlsbad, use the camping ENV store.
+  if (site.id === '2975fba30e3cd3a6f7df3092183e258a' || site.slug === 'kemp-carlsbad') {
+    const campingCreds = getEnvStore('camping');
+    if (campingCreds && campingCreds.client_id) {
+      return {
+        siteId: site.id,
+        siteUrl: site.site_url || undefined,
+        credentials: campingCreds,
+      };
+    }
+  }
+
+  return null;
 }
 
 export function isGlobalTeyaConfigured(): boolean {

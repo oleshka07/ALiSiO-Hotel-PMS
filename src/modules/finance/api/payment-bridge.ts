@@ -81,12 +81,13 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     comment,
   } = input;
 
-  // Get organization_id via reservations -> properties
+  // Get organization_id via reservations -> properties (+ stay dates for
+  // accrual attribution below)
   const row = db.prepare(`
-    SELECT prop.organization_id AS org_id
+    SELECT prop.organization_id AS org_id, r.check_in, r.check_out
     FROM reservations r JOIN properties prop ON r.property_id = prop.id
     WHERE r.id = ?
-  `).get(reservationId) as { org_id: string } | undefined;
+  `).get(reservationId) as { org_id: string; check_in: string | null; check_out: string | null } | undefined;
   if (!row) throw new Error(`Reservation ${reservationId} not found`);
 
   const isRefund = paymentSubtype === 'refund';
@@ -150,6 +151,11 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     }
   }
 
+  // Accrual attribution: booking revenue belongs to the STAY period, not the
+  // payment date. A March prepayment for an August stay is August revenue on
+  // the accrual basis; paid_at keeps the cash truth.
+  const accruedAt = (!isRefund && row.check_in) ? row.check_in : undefined;
+
   const operationId = createOperationInTx(db, row.org_id, {
     op_type: opType,
     account_from_id: isRefund ? (resolvedAccountId || null) : null,
@@ -157,6 +163,9 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     amount: Math.abs(amount),
     currency,
     paid_at: paidAt,
+    ...(accruedAt ? { accrued_at: accruedAt } : {}),
+    ...(row.check_in ? { period_from: row.check_in } : {}),
+    ...(row.check_out ? { period_to: row.check_out } : {}),
     reservation_id: reservationId,
     status,
     method,

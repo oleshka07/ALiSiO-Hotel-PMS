@@ -171,6 +171,13 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     }
 
+    // Track old payment_status for TG notification editing
+    let oldPaymentStatus: string | null = null;
+    if (body.payment_status) {
+      const oldRes = db.prepare('SELECT payment_status FROM reservations WHERE id = ?').get(id) as any;
+      oldPaymentStatus = oldRes?.payment_status || null;
+    }
+
     if (sets.length > 0) {
       sets.push("updated_at = datetime('now')");
       values.push(id);
@@ -178,6 +185,17 @@ export async function updateReservation(request: NextRequest, { params }: { para
       console.log('[PATCH] SQL:', sql, 'values:', values);
       const result = db.prepare(sql).run(...values);
       console.log('[PATCH] result:', JSON.stringify(result));
+    }
+
+    // Emit payment status change event for TG notification editing
+    if (body.payment_status && oldPaymentStatus !== body.payment_status) {
+      import('@core/event-bus').then(({ eventBus }) => {
+        eventBus.emit('booking.payment_status_changed', {
+          bookingId: id,
+          oldStatus: oldPaymentStatus || 'unpaid',
+          newStatus: body.payment_status,
+        });
+      }).catch(() => {});
     }
 
     if (body.firstName || body.lastName || body.email || body.phone) {

@@ -42,7 +42,7 @@ const QUICK_ACTIONS = [
   { label: 'Бронювання',  href: '/bookings',       icon: BookOpen,     color: '#3b82f6' },
   { label: 'Календар',    href: '/calendar',        icon: CalendarDays, color: '#14b8a6' },
   { label: 'Гості',       href: '/guests',          icon: Users,        color: '#8b5cf6' },
-  { label: 'Журнал',      href: '/finance/log',     icon: List,         color: '#22c55e' },
+  { label: 'Журнал',      href: '/finance/operations',     icon: List,         color: '#22c55e' },
   { label: 'Фінанси',     href: '/finance',         icon: Wallet,       color: '#f59e0b' },
   { label: 'Витрати',     href: '/finance/expenses',icon: BarChart3,    color: '#ef4444' },
   { label: 'Ціни',        href: '/pricing',         icon: DollarSign,   color: '#06b6d4' },

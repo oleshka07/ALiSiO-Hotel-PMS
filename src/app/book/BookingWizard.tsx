@@ -368,6 +368,7 @@ export default function BookingWizard() {
       body: JSON.stringify({
         amount: grandTotal, currency: 'CZK', description: desc,
         reservation_id: pmsResId, return_path: returnPath,
+        site_id: siteConfig?.id || siteId || 'kemp-carlsbad',
       }),
     });
     const checkout = await checkoutRes.json();
@@ -676,6 +677,7 @@ export default function BookingWizard() {
             onAdminConfirm={handleAdminConfirm}
             onAdminEurConfirm={handleAdminEurConfirm}
             onTerminalConfirm={handleTerminalConfirm}
+            onSuccess={handleQrPaid}
           />
         )}
       </div>

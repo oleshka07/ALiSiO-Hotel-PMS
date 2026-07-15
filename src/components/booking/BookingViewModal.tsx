@@ -470,12 +470,27 @@ export default function BookingViewModal({
                 )}
               </div>
             )}
+            {/* ── Marketing Attribution ── */}
+            {(b.utm_source || b.utm_medium || b.utm_campaign) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Джерело:</span>
+                {b.utm_source && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderRadius: 4, fontFamily: 'ui-monospace, monospace' }}>src: {b.utm_source}</span>}
+                {b.utm_medium && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderRadius: 4, fontFamily: 'ui-monospace, monospace' }}>med: {b.utm_medium}</span>}
+                {b.utm_campaign && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderRadius: 4, fontFamily: 'ui-monospace, monospace' }}>cmp: {b.utm_campaign}</span>}
+                {b.utm_content && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderRadius: 4, fontFamily: 'ui-monospace, monospace' }}>cnt: {b.utm_content}</span>}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'right', position: 'relative' }}>
             <button onClick={onClose} style={{ position: 'absolute', top: -2, right: -2, background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }} aria-label="Закрити"><X size={14} /></button>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 16 }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
             {(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}
             {b.currency !== 'EUR' && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>}
+            {b.created_at && (
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                 <Clock size={10} /> {new Date(b.created_at + 'Z').toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </div>
+            )}
           </div>
         </div>
 

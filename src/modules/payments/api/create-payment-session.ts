@@ -38,9 +38,13 @@ const STORES: Record<TeyaStoreKey, TeyaCredentials> = {
   },
 };
 
+export function getEnvStore(key: TeyaStoreKey): TeyaCredentials {
+  return STORES[key] ?? STORES.main;
+}
+
 function getDefaultStore(): TeyaCredentials {
   const key = (process.env.TEYA_STORE || 'main') as TeyaStoreKey;
-  return STORES[key] ?? STORES.main;
+  return getEnvStore(key);
 }
 
 // ─── Token cache (per client_id) ─────────────────────────────────────────────

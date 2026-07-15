@@ -8,9 +8,9 @@ import { getReservations, getProperties } from '@/lib/hostex';
 
 export async function hostexSync(): Promise<NextResponse> {
   try {
-    await seedPropertyMap();
+    const seedResult = await seedPropertyMap();
     const result = await syncReservations();
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({ success: true, ...result, unmappedProperties: seedResult?.unmapped || [] });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

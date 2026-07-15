@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X, History } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat, Pencil, ArrowUp, ArrowDown, X, History, Filter } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
+import AdvancedFilterModal from './_components/AdvancedFilterModal';
 import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
 import ExportButton from '../_components/ExportButton';
 
@@ -56,6 +57,7 @@ export default function OperationsPage() {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [projects, setProjects] = useState<NamedRow[]>([]);
   const [counterparties, setCounterparties] = useState<NamedRow[]>([]);
+  const [tags, setTags] = useState<NamedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalType, setModalType] = useState<OpType | null>(null);
   const [editOp, setEditOp] = useState<Operation | null>(null);
@@ -78,6 +80,14 @@ export default function OperationsPage() {
   // an account row. Empty set = no filter. Not persisted; resets on
   // reload so the operator gets the full view back by default.
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  const [filterCategoryIds, setFilterCategoryIds] = useState<Set<string>>(new Set());
+  const [filterCounterpartyIds, setFilterCounterpartyIds] = useState<Set<string>>(new Set());
+  const [filterProjectIds, setFilterProjectIds] = useState<Set<string>>(new Set());
+  const [filterTagIds, setFilterTagIds] = useState<Set<string>>(new Set());
+  const [filterOpTypes, setFilterOpTypes] = useState<Set<string>>(new Set());
+  
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  
   // Temporary client-side sort. Click a column header to toggle:
   // none → asc → desc → none. Resets on reload.
   const [sortKey, setSortKey] = useState<'paid_at' | 'amount' | 'account' | 'counterparty' | 'category' | 'project' | null>(null);
@@ -87,12 +97,49 @@ export default function OperationsPage() {
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
 
+  const [selectedOpsForMerge, setSelectedOpsForMerge] = useState<Set<string>>(new Set());
+  const [isMerging, setIsMerging] = useState(false);
+
+  const handleMerge = async () => {
+    if (selectedOpsForMerge.size !== 2) return;
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/finance/operations/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedOpsForMerge) })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to merge');
+      setSelectedOpsForMerge(new Set());
+      await fetchOps();
+    } catch (err: any) {
+      alert("Помилка об'єднання: " + err.message);
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  const toggleMergeSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSet = new Set(selectedOpsForMerge);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedOpsForMerge(newSet);
+  };
+
   const fetchOps = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ from, to, pageSize: '5000' });
     if (filterType) params.set('op_type', filterType);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
     if (selectedAccountIds.size > 0) params.set('account_id', [...selectedAccountIds].join(','));
+    if (filterCategoryIds.size > 0) params.set('category_id', [...filterCategoryIds].join(','));
+    if (filterCounterpartyIds.size > 0) params.set('counterparty_id', [...filterCounterpartyIds].join(','));
+    if (filterProjectIds.size > 0) params.set('project_id', [...filterProjectIds].join(','));
+    if (filterTagIds.size > 0) params.set('tag_id', [...filterTagIds].join(','));
+    if (filterOpTypes.size > 0) params.set('op_type', [...filterOpTypes].join(','));
+    
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
@@ -112,7 +159,7 @@ export default function OperationsPage() {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [from, to, filterType, debouncedSearch, selectedAccountIds]);
+  }, [from, to, filterType, debouncedSearch, selectedAccountIds, filterCategoryIds, filterCounterpartyIds, filterProjectIds, filterTagIds, filterOpTypes]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -125,14 +172,16 @@ export default function OperationsPage() {
   // Lookup lists for inline pickers — fetched once per visit, not per row.
   const fetchLookups = useCallback(async () => {
     try {
-      const [cats, projs, cps] = await Promise.all([
+      const [cats, projs, cps, tgs] = await Promise.all([
         fetch('/api/finance/categories').then((r) => r.json()).catch(() => []),
         fetch('/api/finance/projects').then((r) => r.json()).catch(() => []),
         fetch('/api/finance/counterparties').then((r) => r.json()).catch(() => []),
+        fetch('/api/finance/tags').then((r) => r.json()).catch(() => []),
       ]);
       setCategories(Array.isArray(cats) ? cats : []);
       setProjects(Array.isArray(projs) ? projs : []);
       setCounterparties(Array.isArray(cps) ? cps : []);
+      setTags(Array.isArray(tgs) ? tgs : []);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -308,17 +357,28 @@ export default function OperationsPage() {
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={input} />
             <span style={{ color: 'var(--text-secondary)' }}>—</span>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={input} />
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value as OpType | '')} style={input}>
-              <option value="">Усі типи</option>
-              <option value="income">Доходи</option>
-              <option value="expense">Витрати</option>
-              <option value="transfer">Перекази</option>
-            </select>
+            
+            <button 
+              type="button"
+              onClick={() => {
+                console.log('Filter button clicked!');
+                setFilterModalOpen(true);
+              }}
+              style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+            >
+              <Filter size={14} /> Фільтр
+              {(filterCategoryIds.size + filterCounterpartyIds.size + filterProjectIds.size + filterTagIds.size + filterOpTypes.size + selectedAccountIds.size) > 0 && (
+                <span style={{ background: '#34d399', color: '#064e3b', padding: '0 6px', borderRadius: 10, fontSize: 11, marginLeft: 4 }}>
+                  {filterCategoryIds.size + filterCounterpartyIds.size + filterProjectIds.size + filterTagIds.size + filterOpTypes.size + selectedAccountIds.size}
+                </span>
+              )}
+            </button>
+            
             <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
               <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-secondary)' }} />
               <input
                 type="text"
-                placeholder="Пошук у коментарях..."
+                placeholder="Пошук по сумі, коментарях, рахунках, проєктах..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{ ...input, paddingLeft: 30, width: '100%' }}
@@ -345,9 +405,22 @@ export default function OperationsPage() {
             </div>
           ) : (
             <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
+              {selectedOpsForMerge.size === 2 && (
+                <div style={{ padding: 12, background: 'rgba(99,102,241,0.1)', borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 500, color: '#4f46e5' }}>Вибрано 2 операції для об'єднання.</span>
+                  <button 
+                    onClick={handleMerge}
+                    disabled={isMerging}
+                    style={{ background: '#4f46e5', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontWeight: 500, cursor: isMerging ? 'not-allowed' : 'pointer', opacity: isMerging ? 0.7 : 1 }}
+                  >
+                    {isMerging ? "Об'єднання..." : "З'єднати в переміщення"}
+                  </button>
+                </div>
+              )}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
+                    <th style={{ ...th, width: 30, textAlign: 'center' }}></th>
                     <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
                     <SortableTh label="Рахунок / залишок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
@@ -374,14 +447,23 @@ export default function OperationsPage() {
                           .map((c) => ({ id: c.id, name: c.name, icon: c.icon }));
                     const projectOptions: InlinePickerOption[] = projects.map((p) => ({ id: p.id, name: p.name }));
                     const counterpartyOptions: InlinePickerOption[] = counterparties.map((c) => ({ id: c.id, name: c.name }));
+                    const isSelected = selectedOpsForMerge.has(o.id);
                     return (
                       <tr
                         key={o.id}
                         onClick={openModal}
-                        style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer', background: isSelected ? 'rgba(99,102,241,0.08)' : 'transparent' }}
+                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                       >
+                        <td style={{ ...td, textAlign: 'center' }} onClick={(e) => toggleMergeSelect(o.id, e)}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => {}} 
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
                         <td style={td}>{o.paid_at?.substring(0, 10)}</td>
                         <td style={{ ...td, textAlign: 'right', color: amountColor, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                           {sign} {Math.abs(o.amount).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {o.currency}
@@ -509,6 +591,30 @@ export default function OperationsPage() {
       {historyOpId && (
         <AuditHistoryModal operationId={historyOpId} onClose={() => setHistoryOpId(null)} />
       )}
+
+      <AdvancedFilterModal 
+        isOpen={filterModalOpen}
+        onClose={() => setFilterModalOpen(false)}
+        categories={categories}
+        counterparties={counterparties}
+        projects={projects}
+        tags={tags}
+        accounts={accounts}
+        initialCategoryIds={filterCategoryIds}
+        initialCounterpartyIds={filterCounterpartyIds}
+        initialProjectIds={filterProjectIds}
+        initialTagIds={filterTagIds}
+        initialAccountIds={selectedAccountIds}
+        initialOpTypes={filterOpTypes}
+        onApply={(catIds, cpIds, projIds, tIds, accIds, opTypes) => {
+          setFilterCategoryIds(catIds);
+          setFilterCounterpartyIds(cpIds);
+          setFilterProjectIds(projIds);
+          setFilterTagIds(tIds);
+          setSelectedAccountIds(accIds);
+          setFilterOpTypes(opTypes);
+        }}
+      />
     </div>
   );
 }

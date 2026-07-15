@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requireOwner } from '@core/security/route-guard';
 
 // ─── CSV utilities ──────────────────────────────────────────────────────────
 
@@ -369,7 +370,8 @@ export interface BatchInvoiceResult {
   created: boolean;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export const POST = requireOwner(_POST);
+async function _POST(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const form = await request.formData();

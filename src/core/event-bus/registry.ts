@@ -11,6 +11,7 @@ export type AppEvents = {
   'booking.checked_in': { bookingId: string; guestId: string };
   'booking.checked_out': { bookingId: string; guestId: string };
   'booking.updated': { bookingId: string; changes: Record<string, unknown> };
+  'booking.payment_status_changed': { bookingId: string; oldStatus: string; newStatus: string };
 
   // Guests
   'guest.created': { guestId: string; email: string | null };

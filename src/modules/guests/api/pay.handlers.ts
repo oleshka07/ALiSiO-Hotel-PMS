@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as actionsRepo from '../data/guest-actions.repo';
-import { createPaymentSession } from '@payments';
+import { createPaymentSession, resolveCredentialsForReservation } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -79,19 +79,20 @@ async function handleSinglePay(
   const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const datesLabel = dates.length > 1 ? `\n📅 Дати: ${dates.join(', ')}` : `\n📅 Дата: ${dates[0]}`;
   sendTelegramMessage([
-    `📦 <b>Нове замовлення послуги</b>`, ``,
+    `🛒 <b>Замовлення · 📱 Гостьова</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
     `📅 ${reservation.check_in} — ${reservation.check_out}`,
     reservation.is_multi_room
       ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
       : '', ``,
     `✨ ${escHtml(serviceName)} × ${effectiveQty} — ${totalPrice} ${service.currency || 'CZK'}${datesLabel}`,
-    `💳 Статус: Очікує оплати`,
+    `💳 Створено замовлення · очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].filter(Boolean).join('\n')).catch((e) => console.error('[Guest Pay] TG error:', e.message));
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
+    const siteCredentials = resolveCredentialsForReservation(reservation.id);
     const session = await createPaymentSession({
       kind: 'service_standalone',
       amount: totalPrice,
@@ -99,6 +100,7 @@ async function handleSinglePay(
       description: `${serviceName} × ${effectiveQty} — ${guestName}`,
       lineItems: [{ description: serviceName, quantity: effectiveQty, unitPriceMajor: service.price }],
       metadata: { order_ids: orderIds.join(','), reservation_id: reservation.id, service_id: serviceId, source: 'guest_page' },
+      credentials: siteCredentials,
       successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
       cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });
@@ -250,19 +252,20 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
   });
 
   sendTelegramMessage([
-    `🛒 <b>Cart Checkout</b>`, ``,
+    `🛒 <b>Кошик · 📱 Гостьова</b>`, ``,
     `👤 ${escHtml(guestName)}`, `🏠 ${escHtml(reservation.unit_name)}`,
     `📅 ${reservation.check_in} — ${reservation.check_out}`,
     reservation.is_multi_room
       ? `\n⚠️ <b>MULTI-ROOM</b> — guest's booking spans multiple cabins; unit shown is one of them.`
       : '', ``,
     ...tgLines, ``,
-    `💰 Total: ${grandTotal} ${currency}`, `💳 Статус: Очікує оплати`,
+    `💰 Total: ${grandTotal} ${currency}`, `💳 Створено замовлення · очікує оплати`,
     ``, `🔖 <code>${escHtml(reservation.id)}</code>`,
   ].filter(Boolean).join('\n')).catch((e) => console.error('[Cart Pay] TG error:', e.message));
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
+    const siteCredentials = resolveCredentialsForReservation(reservation.id);
     const session = await createPaymentSession({
       kind: 'service_cart',
       amount: grandTotal,
@@ -284,6 +287,7 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
         reservation_id: reservation.id,
         source: 'guest_cart',
       },
+      credentials: siteCredentials,
       successUrl: `${baseUrl}/api/booking/payment-return?status=success&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
       cancelUrl: `${baseUrl}/api/booking/payment-return?status=cancel&reservation_id=${encodeURIComponent(reservation.id)}&return=${encodeURIComponent(`/guest/${token}`)}`,
     });

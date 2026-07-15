@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { formatPrice } from '../lib/pricing';
 
 // Phone photos are routinely 5-10 MB. Default nginx `client_max_body_size`
@@ -47,6 +47,7 @@ interface Props {
   onAdminConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
   onAdminEurConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
   onTerminalConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
+  onSuccess?: (reservationId: string) => void;
 }
 
 // ─── Admin PIN Popup ──────────────────────────────────────────────────────────
@@ -297,7 +298,7 @@ function GuestPageLink({ token }: { token: string }) {
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
   nights, total, adults = 1, guestEmail, guestPageToken, paymentUrl, qrCodeUrl,
-  onReset, onAdminConfirm, onAdminEurConfirm, onTerminalConfirm,
+  onReset, onAdminConfirm, onAdminEurConfirm, onTerminalConfirm, onSuccess,
 }: Props) {
   const hasEmail = !!(guestEmail && guestEmail.trim());
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
@@ -314,6 +315,24 @@ export default function StepSuccess({
   const [showEurPinPopup, setShowEurPinPopup] = useState(false);
   const [showTerminalPinPopup, setShowTerminalPinPopup] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ─── Polling for 'pending' status ──────────────────────────────────────────
+  useEffect(() => {
+    if (status !== 'pending' || !reservationId || !onSuccess) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/booking/drafts?reservation_id=${reservationId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.reservation_payment_status === 'paid' || data.status === 'paid' || data.payment_status === 'paid') {
+          onSuccess(reservationId);
+        }
+      } catch (e) { /* ignore network error on polling */ }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [status, reservationId, onSuccess]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;

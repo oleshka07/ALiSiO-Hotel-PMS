@@ -13,24 +13,31 @@ Each business domain is a self-contained module in `src/modules/`. Modules commu
 ```
 src/
   modules/
-    bookings/     — reservations, group bookings, availability, check-in/out
-    guests/       — guest profiles + guest portal (/guest/[token])
-    properties/   — properties, units, unit-types, buildings, categories
-    pricing/      — rate plans, price calendar, promotions, restrictions
-    finance/      — P&L, cashflow, expenses, accruals, capex, bank, payments
-    crm/          — leads, conversations, inbox, pipeline, AI knowledge
-    channels/     — Booking.com, Hostex, iCal, email, Telegram integrations
-    reports/      — city tax, analytics
+    bookings/       — reservations, group bookings, availability, widget, analytics
+    guests/         — guest profiles, portal (/guest/[token]), registration, feedback
+    properties/     — properties, units, unit-types, buildings, categories
+    pricing/        — rate plans, price calendar, promotions, restrictions
+    finance/        — operations, P&L, cashflow, accounts, investors, import, Teya
+    payments/       — Teya checkout sessions, webhooks, refunds
+    crm/            — leads, conversations, inbox, pipeline, AI knowledge
+    channels/       — Booking.com, Hostex, iCal integrations
+    reports/        — city tax, glamping report, analytics
+    tasks/          — internal task manager (projects, tags, priorities)
+    auth/           — login/logout, user CRUD
+    admin/          — iCal cleanup, bulk translation
+    dashboard/      — main dashboard overview + alerts
+    notifications/  — daily Telegram digest (⚠️ needs restructuring)
 
   core/
-    db/           — SQLite connection (better-sqlite3), migrations
-    auth/         — session management, RBAC (7 roles)
-    event-bus/    — typed in-memory event emitter + event registry
+    db/             — SQLite connection (better-sqlite3), migrations
+    auth/           — session management, RBAC (7 roles)
+    event-bus/      — typed in-memory event emitter + event registry
+    security/       — PII masking (maskLastName, maskEmail, etc.)
 
   shared/
-    ui/           — layout components, design system (Header, Sidebar, mobile)
-    utils/        — rate-limit, translate, useCurrentUser, useDevice
-    types/        — shared base types (DateRange, Money, Pagination, etc.)
+    ui/             — layout components, design system (Header, Sidebar, mobile)
+    utils/          — rate-limit, translate, useCurrentUser, useDevice
+    types/          — shared base types (DateRange, Money, Pagination, etc.)
 ```
 
 ---
@@ -38,15 +45,19 @@ src/
 ## Module Dependencies
 
 ```
-bookings ──depends on──► guests (via @guests)
-bookings ──depends on──► pricing (via @pricing)
-bookings ──depends on──► properties (via @properties)
-finance  ──depends on──► bookings (via @bookings)
-channels ──depends on──► bookings (via @bookings)
-channels ──depends on──► properties (via @properties)
-crm      ──depends on──► guests (via @guests)
-reports  ──depends on──► bookings (via @bookings)
-reports  ──depends on──► finance (via @finance)
+bookings  ──depends on──► guests (via @guests)
+bookings  ──depends on──► pricing (via @pricing)
+bookings  ──depends on──► properties (via @properties)
+bookings  ──depends on──► payments (via @payments)      ← subscribes to payment.completed
+finance   ──depends on──► bookings (via @bookings)
+finance   ──depends on──► payments (via @payments)      ← ⚠️ boundary violation: direct internal import
+channels  ──depends on──► bookings (via @bookings)
+channels  ──depends on──► properties (via @properties)
+crm       ──depends on──► guests (via @guests)
+crm       ──depends on──► bookings (via event bus)      ← subscribes to booking.created
+crm       ──depends on──► payments (via event bus)      ← subscribes to payment.completed
+reports   ──depends on──► bookings (via @bookings)
+reports   ──depends on──► finance (via @finance)
 
 all modules ──depend on──► @core/db, @core/auth, @core/event-bus
 all modules ──depend on──► @shared/types, @shared/utils
@@ -56,17 +67,30 @@ all modules ──depend on──► @shared/types, @shared/utils
 
 ## Events
 
-Key events flowing through the system:
+Key events flowing through the system.
 
-| Event | Emitted by | Consumed by |
+**Actively wired** (emit + subscribe connected):
+
+| Event | Emitted by | Consumed by | What happens |
+|---|---|---|---|
+| `booking.created` | bookings | crm | Creates CRM lead + conversation |
+| `payment.completed` | payments | bookings, crm | Sends confirmation email; updates CRM stage |
+
+**Defined but not yet wired** (types exist in `events/published.ts`, no active emit/subscribe):
+
+| Event | Defined by | Notes |
 |---|---|---|
-| `booking.created` | bookings | finance, crm, channels |
-| `booking.cancelled` | bookings | finance, channels |
-| `booking.checked_in` | bookings | guests |
-| `payment.received` | finance | bookings |
-| `channel.reservation_synced` | channels | bookings |
-| `crm.message_received` | crm | — |
-| `guest.created` | guests | crm |
+| `reservation.created/updated/deleted` | bookings | Will replace `booking.created` |
+| `payment.session_created/failed/refunded` | payments | Types ready, not emitting yet |
+| `finance.payment_created/deleted` | finance | Not connected to event bus |
+| `finance.expense_created` | finance | Not connected to event bus |
+| `guest.registered/updated/feedback` | guests | TODO: wire to CRM |
+| `property/unit.created/changed` | properties | Not wired |
+| `pricing.updated` | pricing | Not wired |
+| `channel.reservation_synced/ari_synced` | channels | Not wired |
+| `user.logged_in/created/deleted` | auth | Not wired |
+| `lead.created/stage_changed/deleted` | crm | Not wired |
+| `admin.ical_cleanup_executed` | admin | Not wired |
 
 Full event type definitions: [`src/core/event-bus/registry.ts`](src/core/event-bus/registry.ts)
 
@@ -89,7 +113,7 @@ Full event type definitions: [`src/core/event-bus/registry.ts`](src/core/event-b
 
 ESLint rule: `no-restricted-imports` (currently `warn`, will become `error` after full migration)
 
-TypeScript paths: only `@bookings` → `src/modules/bookings/api` is registered in `tsconfig.json`.
+TypeScript paths: all 14 modules are registered in `tsconfig.json` as `@<name>` → `src/modules/<name>/api`.
 
 ---
 
@@ -138,23 +162,44 @@ export const POST = bookingsHandlers.create
 
 ## Migration Status
 
-> Last updated: 2026-04-21
+> Last updated: 2026-06-30
+
+### Core
 
 | Module | Status | Notes |
 |---|---|---|
 | `core/db` | 🟡 Shim | Re-exports from `src/lib/db.ts` |
 | `core/auth` | 🟡 Shim | Re-exports from `src/lib/auth.ts` + `src/lib/permissions.ts` |
-| `core/event-bus` | ✅ Done | New infrastructure |
-| `properties` | ✅ Done | properties, units, unit-types, buildings, categories |
-| `pricing` | ⬜ Pending | |
-| `guests` | ⬜ Pending | |
-| `channels` | ⬜ Pending | |
-| `finance` | ⬜ Pending | |
-| `bookings` | ⬜ Pending | Most complex, migrate last |
-| `crm` | ⬜ Pending | |
-| `reports` | ⬜ Pending | |
+| `core/event-bus` | ✅ Done | Original implementation (EventBus singleton + typed registry) |
+| `core/security` | ✅ Done | PII masking utilities (new) |
 
-Legend: ✅ Fully migrated · 🟡 Shim (re-export) · ⬜ Pending
+### Modules
+
+| Module | Status | api/ | domain/ | data/ | events/ | Legacy `@/lib` | Notes |
+|---|---|---|---|---|---|---|---|
+| `tasks` | ✅ Done | ✅ | ✅ | ✅ 3 repos | — | 1 | Cleanest module, zero boundary violations |
+| `properties` | ✅ Done | ✅ | ✅ | ✅ 5 repos | ✅ defined | 2 | Clean structure |
+| `payments` | 🟡 Partial | ✅ | ✅ | ✅ 1 repo | ✅ active | 3 | Events active (emit payment.*) |
+| `bookings` | 🟡 Partial | ✅ | ✅ | ✅ 1 repo | ✅ active | ~14 | Events active (emit + subscribe), largest UI |
+| `guests` | 🟡 Partial | ✅ | ✅ | ✅ 7 repos | ✅ defined | ~15 | Full structure, events not wired |
+| `finance` | 🟡 Partial | ✅ (409 lines!) | — | ✅ 22 engines | ✅ defined | 8 | Largest module, 1 boundary violation |
+| `pricing` | 🟡 Partial | ✅ | ✅ | ✅ 2 repos | ✅ defined | 3 | Events not wired |
+| `channels` | 🟡 Partial | ✅ | ✅ | ✅ 2 repos | ✅ defined | 11 | Most legacy-coupled after CRM |
+| `crm` | 🟡 Partial | ✅ | — | — | ✅ active | **26** | Highest legacy coupling, uses `components/` not `ui/` |
+| `auth` | 🟡 Shell | ✅ | — | — | ✅ defined | 1 | api + events, events not wired |
+| `admin` | ⬜ Shell | ✅ | — | — | ✅ defined | 1 | Minimal: 3 API functions |
+| `dashboard` | ⬜ Shell | ✅ | — | — | ✅ empty | 0 | Read-only, cleanest deps |
+| `reports` | ⬜ Shell | ✅ | — | — | ✅ empty | 0 | Read-only aggregation |
+| `notifications` | ⚠️ Broken | ❌ | — | ✅ 1 file | ❌ | 0 | Only `data/daily-digest.ts`, no api/ |
+
+Legend: ✅ Done · 🟡 Partial (has structure but legacy imports remain) · 🟡 Shell (api barrel exists, minimal structure) · ⬜ Shell (minimal) · ⚠️ Broken
+
+### Migration Blockers
+
+1. **`@/lib/channels/telegram-bot`** — imported by 6 modules (bookings, payments, pricing, finance, guests, crm). #1 candidate for `@core/notifications`.
+2. **`@/lib/auth` + `@/lib/permissions`** — imported by 5 modules. `@core/auth` shim exists but not all modules use it.
+3. **CRM legacy coupling** — 26 `@/lib/` imports across ai, channels, email, sync. Largest migration effort.
+4. **Finance boundary violation** — `finance/data/teya-reconcile-engine.ts` imports from `@/modules/payments/domain/teya-client` instead of `@payments`.
 
 ---
 

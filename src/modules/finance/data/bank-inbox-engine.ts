@@ -397,7 +397,7 @@ function findAccountByIban(db: any, orgId: string, statement: ParsedStatement): 
   return null;
 }
 
-function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement, uid: number, emailDate: Date): number {
+export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement, uid: number, emailDate: Date): number {
   const accountId = findAccountByIban(db, inbox.organization_id, stmt);
   if (!accountId) return -1; // unmatched — don't import
 

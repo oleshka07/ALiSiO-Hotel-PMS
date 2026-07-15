@@ -8,6 +8,7 @@ import {
 
 export const TABS = [
   { id: 'analytics',   label: 'Аналітика',          icon: <PieChart size={16} /> },
+  { id: 'bookings',    label: 'Бронювання',         icon: <LayoutList size={16} /> },
   { id: 'listings',    label: 'Оголошення',       icon: <LayoutList size={16} /> },
   { id: 'services',   label: 'Сервіси',           icon: <Sparkles size={16} /> },
   { id: 'design',     label: 'Дизайн',            icon: <Palette size={16} /> },

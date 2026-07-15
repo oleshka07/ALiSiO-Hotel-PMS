@@ -131,7 +131,8 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const db = getDb();
     const orgId = getOrgId(db);
     const sp = request.nextUrl.searchParams;
-    const opType = sp.get('op_type');
+    const opTypeRaw = sp.get('op_type');
+    const opTypes = opTypeRaw ? opTypeRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const from = sp.get('from');
     const to = sp.get('to');
     // account_id supports both single value and comma-separated list of
@@ -140,10 +141,14 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const accountIds = accountIdRaw
       ? accountIdRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-    const categoryId = sp.get('category_id');
-    const projectId = sp.get('project_id');
-    const counterpartyId = sp.get('counterparty_id');
-    const tagId = sp.get('tag_id');
+    const categoryIdRaw = sp.get('category_id');
+    const categoryIds = categoryIdRaw ? categoryIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const projectIdRaw = sp.get('project_id');
+    const projectIds = projectIdRaw ? projectIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const counterpartyIdRaw = sp.get('counterparty_id');
+    const counterpartyIds = counterpartyIdRaw ? counterpartyIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const tagIdRaw = sp.get('tag_id');
+    const tagIds = tagIdRaw ? tagIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const status = sp.get('status');
     const search = sp.get('search');
     const reservationId = sp.get('reservation_id');
@@ -159,7 +164,14 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     const params: any[] = [orgId, orgId, orgId];
 
     if (needsReviewOnly) where.push('o.needs_review = 1');
-    if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
+    if (opTypes.length > 0) {
+      const validOps = opTypes.filter(o => (OP_TYPES as readonly string[]).includes(o));
+      if (validOps.length > 0) {
+        const ph = validOps.map(() => '?').join(',');
+        where.push(`o.op_type IN (${ph})`);
+        params.push(...validOps);
+      }
+    }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
     if (to) { where.push('o.paid_at <= ?'); params.push(to); }
     if (accountIds.length > 0) {
@@ -167,19 +179,57 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       where.push(`(o.account_from_id IN (${ph}) OR o.account_to_id IN (${ph}))`);
       params.push(...accountIds, ...accountIds);
     }
-    if (categoryId) { where.push('o.category_id = ?'); params.push(categoryId); }
-    if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
-    if (counterpartyId) { where.push('o.counterparty_id = ?'); params.push(counterpartyId); }
+    if (categoryIds.length > 0) {
+      const ph = categoryIds.map(() => '?').join(',');
+      where.push(`o.category_id IN (${ph})`);
+      params.push(...categoryIds);
+    }
+    if (projectIds.length > 0) {
+      const ph = projectIds.map(() => '?').join(',');
+      where.push(`o.project_id IN (${ph})`);
+      params.push(...projectIds);
+    }
+    if (counterpartyIds.length > 0) {
+      const ph = counterpartyIds.map(() => '?').join(',');
+      where.push(`o.counterparty_id IN (${ph})`);
+      params.push(...counterpartyIds);
+    }
     if (status && (STATUSES as readonly string[]).includes(status)) { where.push('o.status = ?'); params.push(status); }
     if (reservationId) { where.push('o.reservation_id = ?'); params.push(reservationId); }
     if (source) { where.push('o.source = ?'); params.push(source); }
-    if (tagId) {
-      where.push('o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id = ?)');
-      params.push(tagId);
+    if (tagIds.length > 0) {
+      const ph = tagIds.map(() => '?').join(',');
+      where.push(`o.id IN (SELECT operation_id FROM fin_operation_tags WHERE tag_id IN (${ph}))`);
+      params.push(...tagIds);
     }
     if (search) {
-      where.push('(o.comment LIKE ? OR o.source_ref LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const searchNum = parseFloat(search.replace(/\s/g, '').replace(',', '.'));
+      const isNum = !isNaN(searchNum) && searchNum > 0;
+      
+      const parts = [
+        'o.comment LIKE ?',
+        'o.source_ref LIKE ?'
+      ];
+      const p: any[] = [`%${search}%`, `%${search}%`];
+      
+      if (isNum) {
+        parts.push('ABS(o.amount) = ?');
+        p.push(searchNum);
+      } else {
+        parts.push(`EXISTS (SELECT 1 FROM expense_categories WHERE id = o.category_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM business_units WHERE id = o.project_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_counterparties WHERE id = o.counterparty_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_accounts WHERE id = o.account_from_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+        parts.push(`EXISTS (SELECT 1 FROM finance_accounts WHERE id = o.account_to_id AND name LIKE ?)`);
+        p.push(`%${search}%`);
+      }
+      
+      where.push(`(${parts.join(' OR ')})`);
+      params.push(...p);
     }
 
     const whereSql = where.join(' AND ');
@@ -538,6 +588,73 @@ export async function deleteOperation(
   }
 }
 
+export async function mergeOperations(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    if (!Array.isArray(body.ids) || body.ids.length !== 2) {
+      return NextResponse.json({ error: 'Очікується рівно 2 ідентифікатори' }, { status: 400 });
+    }
+
+    const [id1, id2] = body.ids;
+    const op1 = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id1) as any;
+    const op2 = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id2) as any;
+
+    if (!op1 || !op2) {
+      return NextResponse.json({ error: 'Операції не знайдено' }, { status: 404 });
+    }
+
+    if (op1.op_type === 'transfer' || op2.op_type === 'transfer') {
+      return NextResponse.json({ error: "Неможливо об'єднати вже існуюче переміщення" }, { status: 400 });
+    }
+
+    // Determine which is expense and which is income
+    let expOp, incOp;
+    if (op1.op_type === 'expense' && op2.op_type === 'income') {
+      expOp = op1; incOp = op2;
+    } else if (op1.op_type === 'income' && op2.op_type === 'expense') {
+      expOp = op2; incOp = op1;
+    } else {
+      return NextResponse.json({ error: "Для об'єднання виберіть одну витрату та один дохід" }, { status: 400 });
+    }
+
+    const actor = await getOptionalActor();
+    
+    // We keep the expense operation, turn it into a transfer, and delete the income operation.
+    // The amount will be exactly the amount of the expense.
+    const updatedExp = {
+      ...expOp,
+      op_type: 'transfer',
+      account_to_id: incOp.account_to_id,
+      category_id: null
+    };
+
+    db.prepare(`
+      UPDATE fin_operations 
+      SET op_type = 'transfer', account_to_id = ?, category_id = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(incOp.account_to_id, expOp.id);
+
+    // Audit the conversion
+    writeOperationAudit(db, expOp.id, 'convert', actor, expOp, updatedExp);
+
+    // Re-link bank transactions from the deleted income operation to the new transfer operation
+    db.prepare('UPDATE bank_transactions SET matched_operation_id = ? WHERE matched_operation_id = ?').run(expOp.id, incOp.id);
+    
+    // Audit and delete the income operation
+    writeOperationAudit(db, incOp.id, 'delete', actor, incOp, null);
+    db.prepare('DELETE FROM fin_operations WHERE id = ?').run(incOp.id);
+
+    if (incOp.reservation_id) recalcReservationPaymentStatus(db, incOp.reservation_id);
+    if (expOp.reservation_id) recalcReservationPaymentStatus(db, expOp.reservation_id);
+
+    return NextResponse.json({ ok: true, merged_into: expOp.id });
+
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 /**
  * GET /api/finance/operations/[id]/audit
  * Returns the full change history for one operation, newest first.
@@ -704,5 +821,21 @@ export function recalcReservationPaymentStatus(db: any, reservationId: string): 
   let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid';
   if (total > 0 && net >= total - 0.005) paymentStatus = 'paid';
   else if (net > 0) paymentStatus = 'partial';
+
+  // Read old status before update for TG notification editing
+  const oldRow = db.prepare('SELECT payment_status FROM reservations WHERE id = ?').get(reservationId) as any;
+  const oldPaymentStatus = oldRow?.payment_status || 'unpaid';
+
   db.prepare('UPDATE reservations SET payment_status = ? WHERE id = ?').run(paymentStatus, reservationId);
+
+  // Emit event if status changed
+  if (oldPaymentStatus !== paymentStatus) {
+    import('@core/event-bus').then(({ eventBus }) => {
+      eventBus.emit('booking.payment_status_changed', {
+        bookingId: reservationId,
+        oldStatus: oldPaymentStatus,
+        newStatus: paymentStatus,
+      });
+    }).catch(() => {});
+  }
 }

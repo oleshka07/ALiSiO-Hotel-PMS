@@ -18,7 +18,12 @@ function selectAccountsWithBalance(db: any, orgId: string, opts: { includeArchiv
       (
         fa.initial_balance
         + COALESCE((SELECT SUM(
-            CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
+            CASE
+              WHEN o.op_type = 'transfer' AND o.currency_to IS NOT NULL AND o.currency_to = fa.currency
+                THEN COALESCE(o.amount_to, o.amount)
+              WHEN o.currency = fa.currency THEN o.amount
+              ELSE o.amount_company
+            END
           ) FROM fin_operations o
           WHERE o.account_to_id = fa.id AND o.status = 'completed'), 0)
         - COALESCE((SELECT SUM(

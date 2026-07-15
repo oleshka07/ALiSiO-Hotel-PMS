@@ -5,8 +5,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
+import { requirePermission } from '@core/security/route-guard';
 
-export async function GET(
+export const GET = requirePermission('manage_documents', _GET);
+async function _GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {

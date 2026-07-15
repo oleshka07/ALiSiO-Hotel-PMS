@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { requirePermission } from '@core/security/route-guard';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { generateIsdocXml }   from '@/lib/isdoc';
 import { sendEmail }           from '@/lib/email';
@@ -44,7 +45,8 @@ function getNextInvoiceNumber(db: ReturnType<typeof getDb>): string {
   return `${prefix}${String(next).padStart(3, '0')}`;
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = requirePermission('manage_documents', _POST);
+async function _POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body  = await req.json();
     const {
@@ -53,12 +55,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       buyerName, buyerIco, buyerDic, buyerAddress, buyerCity, buyerCountry,
       emailTo,
       action = 'pdf',
+      items: rawItems,
     } = body;
 
-    if (!description?.trim()) {
+    // Support multi-item invoices
+    interface RawItem { description: string; amount: number; }
+    const itemList: RawItem[] | undefined = Array.isArray(rawItems) && rawItems.length > 0
+      ? rawItems.filter((i: RawItem) => i.description?.trim() && i.amount > 0)
+      : undefined;
+
+    const totalAmount: number = itemList
+      ? itemList.reduce((s: number, i: RawItem) => s + i.amount, 0)
+      : (typeof amount === 'number' ? amount : parseFloat(amount));
+
+    const primaryDesc: string = itemList
+      ? itemList.map((i: RawItem) => i.description).join('; ')
+      : (description || '');
+
+    if (!primaryDesc?.trim()) {
       return NextResponse.json({ error: 'description required' }, { status: 400 });
     }
-    if (typeof amount !== 'number' || amount <= 0) {
+    if (!totalAmount || totalAmount <= 0) {
       return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 });
     }
 
@@ -82,18 +99,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       VALUES (?, NULL, ?, ?, ?, ?, ?, 'issued',
               1, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      invoiceId, invoiceNumber, today, due, amount, currency,
+      invoiceId, invoiceNumber, today, due, totalAmount, currency,
       buyerName    || null,
       buyerIco     || null,
       buyerDic     || null,
       buyerAddress || null,
       buyerCity    || null,
       buyerCountry || null,
-      description,
+      primaryDesc,
       emailTo      || null,
     );
 
-    console.log(`[CustomInvoice] Created ${invoiceNumber} (${invoiceId}) amount=${amount} ${currency}`);
+    console.log(`[CustomInvoice] Created ${invoiceNumber} (${invoiceId}) amount=${totalAmount} ${currency} items=${itemList?.length ?? 1}`);
 
     // Generate PDF
     const buyer = buyerName?.trim() ? {
@@ -110,10 +127,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       issueDate:     today,
       dueDate:       due,
       paymentMethod: paymentMethod || 'Příkazem',
-      description,
-      amount,
+      description:   primaryDesc,
+      amount:        totalAmount,
       currency,
       buyer,
+      items: itemList?.map((i: { description: string; amount: number }) => ({
+        description: i.description,
+        quantity:    1,
+        unitPrice:   i.amount,
+        total:       i.amount,
+      })),
     });
 
     // Optionally send email

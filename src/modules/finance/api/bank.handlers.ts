@@ -63,10 +63,42 @@ export async function updateBankTransaction(request: Request): Promise<NextRespo
       const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
       // Negative amount → expense (money out), positive → income
       const opType: 'expense' | 'income' = tx.amount < 0 ? 'expense' : 'income';
+
+      // Resolve the bank account: statement account_number ↔ finance_accounts.iban,
+      // else first active bank account (flagged for review).
+      const stmtRow = db.prepare(
+        "SELECT account_number FROM bank_statements WHERE id = ?"
+      ).get(tx.statement_id) as { account_number: string | null } | undefined;
+      const acctNum = (stmtRow?.account_number || '').replace(/[\s\-/]/g, '').toUpperCase();
+      let accountId: string | null = null;
+      if (acctNum) {
+        const byIban = db.prepare(`
+          SELECT id FROM finance_accounts
+          WHERE organization_id = ? AND is_active = 1 AND iban IS NOT NULL
+            AND REPLACE(REPLACE(REPLACE(UPPER(iban), ' ', ''), '-', ''), '/', '') LIKE '%' || ? || '%'
+        `).get(orgRow.id, acctNum) as { id: string } | undefined;
+        accountId = byIban?.id || null;
+      }
+      const usedFallback = !accountId;
+      if (!accountId) {
+        const fallback = db.prepare(`
+          SELECT id FROM finance_accounts
+          WHERE organization_id = ? AND is_active = 1 AND type = 'bank' AND currency = 'CZK'
+          ORDER BY sort_order LIMIT 1
+        `).get(orgRow.id) as { id: string } | undefined;
+        accountId = fallback?.id || null;
+      }
+      if (!accountId) {
+        return NextResponse.json(
+          { error: 'Не знайдено банківського рахунку для операції. Створіть рахунок типу «банк».' },
+          { status: 400 },
+        );
+      }
+
       const operationId = createOperationInTx(db, orgRow.id, {
         op_type: opType,
-        account_from_id: opType === 'expense' ? null : null,
-        account_to_id: opType === 'income' ? null : null,
+        account_from_id: opType === 'expense' ? accountId : null,
+        account_to_id: opType === 'income' ? accountId : null,
         amount: Math.abs(tx.amount),
         currency: 'CZK',
         paid_at: tx.transaction_date,
@@ -76,6 +108,7 @@ export async function updateBankTransaction(request: Request): Promise<NextRespo
         method: 'bank_transfer',
         source: 'bank_import',
         source_ref: tx.id,
+        needs_review: usedFallback ? 1 : 0,
       });
 
       db.prepare("UPDATE bank_transactions SET matched_operation_id = ? WHERE id = ?").run(operationId, id);

@@ -216,6 +216,30 @@ export async function createBookingDraft(req: Request) {
     const reservationId = genId('r');
     const guestPageToken = genToken(32);
 
+    const utmParams = body.utm_params || {};
+    const utmSource = utmParams['utm_source'] || null;
+    const utmMedium = utmParams['utm_medium'] || null;
+    const utmCampaign = utmParams['utm_campaign'] || null;
+    const utmContent = utmParams['utm_content'] || null;
+    const utmTerm = utmParams['utm_term'] || null;
+    const gaClientId = utmParams['ga_client_id'] || null;
+
+    const draftSource = body.site_id ? `widget:${body.site_id}` : 'widget_kemp';
+
+    const refUrl = body.source_url || 'Прямий захід';
+    const ua = body.user_agent || '';
+    const browser = ua.includes('Chrome') ? 'Chrome' : ua.includes('Safari') && !ua.includes('Chrome') ? 'Safari' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Edge') ? 'Edge' : 'Інший';
+    const device = ua.includes('Mobile') ? 'Mobile' : 'Desktop';
+    
+    let marketingNotes = `🌐 Джерело: ${refUrl}\n`;
+    marketingNotes += `💻 Пристрій: ${device} · ${browser}\n`;
+    if (body.language || body.time_zone) {
+      marketingNotes += `🌍 Мова/Локація: ${body.language || '?'} · ${body.time_zone || '?'}\n`;
+    }
+    if (body.accommodation_data) {
+      marketingNotes += `ℹ️ Опції: ${JSON.stringify(body.accommodation_data)}`;
+    }
+
     db.prepare(`
       INSERT INTO reservations (
         id, property_id, unit_id, guest_id, source,
@@ -224,14 +248,16 @@ export async function createBookingDraft(req: Request) {
         total_price, currency,
         status, payment_status,
         guest_page_token,
+        utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
         notes, created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, 'widget_kemp',
+        ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?,
         ?, 'CZK',
         'tentative', 'unpaid',
         ?,
+        ?, ?, ?, ?, ?, ?,
         ?, datetime('now'), datetime('now')
       )
     `).run(
@@ -239,6 +265,7 @@ export async function createBookingDraft(req: Request) {
       property.id,
       unitId,
       guestId,
+      draftSource,
       body.check_in || null,
       body.check_out || null,
       nights,
@@ -246,7 +273,8 @@ export async function createBookingDraft(req: Request) {
       body.accommodation_data?.children || 0,
       body.total_price || 0,
       guestPageToken,
-      body.accommodation_data ? `Type: ${accommodationType}, Options: ${JSON.stringify(body.accommodation_data)}` : null,
+      utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
+      marketingNotes,
     );
 
     // Link draft → reservation + save token in draft
@@ -369,8 +397,16 @@ export async function updateBookingDraft(req: Request) {
       try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
       try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ? AND payment_status != 'paid'`).run(rid); } catch { /* */ }
 
-      // First-time confirmation: create fin_operation + send email.
+      // First-time confirmation: create fin_operation + send email + notify TG.
       if (confirmResult.changes > 0) {
+        // Emit payment status change for TG notification editing
+        import('@core/event-bus').then(({ eventBus }) => {
+          eventBus.emit('booking.payment_status_changed', {
+            bookingId: rid,
+            oldStatus: 'unpaid',
+            newStatus: 'paid',
+          });
+        }).catch(() => {});
         // ─── Create fin_operation ONLY for CASH payments ──────────────────
         // Terminal payments do NOT get a fin_operation here — the money
         // arrives via bank statement and will be recorded through bank import.
