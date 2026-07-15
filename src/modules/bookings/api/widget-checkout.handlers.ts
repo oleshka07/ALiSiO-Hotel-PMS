@@ -38,6 +38,8 @@ export async function createWidgetCheckoutSession(req: Request) {
 
     const db = getDb();
 
+    // пінг щоб оновити проект на сервері
+
     // 1. Resolve Site and Payment Config
     //    site_slug is optional — when absent, fall back to global ENV credentials
     let site: any = null;
@@ -63,7 +65,7 @@ export async function createWidgetCheckoutSession(req: Request) {
         // Fire email explicitly for offline/bank-transfer partner bookings
         try {
           const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
-          sendBookingConfirmationEmail(reservation_id).catch(() => {});
+          sendBookingConfirmationEmail(reservation_id).catch(() => { });
         } catch (err: any) {
           console.error('[Checkout Session] Failed to trigger email:', err.message);
         }
@@ -142,7 +144,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       // Main Reservation payment
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
-      
+
       amount = res.total_price || 0;
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
