@@ -611,6 +611,17 @@ export default function DocumentsPage() {
                 >
                   <Download size={13} /> Скачати CSV
                 </a>
+                {/* ZIP ISDOC button */}
+                <button
+                  onClick={() => downloadZip(allInvoices.map(i => i.id), 'isdoc', invSourceFilter)}
+                  disabled={zipLoading === 'isdoc' || allInvoices.length === 0}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'rgba(79,110,247,0.1)', color: 'var(--accent-primary)', fontSize: 12, fontWeight: 700, cursor: allInvoices.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: allInvoices.length === 0 ? 0.5 : 1 }}
+                >
+                  {zipLoading === 'isdoc'
+                    ? <><RefreshCw size={13} className="spin" /> Генеруємо ZIP…</>
+                    : <><Package size={13} /> ZIP ISDOC</>
+                  }
+                </button>
               </div>
 
               {/* Source filter pills */}
