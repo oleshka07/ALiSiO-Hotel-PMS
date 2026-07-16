@@ -125,6 +125,8 @@ export default function DocumentsPage() {
   const [allInvLoading,    setAllInvLoading]    = useState(false);
   const [allInvError,      setAllInvError]      = useState<string | null>(null);
   const [invSearch,        setInvSearch]        = useState('');
+  const [invDateFrom,      setInvDateFrom]      = useState('');
+  const [invDateTo,        setInvDateTo]        = useState('');
   const [invSourceFilter,  setInvSourceFilter]  = useState<'all' | 'airbnb' | 'booking' | 'teya' | 'manual' | 'pms'>('all');
 
   // ── Statements tab state ──────────────────────────────────────
@@ -174,7 +176,7 @@ export default function DocumentsPage() {
       setDeleteConfirm(null);
       // Refresh both lists
       fetchInvoices();
-      fetchAllInvoices(invSourceFilter, invSearch);
+      fetchAllInvoices(invSourceFilter, invSearch, invDateFrom, invDateTo);
     } catch (e: unknown) {
       alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -272,7 +274,7 @@ export default function DocumentsPage() {
       setCustomToast(emailAfter
         ? `✅ PDF збережено і надіслано на ${customForm.emailTo}`
         : '✅ PDF згенеровано і завантажено');
-      setTimeout(() => { fetchInvoices(); fetchAllInvoices(invSourceFilter, invSearch); }, 1000);
+      setTimeout(() => { fetchInvoices(); fetchAllInvoices(invSourceFilter, invSearch, invDateFrom, invDateTo); }, 1000);
       setTimeout(() => setShowCustomModal(false), 2500);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -338,11 +340,13 @@ export default function DocumentsPage() {
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
   // ── Fetch ALL invoices (unified: batch + PMS + manual) ────────
-  const fetchAllInvoices = useCallback(async (source: string, search: string) => {
+  const fetchAllInvoices = useCallback(async (source: string, search: string, from: string, to: string) => {
     setAllInvLoading(true);
     setAllInvError(null);
     try {
       const params = new URLSearchParams({ source, search });
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
       const res = await fetch(`/api/accounting/invoices/list?${params}`);
       if (!res.ok) throw new Error('Failed to fetch');
       setAllInvoices(await res.json());
@@ -356,10 +360,10 @@ export default function DocumentsPage() {
   // Auto-fetch when invoices tab is active or filters change
   useEffect(() => {
     if (activeTab === 'invoices') {
-      const t = setTimeout(() => fetchAllInvoices(invSourceFilter, invSearch), 300);
+      const t = setTimeout(() => fetchAllInvoices(invSourceFilter, invSearch, invDateFrom, invDateTo), 300);
       return () => clearTimeout(t);
     }
-  }, [activeTab, invSourceFilter, invSearch, fetchAllInvoices]);
+  }, [activeTab, invSourceFilter, invSearch, invDateFrom, invDateTo, fetchAllInvoices]);
 
   // ── Actions ───────────────────────────────────────────────────
   const openInvoice     = (id: string)   => window.open(`/api/invoices/${id}`, '_blank');
@@ -603,9 +607,25 @@ export default function DocumentsPage() {
                     </button>
                   )}
                 </div>
+                {/* Date Filters */}
+                <input
+                  type="date"
+                  title="Від дати"
+                  value={invDateFrom}
+                  onChange={e => setInvDateFrom(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border-primary)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                />
+                <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                <input
+                  type="date"
+                  title="До дати"
+                  value={invDateTo}
+                  onChange={e => setInvDateTo(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border-primary)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                />
                 {/* CSV Export button */}
                 <a
-                  href={`/api/invoices/export?source=${invSourceFilter}`}
+                  href={`/api/invoices/export?source=${invSourceFilter}${invDateFrom ? '&from='+invDateFrom : ''}${invDateTo ? '&to='+invDateTo : ''}`}
                   download
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--border-primary)', background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
                 >

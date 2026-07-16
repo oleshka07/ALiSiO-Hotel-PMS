@@ -20,6 +20,9 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
     const source = searchParams.get('source') || 'all';
     const search = (searchParams.get('search') || '').trim();
 
+    const from   = searchParams.get('from');
+    const to     = searchParams.get('to');
+
     // Build the base query — LEFT JOINs so custom/batch invoices without
     // reservation_id are still returned.
     const rows: any[] = db.prepare(`
@@ -68,8 +71,15 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
       filtered = filtered.filter(r => r.source === source);
     }
 
-    if (search) {
-      const q = search.toLowerCase();
+    if (from) {
+      filtered = filtered.filter(r => r.issued_at >= from);
+    }
+
+    if (to) {
+      filtered = filtered.filter(r => r.issued_at <= to);
+    }
+
+    if (search) {      const q = search.toLowerCase();
       filtered = filtered.filter(r => {
         const name   = (r.buyer_name || '').toLowerCase();
         const num    = (r.invoice_number || '').toLowerCase();
