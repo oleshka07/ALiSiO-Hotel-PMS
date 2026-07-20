@@ -47,33 +47,78 @@ export async function createWidgetCheckoutSession(req: Request) {
     let siteCreds: any = null;
 
     let activeSiteSlug = site_slug;
-    if (activeSiteSlug) {
-      if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
-      // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
-      // site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any; тестування
+    //     if (activeSiteSlug) {
+    //       if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
+    //       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
+    //       // site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any; тестування
+    //       site = db.prepare(`
+    //   SELECT id, payment_config, site_url, slug 
+    //   FROM booking_sites 
+    //   WHERE id = ?
+    //      OR slug = ?
+    //      OR site_url LIKE ?
+    // `).get(
+    //         clientSiteId,
+    //         clientSiteId,
+    //         `%${clientSiteId}%`
+    //       ) as any;
+    //       if (!site) {
+    //         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
+    //       }
+    //       siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
+    //     } else if (clientSiteId) {
+    //       // booking/page.tsx sends site_id instead of site_slug.
+    //       // clientSiteId may be a UUID *or* a slug (e.g. 'kemp-carlsbad') — search both columns.
+    //       site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ? OR slug = ?').get(clientSiteId, clientSiteId) as any;
+    //       if (site) {
+    //         siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
+    //       }
+    //     }
+    const searchSiteId = activeSiteSlug || clientSiteId;
+
+    if (searchSiteId) {
+      const normalized = searchSiteId === 'kv.kemp-carlsbad.cz'
+        ? 'kemp-carlsbad'
+        : searchSiteId;
+
       site = db.prepare(`
-  SELECT id, payment_config, site_url, slug 
-  FROM booking_sites 
-  WHERE id = ?
-     OR slug = ?
-     OR site_url LIKE ?
-`).get(
-        clientSiteId,
-        clientSiteId,
-        `%${clientSiteId}%`
+    SELECT id, payment_config, site_url, slug
+    FROM booking_sites
+    WHERE id = ?
+       OR slug = ?
+       OR site_url LIKE ?
+  `).get(
+        normalized,
+        normalized,
+        `%${normalized}%`
       ) as any;
+
       if (!site) {
-        return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
+        console.error('[Checkout Session] Site not found:', {
+          clientSiteId,
+          site_slug,
+          normalized
+        });
+
+        return NextResponse.json(
+          { error: 'Site not found' },
+          { status: 404, headers: CORS_HEADERS }
+        );
       }
-      siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
-    } else if (clientSiteId) {
-      // booking/page.tsx sends site_id instead of site_slug.
-      // clientSiteId may be a UUID *or* a slug (e.g. 'kemp-carlsbad') — search both columns.
-      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ? OR slug = ?').get(clientSiteId, clientSiteId) as any;
-      if (site) {
-        siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
-      }
+
+      console.log('[Checkout Session] RESOLVED SITE:', site);
+
+      siteCreds = resolveSiteCredentials({
+        id: site.id,
+        slug: site.slug
+      });
     }
+
+    console.log('[Checkout Session] RESOLVED CREDS:', {
+      siteId: site.id,
+      slug: site.slug,
+      hasCredentials: !!siteCreds?.credentials
+    });
 
     // Check if payment is possible: either site-specific Teya config or global ENV
     const hasSiteTeya = !!siteCreds?.credentials;
