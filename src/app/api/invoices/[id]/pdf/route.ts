@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { requirePermission } from '@core/security/route-guard';
-import { convertToCzk, foreignNote } from '@/lib/fx';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
 import { showBuyerName } from '@/lib/invoice-rules';
 
 export const GET = requirePermission('manage_documents', _GET);
@@ -60,7 +60,7 @@ async function _GET(
     // Real accounting date: check-in → payment → creation (never import date).
     const documentDate = ((row.check_in as string | null) || (row.payment_date as string | null) || (row.issued_at as string | null) || '').slice(0, 10);
     // Foreign-currency (OTA/EUR) → CZK at the rate effective on the document date.
-    const conv = convertToCzk(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
+    const conv = await convertToCzkAuto(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
     const czkAmount = conv.converted ? conv.amountCzk : ((row.amount as number) || 0);
 
     // Build buyer — explicit company/custom always shown; a personal guest only

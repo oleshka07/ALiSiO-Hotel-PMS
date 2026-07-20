@@ -7,6 +7,7 @@
  * inconsistently store the pair direction.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { syncCnbRates } from './cnb-rates';
 
 function orgId(db: any): string | null {
   const r = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
@@ -72,6 +73,27 @@ export function convertToCzk(db: any, amount: number, currency: string, dateIso:
   if (rate == null) {
     return { amountCzk: amount, rate: 0, original: amount, currency: cur, converted: false };
   }
+  return { amountCzk: Math.round(amount * rate * 100) / 100, rate, original: amount, currency: cur, converted: true };
+}
+
+/**
+ * Like convertToCzk, but if no rate exists for the date it lazily pulls that
+ * exact day's ČNB fixing, stores it, and retries — so invoice conversion "just
+ * works" with no cron or manual entry. Falls back to the original currency if
+ * ČNB is unreachable (never fabricates a rate).
+ */
+export async function convertToCzkAuto(db: any, amount: number, currency: string, dateIso: string): Promise<CzkConversion> {
+  const cur = (currency || 'CZK').toUpperCase();
+  if (cur === 'CZK') return { amountCzk: amount, rate: 1, original: amount, currency: 'CZK', converted: false };
+
+  let rate = getCzkRate(db, cur, dateIso);
+  if (rate == null) {
+    try {
+      await syncCnbRates(db, { date: (dateIso || '').slice(0, 10), currencies: [cur] });
+      rate = getCzkRate(db, cur, dateIso);
+    } catch { /* offline / feed error — leave rate null, keep original currency */ }
+  }
+  if (rate == null) return { amountCzk: amount, rate: 0, original: amount, currency: cur, converted: false };
   return { amountCzk: Math.round(amount * rate * 100) / 100, rate, original: amount, currency: cur, converted: true };
 }
 

@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
-import { convertToCzk, foreignNote } from '@/lib/fx';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
 
 /**
  * Real accounting date for a document: check-in (stay) → payment date → creation.
@@ -204,7 +204,7 @@ export async function getInvoiceHtml(
 
     // Real accounting date + CZK conversion for foreign-currency (OTA) invoices.
     data.document_date = resolveDocumentDate(data);
-    const conv = convertToCzk(db, data.amount || 0, data.currency || 'CZK', data.document_date);
+    const conv = await convertToCzkAuto(db, data.amount || 0, data.currency || 'CZK', data.document_date);
     if (conv.converted) {
       data.amount = conv.amountCzk;
       data.currency = 'CZK';
