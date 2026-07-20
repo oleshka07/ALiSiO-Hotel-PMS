@@ -73,7 +73,13 @@ function resolveSite(site) {
       creds: { client_id: payCfg.teya.client_id, client_secret: payCfg.teya.client_secret, store_id: payCfg.teya.store_id },
     };
   }
-  if (site.id === '2975fba30e3cd3a6f7df3092183e258a' || site.slug === 'kemp-carlsbad') {
+  const siteSlug = site.slug || '';
+  const isKemp =
+    site.id === '2975fba30e3cd3a6f7df3092183e258a' ||
+    site.id === '50aeb822f406ff264ac5c292d0d48926' ||
+    siteSlug === 'kemp-carlsbad' ||
+    siteSlug.includes('kemp-carlsbad');
+  if (isKemp) {
     const c = envStore('camping');
     if (c.client_id) return { how: "ENV store 'camping' (fallback Kemp Carlsbad)", creds: c };
   }
@@ -107,3 +113,40 @@ for (const s of sites) {
   console.log('');
 }
 db.close();
+
+// ─── Живий тест кредів (--live): OAuth + тимчасова OPEN checkout-сесія ─────────
+// Без списання. Друкує лише HTTP-статус. Запуск: node diagnose-site-store.cjs --live
+if (process.argv.includes('--live')) {
+  const crypto = require('crypto');
+  const IS_PROD = (env.TEYA_ENVIRONMENT || 'staging') === 'production';
+  const API = IS_PROD ? 'https://api.teya.com' : 'https://api.teya.xyz';
+  const OAUTH = IS_PROD ? 'https://id.teya.com/oauth/v2/oauth-token' : 'https://id.teya.xyz/oauth/v2/oauth-token';
+
+  async function testCreds(label, c) {
+    if (!c.client_id || !c.client_secret || !c.store_id) {
+      console.log(`\n[${label}] пропуск — креди не повні`);
+      return;
+    }
+    const body = new URLSearchParams({ grant_type: 'client_credentials', client_id: c.client_id, client_secret: c.client_secret, scope: 'checkout/sessions/create' });
+    const tr = await fetch(OAUTH, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    if (!tr.ok) { console.log(`\n[${label}] OAuth → HTTP ${tr.status} ❌  ${(await tr.text()).slice(0, 200)}`); return; }
+    const token = (await tr.json()).access_token;
+    const cr = await fetch(`${API}/v2/checkout/sessions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({ store_id: c.store_id, amount: { currency: 'CZK', value: 100 }, type: 'SALE', line_items: [{ description: 'DIAG test (ignore)', quantity: 1, unit_price: 100 }] }),
+    });
+    const txt = await cr.text();
+    console.log(`\n[${label}] checkout → HTTP ${cr.status}` + (cr.ok ? ' ✅ (креди робочі)' : ' ❌'));
+    if (!cr.ok) console.log('   тіло:', txt.replace(/\s+/g, ' ').slice(0, 220));
+  }
+
+  (async () => {
+    console.log('\n════════ ЖИВИЙ ТЕСТ КРЕДІВ (без списання) ════════');
+    console.log('ENV:', env.TEYA_ENVIRONMENT || 'staging', '| API:', API);
+    await testCreds('main', envStore('main'));
+    const camp = envStore('camping');
+    if (camp.client_id !== envStore('main').client_id) await testCreds('camping', camp);
+    else console.log('\n[camping] = main (окремих кредів немає) — тест пропущено');
+  })();
+}
