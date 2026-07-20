@@ -413,8 +413,8 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
       db.prepare(`
         INSERT INTO invoices
           (id, invoice_number, issued_at, due_date, amount, currency, status, notes, is_custom,
-           custom_buyer_name, custom_description, is_credit_note, series, period)
-        VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, 1, ?, ?, ?, ?, ?)
+           custom_buyer_name, custom_description, is_credit_note, series, period, confirmed, confirmation_source)
+        VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, 1, ?, ?, ?, ?, ?, 1, ?)
       `).run(
         invId, invNum, issued, due,
         row.amount, row.currency,
@@ -423,6 +423,7 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
         row.description,
         row.is_credit_note ? 1 : 0,
         series, period,
+        `statement:${row.source}`,
       );
 
       return { id: invId, number: invNum, created: true };

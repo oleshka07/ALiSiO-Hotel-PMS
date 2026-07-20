@@ -46,6 +46,10 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month') || new Date().toISOString().slice(0, 7);
+    // Monthly accountant export includes only confirmed invoices (Teya/cash/OTA
+    // statement). Pass ?include_unconfirmed=1 to also export un-reconciled ones.
+    const includeUnconfirmed = searchParams.get('include_unconfirmed') === '1';
+    const confirmedFilter = includeUnconfirmed ? '' : 'AND i.confirmed = 1';
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return NextResponse.json({ error: 'Invalid month format. Use YYYY-MM.' }, { status: 400 });
@@ -89,6 +93,7 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
         ON p.reservation_id = r.id AND p.op_type = 'income' AND p.status = 'completed'
       WHERE i.status = 'issued'
         AND strftime('%Y-%m', i.issued_at) = ?
+        ${confirmedFilter}
       ORDER BY i.invoice_number ASC
     `).all(month) as (InvoiceData & { payment_method?: string })[];
 

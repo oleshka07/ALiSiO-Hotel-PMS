@@ -33,16 +33,27 @@ export function resolveDocumentDate(row: {
  * Create an invoice record for a reservation.
  * Idempotent — if invoice already exists for this reservation, returns existing id.
  */
-export function generateInvoiceForReservation(reservationId: string): string | null {
+export function generateInvoiceForReservation(
+  reservationId: string,
+  opts: { confirmed?: boolean; source?: string } = {},
+): string | null {
   try {
     const db = getDb();
+    const confirmed = opts.confirmed ? 1 : 0;
+    const confirmationSource = opts.source || (opts.confirmed ? 'confirmed' : 'manual');
 
-    // Idempotency check — skip if invoice already exists (not cancelled)
+    // Idempotency check — skip if invoice already exists (not cancelled). If it
+    // exists but was unconfirmed and this call carries a confirmation (Teya/cash),
+    // upgrade it to confirmed.
     const existing = db.prepare(
-      "SELECT id FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
-    ).get(reservationId) as { id: string } | undefined;
+      "SELECT id, confirmed FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
+    ).get(reservationId) as { id: string; confirmed: number } | undefined;
 
     if (existing) {
+      if (confirmed && !existing.confirmed) {
+        db.prepare("UPDATE invoices SET confirmed = 1, confirmation_source = ? WHERE id = ?")
+          .run(confirmationSource, existing.id);
+      }
       return existing.id;
     }
 
@@ -64,9 +75,9 @@ export function generateInvoiceForReservation(reservationId: string): string | n
     const period = (res.check_out || today).slice(0, 7);
 
     db.prepare(`
-      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status, series, period)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', 'HOUSE', ?)
-    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK', period);
+      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status, series, period, confirmed, confirmation_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', 'HOUSE', ?, ?, ?)
+    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK', period, confirmed, confirmationSource);
 
     console.log(`[Invoices] Created ${invoiceNumber} for reservation ${reservationId}`);
     return invoiceId;
