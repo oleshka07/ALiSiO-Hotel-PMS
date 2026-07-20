@@ -56,8 +56,9 @@ export async function createWidgetCheckoutSession(req: Request) {
       }
       siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
     } else if (clientSiteId) {
-      // booking/page.tsx sends site_id instead of site_slug
-      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ?').get(clientSiteId) as any;
+      // booking/page.tsx sends site_id instead of site_slug.
+      // clientSiteId may be a UUID *or* a slug (e.g. 'kemp-carlsbad') — search both columns.
+      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ? OR slug = ?').get(clientSiteId, clientSiteId) as any;
       if (site) {
         siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
       }
