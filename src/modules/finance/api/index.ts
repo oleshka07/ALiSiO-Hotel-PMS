@@ -358,11 +358,12 @@ export const deleteAttachment = withPermission('manage_payments', _deleteAttachm
 // ─── Teya transaction sync (PR #24) — import_bank_data ─────────
 import {
   getTeyaSyncStatus as _getTeyaSyncStatus, getTeyaCoverage as _getTeyaCoverage,
-  syncTeyaTransactions as _syncTeyaTransactions,
+  syncTeyaTransactions as _syncTeyaTransactions, importTeyaCsv as _importTeyaCsv,
 } from './teya-sync.handlers';
 export const getTeyaSyncStatus = withFinanceRead(_getTeyaSyncStatus);
 export const getTeyaCoverage   = withFinanceRead(_getTeyaCoverage);
 export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeyaTransactions);
+export const importTeyaCsv = withPermission('import_bank_data', _importTeyaCsv);
 
 // ─── Reconciliation dashboard (PR #28) — read ──────────────────
 import { getReconcileDashboard as _getReconcileDashboard } from './reconcile-dashboard.handlers';

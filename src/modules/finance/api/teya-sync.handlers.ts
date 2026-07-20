@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { reconcileTeyaTransactions } from '../data/teya-reconcile-engine';
+import { reconcileTeyaTransactions, reconcileTeyaCsvRows } from '../data/teya-reconcile-engine';
+import { parseTeyaCsv } from '../data/teya-csv-parser';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -65,6 +66,53 @@ export async function syncTeyaTransactions(request: NextRequest): Promise<NextRe
  * GET /api/finance/teya/sync — returns last sync metadata (date range,
  * counts, when it ran). For UI status display.
  */
+/**
+ * POST /api/finance/teya/import-csv  (multipart: file, currency?)
+ *
+ * Reconciles a Teya "Transactions" CSV/Excel export against fin_operations —
+ * the fallback path when the API can't list terminal transactions. Terminal /
+ * link payments that never reached PMS are created as needs_review operations
+ * (source='teya_csv'); re-imports are idempotent (synthetic per-row hash).
+ */
+export async function importTeyaCsv(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const form = await request.formData();
+    const file = form.get('file');
+    const currency = ((form.get('currency') as string) || 'CZK').toUpperCase();
+    if (!file || typeof file === 'string') {
+      return NextResponse.json({ error: 'CSV файл не надано (поле "file").' }, { status: 400 });
+    }
+    const text = await (file as File).text();
+    const parsed = parseTeyaCsv(text, currency);
+    if (!parsed.total) {
+      return NextResponse.json({ error: 'У файлі не знайдено підтверджених транзакцій.' }, { status: 400 });
+    }
+    const result = reconcileTeyaCsvRows(db, orgId, parsed.rows);
+
+    db.prepare(`
+      INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
+      VALUES ('teya_csv_last_import', ?, datetime('now'))
+    `).run(JSON.stringify({
+      currency, parsedRows: parsed.total, skippedRows: parsed.skipped,
+      fetched: result.fetched, matched: result.matched, created: result.created,
+      errors: result.errors, ran_at: new Date().toISOString(),
+    }));
+
+    return NextResponse.json({
+      ok: true, currency,
+      parsedRows: parsed.total, skippedRows: parsed.skipped,
+      matched: result.matched, created: result.created, errors: result.errors,
+      outcomes: result.outcomes.slice(0, 500),
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[Teya CSV import]', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
 export async function getTeyaSyncStatus(_request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
