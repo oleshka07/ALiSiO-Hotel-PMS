@@ -77,8 +77,14 @@ async function post(tok, payload, label) {
   await post(tok, { ...base, success_url: `${origin}/ok`, cancel_url: `${origin}/cancel` }, 'P2 +simple urls');
   // + real nested-encoded success/cancel (as the app builds them)
   await post(tok, { ...base, success_url: successUrl, cancel_url: cancelUrl }, 'P3 +nested return urls');
-  // Full app-style payload
-  await post(tok, { ...base, metadata: { reservation_id: resId, source: 'widget_service', site_id: '50aeb822f406ff264ac5c292d0d48926' }, success_url: successUrl, cancel_url: cancelUrl }, 'P4 FULL (app-style)');
+  // Full app-style payload (HTTPS)
+  await post(tok, { ...base, metadata: { reservation_id: resId, source: 'widget_service', site_id: '50aeb822f406ff264ac5c292d0d48926' }, success_url: successUrl, cancel_url: cancelUrl }, 'P4 FULL https');
+
+  // ── The suspected real cause: app builds origin from req.url (http, behind nginx) ──
+  const httpLocal = 'http://localhost:3001';
+  const httpHost  = `http://${new URL(origin).host}`;
+  await post(tok, { ...base, success_url: `${httpLocal}/api/booking/payment-return?status=success&return=${encodeURIComponent(returnTo)}`, cancel_url: `${httpLocal}/api/booking/payment-return?status=cancel` }, 'P5 http://localhost:3001');
+  await post(tok, { ...base, success_url: `${httpHost}/api/booking/payment-return?status=success&return=${encodeURIComponent(returnTo)}`,  cancel_url: `${httpHost}/api/booking/payment-return?status=cancel` },  'P6 http:// real host');
 
   console.log('\n══════ ЧИТАЙ ТАК ══════');
   console.log('Перший рядок з ❌ 403 показує, яке поле ламає. HTML-тіло + server: показує, ХТО ріже (Teya gateway / Cloudflare / nginx).');
