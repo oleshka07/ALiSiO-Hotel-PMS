@@ -16,6 +16,8 @@ function resolveIntentKind(metadata: Record<string, string> | undefined): string
   if (source === 'guest_page') return 'service_standalone';
   if (source === 'widget_service') return 'service_standalone';
   if (source === 'crm_deposit') return 'booking_deposit';
+  // Widget full-booking payment (BookingWizard → checkout-session)
+  if (source === 'booking_payment') return 'booking_full';
   if (metadata?.reservation_id) return 'booking_full';
   return 'unknown';
 }
@@ -293,6 +295,12 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
     sendBookingPaymentTG(db, effectiveRef, amount, currency);
   }
 
+  // Booking payment via widget (full booking checkout) — result4 path
+  // Previously this was silently processed (status updated) but no TG was sent.
+  if (result4.changes > 0) {
+    sendFullBookingWebhookTG(db, effectiveRef, amount, currency);
+  }
+
   // Auto-generate invoice when a reservation transitions to fully paid via webhook.
   // Until now this only happened on manual PATCH (admin marking paid). Public Teya
   // payments would mark payment_status='paid' but never call generateInvoiceForReservation,
@@ -321,8 +329,9 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
       WHERE l.reservation_id IN (
         SELECT so.reservation_id FROM service_orders so WHERE so.payment_id = ?
         UNION SELECT bso.reservation_id FROM booking_service_orders bso WHERE bso.payment_id = ?
+        UNION SELECT r2.id FROM reservations r2 WHERE r2.payment_id = ?
       ) LIMIT 1
-    `).get(effectiveRef, effectiveRef) as any;
+    `).get(effectiveRef, effectiveRef, effectiveRef) as any;
     if (leadByPayment) {
       const totalPrice = leadByPayment.total_price || leadByPayment.estimated_value || 0;
       onPaymentReceived(leadByPayment.id, leadByPayment.stage, !!(amount && totalPrice > 0 && amount >= totalPrice * 0.9));
@@ -484,4 +493,63 @@ function sendBookingPaymentTG(db: any, paymentRef: string, amount: number, curre
     console.log('[Teya Webhook] Sending booking payment TG for', res.first_name, res.last_name);
     sendTelegramMessage(text).catch((e: any) => console.error('[Teya Webhook] TG send failed:', e.message));
   } catch (e: any) { console.error('[Teya Webhook] sendBookingPaymentTG error:', e.message); }
+}
+
+/**
+ * TG notification for full widget bookings paid via Teya (result4 path).
+ * Triggered when a reservation with payment_id=<sessionId> transitions
+ * from 'tentative' to 'confirmed' + 'paid' via webhook.
+ */
+function sendFullBookingWebhookTG(db: any, paymentRef: string, amount: number, currency: string) {
+  try {
+    const res = db.prepare(`
+      SELECT r.id, r.check_in, r.check_out, r.total_price, r.currency,
+             r.accommodation_type, r.accommodation_data,
+             g.first_name, g.last_name, g.email, g.phone,
+             u.name as unit_name
+      FROM reservations r
+      LEFT JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN units u ON r.unit_id = u.id
+      WHERE r.payment_id = ?
+      ORDER BY r.created_at DESC LIMIT 1
+    `).get(paymentRef) as any;
+
+    if (!res) {
+      console.log('[Teya Webhook] sendFullBookingWebhookTG: no reservation found for', paymentRef);
+      return;
+    }
+
+    const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    const displayAmount = amount > 1000 ? Math.round(amount / 100) : amount; // Teya sends minor units
+    const guestName = res.first_name ? `${esc(res.first_name)} ${esc(res.last_name || '')}`.trim() : 'Невідомий гість';
+
+    // Parse accommodation details from accommodation_data JSON
+    let accommodationLabel = res.accommodation_type || '';
+    try {
+      const accData = res.accommodation_data ? JSON.parse(res.accommodation_data) : {};
+      if (accData.building) {
+        const bName = accData.building === 'budova_d' ? 'Budova D' : 'Budova F';
+        const mName = accData.mode === 'shared' ? 'Shared beds' : accData.mode === 'non_shared' ? 'Private room' : 'Whole building';
+        accommodationLabel = `${bName} — ${mName}`;
+      } else if (accData.unit) {
+        accommodationLabel = accData.unit === 'tiny' ? 'Tiny House' : 'Barn House';
+      }
+    } catch { /* ignore JSON parse errors */ }
+
+    const text = [
+      `✅ <b>Бронювання оплачено через Teya</b>`, ``,
+      `👤 ${guestName}`,
+      res.email ? `📧 ${esc(res.email)}` : '',
+      res.phone ? `📞 ${esc(res.phone)}` : '',
+      accommodationLabel ? `🏠 ${esc(accommodationLabel)}` : (res.unit_name ? `🏠 ${esc(res.unit_name)}` : ''),
+      `📅 ${res.check_in} — ${res.check_out}`,
+      `💰 ${displayAmount} ${currency || res.currency || 'CZK'} — ✅ Оплачено онлайн`,
+      ``,
+      `🔖 <code>${esc(res.id)}</code>`,
+      `🔗 <a href="https://alisio.swipescape.eu/crm/inbox?id=${esc(res.id)}">Відкрити в CRM</a>`,
+    ].filter(Boolean).join('\n');
+
+    console.log('[Teya Webhook] Sending full-booking webhook TG for', guestName);
+    sendTelegramMessage(text).catch((e: any) => console.error('[Teya Webhook] Full-booking TG send failed:', e.message));
+  } catch (e: any) { console.error('[Teya Webhook] sendFullBookingWebhookTG error:', e.message); }
 }
