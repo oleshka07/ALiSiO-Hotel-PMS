@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
 import { convertToCzkAuto, foreignNote } from '@/lib/fx';
+import { allocateInvoiceNumber, isInvoiceLocked } from '@/lib/invoice-numbering';
 
 /**
  * Real accounting date for a document: check-in (stay) → payment date → creation.
@@ -24,29 +25,6 @@ export function resolveDocumentDate(row: {
 }): string {
   const pick = row.check_in || row.payment_date || row.issued_at || '';
   return pick.slice(0, 10);
-}
-
-// ─── Invoice Number Generator ───────────────────────────────────────────────
-
-function getNextInvoiceNumber(db: any): string {
-  const year = new Date().getFullYear();
-  const prefix = `${year}-`;
-
-  const last = db.prepare(`
-    SELECT invoice_number FROM invoices
-    WHERE invoice_number LIKE ?
-    ORDER BY invoice_number DESC
-    LIMIT 1
-  `).get(`${prefix}%`) as { invoice_number: string } | undefined;
-
-  let nextNum = 1;
-  if (last) {
-    const parts = last.invoice_number.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-  }
-
-  return `${prefix}${String(nextNum).padStart(3, '0')}`;
 }
 
 // ─── Core Business Logic ─────────────────────────────────────────────────────
@@ -78,15 +56,17 @@ export function generateInvoiceForReservation(reservationId: string): string | n
     if (!res) return null;
 
     const invoiceId = `inv_${Date.now()}`;
-    const invoiceNumber = getNextInvoiceNumber(db);
     const today = new Date().toISOString().split('T')[0];
+    // Direct-booking invoices use the HOUSE series (plain YYYY-NNN), allocated atomically.
+    const { invoiceNumber } = allocateInvoiceNumber(db, 'house', new Date().getFullYear());
     // Due date: check-out date (service rendered on departure)
     const dueDate = res.check_out > today ? res.check_out : today;
+    const period = (res.check_out || today).slice(0, 7);
 
     db.prepare(`
-      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued')
-    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK');
+      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status, series, period)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', 'HOUSE', ?)
+    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK', period);
 
     console.log(`[Invoices] Created ${invoiceNumber} for reservation ${reservationId}`);
     return invoiceId;
@@ -103,6 +83,14 @@ export function generateInvoiceForReservation(reservationId: string): string | n
 export function reissueInvoiceForReservation(reservationId: string): string | null {
   try {
     const db = getDb();
+    // A locked (filed) invoice cannot be cancelled/renumbered — it must be
+    // corrected with a storno (credit note) instead.
+    const current = db.prepare(
+      "SELECT id FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
+    ).get(reservationId) as { id: string } | undefined;
+    if (current && isInvoiceLocked(db, current.id)) {
+      throw new Error('Invoice period is locked — use a storno (credit note) to correct it.');
+    }
     // Cancel all existing non-cancelled invoices for this reservation
     db.prepare(
       "UPDATE invoices SET status = 'cancelled' WHERE reservation_id = ? AND status != 'cancelled'"
