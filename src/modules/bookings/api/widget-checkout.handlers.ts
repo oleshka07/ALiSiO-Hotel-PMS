@@ -306,7 +306,40 @@ export async function createWidgetCheckoutSession(req: Request) {
 
 
     // Step 3: Call Teya with dynamic credentials
-    const origin = new URL(req.url).origin;
+    //
+    // Behind nginx the socket request is http://localhost:3001, so
+    // `new URL(req.url).origin` yields a localhost origin. Teya's edge (AWS ELB)
+    // returns 403 Forbidden when the success/cancel URL host is localhost. Rebuild
+    // the PUBLIC origin from the proxy's forwarded headers (or the browser's
+    // Origin/Referer, or the site's own URL) so return URLs point at the real host.
+    const firstHeader = (v: string | null) => (v ? v.split(',')[0].trim() : '');
+    const isLocalHost = (h: string) => !h || h.includes('localhost') || h.includes('127.0.0.1');
+    const resolvePublicOrigin = (): string => {
+      const raw = new URL(req.url).origin;
+      const xfHost = firstHeader(req.headers.get('x-forwarded-host'));
+      const xfProto = firstHeader(req.headers.get('x-forwarded-proto')) || 'https';
+      if (xfHost && !isLocalHost(xfHost)) return `${xfProto}://${xfHost}`;
+
+      const originHdr = req.headers.get('origin');
+      if (originHdr && originHdr.startsWith('https://') && !isLocalHost(originHdr)) return originHdr;
+
+      const referer = req.headers.get('referer');
+      if (referer) {
+        try {
+          const u = new URL(referer);
+          if (u.protocol === 'https:' && !isLocalHost(u.hostname)) return u.origin;
+        } catch { /* invalid referer — ignore */ }
+      }
+
+      if (site?.site_url) {
+        try { return new URL(site.site_url).origin; } catch { /* invalid site_url — ignore */ }
+      }
+      if (process.env.PUBLIC_APP_URL) return process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
+
+      // Last resort: never hand Teya a localhost/http URL — force https on the raw host.
+      return raw.replace(/^http:\/\//, 'https://');
+    };
+    const origin = resolvePublicOrigin();
     const isProduction = !origin.includes('localhost') && !origin.includes('127.0.0.1');
 
     // Validate returnTo for security (prevent open redirects)
