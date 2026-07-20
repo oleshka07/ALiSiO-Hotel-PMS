@@ -47,12 +47,32 @@ function getDefaultStore(): TeyaCredentials {
   return getEnvStore(key);
 }
 
-// ─── Token cache (per client_id) ─────────────────────────────────────────────
+// ─── HTTP with timeout ────────────────────────────────────────────────────────
+const CHECKOUT_SCOPE = 'checkout/sessions/create';
+
+async function teyaFetch(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── Token cache (per client_id + scope) ──────────────────────────────────────
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-async function getAccessToken(clientId: string, clientSecret: string): Promise<string> {
-  const cached = tokenCache.get(clientId);
-  if (cached && Date.now() < cached.expiresAt) return cached.token;
+async function getAccessToken(
+  clientId: string,
+  clientSecret: string,
+  opts: { force?: boolean } = {},
+): Promise<string> {
+  const cacheKey = `${clientId}::${CHECKOUT_SCOPE}`;
+  if (!opts.force) {
+    const cached = tokenCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) return cached.token;
+  }
 
   if (!clientId || !clientSecret) {
     throw new Error('[payments] Teya credentials not configured. Check TEYA_CLIENT_ID / TEYA_CLIENT_SECRET in .env.local');
@@ -62,10 +82,10 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
     grant_type:    'client_credentials',
     client_id:     clientId,
     client_secret: clientSecret,
-    scope:         'checkout/sessions/create',
+    scope:         CHECKOUT_SCOPE,
   });
 
-  const res = await fetch(TEYA_OAUTH_URL, {
+  const res = await teyaFetch(TEYA_OAUTH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -77,7 +97,7 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
   }
 
   const data = await res.json();
-  tokenCache.set(clientId, {
+  tokenCache.set(cacheKey, {
     token:     data.access_token,
     expiresAt: Date.now() + (data.expires_in - 60) * 1000,
   });
@@ -108,8 +128,6 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
     throw new Error('[payments] No Teya credentials. Configure TEYA_CLIENT_ID, TEYA_CLIENT_SECRET, TEYA_STORE_ID in .env.local');
   }
 
-  const accessToken = await getAccessToken(creds.client_id, creds.client_secret);
-
   // amount: major units → minor units (×100)
   const amountMinor = Math.round(intent.amount * 100);
 
@@ -134,15 +152,26 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   if (intent.cancelUrl)  payload.cancel_url  = intent.cancelUrl;
   if (intent.expiresAt)  payload.expires_at  = intent.expiresAt;
 
-  const res = await fetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
-    method: 'POST',
-    headers: {
-      Authorization:     `Bearer ${accessToken}`,
-      'Content-Type':    'application/json',
-      'Idempotency-Key': crypto.randomUUID(),
-    },
-    body: JSON.stringify(payload),
-  });
+  const idempotencyKey = crypto.randomUUID();
+  const doPost = (token: string) =>
+    teyaFetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
+      method: 'POST',
+      headers: {
+        Authorization:     `Bearer ${token}`,
+        'Content-Type':    'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+  let accessToken = await getAccessToken(creds.client_id, creds.client_secret);
+  let res = await doPost(accessToken);
+
+  // Stale/invalid token → refresh once and retry (same idempotency key)
+  if (res.status === 401 || res.status === 403) {
+    accessToken = await getAccessToken(creds.client_id, creds.client_secret, { force: true });
+    res = await doPost(accessToken);
+  }
 
   if (!res.ok) {
     const txt = await res.text();
