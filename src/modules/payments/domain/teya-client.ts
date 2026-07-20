@@ -12,44 +12,68 @@ const TEYA_CLIENT_ID = process.env.TEYA_CLIENT_ID || '';
 const TEYA_CLIENT_SECRET = process.env.TEYA_CLIENT_SECRET || '';
 const TEYA_STORE_ID = process.env.TEYA_STORE_ID || '';
 
-let cachedToken: string | null = null;
-let tokenExpiresAt = 0;
+// Per-scope token cache. A token issued for one scope (e.g. transactions/list
+// or refunds/create) must NEVER be reused for checkout — Teya rejects it with
+// 403. Keyed by scope so scopes can't poison each other.
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-export async function getTeyaAccessToken(scope = 'checkout/sessions/create'): Promise<string> {
-  const now = Date.now();
-  if (cachedToken && now < tokenExpiresAt) {
-    return cachedToken;
+// Hard timeout on every Teya HTTP call, so a slow/hung Teya surfaces a clean
+// error instead of the request hanging until nginx returns a 502.
+async function teyaFetch(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error(`Teya request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  if (!TEYA_CLIENT_ID || !TEYA_CLIENT_SECRET) {
-    throw new Error('Teya credentials not configured. Set TEYA_CLIENT_ID and TEYA_CLIENT_SECRET in .env.local');
-  }
-
+async function fetchTeyaToken(
+  clientId: string,
+  clientSecret: string,
+  scope: string,
+): Promise<{ access_token: string; expires_in: number }> {
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
-    client_id: TEYA_CLIENT_ID,
-    client_secret: TEYA_CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
     scope,
   });
-
-  const res = await fetch(TEYA_OAUTH_URL, {
+  const res = await teyaFetch(TEYA_OAUTH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
-
   if (!res.ok) {
     const errorText = await res.text();
     console.error('[Teya OAuth] Error:', res.status, errorText);
     throw new Error(`Teya OAuth failed: ${res.status} ${errorText}`);
   }
+  return res.json();
+}
 
-  const data = await res.json();
-  cachedToken = data.access_token;
-  tokenExpiresAt = now + (data.expires_in - 60) * 1000;
-
-  console.log('[Teya] Access token obtained, expires in', data.expires_in, 'seconds');
-  return cachedToken!;
+export async function getTeyaAccessToken(
+  scope = 'checkout/sessions/create',
+  opts?: { force?: boolean },
+): Promise<string> {
+  const now = Date.now();
+  const cached = tokenCache.get(scope);
+  if (!opts?.force && cached && now < cached.expiresAt) {
+    return cached.token;
+  }
+  if (!TEYA_CLIENT_ID || !TEYA_CLIENT_SECRET) {
+    throw new Error('Teya credentials not configured. Set TEYA_CLIENT_ID and TEYA_CLIENT_SECRET in .env.local');
+  }
+  const data = await fetchTeyaToken(TEYA_CLIENT_ID, TEYA_CLIENT_SECRET, scope);
+  tokenCache.set(scope, { token: data.access_token, expiresAt: now + (data.expires_in - 60) * 1000 });
+  console.log('[Teya] Access token obtained for scope', scope, '— expires in', data.expires_in, 's');
+  return data.access_token;
 }
 
 export async function getTeyaAccessTokenWithCreds(
@@ -57,26 +81,7 @@ export async function getTeyaAccessTokenWithCreds(
   clientSecret: string,
   scope = 'checkout/sessions/create',
 ): Promise<string> {
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope,
-  });
-
-  const res = await fetch(TEYA_OAUTH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.error('[Teya OAuth] Dynamic Error:', res.status, errorText);
-    throw new Error(`Teya OAuth failed with custom credentials: ${res.status}`);
-  }
-
-  const data = await res.json();
+  const data = await fetchTeyaToken(clientId, clientSecret, scope);
   return data.access_token;
 }
 
@@ -110,9 +115,9 @@ export interface CheckoutSessionResult {
 }
 
 export async function createCheckoutSession(opts: CheckoutSessionOptions): Promise<CheckoutSessionResult> {
-  const token = opts.credentials
-    ? await getTeyaAccessTokenWithCreds(opts.credentials.client_id, opts.credentials.client_secret)
-    : await getTeyaAccessToken();
+  const getToken = (force: boolean) => opts.credentials
+    ? getTeyaAccessTokenWithCreds(opts.credentials.client_id, opts.credentials.client_secret)
+    : getTeyaAccessToken('checkout/sessions/create', { force });
 
   const storeId = opts.credentials?.store_id || TEYA_STORE_ID;
 
@@ -149,7 +154,7 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
     payload.expires_at = opts.expiresAt;
   }
 
-  const res = await fetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
+  const doPost = (token: string) => teyaFetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -158,6 +163,14 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
     },
     body: JSON.stringify(payload),
   });
+
+  let res = await doPost(await getToken(false));
+  // A cached token can be stale or issued for the wrong scope → Teya answers
+  // 401/403. Drop it, fetch a fresh checkout-scoped token and retry once.
+  if (res.status === 401 || res.status === 403) {
+    console.warn('[Teya Checkout] got', res.status, '— refreshing token and retrying once');
+    res = await doPost(await getToken(true));
+  }
 
   if (!res.ok) {
     const errorText = await res.text();
