@@ -50,7 +50,18 @@ export async function createWidgetCheckoutSession(req: Request) {
     if (activeSiteSlug) {
       if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
-      site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any;
+      // site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any; тестування
+      site = db.prepare(`
+  SELECT id, payment_config, site_url, slug 
+  FROM booking_sites 
+  WHERE id = ?
+     OR slug = ?
+     OR site_url LIKE ?
+`).get(
+        clientSiteId,
+        clientSiteId,
+        `%${clientSiteId}%`
+      ) as any;
       if (!site) {
         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
       }
@@ -328,7 +339,31 @@ export async function createWidgetCheckoutSession(req: Request) {
       } catch { /* non-fatal */ }
     }
 
+    // test
+    // 
+    console.log('[Checkout Session] Creating Teya session:', {
+      reservation_id,
+      site_id: clientSiteId,
+      resolved_site: site,
+      hasSiteCredentials: !!siteCreds?.credentials,
+      amount,
+      currency,
+      description,
+    });
+
     try {
+      // додано для тесту
+      if (!siteCreds?.credentials) {
+        console.error('[Checkout Session] Missing site Teya credentials', {
+          site,
+          clientSiteId,
+          siteCreds
+        });
+      }
+
+      console.log('[Checkout Session] SITE:', site);
+      console.log('[Checkout Session] CREDS:', !!siteCreds?.credentials);
+
       const session = await createPaymentSession({
         kind: service_id && service_date ? (reservation_id ? 'reservation_services' : 'service_standalone') : 'booking_full',
         amount,
@@ -337,7 +372,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         metadata: reservation_id
           ? {
             reservation_id,
-            source: 'widget_service',
+            // source: 'widget_service', змінено для тесту
+            source: service_id ? 'widget_service' : 'booking_payment',
             ...(orderId && { order_id: orderId }),
             ...(site?.id && { site_id: site.id })
           }
