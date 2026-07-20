@@ -46,8 +46,9 @@ export async function createWidgetCheckoutSession(req: Request) {
     let site: any = null;
     let siteCreds: any = null;
 
-    let activeSiteSlug = site_slug;
-    //  закоментовано для тесту
+
+
+    //     let activeSiteSlug = site_slug;
     //     if (activeSiteSlug) {
     //       if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
     //       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
@@ -75,36 +76,31 @@ export async function createWidgetCheckoutSession(req: Request) {
     //         siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
     //       }
     //     }
-    const searchSiteId = activeSiteSlug || clientSiteId;
 
-    if (searchSiteId) {
-      const normalized = searchSiteId === 'https-kv-kemp-carlsbad-cz'
-        ? 'kemp-carlsbad'
-        : searchSiteId;
+    let activeSiteSlug = site_slug;
+
+    if (activeSiteSlug) {
+      if (activeSiteSlug === 'kv.kemp-carlsbad.cz') {
+        activeSiteSlug = 'kemp-carlsbad';
+      }
 
       site = db.prepare(`
-    SELECT id, payment_config, site_url, slug
-    FROM booking_sites
+    SELECT id, payment_config, site_url, slug 
+    FROM booking_sites 
     WHERE id = ?
        OR slug = ?
        OR site_url LIKE ?
   `).get(
-        normalized,
-        normalized,
-        `%${normalized}%`
-      ) as any;
-
-      console.log('[Checkout Session] Searching site:', {
         activeSiteSlug,
-        clientSiteId,
-        normalized
-      });
+        activeSiteSlug,
+        `%${activeSiteSlug}%`
+      ) as any;
 
       if (!site) {
         console.error('[Checkout Session] Site not found:', {
+          activeSiteSlug,
           clientSiteId,
-          site_slug,
-          normalized
+          site_slug
         });
 
         return NextResponse.json(
@@ -113,19 +109,29 @@ export async function createWidgetCheckoutSession(req: Request) {
         );
       }
 
-      console.log('[Checkout Session] RESOLVED SITE:', site);
-
       siteCreds = resolveSiteCredentials({
         id: site.id,
         slug: site.slug
       });
-    }
 
-    console.log('[Checkout Session] RESOLVED CREDS:', {
-      siteId: site.id,
-      slug: site.slug,
-      hasCredentials: !!siteCreds?.credentials
-    });
+    } else if (clientSiteId) {
+
+      site = db.prepare(`
+    SELECT id, payment_config, site_url, slug 
+    FROM booking_sites 
+    WHERE id = ? OR slug = ?
+  `).get(
+        clientSiteId,
+        clientSiteId
+      ) as any;
+
+      if (site) {
+        siteCreds = resolveSiteCredentials({
+          id: site.id,
+          slug: site.slug
+        });
+      }
+    }
 
     // Check if payment is possible: either site-specific Teya config or global ENV
     const hasSiteTeya = !!siteCreds?.credentials;
