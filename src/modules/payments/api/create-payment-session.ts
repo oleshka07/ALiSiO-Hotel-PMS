@@ -42,7 +42,7 @@ export function getEnvStore(key: TeyaStoreKey): TeyaCredentials {
   return STORES[key] ?? STORES.main;
 }
 
-function getDefaultStore(): TeyaCredentials {
+export function getDefaultStore(): TeyaCredentials {
   const key = (process.env.TEYA_STORE || 'main') as TeyaStoreKey;
   return getEnvStore(key);
 }
