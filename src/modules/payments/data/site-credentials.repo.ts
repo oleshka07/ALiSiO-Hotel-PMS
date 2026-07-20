@@ -38,7 +38,14 @@ export function resolveSiteCredentials(opts: { slug?: string | null; id?: string
   }
 
   // Fallback: If no UI config is set, but the site is Kemp Carlsbad, use the camping ENV store.
-  if (site.id === '2975fba30e3cd3a6f7df3092183e258a' || site.slug === 'kemp-carlsbad') {
+  // Slug is stored as the slugified full URL (e.g. "https-kv-kemp-carlsbad-cz"), so match loosely.
+  const siteSlug = (site.slug || '') as string;
+  const isKempCarlsbad =
+    site.id === '2975fba30e3cd3a6f7df3092183e258a' ||
+    site.id === '50aeb822f406ff264ac5c292d0d48926' ||
+    siteSlug === 'kemp-carlsbad' ||
+    siteSlug.includes('kemp-carlsbad');
+  if (isKempCarlsbad) {
     const campingCreds = getEnvStore('camping');
     if (campingCreds && campingCreds.client_id) {
       return {
