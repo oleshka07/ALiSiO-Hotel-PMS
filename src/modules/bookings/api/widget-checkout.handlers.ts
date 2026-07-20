@@ -47,6 +47,7 @@ export async function createWidgetCheckoutSession(req: Request) {
     let siteCreds: any = null;
 
     let activeSiteSlug = site_slug;
+    //  закоментовано для тесту
     //     if (activeSiteSlug) {
     //       if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
     //       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
@@ -77,7 +78,7 @@ export async function createWidgetCheckoutSession(req: Request) {
     const searchSiteId = activeSiteSlug || clientSiteId;
 
     if (searchSiteId) {
-      const normalized = searchSiteId === 'kv.kemp-carlsbad.cz'
+      const normalized = searchSiteId === 'https-kv-kemp-carlsbad-cz'
         ? 'kemp-carlsbad'
         : searchSiteId;
 
@@ -92,6 +93,12 @@ export async function createWidgetCheckoutSession(req: Request) {
         normalized,
         `%${normalized}%`
       ) as any;
+
+      console.log('[Checkout Session] Searching site:', {
+        activeSiteSlug,
+        clientSiteId,
+        normalized
+      });
 
       if (!site) {
         console.error('[Checkout Session] Site not found:', {
