@@ -189,6 +189,76 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
   };
 }
 
+// ─── Pay-by-Link ─────────────────────────────────────────────────────────────
+
+export interface PaymentLinkOptions {
+  amount: number;                 // minor units
+  currency?: string;
+  description?: string;
+  items?: TeyaLineItem[];
+  /** Our own reference (reservation id) — echoed back in the webhook for auto-linking. */
+  merchantReference?: string;
+  metadata?: Record<string, string>;
+  credentials?: { client_id: string; client_secret: string; store_id: string };
+}
+
+export interface PaymentLinkResult { id: string; url: string; status: string; }
+
+/**
+ * Create a Teya Pay-by-Link. Deliberately sends NO expires_at → the link never
+ * expires (operator requirement). merchant_reference carries the reservation id
+ * so the payment.succeeded webhook can auto-link it to the booking.
+ */
+export async function createPaymentLink(opts: PaymentLinkOptions): Promise<PaymentLinkResult> {
+  const getToken = (force: boolean) => opts.credentials
+    ? getTeyaAccessTokenWithCreds(opts.credentials.client_id, opts.credentials.client_secret, 'payment-links/create')
+    : getTeyaAccessToken('payment-links/create', { force });
+
+  const storeId = opts.credentials?.store_id || TEYA_STORE_ID;
+  const payload: Record<string, unknown> = {
+    store_id: storeId,
+    amount: { currency: opts.currency || 'CZK', value: opts.amount },
+    type: 'SALE',
+    line_items: (opts.items && opts.items.length)
+      ? opts.items
+      : [{ description: opts.description || 'Platba', quantity: 1, unit_price: opts.amount }],
+  };
+  if (opts.merchantReference) payload.merchant_reference = opts.merchantReference;
+  if (opts.metadata) payload.metadata = opts.metadata;
+  // NOTE: no expires_at → unlimited link lifetime (intentional).
+
+  const doPost = (token: string) => teyaFetch(`${TEYA_API_URL}/v2/payment-links`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  let res = await doPost(await getToken(false));
+  if (res.status === 401 || res.status === 403) {
+    console.warn('[Teya PayLink] got', res.status, '— refreshing token and retrying once');
+    res = await doPost(await getToken(true));
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('[Teya PayLink] Error:', res.status, errorText);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Teya payment-link rejected (${res.status}). Ваші креди не мають scope 'payment-links/create' — додайте його в Teya Business Portal (Integrations).`);
+    }
+    throw new Error(`Teya payment-link failed: ${res.status} ${errorText}`);
+  }
+
+  const data = await res.json();
+  const id = data.id || data.payment_link_id || data.link_id;
+  const url = data.url || data.payment_link_url || data.link_url;
+  console.log('[Teya] Payment link created:', id, '| keys:', Object.keys(data).join(','));
+  return { id, url, status: data.status || 'ACTIVE' };
+}
+
 export function verifyWebhookSignature(body: string, signature: string): boolean {
   const rawKey = process.env.TEYA_WEBHOOK_PUBLIC_KEY;
   if (!rawKey) {
