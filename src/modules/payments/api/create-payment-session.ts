@@ -12,7 +12,7 @@ import type { PaymentIntent, PaymentSession, TeyaCredentials } from '../domain/t
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const IS_PRODUCTION = (process.env.TEYA_ENVIRONMENT || 'staging') === 'production';
-const TEYA_API_URL   = IS_PRODUCTION ? 'https://api.teya.com'  : 'https://api.teya.xyz';
+const TEYA_API_URL = IS_PRODUCTION ? 'https://api.teya.com' : 'https://api.teya.xyz';
 const TEYA_OAUTH_URL = IS_PRODUCTION
   ? 'https://id.teya.com/oauth/v2/oauth-token'
   : 'https://id.teya.xyz/oauth/v2/oauth-token';
@@ -22,19 +22,19 @@ type TeyaStoreKey = 'main' | 'camping' | 'glamping';
 
 const STORES: Record<TeyaStoreKey, TeyaCredentials> = {
   main: {
-    client_id:     process.env.TEYA_CLIENT_ID     || '',
+    client_id: process.env.TEYA_CLIENT_ID || '',
     client_secret: process.env.TEYA_CLIENT_SECRET || '',
-    store_id:      process.env.TEYA_STORE_ID       || '',
+    store_id: process.env.TEYA_STORE_ID || '',
   },
   camping: {
-    client_id:     process.env.TEYA_CAMPING_CLIENT_ID     || process.env.TEYA_CLIENT_ID     || '',
+    client_id: process.env.TEYA_CAMPING_CLIENT_ID || process.env.TEYA_CLIENT_ID || '',
     client_secret: process.env.TEYA_CAMPING_CLIENT_SECRET || process.env.TEYA_CLIENT_SECRET || '',
-    store_id:      process.env.TEYA_CAMPING_STORE_ID      || process.env.TEYA_STORE_ID      || '',
+    store_id: process.env.TEYA_CAMPING_STORE_ID || process.env.TEYA_STORE_ID || '',
   },
   glamping: {
-    client_id:     process.env.TEYA_GLAMPING_CLIENT_ID     || process.env.TEYA_CLIENT_ID     || '',
+    client_id: process.env.TEYA_GLAMPING_CLIENT_ID || process.env.TEYA_CLIENT_ID || '',
     client_secret: process.env.TEYA_GLAMPING_CLIENT_SECRET || process.env.TEYA_CLIENT_SECRET || '',
-    store_id:      process.env.TEYA_GLAMPING_STORE_ID      || process.env.TEYA_STORE_ID      || '',
+    store_id: process.env.TEYA_GLAMPING_STORE_ID || process.env.TEYA_STORE_ID || '',
   },
 };
 
@@ -79,10 +79,10 @@ async function getAccessToken(
   }
 
   const body = new URLSearchParams({
-    grant_type:    'client_credentials',
-    client_id:     clientId,
+    grant_type: 'client_credentials',
+    client_id: clientId,
     client_secret: clientSecret,
-    scope:         CHECKOUT_SCOPE,
+    scope: CHECKOUT_SCOPE,
   });
 
   const res = await teyaFetch(TEYA_OAUTH_URL, {
@@ -98,7 +98,7 @@ async function getAccessToken(
 
   const data = await res.json();
   tokenCache.set(cacheKey, {
-    token:     data.access_token,
+    token: data.access_token,
     expiresAt: Date.now() + (data.expires_in - 60) * 1000,
   });
   return data.access_token;
@@ -122,7 +122,14 @@ async function getAccessToken(
  */
 export async function createPaymentSession(intent: PaymentIntent): Promise<PaymentSession> {
   // Resolve credentials: explicit intent.credentials > env TEYA_STORE > 'main'
+  // const creds: TeyaCredentials = intent.credentials ?? getDefaultStore();
   const creds: TeyaCredentials = intent.credentials ?? getDefaultStore();
+
+  console.log('[Teya CREDS DEBUG]', {
+    client_id: creds.client_id ? 'YES' : 'NO',
+    client_secret: creds.client_secret ? 'YES' : 'NO',
+    store_id: creds.store_id,
+  });
 
   if (!creds.client_id || !creds.store_id) {
     throw new Error('[payments] No Teya credentials. Configure TEYA_CLIENT_ID, TEYA_CLIENT_SECRET, TEYA_STORE_ID in .env.local');
@@ -140,25 +147,25 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   if (intent.lineItems?.length) {
     payload.line_items = intent.lineItems.map(li => ({
       description: li.description,
-      quantity:    li.quantity,
-      unit_price:  Math.round(li.unitPriceMajor * 100),
+      quantity: li.quantity,
+      unit_price: Math.round(li.unitPriceMajor * 100),
     }));
   } else {
     payload.line_items = [{ description: intent.description, quantity: 1, unit_price: amountMinor }];
   }
 
-  if (intent.metadata)   payload.metadata    = intent.metadata;
+  if (intent.metadata) payload.metadata = intent.metadata;
   if (intent.successUrl) payload.success_url = intent.successUrl;
-  if (intent.cancelUrl)  payload.cancel_url  = intent.cancelUrl;
-  if (intent.expiresAt)  payload.expires_at  = intent.expiresAt;
+  if (intent.cancelUrl) payload.cancel_url = intent.cancelUrl;
+  if (intent.expiresAt) payload.expires_at = intent.expiresAt;
 
   const idempotencyKey = crypto.randomUUID();
   const doPost = (token: string) =>
     teyaFetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
       method: 'POST',
       headers: {
-        Authorization:     `Bearer ${token}`,
-        'Content-Type':    'application/json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
         'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(payload),
@@ -182,10 +189,10 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   const data = await res.json();
 
   return {
-    sessionId:    data.session_id,
+    sessionId: data.session_id,
     sessionToken: data.session_token,
-    sessionUrl:   data.session_url,
-    provider:     'teya',
-    intentKind:   intent.kind,
+    sessionUrl: data.session_url,
+    provider: 'teya',
+    intentKind: intent.kind,
   };
 }

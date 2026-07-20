@@ -421,6 +421,12 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       console.log('[Checkout Session] SITE:', site);
       console.log('[Checkout Session] CREDS:', !!siteCreds?.credentials);
+      console.log('[Teya DEBUG]', {
+        siteId: site?.id,
+        slug: site?.slug,
+        siteCreds,
+        hasCredentials: !!siteCreds?.credentials,
+      });
 
       const session = await createPaymentSession({
         kind: service_id && service_date ? (reservation_id ? 'reservation_services' : 'service_standalone') : 'booking_full',
