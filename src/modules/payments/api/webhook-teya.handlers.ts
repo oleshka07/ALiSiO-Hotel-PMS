@@ -314,7 +314,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
                OR r.id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL))
       `).all(effectiveRef, effectiveRef) as Array<{ id: string }>;
       for (const row of paid) {
-        const invId = generateInvoiceForReservation(row.id);
+        const invId = generateInvoiceForReservation(row.id, { confirmed: true, source: 'teya_webhook' });
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
       }
     } catch (e: any) {

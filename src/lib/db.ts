@@ -3199,6 +3199,26 @@ function runMigrations(database: any) {
     console.error('[db] invoice series/lock migration:', e.message);
   }
 
+  // --- Migration: invoice confirmation (only Teya/cash-confirmed invoices count) ---
+  // An invoice is "confirmed" when backed by a real payment: Teya webhook, Teya
+  // CSV/POSLink reconciliation, an OTA statement, or operator-marked cash. A bare
+  // "mark paid" in PMS is NOT confirmed and is excluded from the monthly ISDOC
+  // export until reconciled. Existing invoices are grandfathered as confirmed so
+  // historical exports are unaffected.
+  try {
+    const invCols2 = (database.prepare('PRAGMA table_info(invoices)').all() as any[]).map((c: any) => c.name);
+    if (!invCols2.includes('confirmed')) {
+      database.exec('ALTER TABLE invoices ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0');
+      database.exec("ALTER TABLE invoices ADD COLUMN confirmation_source TEXT");
+      // Grandfather every pre-existing invoice as confirmed.
+      database.exec("UPDATE invoices SET confirmed = 1, confirmation_source = 'legacy' WHERE confirmation_source IS NULL");
+    } else if (!invCols2.includes('confirmation_source')) {
+      database.exec("ALTER TABLE invoices ADD COLUMN confirmation_source TEXT");
+    }
+  } catch (e: any) {
+    console.error('[db] invoice confirmation migration:', e.message);
+  }
+
   // --- Migration: camping-specific fields in reservations ---
   try {
     const resCols = (database.prepare("PRAGMA table_info(reservations)").all() as any[]).map((c: any) => c.name);
