@@ -426,7 +426,7 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
            custom_buyer_name, custom_description, is_credit_note)
         VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, 1, ?, ?, ?)
       `).run(
-        invId, invNum, today, due,
+        invId, invNum, (row.date || today), due,
         row.amount, row.currency,
         noteKey,
         buyerName,

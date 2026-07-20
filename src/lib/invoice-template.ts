@@ -9,6 +9,8 @@
  * Also respects Zákon č. 563/1991 Sb. (Zákon o účetnictví)
  */
 
+import { showBuyerName } from './invoice-rules';
+
 // Inline type — avoids cross-module coupling for a pure template helper.
 // Many fields are nullable because the SQL uses LEFT JOIN on units/guests,
 // so a deleted unit or guest produces a row with nulls instead of dropping it.
@@ -36,6 +38,11 @@ export interface InvoiceData {
   guest_country?: string | null;
   payment_method?: string | null;
   payment_notes?: string | null;
+  payment_date?: string | null;
+  /** Real document date (check-in → payment → creation), used instead of issued_at. */
+  document_date?: string | null;
+  /** Secondary foreign-currency line when the payable total was converted to CZK. */
+  foreign_note?: string | null;
   // Optional invoice-to-company override. When invoice_company_name is non-empty,
   // the Odberatel block renders these fields instead of the personal guest data.
   invoice_company_name?: string | null;
@@ -128,14 +135,15 @@ export function renderInvoiceHtml(data: InvoiceData): string {
   // blank — Czech law does not require buyer identification for non-VAT entities
   // on invoices under 15 000 CZK, and the operator prefers anonymous invoices.
   const isCompanyInvoice = !!(data.invoice_company_name && data.invoice_company_name.trim());
-  let buyerLabel: string;
+  // data.amount is already the CZK payable at render time (handler converts EUR).
+  const buyerRequired = showBuyerName(data.amount || 0, isCompanyInvoice);
+  const buyerLabel = 'Odběratel';
   let buyerHtml: string;
   if (isCompanyInvoice) {
     const companyAddrLines: string[] = [];
     if (data.invoice_company_address) companyAddrLines.push(data.invoice_company_address);
     if (data.invoice_company_city) companyAddrLines.push(data.invoice_company_city);
     if (data.invoice_company_country) companyAddrLines.push(formatCountry(data.invoice_company_country));
-    buyerLabel = 'Odběratel';
     buyerHtml = [
       `<strong>${data.invoice_company_name}</strong>`,
       ...companyAddrLines,
@@ -143,9 +151,11 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       data.invoice_company_dic ? `DIČ: ${data.invoice_company_dic}` : null,
       data.invoice_company_email ? data.invoice_company_email : null,
     ].filter(Boolean).join('<br>');
+  } else if (buyerRequired && (guestFirst || guestLast)) {
+    // ≥ 9900 CZK — buyer (guest) name is mandatory
+    buyerHtml = [`<strong>${guestName}</strong>`, ...guestAddressLines].filter(Boolean).join('<br>');
   } else {
-    // Anonymous invoice — no buyer name
-    buyerLabel = 'Odběratel';
+    // Below threshold — anonymous invoice, no buyer name
     buyerHtml = `<span style="color:#9ca3af;font-style:italic;">—</span>`;
   }
 
@@ -579,7 +589,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       <div class="dates-row">
         <div class="date-cell">
           <div class="label">Datum vystavení</div>
-          <div class="value">${formatDate(data.issued_at)}</div>
+          <div class="value">${formatDate(data.document_date || data.issued_at)}</div>
         </div>
         <div class="date-cell">
           <div class="label">Datum uskuteč. plnění</div>
@@ -631,6 +641,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
             <span>Celkem k úhradě</span>
             <span class="amount">${formatAmount(data.amount, data.currency as string)}</span>
           </div>
+          ${data.foreign_note ? `<div class="no-vat-note" style="color:#6b7280">${data.foreign_note}</div>` : ''}
           <div class="no-vat-note">Fakturující subjekt není plátcem DPH.</div>
         </div>
       </div>
@@ -665,7 +676,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
         dle § 6 zákona č. 235/2004 Sb.
       </div>
       <div class="signature-block">
-        <div class="signature-date">V Karlových Varech dne ${formatDate(data.issued_at)}</div>
+        <div class="signature-date">V Karlových Varech dne ${formatDate(data.document_date || data.issued_at)}</div>
         <div class="signature-line">Vystavil / podpis dodavatele</div>
       </div>
     </div>

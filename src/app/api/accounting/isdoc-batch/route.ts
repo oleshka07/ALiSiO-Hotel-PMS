@@ -16,6 +16,8 @@ import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
 import { requireOwner } from '@core/security/route-guard';
 import type { InvoiceData } from '@/lib/invoice-template';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
+import { showBuyerName } from '@/lib/invoice-rules';
 import JSZip from 'jszip';
 
 // ─── Helper: build description from invoice or fin_op data ───────────────────
@@ -78,7 +80,7 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
         COALESCE(NULLIF(g.country,''),'') as guest_country,
         r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
         r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
-        p.method as payment_method
+        p.method as payment_method, p.paid_at as payment_date
       FROM invoices i
       LEFT JOIN reservations r ON i.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
@@ -92,9 +94,17 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
 
     for (const inv of invoices) {
       if (!inv.invoice_number) continue;
-      const buyerName = inv.invoice_company_name
-        || `${inv.guest_first_name || ''} ${inv.guest_last_name || ''}`.trim()
-        || undefined;
+
+      const documentDate = (inv.check_in || inv.payment_date || inv.issued_at || '').slice(0, 10);
+      const conv = await convertToCzkAuto(db, inv.amount || 0, inv.currency || 'CZK', documentDate);
+      const czkAmount = conv.converted ? conv.amountCzk : (inv.amount || 0);
+
+      // Buyer: explicit company always; personal guest only at/above 9900 CZK.
+      const hasCompany = !!(inv.invoice_company_name && inv.invoice_company_name.trim());
+      const guestName = `${inv.guest_first_name || ''} ${inv.guest_last_name || ''}`.trim();
+      const buyerName = hasCompany
+        ? (inv.invoice_company_name as string)
+        : (showBuyerName(czkAmount, false) && guestName ? guestName : undefined);
       const buyer = buyerName ? {
         name:    buyerName,
         ico:     inv.invoice_company_ico    || undefined,
@@ -106,14 +116,15 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
 
       const xml = generateIsdocXml({
         invoiceNumber:  inv.invoice_number,
-        issueDate:      (inv.issued_at || '').slice(0, 10),
-        taxPointDate:   (inv.check_out || inv.due_date || inv.issued_at || '').slice(0, 10) || undefined,
+        issueDate:      documentDate || (inv.issued_at || '').slice(0, 10),
+        taxPointDate:   (inv.check_out || documentDate || inv.due_date || '').slice(0, 10) || undefined,
         description:    buildDescription(inv as { unit_name?: string | null; check_in?: string | null; check_out?: string | null; comment?: string | null; source?: string | null }),
-        amount:         inv.amount || 0,
-        currency:       inv.currency || 'CZK',
+        amount:         conv.converted ? conv.amountCzk : (inv.amount || 0),
+        currency:       conv.converted ? 'CZK' : (inv.currency || 'CZK'),
         buyer,
         paymentMethod:  inv.payment_method || undefined,
         paymentDueDate: (inv.due_date || '').slice(0, 10) || undefined,
+        foreignNote:    conv.converted ? foreignNote(conv) : undefined,
       });
 
       zip.file(filename(inv.invoice_number), xml);
@@ -159,15 +170,20 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
         if (m?.[1]?.trim()) guestName = m[1].trim();
       }
 
+      const documentDate = (op.paid_at || '').slice(0, 10);
+      const conv = await convertToCzkAuto(db, op.amount || 0, op.currency || 'EUR', documentDate);
+      const czkAmount = conv.converted ? conv.amountCzk : (op.amount || 0);
+
       const xml = generateIsdocXml({
         invoiceNumber:  virtualNumber,
-        issueDate:      (op.paid_at || '').slice(0, 10),
+        issueDate:      documentDate,
         description:    op.comment || `Ubytování — ${sourceLabel} (${op.source_ref})`,
-        amount:         op.amount || 0,
-        currency:       op.currency || 'EUR',
-        buyer:          guestName ? { name: guestName } : undefined,
+        amount:         conv.converted ? conv.amountCzk : (op.amount || 0),
+        currency:       conv.converted ? 'CZK' : (op.currency || 'EUR'),
+        buyer:          (showBuyerName(czkAmount, false) && guestName) ? { name: guestName } : undefined,
         paymentMethod:  op.method || 'booking_platform',
         note:           `OTA platba přes ${sourceLabel}. Ref: ${op.source_ref}`,
+        foreignNote:    conv.converted ? foreignNote(conv) : undefined,
       });
 
       zip.file(filename(virtualNumber, `-${op.source_ref.slice(0, 8)}`), xml);
