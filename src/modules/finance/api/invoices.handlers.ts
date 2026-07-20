@@ -13,6 +13,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
+import { convertToCzk, foreignNote } from '@/lib/fx';
+
+/**
+ * Real accounting date for a document: check-in (stay) → payment date → creation.
+ * Never the statement-import date. Returns YYYY-MM-DD.
+ */
+export function resolveDocumentDate(row: {
+  check_in?: string | null; payment_date?: string | null; issued_at?: string | null;
+}): string {
+  const pick = row.check_in || row.payment_date || row.issued_at || '';
+  return pick.slice(0, 10);
+}
 
 // ─── Invoice Number Generator ───────────────────────────────────────────────
 
@@ -161,7 +173,7 @@ export async function getInvoiceHtml(
         r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
         r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
         r.invoice_company_email,
-        p.method as payment_method, p.comment as payment_notes
+        p.method as payment_method, p.comment as payment_notes, p.paid_at as payment_date
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
@@ -188,6 +200,15 @@ export async function getInvoiceHtml(
     if (!data) {
       console.error('[Invoices] getInvoiceHtml: no row for invoice id', id);
       return NextResponse.json({ error: 'Invoice not found', invoice_id: id }, { status: 404 });
+    }
+
+    // Real accounting date + CZK conversion for foreign-currency (OTA) invoices.
+    data.document_date = resolveDocumentDate(data);
+    const conv = convertToCzk(db, data.amount || 0, data.currency || 'CZK', data.document_date);
+    if (conv.converted) {
+      data.amount = conv.amountCzk;
+      data.currency = 'CZK';
+      data.foreign_note = foreignNote(conv);
     }
 
     const html = renderInvoiceHtml(data);

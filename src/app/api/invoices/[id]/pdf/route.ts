@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { requirePermission } from '@core/security/route-guard';
+import { convertToCzk, foreignNote } from '@/lib/fx';
 
 export const GET = requirePermission('manage_documents', _GET);
 async function _GET(
@@ -28,7 +29,7 @@ async function _GET(
         g.first_name as guest_first_name, g.last_name as guest_last_name,
         r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
         r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
-        p.method as payment_method
+        p.method as payment_method, p.paid_at as payment_date
       FROM invoices i
       LEFT JOIN reservations r  ON i.reservation_id = r.id
       LEFT JOIN units u         ON r.unit_id = u.id
@@ -66,15 +67,21 @@ async function _GET(
       country: (row.custom_buyer_country || row.invoice_company_country) as string | undefined,
     } : undefined;
 
+    // Real accounting date: check-in → payment → creation (never import date).
+    const documentDate = ((row.check_in as string | null) || (row.payment_date as string | null) || (row.issued_at as string | null) || '').slice(0, 10);
+    // Foreign-currency (OTA/EUR) → CZK at the rate effective on the document date.
+    const conv = convertToCzk(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
+
     const pdfBuffer = await generateInvoicePdf({
       invoiceNumber:  row.invoice_number as string,
-      issueDate:      (row.issued_at as string).slice(0, 10),
+      issueDate:      documentDate || (row.issued_at as string).slice(0, 10),
       dueDate:        row.due_date ? (row.due_date as string).slice(0, 10) : undefined,
       paymentMethod:  (row.payment_method as string | null) || 'Příkazem',
       description,
-      amount:         row.amount as number,
-      currency:       (row.currency as string) || 'CZK',
+      amount:         conv.converted ? conv.amountCzk : (row.amount as number),
+      currency:       conv.converted ? 'CZK' : ((row.currency as string) || 'CZK'),
       buyer,
+      foreignNote:    conv.converted ? foreignNote(conv) : undefined,
     });
 
     return new NextResponse(new Uint8Array(pdfBuffer), {

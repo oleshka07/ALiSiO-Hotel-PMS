@@ -101,6 +101,12 @@ export interface InvoicePdfInput {
   isCreditNote?:  boolean;
   /** Reference to the original transaction (shown in note/header for credit notes) */
   originalInvoiceRef?: string;
+  /**
+   * Secondary foreign-currency line (e.g. "Původní částka: 250,00 EUR · kurz
+   * 25,300 CZK/EUR"). When set, amount/currency are already CZK and this is
+   * printed under CELKEM K ÚHRADĚ as secondary info.
+   */
+  foreignNote?: string;
   buyer?: {
     name?:    string;
     ico?:     string;
@@ -494,6 +500,13 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
     B(11.5).fillColor(BLACK)
       .text(fmtMoney(totalAmount, currency), TC.total.x, totY, { width: TC.total.w, align: 'right', lineBreak: false });
     totY += 20;
+
+    // Secondary foreign-currency reference (e.g. original EUR amount + rate)
+    if (data.foreignNote) {
+      R(8).fillColor(LGRAY)
+        .text(data.foreignNote, ML, totY, { width: CR - ML, align: 'right', lineBreak: false });
+      totY += 14;
+    }
 
     hline(totY, BORDER, 0.5);
     totY += 10;

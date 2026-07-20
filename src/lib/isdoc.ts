@@ -86,6 +86,12 @@ export interface IsdocInput {
    * Use the source_ref or original invoice number.
    */
   originalDocRef?: string;
+  /**
+   * Secondary foreign-currency reference (e.g. "Původní částka: 250,00 EUR ·
+   * kurz 25,300 CZK/EUR"). When set, `amount`/`currency` are already the CZK
+   * values and this note is appended to <Note> for the accountant.
+   */
+  foreignNote?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -127,6 +133,7 @@ export function generateIsdocXml(input: IsdocInput): string {
     note,
     documentType = 1,
     originalDocRef,
+    foreignNote,
   } = input;
 
   const isCreditNote = documentType === 2;
@@ -206,9 +213,10 @@ export function generateIsdocXml(input: IsdocInput): string {
   </OriginalDocumentReference>` : '';
 
   // ─── Full XML ────────────────────────────────────────────────
-  const noteText = isCreditNote
+  const baseNote = isCreditNote
     ? (note || `Storno platby – vrácení: ${description}`)
     : (note || `Fakturujeme Vám: ${description}`);
+  const noteText = foreignNote ? `${baseNote} | ${foreignNote}` : baseNote;
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.2">

@@ -36,6 +36,11 @@ export interface InvoiceData {
   guest_country?: string | null;
   payment_method?: string | null;
   payment_notes?: string | null;
+  payment_date?: string | null;
+  /** Real document date (check-in → payment → creation), used instead of issued_at. */
+  document_date?: string | null;
+  /** Secondary foreign-currency line when the payable total was converted to CZK. */
+  foreign_note?: string | null;
   // Optional invoice-to-company override. When invoice_company_name is non-empty,
   // the Odberatel block renders these fields instead of the personal guest data.
   invoice_company_name?: string | null;
@@ -579,7 +584,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       <div class="dates-row">
         <div class="date-cell">
           <div class="label">Datum vystavení</div>
-          <div class="value">${formatDate(data.issued_at)}</div>
+          <div class="value">${formatDate(data.document_date || data.issued_at)}</div>
         </div>
         <div class="date-cell">
           <div class="label">Datum uskuteč. plnění</div>
@@ -631,6 +636,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
             <span>Celkem k úhradě</span>
             <span class="amount">${formatAmount(data.amount, data.currency as string)}</span>
           </div>
+          ${data.foreign_note ? `<div class="no-vat-note" style="color:#6b7280">${data.foreign_note}</div>` : ''}
           <div class="no-vat-note">Fakturující subjekt není plátcem DPH.</div>
         </div>
       </div>
@@ -665,7 +671,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
         dle § 6 zákona č. 235/2004 Sb.
       </div>
       <div class="signature-block">
-        <div class="signature-date">V Karlových Varech dne ${formatDate(data.issued_at)}</div>
+        <div class="signature-date">V Karlových Varech dne ${formatDate(data.document_date || data.issued_at)}</div>
         <div class="signature-line">Vystavil / podpis dodavatele</div>
       </div>
     </div>
