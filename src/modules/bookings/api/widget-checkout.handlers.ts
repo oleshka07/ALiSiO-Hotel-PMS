@@ -378,7 +378,12 @@ export async function createWidgetCheckoutSession(req: Request) {
       }, { headers: CORS_HEADERS });
 
     } catch (teyaErr: any) {
-      console.error('[Checkout Session] Teya error:', teyaErr.message);
+      // console.error('[Checkout Session] Teya error:', teyaErr.message); // test bugs
+      console.error(
+        '[Checkout Session] Teya error:',
+        teyaErr.response?.data || teyaErr.message,
+        teyaErr
+      );
       return NextResponse.json({ error: 'Payment gateway error' }, { status: 502, headers: CORS_HEADERS });
     }
   } catch (err: unknown) {
