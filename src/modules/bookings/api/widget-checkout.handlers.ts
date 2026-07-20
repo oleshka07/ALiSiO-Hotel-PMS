@@ -46,90 +46,28 @@ export async function createWidgetCheckoutSession(req: Request) {
     let site: any = null;
     let siteCreds: any = null;
 
-
-
-    //     let activeSiteSlug = site_slug;
-    //     if (activeSiteSlug) {
-    //       if (activeSiteSlug === 'kv.kemp-carlsbad.cz') activeSiteSlug = 'kemp-carlsbad';
-    //       // Try by slug first, then fallback to id — widget URLs use site ID as the siteSlug param
-    //       // site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE slug = ? OR id = ?').get(activeSiteSlug, activeSiteSlug) as any; тестування
-    //       site = db.prepare(`
-    //   SELECT id, payment_config, site_url, slug 
-    //   FROM booking_sites 
-    //   WHERE id = ?
-    //      OR slug = ?
-    //      OR site_url LIKE ?
-    // `).get(
-    //         clientSiteId,
-    //         clientSiteId,
-    //         `%${clientSiteId}%`
-    //       ) as any;
-    //       if (!site) {
-    //         return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
-    //       }
-    //       siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
-    //     } else if (clientSiteId) {
-    //       // booking/page.tsx sends site_id instead of site_slug.
-    //       // clientSiteId may be a UUID *or* a slug (e.g. 'kemp-carlsbad') — search both columns.
-    //       site = db.prepare('SELECT id, payment_config, site_url, slug FROM booking_sites WHERE id = ? OR slug = ?').get(clientSiteId, clientSiteId) as any;
-    //       if (site) {
-    //         siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
-    //       }
-    //     }
-
-    let activeSiteSlug = site_slug;
-
-    if (activeSiteSlug) {
-      if (activeSiteSlug === 'kv.kemp-carlsbad.cz') {
-        activeSiteSlug = 'kemp-carlsbad';
+    // Identifier may arrive as site_slug OR site_id. It can be a UUID, a DB slug,
+    // or a friendly slug like 'kemp-carlsbad'. If it is missing OR does not match
+    // any row, fall through to global/default ENV credentials (NO hard 404) so a
+    // single-property site (e.g. alisio.swipescape.eu) not registered in
+    // booking_sites can still take payment.
+    let siteKey: string | undefined = site_slug || clientSiteId;
+    if (siteKey) {
+      if (siteKey === 'kv.kemp-carlsbad.cz' || siteKey === 'www.kemp-carlsbad.cz' || siteKey === 'kemp-carlsbad.cz') {
+        siteKey = 'kemp-carlsbad';
       }
-
-      site = db.prepare(`
-    SELECT id, payment_config, site_url, slug 
-    FROM booking_sites 
-    WHERE id = ?
-       OR slug = ?
-       OR site_url LIKE ?
-  `).get(
-        activeSiteSlug,
-        activeSiteSlug,
-        `%${activeSiteSlug}%`
-      ) as any;
-
-      if (!site) {
-        console.error('[Checkout Session] Site not found:', {
-          activeSiteSlug,
-          clientSiteId,
-          site_slug
-        });
-
-        return NextResponse.json(
-          { error: 'Site not found' },
-          { status: 404, headers: CORS_HEADERS }
-        );
-      }
-
-      siteCreds = resolveSiteCredentials({
-        id: site.id,
-        slug: site.slug
-      });
-
-    } else if (clientSiteId) {
-
-      site = db.prepare(`
-    SELECT id, payment_config, site_url, slug 
-    FROM booking_sites 
-    WHERE id = ? OR slug = ?
-  `).get(
-        clientSiteId,
-        clientSiteId
-      ) as any;
-
+      // Exact slug/id, loose Kemp Carlsbad slug (DB stores the slugified full URL,
+      // e.g. 'https-kv-kemp-carlsbad-cz'), or a site_url substring match.
+      site = db.prepare(
+        `SELECT id, payment_config, site_url, slug FROM booking_sites
+         WHERE slug = ? OR id = ?
+            OR (? = 'kemp-carlsbad' AND slug LIKE '%kemp-carlsbad%')
+            OR (site_url IS NOT NULL AND site_url <> '' AND site_url LIKE ?)`
+      ).get(siteKey, siteKey, siteKey, `%${siteKey}%`) as any;
       if (site) {
-        siteCreds = resolveSiteCredentials({
-          id: site.id,
-          slug: site.slug
-        });
+        siteCreds = resolveSiteCredentials({ id: site.id, slug: site.slug });
+      } else {
+        console.warn('[Checkout Session] Site not registered, using default ENV creds:', siteKey);
       }
     }
 
