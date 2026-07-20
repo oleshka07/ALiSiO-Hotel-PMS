@@ -66,7 +66,7 @@ const SUPPLIER = {
   street: 'Chebská 38/5',
   city:   '360 06 Karlovy Vary',
   ico:    '23430567',
-  dic:    'CZ23430567',
+  dic:    '',            // neplátce DPH — IČO only, no VAT number
   phone:  '723565616',
   email:  'kemp-carlsbad@email.cz',
   court:  'Krajského soudu v Plzni, oddíl C 46931',
@@ -239,7 +239,8 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
       { text: SUPPLIER.street, size: 9.5, color: BLACK, bold: false, gap: 11 },
       { text: SUPPLIER.city,   size: 9.5, color: BLACK, bold: false, gap: 17 },
       { text: `IČ: ${SUPPLIER.ico}`,  size: 9.5, color: BLUE,  bold: false, gap: 11 },
-      { text: `DIČ: ${SUPPLIER.dic}`, size: 9.5, color: BLUE,  bold: false, gap: 11 },
+      // neplátce DPH — show DIČ only if a real VAT number is configured
+      ...(SUPPLIER.dic ? [{ text: `DIČ: ${SUPPLIER.dic}`, size: 9.5, color: BLUE, bold: false, gap: 11 }] : []),
       { text: `Mobil: ${SUPPLIER.phone}`, size: 9.5, color: BLACK, bold: false, gap: 11 },
       { text: `E-mail: ${SUPPLIER.email}`, size: 9.5, color: BLACK, bold: false, gap: 0 },
     ];

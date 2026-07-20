@@ -9,6 +9,8 @@
  * Also respects Zákon č. 563/1991 Sb. (Zákon o účetnictví)
  */
 
+import { showBuyerName } from './invoice-rules';
+
 // Inline type — avoids cross-module coupling for a pure template helper.
 // Many fields are nullable because the SQL uses LEFT JOIN on units/guests,
 // so a deleted unit or guest produces a row with nulls instead of dropping it.
@@ -133,14 +135,15 @@ export function renderInvoiceHtml(data: InvoiceData): string {
   // blank — Czech law does not require buyer identification for non-VAT entities
   // on invoices under 15 000 CZK, and the operator prefers anonymous invoices.
   const isCompanyInvoice = !!(data.invoice_company_name && data.invoice_company_name.trim());
-  let buyerLabel: string;
+  // data.amount is already the CZK payable at render time (handler converts EUR).
+  const buyerRequired = showBuyerName(data.amount || 0, isCompanyInvoice);
+  const buyerLabel = 'Odběratel';
   let buyerHtml: string;
   if (isCompanyInvoice) {
     const companyAddrLines: string[] = [];
     if (data.invoice_company_address) companyAddrLines.push(data.invoice_company_address);
     if (data.invoice_company_city) companyAddrLines.push(data.invoice_company_city);
     if (data.invoice_company_country) companyAddrLines.push(formatCountry(data.invoice_company_country));
-    buyerLabel = 'Odběratel';
     buyerHtml = [
       `<strong>${data.invoice_company_name}</strong>`,
       ...companyAddrLines,
@@ -148,9 +151,11 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       data.invoice_company_dic ? `DIČ: ${data.invoice_company_dic}` : null,
       data.invoice_company_email ? data.invoice_company_email : null,
     ].filter(Boolean).join('<br>');
+  } else if (buyerRequired && (guestFirst || guestLast)) {
+    // ≥ 9900 CZK — buyer (guest) name is mandatory
+    buyerHtml = [`<strong>${guestName}</strong>`, ...guestAddressLines].filter(Boolean).join('<br>');
   } else {
-    // Anonymous invoice — no buyer name
-    buyerLabel = 'Odběratel';
+    // Below threshold — anonymous invoice, no buyer name
     buyerHtml = `<span style="color:#9ca3af;font-style:italic;">—</span>`;
   }
 

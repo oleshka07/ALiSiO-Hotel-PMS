@@ -7,6 +7,7 @@ import { getDb } from '@core/db';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { requirePermission } from '@core/security/route-guard';
 import { convertToCzk, foreignNote } from '@/lib/fx';
+import { showBuyerName } from '@/lib/invoice-rules';
 
 export const GET = requirePermission('manage_documents', _GET);
 async function _GET(
@@ -56,9 +57,16 @@ async function _GET(
       }
     }
 
-    // Build buyer
+    // Real accounting date: check-in → payment → creation (never import date).
+    const documentDate = ((row.check_in as string | null) || (row.payment_date as string | null) || (row.issued_at as string | null) || '').slice(0, 10);
+    // Foreign-currency (OTA/EUR) → CZK at the rate effective on the document date.
+    const conv = convertToCzk(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
+    const czkAmount = conv.converted ? conv.amountCzk : ((row.amount as number) || 0);
+
+    // Build buyer — explicit company/custom always shown; a personal guest only
+    // at/above the 9900 CZK threshold, otherwise the invoice stays anonymous.
     const companyName = (row.custom_buyer_name || row.invoice_company_name) as string | null;
-    const buyer = companyName?.trim() ? {
+    let buyer = companyName?.trim() ? {
       name:    companyName,
       ico:     (row.custom_buyer_ico  || row.invoice_company_ico)  as string | undefined,
       dic:     (row.custom_buyer_dic  || row.invoice_company_dic)  as string | undefined,
@@ -66,11 +74,10 @@ async function _GET(
       city:    (row.custom_buyer_city    || row.invoice_company_city)    as string | undefined,
       country: (row.custom_buyer_country || row.invoice_company_country) as string | undefined,
     } : undefined;
-
-    // Real accounting date: check-in → payment → creation (never import date).
-    const documentDate = ((row.check_in as string | null) || (row.payment_date as string | null) || (row.issued_at as string | null) || '').slice(0, 10);
-    // Foreign-currency (OTA/EUR) → CZK at the rate effective on the document date.
-    const conv = convertToCzk(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
+    if (!buyer && showBuyerName(czkAmount, false)) {
+      const gname = `${row.guest_first_name || ''} ${row.guest_last_name || ''}`.trim();
+      if (gname) buyer = { name: gname, ico: undefined, dic: undefined, address: undefined, city: undefined, country: undefined };
+    }
 
     const pdfBuffer = await generateInvoicePdf({
       invoiceNumber:  row.invoice_number as string,

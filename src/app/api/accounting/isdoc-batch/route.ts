@@ -17,6 +17,7 @@ import { generateIsdocXml } from '@/lib/isdoc';
 import { requireOwner } from '@core/security/route-guard';
 import type { InvoiceData } from '@/lib/invoice-template';
 import { convertToCzk, foreignNote } from '@/lib/fx';
+import { showBuyerName } from '@/lib/invoice-rules';
 import JSZip from 'jszip';
 
 // ─── Helper: build description from invoice or fin_op data ───────────────────
@@ -93,9 +94,17 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
 
     for (const inv of invoices) {
       if (!inv.invoice_number) continue;
-      const buyerName = inv.invoice_company_name
-        || `${inv.guest_first_name || ''} ${inv.guest_last_name || ''}`.trim()
-        || undefined;
+
+      const documentDate = (inv.check_in || inv.payment_date || inv.issued_at || '').slice(0, 10);
+      const conv = convertToCzk(db, inv.amount || 0, inv.currency || 'CZK', documentDate);
+      const czkAmount = conv.converted ? conv.amountCzk : (inv.amount || 0);
+
+      // Buyer: explicit company always; personal guest only at/above 9900 CZK.
+      const hasCompany = !!(inv.invoice_company_name && inv.invoice_company_name.trim());
+      const guestName = `${inv.guest_first_name || ''} ${inv.guest_last_name || ''}`.trim();
+      const buyerName = hasCompany
+        ? (inv.invoice_company_name as string)
+        : (showBuyerName(czkAmount, false) && guestName ? guestName : undefined);
       const buyer = buyerName ? {
         name:    buyerName,
         ico:     inv.invoice_company_ico    || undefined,
@@ -104,9 +113,6 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
         city:    inv.invoice_company_city    || inv.guest_city    || undefined,
         country: inv.invoice_company_country || inv.guest_country || undefined,
       } : undefined;
-
-      const documentDate = (inv.check_in || inv.payment_date || inv.issued_at || '').slice(0, 10);
-      const conv = convertToCzk(db, inv.amount || 0, inv.currency || 'CZK', documentDate);
 
       const xml = generateIsdocXml({
         invoiceNumber:  inv.invoice_number,
@@ -166,6 +172,7 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
 
       const documentDate = (op.paid_at || '').slice(0, 10);
       const conv = convertToCzk(db, op.amount || 0, op.currency || 'EUR', documentDate);
+      const czkAmount = conv.converted ? conv.amountCzk : (op.amount || 0);
 
       const xml = generateIsdocXml({
         invoiceNumber:  virtualNumber,
@@ -173,7 +180,7 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
         description:    op.comment || `Ubytování — ${sourceLabel} (${op.source_ref})`,
         amount:         conv.converted ? conv.amountCzk : (op.amount || 0),
         currency:       conv.converted ? 'CZK' : (op.currency || 'EUR'),
-        buyer:          guestName ? { name: guestName } : undefined,
+        buyer:          (showBuyerName(czkAmount, false) && guestName) ? { name: guestName } : undefined,
         paymentMethod:  op.method || 'booking_platform',
         note:           `OTA platba přes ${sourceLabel}. Ref: ${op.source_ref}`,
         foreignNote:    conv.converted ? foreignNote(conv) : undefined,
