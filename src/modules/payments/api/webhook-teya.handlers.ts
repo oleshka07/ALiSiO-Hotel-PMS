@@ -195,9 +195,8 @@ interface SuccessOutcome {
 function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOutcome {
   const { sessionId, transactionId, amount, currency } = extractPaymentRef(event);
 
-  // Pay-by-Link: merchant_reference carries the reservation id. Match it directly
-  // so links created from PMS auto-confirm the booking + invoice.
   const merchantRef: string = event.data?.merchant_reference || event.merchant_reference || '';
+  let payByLinkMatched = false;
   if (merchantRef) {
     try {
       const r = db.prepare(
@@ -207,13 +206,14 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
       ).run(merchantRef);
       if (r.changes > 0) {
         generateInvoiceForReservation(merchantRef, { confirmed: true, source: 'teya_webhook' });
-        console.log('[Teya Webhook] Pay-by-Link matched reservation', merchantRef);
-        return { result: 'recorded', effectiveRef: merchantRef, reservationId: merchantRef };
+        console.log('[Teya Webhook] Pay-by-Link / Direct matched reservation', merchantRef);
+        payByLinkMatched = true;
+        // DO NOT RETURN HERE! We must continue to send emails, TG, and Analytics!
       }
     } catch (e: any) { console.error('[Teya Webhook] merchant_reference match error:', e.message); }
   }
 
-  const paymentRef = sessionId || transactionId;
+  const paymentRef = sessionId || transactionId || merchantRef;
   if (!paymentRef) {
     console.log('[Teya Webhook] No payment reference found in success event');
     return { result: 'no_match' };
@@ -316,7 +316,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
 
   // Booking payment via widget (full booking checkout) — result4 path
   // Previously this was silently processed (status updated) but no TG was sent.
-  if (result4.changes > 0) {
+  if (result4.changes > 0 || payByLinkMatched) {
     sendFullBookingWebhookTG(db, effectiveRef, amount, currency);
     // ── Server-side Purchase tracking (GA4 Measurement Protocol + Meta CAPI) ──
     sendServerSideAnalytics(db, effectiveRef, amount, currency).catch(() => {});
