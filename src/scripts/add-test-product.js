@@ -5,6 +5,7 @@
  * Використовується для перевірки webhook інтеграції Teya.
  *
  * Запуск: node src/scripts/add-test-product.js
+ * 
  */
 
 const path = require('path');
@@ -51,7 +52,7 @@ if (existing) {
 
   const insertCols = ['id', 'property_id', 'name', 'name_en', 'price', 'currency', 'unit_label'];
   const insertVals = ['svc_test_stone', property.id, 'Kámen (testovací platba 1 Kč)', 'Test Stone (1 Kč payment test)', 1, 'CZK', 'ks'];
-  
+
   if (hasIcon) { insertCols.push('icon'); insertVals.push('🪨'); }
   if (hasCategory) { insertCols.push('category'); insertVals.push('other'); }
   if (hasWidget) { insertCols.push('available_in_widget'); insertVals.push(1); }
