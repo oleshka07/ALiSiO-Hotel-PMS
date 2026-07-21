@@ -239,9 +239,13 @@ export async function updateReservation(request: NextRequest, { params }: { para
       }
     } catch { /* non-critical */ }
 
-    // Auto-generate invoice when payment_status is manually set to 'paid'
+    // Auto-generate invoice when payment_status is manually set to 'paid'.
+    // Cash marked by the operator counts as confirmed; any other manual "paid"
+    // (card/online without a Teya confirmation) stays unconfirmed and is excluded
+    // from the monthly ISDOC export until reconciled.
     if (body.payment_status === 'paid') {
-      generateInvoiceForReservation(id);
+      const isCash = body.payment_method === 'cash';
+      generateInvoiceForReservation(id, isCash ? { confirmed: true, source: 'cash' } : { confirmed: false, source: 'manual' });
     }
 
     // ── Cascade to child reservations ──

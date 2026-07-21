@@ -52,13 +52,13 @@ function defaultBankAccountId(db: any, orgId: string, currency: string): string 
 }
 
 function findExistingOp(db: any, orgId: string, txnId: string): { id: string } | null {
-  // Check both 'teia' (webhook) and 'teya_sync' (this importer) sources.
-  // A transaction may have come in via webhook AND show up in API listing —
-  // we don't want duplicates.
+  // Check webhook ('teia'), API sync ('teya_sync') and CSV import ('teya_csv')
+  // sources together — the same payment may arrive via more than one channel and
+  // we must never double-count it.
   const row = db.prepare(`
     SELECT id FROM fin_operations
     WHERE organization_id = ?
-      AND source IN ('teia', 'teya_sync')
+      AND source IN ('teia', 'teya_sync', 'teya_csv')
       AND source_ref = ?
     LIMIT 1
   `).get(orgId, txnId) as { id: string } | undefined;
@@ -188,6 +188,7 @@ function reconcileSingleTransaction(
   orgId: string,
   txn: TeyaTransaction,
   result: ReconcileResult,
+  source: 'teya_sync' | 'teya_csv' = 'teya_sync',
 ): void {
   // Skip non-success transactions (PENDING, FAILED, CANCELLED) — only
   // record actual money movements. Refunds get recorded as expense ops.
@@ -250,9 +251,9 @@ function reconcileSingleTransaction(
       paid_at: paidAt,
       method: 'card',
       payment_subtype: isRefund ? 'refund' : 'service',
-      source: 'teya_sync',
+      source,
       source_ref: txn.id,
-      comment: txn.description || (txn.reference ? `Teya ${txn.reference}` : 'Teya POS / API sync'),
+      comment: txn.description || (txn.reference ? `Teya ${txn.reference}` : (source === 'teya_csv' ? 'Teya CSV import' : 'Teya POS / API sync')),
       // Money sits on Teya's merchant account until the weekly sweep; the fact
       // lands via the bank statement (bank_import). Keep sync ops as pending so
       // completed-based reports don't double-count the same money.
@@ -272,4 +273,32 @@ function reconcileSingleTransaction(
       message: e.message,
     });
   }
+}
+
+// ─── CSV import path (Teya Transactions export) ──────────────────────────────
+//
+// The Teya CSV export carries no transaction id, so each row is keyed by a
+// synthetic stable hash (see teya-csv-parser). Reconciliation is otherwise
+// identical to the API path: dedup against existing ops, create a needs_review
+// fin_operation (source='teya_csv') for anything new (terminal / link payments
+// that never reached PMS).
+
+export interface TeyaCsvTxn {
+  id: string;            // synthetic stable hash — dedup key
+  status: string;
+  amount: number;
+  currency: string;
+  created_at: string;
+  type?: string;         // SALE | REFUND
+  description?: string;
+  reference?: string;    // email/phone from the Pay-by-Link columns, for later matching
+}
+
+export function reconcileTeyaCsvRows(db: any, orgId: string, rows: TeyaCsvTxn[]): ReconcileResult {
+  const result: ReconcileResult = { fetched: 0, matched: 0, created: 0, skipped: 0, errors: 0, outcomes: [] };
+  for (const r of rows) {
+    result.fetched++;
+    reconcileSingleTransaction(db, orgId, r as unknown as TeyaTransaction, result, 'teya_csv');
+  }
+  return result;
 }

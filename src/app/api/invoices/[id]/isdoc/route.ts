@@ -7,6 +7,8 @@ import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
 import type { InvoiceData } from '@/lib/invoice-template';
 import { requirePermission } from '@core/security/route-guard';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
+import { showBuyerName } from '@/lib/invoice-rules';
 
 export const GET = requirePermission('manage_documents', _GET);
 async function _GET(
@@ -32,7 +34,7 @@ async function _GET(
         r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
         r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
         r.invoice_company_email,
-        p.method as payment_method
+        p.method as payment_method, p.paid_at as payment_date
       FROM invoices i
       LEFT JOIN reservations r ON i.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
@@ -55,17 +57,26 @@ async function _GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Build buyer from company override ONLY.
-    // Personal guests are invoiced anonymously (no name in Odběratel),
-    // consistent with the HTML invoice template.
-    const buyer = data.invoice_company_name?.trim() ? {
-      name:    data.invoice_company_name,
+    // Real accounting date: check-in → payment → creation (never import date).
+    const documentDate = (data.check_in || data.payment_date || data.issued_at || '').slice(0, 10);
+    // Foreign-currency (OTA/EUR) → CZK at the rate effective on the document date.
+    const conv = await convertToCzkAuto(db, data.amount || 0, data.currency || 'CZK', documentDate);
+    const czkAmount = conv.converted ? conv.amountCzk : (data.amount || 0);
+
+    // Buyer: explicit company always; personal guest only at/above 9900 CZK.
+    const hasCompany = !!data.invoice_company_name?.trim();
+    let buyer = hasCompany ? {
+      name:    data.invoice_company_name as string,
       ico:     data.invoice_company_ico  || undefined,
       dic:     data.invoice_company_dic  || undefined,
       street:  data.invoice_company_address || undefined,
       city:    data.invoice_company_city    || undefined,
       country: data.invoice_company_country || undefined,
     } : undefined;
+    if (!buyer && showBuyerName(czkAmount, false)) {
+      const gname = `${data.guest_first_name || ''} ${data.guest_last_name || ''}`.trim();
+      if (gname) buyer = { name: gname, ico: undefined, dic: undefined, street: data.guest_address || undefined, city: data.guest_city || undefined, country: data.guest_country || undefined };
+    }
 
     // Description line
     let desc = 'Ubytování';
@@ -77,14 +88,15 @@ async function _GET(
 
     const xml = generateIsdocXml({
       invoiceNumber:  data.invoice_number,
-      issueDate:      (data.issued_at || new Date().toISOString()).slice(0, 10),
-      taxPointDate:   (data.check_out || data.due_date || data.issued_at || '').slice(0, 10) || undefined,
+      issueDate:      documentDate || (data.issued_at || '').slice(0, 10),
+      taxPointDate:   (data.check_out || documentDate || data.due_date || '').slice(0, 10) || undefined,
       description:    desc,
-      amount:         data.amount || 0,
-      currency:       data.currency || 'CZK',
+      amount:         conv.converted ? conv.amountCzk : (data.amount || 0),
+      currency:       conv.converted ? 'CZK' : (data.currency || 'CZK'),
       buyer,
       paymentMethod:  data.payment_method || undefined,
       paymentDueDate: (data.due_date || '').slice(0, 10) || undefined,
+      foreignNote:    conv.converted ? foreignNote(conv) : undefined,
     });
 
     const filename = `faktura-${data.invoice_number}.isdoc`;

@@ -55,6 +55,28 @@ export default function TeyaSyncTab() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [csvCurrency, setCsvCurrency] = useState('CZK');
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvMsg, setCsvMsg] = useState<string | null>(null);
+
+  async function importCsv(file: File) {
+    setCsvBusy(true);
+    setCsvMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('currency', csvCurrency);
+      const res = await fetch('/api/finance/teya/import-csv', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok) setCsvMsg(`❌ ${json.error || 'Помилка імпорту'}`);
+      else {
+        setCsvMsg(`✅ Оброблено ${json.parsedRows}, звірено ${json.matched}, створено ${json.created}, пропущено ${json.skippedRows}.`);
+        fetchStatus();
+      }
+    } catch (e: any) { setCsvMsg(`❌ ${e.message}`); }
+    setCsvBusy(false);
+  }
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/finance/teya/sync');
@@ -100,6 +122,25 @@ export default function TeyaSyncTab() {
         платежі з телефону / POS-терміналу / ресторану повз нього. Цей sync їх дотягує і створює fin_operations
         для ще-не-записаних. <b>Дублі не створюються</b> — матчинг по transaction_id.
       </p>
+
+      {/* CSV import — reliable fallback for terminal/POS payments */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>📄 Імпорт CSV (експорт транзакцій Teya)</span>
+        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Валюта:</label>
+        <select value={csvCurrency} onChange={e => setCsvCurrency(e.target.value)} style={{ padding: '4px 8px', borderRadius: 6 }}>
+          <option value="CZK">CZK</option>
+          <option value="EUR">EUR</option>
+        </select>
+        <input
+          type="file"
+          accept=".csv,.txt,text/csv"
+          disabled={csvBusy}
+          onChange={e => { const f = e.target.files?.[0]; if (f) importCsv(f); e.currentTarget.value = ''; }}
+          style={{ fontSize: 12 }}
+        />
+        {csvBusy && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Обробка…</span>}
+        {csvMsg && <span style={{ fontSize: 12 }}>{csvMsg}</span>}
+      </div>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
         <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Період:</label>

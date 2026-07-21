@@ -115,6 +115,26 @@ export default function DocumentsPage() {
     urlTab === 'statements' ? 'statements' : 'invoices'
   );
 
+  // ── Period locking (per series) ───────────────────────────────
+  const [lockMonth, setLockMonth] = useState<string>(validMonth(urlMonth) || new Date().toISOString().slice(0, 7));
+  const [lockSeries, setLockSeries] = useState<string>('HOUSE');
+  const [lockMsg, setLockMsg] = useState<string | null>(null);
+  const [lockBusy, setLockBusy] = useState(false);
+  async function lockPeriodAction(action: 'lock' | 'unlock') {
+    setLockBusy(true);
+    setLockMsg(null);
+    try {
+      const res = await fetch('/api/accounting/lock-period', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ series: lockSeries, month: lockMonth, action }),
+      });
+      const j = await res.json();
+      if (!res.ok) setLockMsg(`❌ ${j.error || 'Помилка'}`);
+      else setLockMsg(`✅ ${lockSeries} ${lockMonth} → ${j.status === 'locked' ? 'заблоковано' : 'відкрито'}`);
+    } catch (e: any) { setLockMsg(`❌ ${e.message}`); }
+    setLockBusy(false);
+  }
+
   // ── Invoices tab state ────────────────────────────────────────
   const [invoices,    setInvoices]   = useState<Invoice[]>([]);
   const [invLoading,  setInvLoading] = useState(true);
@@ -547,6 +567,24 @@ export default function DocumentsPage() {
           ] as const;
           return (
             <>
+              {/* Period lock — freeze a month's numbering per series before the accountant's ISDOC export */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-primary)' }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>🔒 Блокування місяця</span>
+                <input type="month" value={lockMonth} onChange={e => setLockMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: 6 }} />
+                <select value={lockSeries} onChange={e => setLockSeries(e.target.value)} style={{ padding: '4px 8px', borderRadius: 6 }}>
+                  <option value="HOUSE">Готівка/прямі (2026-…)</option>
+                  <option value="BKG">Booking (BKG-)</option>
+                  <option value="AIR">Airbnb (AIR-)</option>
+                  <option value="TEYA">Teya (TEYA-)</option>
+                </select>
+                <button disabled={lockBusy} onClick={() => { if (confirm(`Заблокувати ${lockSeries} ${lockMonth}? Після цього нумерацію не можна змінювати — лише storno.`)) lockPeriodAction('lock'); }}
+                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: lockBusy ? 'wait' : 'pointer' }}>Заблокувати</button>
+                <button disabled={lockBusy} onClick={() => lockPeriodAction('unlock')}
+                  style={{ background: 'none', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>Відкрити</button>
+                {lockMsg && <span style={{ fontSize: 12 }}>{lockMsg}</span>}
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexBasis: '100%' }}>Бухгалтер вивантажує ISDOC раз на місяць — після блокування нумерація застигає.</span>
+              </div>
+
               {/* Stats row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
                 <div className="card" style={{ padding: '16px 20px' }}>

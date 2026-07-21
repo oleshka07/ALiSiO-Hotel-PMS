@@ -13,28 +13,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
+import { allocateInvoiceNumber, isInvoiceLocked } from '@/lib/invoice-numbering';
 
-// ─── Invoice Number Generator ───────────────────────────────────────────────
-
-function getNextInvoiceNumber(db: any): string {
-  const year = new Date().getFullYear();
-  const prefix = `${year}-`;
-
-  const last = db.prepare(`
-    SELECT invoice_number FROM invoices
-    WHERE invoice_number LIKE ?
-    ORDER BY invoice_number DESC
-    LIMIT 1
-  `).get(`${prefix}%`) as { invoice_number: string } | undefined;
-
-  let nextNum = 1;
-  if (last) {
-    const parts = last.invoice_number.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-  }
-
-  return `${prefix}${String(nextNum).padStart(3, '0')}`;
+/**
+ * Real accounting date for a document: check-in (stay) → payment date → creation.
+ * Never the statement-import date. Returns YYYY-MM-DD.
+ */
+export function resolveDocumentDate(row: {
+  check_in?: string | null; payment_date?: string | null; issued_at?: string | null;
+}): string {
+  const pick = row.check_in || row.payment_date || row.issued_at || '';
+  return pick.slice(0, 10);
 }
 
 // ─── Core Business Logic ─────────────────────────────────────────────────────
@@ -43,16 +33,27 @@ function getNextInvoiceNumber(db: any): string {
  * Create an invoice record for a reservation.
  * Idempotent — if invoice already exists for this reservation, returns existing id.
  */
-export function generateInvoiceForReservation(reservationId: string): string | null {
+export function generateInvoiceForReservation(
+  reservationId: string,
+  opts: { confirmed?: boolean; source?: string } = {},
+): string | null {
   try {
     const db = getDb();
+    const confirmed = opts.confirmed ? 1 : 0;
+    const confirmationSource = opts.source || (opts.confirmed ? 'confirmed' : 'manual');
 
-    // Idempotency check — skip if invoice already exists (not cancelled)
+    // Idempotency check — skip if invoice already exists (not cancelled). If it
+    // exists but was unconfirmed and this call carries a confirmation (Teya/cash),
+    // upgrade it to confirmed.
     const existing = db.prepare(
-      "SELECT id FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
-    ).get(reservationId) as { id: string } | undefined;
+      "SELECT id, confirmed FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
+    ).get(reservationId) as { id: string; confirmed: number } | undefined;
 
     if (existing) {
+      if (confirmed && !existing.confirmed) {
+        db.prepare("UPDATE invoices SET confirmed = 1, confirmation_source = ? WHERE id = ?")
+          .run(confirmationSource, existing.id);
+      }
       return existing.id;
     }
 
@@ -66,15 +67,17 @@ export function generateInvoiceForReservation(reservationId: string): string | n
     if (!res) return null;
 
     const invoiceId = `inv_${Date.now()}`;
-    const invoiceNumber = getNextInvoiceNumber(db);
     const today = new Date().toISOString().split('T')[0];
+    // Direct-booking invoices use the HOUSE series (plain YYYY-NNN), allocated atomically.
+    const { invoiceNumber } = allocateInvoiceNumber(db, 'house', new Date().getFullYear());
     // Due date: check-out date (service rendered on departure)
     const dueDate = res.check_out > today ? res.check_out : today;
+    const period = (res.check_out || today).slice(0, 7);
 
     db.prepare(`
-      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued')
-    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK');
+      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status, series, period, confirmed, confirmation_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued', 'HOUSE', ?, ?, ?)
+    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK', period, confirmed, confirmationSource);
 
     console.log(`[Invoices] Created ${invoiceNumber} for reservation ${reservationId}`);
     return invoiceId;
@@ -91,6 +94,14 @@ export function generateInvoiceForReservation(reservationId: string): string | n
 export function reissueInvoiceForReservation(reservationId: string): string | null {
   try {
     const db = getDb();
+    // A locked (filed) invoice cannot be cancelled/renumbered — it must be
+    // corrected with a storno (credit note) instead.
+    const current = db.prepare(
+      "SELECT id FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
+    ).get(reservationId) as { id: string } | undefined;
+    if (current && isInvoiceLocked(db, current.id)) {
+      throw new Error('Invoice period is locked — use a storno (credit note) to correct it.');
+    }
     // Cancel all existing non-cancelled invoices for this reservation
     db.prepare(
       "UPDATE invoices SET status = 'cancelled' WHERE reservation_id = ? AND status != 'cancelled'"
@@ -161,7 +172,7 @@ export async function getInvoiceHtml(
         r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
         r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
         r.invoice_company_email,
-        p.method as payment_method, p.comment as payment_notes
+        p.method as payment_method, p.comment as payment_notes, p.paid_at as payment_date
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
       LEFT JOIN units u ON r.unit_id = u.id
@@ -188,6 +199,15 @@ export async function getInvoiceHtml(
     if (!data) {
       console.error('[Invoices] getInvoiceHtml: no row for invoice id', id);
       return NextResponse.json({ error: 'Invoice not found', invoice_id: id }, { status: 404 });
+    }
+
+    // Real accounting date + CZK conversion for foreign-currency (OTA) invoices.
+    data.document_date = resolveDocumentDate(data);
+    const conv = await convertToCzkAuto(db, data.amount || 0, data.currency || 'CZK', data.document_date);
+    if (conv.converted) {
+      data.amount = conv.amountCzk;
+      data.currency = 'CZK';
+      data.foreign_note = foreignNote(conv);
     }
 
     const html = renderInvoiceHtml(data);

@@ -194,6 +194,25 @@ interface SuccessOutcome {
 
 function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOutcome {
   const { sessionId, transactionId, amount, currency } = extractPaymentRef(event);
+
+  // Pay-by-Link: merchant_reference carries the reservation id. Match it directly
+  // so links created from PMS auto-confirm the booking + invoice.
+  const merchantRef: string = event.data?.merchant_reference || event.merchant_reference || '';
+  if (merchantRef) {
+    try {
+      const r = db.prepare(
+        "UPDATE reservations SET status = CASE WHEN status = 'tentative' THEN 'confirmed' ELSE status END, " +
+        "payment_status = 'paid', updated_at = datetime('now') " +
+        "WHERE id = ? AND payment_status IN ('unpaid','payment_requested','prepaid','tentative')"
+      ).run(merchantRef);
+      if (r.changes > 0) {
+        generateInvoiceForReservation(merchantRef, { confirmed: true, source: 'teya_webhook' });
+        console.log('[Teya Webhook] Pay-by-Link matched reservation', merchantRef);
+        return { result: 'recorded', effectiveRef: merchantRef, reservationId: merchantRef };
+      }
+    } catch (e: any) { console.error('[Teya Webhook] merchant_reference match error:', e.message); }
+  }
+
   const paymentRef = sessionId || transactionId;
   if (!paymentRef) {
     console.log('[Teya Webhook] No payment reference found in success event');
@@ -314,7 +333,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
                OR r.id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL))
       `).all(effectiveRef, effectiveRef) as Array<{ id: string }>;
       for (const row of paid) {
-        const invId = generateInvoiceForReservation(row.id);
+        const invId = generateInvoiceForReservation(row.id, { confirmed: true, source: 'teya_webhook' });
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
       }
     } catch (e: any) {

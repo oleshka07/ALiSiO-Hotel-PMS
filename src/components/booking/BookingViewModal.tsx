@@ -76,6 +76,23 @@ export default function BookingViewModal({
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
   const [savingReg, setSavingReg] = useState(false);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
+  const [payLink, setPayLink] = useState<string | null>(null);
+  const [payLinkBusy, setPayLinkBusy] = useState(false);
+  async function createPayLink() {
+    setPayLinkBusy(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/payment-link`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      const j = await res.json();
+      if (!res.ok) { alert(j.error || 'Не вдалося створити лінк'); }
+      else {
+        setPayLink(j.url);
+        try { await navigator.clipboard.writeText(j.url); showToast('Лінк скопійовано'); } catch { showToast('Лінк створено'); }
+      }
+    } catch (e: any) { alert(e.message); }
+    setPayLinkBusy(false);
+  }
   const [reissuing, setReissuing] = useState(false);
   const [waPopupOpen, setWaPopupOpen] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -677,7 +694,18 @@ export default function BookingViewModal({
                     <Plus size={11} /> Платіж
                   </button>
                 )}
+                <button onClick={createPayLink} disabled={payLinkBusy} title="Створити лінк оплати Teya (без терміну дії)"
+                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', padding: '7px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', border: '1px solid var(--border-primary)', cursor: payLinkBusy ? 'wait' : 'pointer' }}>
+                  🔗 {payLinkBusy ? 'Створення…' : 'Лінк оплати'}
+                </button>
               </div>
+              {payLink && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '8px 10px', background: 'var(--bg-tertiary)', borderRadius: 7 }}>
+                  <a href={payLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', wordBreak: 'break-all', flex: 1 }}>{payLink}</a>
+                  <button onClick={() => { navigator.clipboard.writeText(payLink).then(() => showToast('Скопійовано')); }}
+                    style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>Копіювати</button>
+                </div>
+              )}
               {payments.length > 0 && (
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Транзакції</div>

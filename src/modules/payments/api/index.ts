@@ -4,6 +4,7 @@
 
 // Universal session factory (new). Callers build a PaymentIntent and pass it here.
 export { createPaymentSession, getEnvStore } from '../api/create-payment-session';
+export { createReservationPaymentLink } from './payment-link.handlers';
 
 // Webhook handlers — route /api/webhooks/teya and /api/webhooks/teya-bot point here.
 export { teyaWebhook } from './webhook-teya.handlers';

@@ -3155,6 +3155,70 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued ON invoices(issued_at)');
 
+  // --- Migration: per-channel invoice series + monthly period locking ---
+  // Additive only — existing invoices keep their invoice_number; they default to
+  // the HOUSE series and remain editable.
+  try {
+    const invCols = (database.prepare('PRAGMA table_info(invoices)').all() as any[]).map((c: any) => c.name);
+    if (!invCols.includes('series')) database.exec("ALTER TABLE invoices ADD COLUMN series TEXT DEFAULT 'HOUSE'");
+    if (!invCols.includes('period')) database.exec('ALTER TABLE invoices ADD COLUMN period TEXT'); // YYYY-MM of the document date
+    if (!invCols.includes('locked')) database.exec('ALTER TABLE invoices ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
+
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_counters (
+        series  TEXT NOT NULL,
+        year    INTEGER NOT NULL,
+        last_no INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (series, year)
+      )
+    `);
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_periods (
+        series    TEXT NOT NULL,
+        month     TEXT NOT NULL,
+        status    TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','locked')),
+        locked_at TEXT,
+        PRIMARY KEY (series, month)
+      )
+    `);
+
+    // Seed the HOUSE counter from existing plain "YYYY-NNN" numbers so new
+    // allocations never collide with legacy invoices.
+    const yr = new Date().getFullYear();
+    const seed = database.prepare(
+      "SELECT MAX(CAST(substr(invoice_number, instr(invoice_number,'-')+1) AS INTEGER)) AS mx " +
+      "FROM invoices WHERE invoice_number LIKE ?"
+    ).get(`${yr}-%`) as { mx: number | null } | undefined;
+    if (seed?.mx) {
+      database.prepare(
+        "INSERT INTO invoice_counters (series, year, last_no) VALUES ('HOUSE', ?, ?) " +
+        "ON CONFLICT(series, year) DO UPDATE SET last_no = MAX(last_no, excluded.last_no)"
+      ).run(yr, seed.mx);
+    }
+  } catch (e: any) {
+    console.error('[db] invoice series/lock migration:', e.message);
+  }
+
+  // --- Migration: invoice confirmation (only Teya/cash-confirmed invoices count) ---
+  // An invoice is "confirmed" when backed by a real payment: Teya webhook, Teya
+  // CSV/POSLink reconciliation, an OTA statement, or operator-marked cash. A bare
+  // "mark paid" in PMS is NOT confirmed and is excluded from the monthly ISDOC
+  // export until reconciled. Existing invoices are grandfathered as confirmed so
+  // historical exports are unaffected.
+  try {
+    const invCols2 = (database.prepare('PRAGMA table_info(invoices)').all() as any[]).map((c: any) => c.name);
+    if (!invCols2.includes('confirmed')) {
+      database.exec('ALTER TABLE invoices ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0');
+      database.exec("ALTER TABLE invoices ADD COLUMN confirmation_source TEXT");
+      // Grandfather every pre-existing invoice as confirmed.
+      database.exec("UPDATE invoices SET confirmed = 1, confirmation_source = 'legacy' WHERE confirmation_source IS NULL");
+    } else if (!invCols2.includes('confirmation_source')) {
+      database.exec("ALTER TABLE invoices ADD COLUMN confirmation_source TEXT");
+    }
+  } catch (e: any) {
+    console.error('[db] invoice confirmation migration:', e.message);
+  }
+
   // --- Migration: camping-specific fields in reservations ---
   try {
     const resCols = (database.prepare("PRAGMA table_info(reservations)").all() as any[]).map((c: any) => c.name);

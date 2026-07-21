@@ -66,7 +66,7 @@ const SUPPLIER = {
   street: 'Chebská 38/5',
   city:   '360 06 Karlovy Vary',
   ico:    '23430567',
-  dic:    'CZ23430567',
+  dic:    '',            // neplátce DPH — IČO only, no VAT number
   phone:  '723565616',
   email:  'kemp-carlsbad@email.cz',
   court:  'Krajského soudu v Plzni, oddíl C 46931',
@@ -101,6 +101,12 @@ export interface InvoicePdfInput {
   isCreditNote?:  boolean;
   /** Reference to the original transaction (shown in note/header for credit notes) */
   originalInvoiceRef?: string;
+  /**
+   * Secondary foreign-currency line (e.g. "Původní částka: 250,00 EUR · kurz
+   * 25,300 CZK/EUR"). When set, amount/currency are already CZK and this is
+   * printed under CELKEM K ÚHRADĚ as secondary info.
+   */
+  foreignNote?: string;
   buyer?: {
     name?:    string;
     ico?:     string;
@@ -233,7 +239,8 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
       { text: SUPPLIER.street, size: 9.5, color: BLACK, bold: false, gap: 11 },
       { text: SUPPLIER.city,   size: 9.5, color: BLACK, bold: false, gap: 17 },
       { text: `IČ: ${SUPPLIER.ico}`,  size: 9.5, color: BLUE,  bold: false, gap: 11 },
-      { text: `DIČ: ${SUPPLIER.dic}`, size: 9.5, color: BLUE,  bold: false, gap: 11 },
+      // neplátce DPH — show DIČ only if a real VAT number is configured
+      ...(SUPPLIER.dic ? [{ text: `DIČ: ${SUPPLIER.dic}`, size: 9.5, color: BLUE, bold: false, gap: 11 }] : []),
       { text: `Mobil: ${SUPPLIER.phone}`, size: 9.5, color: BLACK, bold: false, gap: 11 },
       { text: `E-mail: ${SUPPLIER.email}`, size: 9.5, color: BLACK, bold: false, gap: 0 },
     ];
@@ -494,6 +501,13 @@ export async function generateInvoicePdf(data: InvoicePdfInput): Promise<Buffer>
     B(11.5).fillColor(BLACK)
       .text(fmtMoney(totalAmount, currency), TC.total.x, totY, { width: TC.total.w, align: 'right', lineBreak: false });
     totY += 20;
+
+    // Secondary foreign-currency reference (e.g. original EUR amount + rate)
+    if (data.foreignNote) {
+      R(8).fillColor(LGRAY)
+        .text(data.foreignNote, ML, totY, { width: CR - ML, align: 'right', lineBreak: false });
+      totY += 14;
+    }
 
     hline(totY, BORDER, 0.5);
     totY += 10;
