@@ -100,6 +100,18 @@ export async function uploadGuestDoc(
     let ocrResult: any = null;
     try {
       ocrResult = await ocrDocument(dataUrl);
+      
+      // ── Telegram notification ──────────────────────────────────
+      try {
+        const { sendTelegramMessage } = require('@/lib/channels/telegram-bot');
+        const text = [
+          `📄 <b>Завантажено документ (Скан/Фото)</b>`,
+          `📋 <b>Reservation:</b> <code>${reservation.id}</code>`,
+          ocrResult?.firstName || ocrResult?.lastName ? `👤 <b>Розпізнано:</b> ${ocrResult.firstName || ''} ${ocrResult.lastName || ''}`.trim() : null
+        ].filter(Boolean).join('\n');
+        sendTelegramMessage(text).catch(() => {});
+      } catch { /* non-critical */ }
+      
     } catch (ocrErr: any) {
       console.error('[DocUpload] OCR failed:', ocrErr.message);
       // Still return the saved URL even if OCR fails

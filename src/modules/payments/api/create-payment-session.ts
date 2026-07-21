@@ -155,7 +155,10 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   }
 
   if (intent.metadata) payload.metadata = intent.metadata;
-  if (intent.successUrl) payload.success_url = intent.successUrl;
+  if (intent.successUrl) {
+    payload.success_url = intent.successUrl;
+    payload.return_url = intent.successUrl; // Teya API v2 sometimes expects return_url
+  }
   if (intent.cancelUrl) payload.cancel_url = intent.cancelUrl;
   if (intent.expiresAt) payload.expires_at = intent.expiresAt;
 
