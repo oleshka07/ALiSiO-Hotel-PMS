@@ -192,7 +192,7 @@ export function calcBuildingPrice(
 }
 
 // ─── Camping Pricing (multi-select) ──────────────────
-export type CampingItemCode = 'small_tent' | 'large_tent' | 'car' | 'minibus' | 'caravan' | 'motorhome' | 'motorcycle';
+export type CampingItemCode = 'small_tent' | 'large_tent' | 'car' | 'minibus' | 'caravan' | 'motorhome' | 'motorcycle' | 'svc_test_stone';
 
 export const CAMPING_ITEMS: { code: CampingItemCode; label: string; emoji: string }[] = [
   { code: 'small_tent', label: 'Small tent', emoji: '⛺' },
@@ -202,6 +202,7 @@ export const CAMPING_ITEMS: { code: CampingItemCode; label: string; emoji: strin
   { code: 'caravan', label: 'Caravan', emoji: '🚙' },
   { code: 'motorhome', label: 'Motorhome', emoji: '🚌' },
   { code: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' },
+  { code: 'svc_test_stone', label: 'Test Stone (1 Kč)', emoji: '🪨' },
 ];
 
 export function calcCampingPrice(

@@ -70,5 +70,24 @@ if (existing) {
 // Перевіряємо
 const check = db.prepare("SELECT id, name, price, currency FROM additional_services WHERE id = 'svc_test_stone'").get();
 console.log('\n📦 Product in DB:', check);
-console.log('\n🎯 Now the test stone will appear in widget /api/widget/config → services[]');
-console.log('   (Filter "other" category must be removed from StepExtras.tsx to see it)');
+
+// Додаємо також у widget_price_list, щоб він відображався у вкладці Camping
+try {
+  const existingPrice = db.prepare("SELECT id FROM widget_price_list WHERE item_code = 'svc_test_stone'").get();
+  if (existingPrice) {
+    db.prepare("UPDATE widget_price_list SET rate_standard = 1 WHERE item_code = 'svc_test_stone'").run();
+    console.log('✅ Updated svc_test_stone in widget_price_list to 1 Kč');
+  } else {
+    db.prepare(`
+      INSERT INTO widget_price_list (id, category, item_code, item_name, rate_standard, is_active, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'wpl_test_stone', 'camping', 'svc_test_stone', 'Test Stone (1 Kč payment test)', 1, 1, 999
+    );
+    console.log('✅ Inserted svc_test_stone into widget_price_list (1 Kč)');
+  }
+} catch (e) {
+  console.log('ℹ️ Could not add to widget_price_list (table might not exist yet):', e.message);
+}
+
+console.log('\n🎯 Now the test stone will appear in the Camping step!');
