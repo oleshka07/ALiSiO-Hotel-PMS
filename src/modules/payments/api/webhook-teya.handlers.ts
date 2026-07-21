@@ -318,6 +318,8 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
   // Previously this was silently processed (status updated) but no TG was sent.
   if (result4.changes > 0) {
     sendFullBookingWebhookTG(db, effectiveRef, amount, currency);
+    // ── Server-side Purchase tracking (GA4 Measurement Protocol + Meta CAPI) ──
+    sendServerSideAnalytics(db, effectiveRef, amount, currency).catch(() => {});
   }
 
   // Auto-generate invoice when a reservation transitions to fully paid via webhook.
@@ -572,3 +574,109 @@ function sendFullBookingWebhookTG(db: any, paymentRef: string, amount: number, c
     sendTelegramMessage(text).catch((e: any) => console.error('[Teya Webhook] Full-booking TG send failed:', e.message));
   } catch (e: any) { console.error('[Teya Webhook] sendFullBookingWebhookTG error:', e.message); }
 }
+
+/**
+ * Server-side Purchase tracking fired from the Teya webhook when a widget
+ * full-booking payment is confirmed (result4 path).
+ *
+ * GA4 Measurement Protocol: https://developers.google.com/analytics/devguides/collection/protocol/ga4
+ * Meta Conversions API:     https://developers.facebook.com/docs/marketing-api/conversions-api
+ *
+ * Required env vars (set in .env.local on production):
+ *   GA4_MEASUREMENT_ID   — e.g. G-XXXXXXXXXX
+ *   GA4_API_SECRET       — from GA4 → Admin → Data Streams → Measurement Protocol
+ *   META_PIXEL_ID        — Facebook pixel ID
+ *   META_ACCESS_TOKEN    — System user access token
+ */
+async function sendServerSideAnalytics(db: any, paymentRef: string, amount: number, currency: string): Promise<void> {
+  try {
+    const res = db.prepare(`
+      SELECT r.id, r.total_price, r.currency, r.check_in, r.check_out,
+             r.ga_client_id, r.utm_params,
+             g.email, g.phone
+      FROM reservations r
+      LEFT JOIN guests g ON r.guest_id = g.id
+      WHERE r.payment_id = ?
+      ORDER BY r.created_at DESC LIMIT 1
+    `).get(paymentRef) as any;
+
+    if (!res) return;
+
+    const displayAmount = amount > 1000 ? amount / 100 : amount; // Teya sends minor units
+    const curr = currency || res.currency || 'CZK';
+    const transactionId = res.id;
+    const gaClientId: string | null = res.ga_client_id || null;
+
+    let fbp: string | undefined;
+    let fbc: string | undefined;
+    try {
+      if (res.utm_params) {
+        const utm = JSON.parse(res.utm_params);
+        fbp = utm['_fbp'];
+        fbc = utm['_fbc'];
+      }
+    } catch { /* ignore */ }
+
+    // ── 1. GA4 Measurement Protocol ──────────────────────────────────────────
+    const ga4Id = process.env.GA4_MEASUREMENT_ID;
+    const ga4Secret = process.env.GA4_API_SECRET;
+
+    if (ga4Id && ga4Secret && gaClientId) {
+      const ga4Payload = {
+        client_id: gaClientId,
+        events: [{
+          name: 'purchase',
+          params: {
+            transaction_id: transactionId,
+            value: displayAmount,
+            currency: curr,
+            items: [{ item_id: transactionId, item_name: 'Kemp Carlsbad Reservation', price: displayAmount, quantity: 1 }],
+          },
+        }],
+      };
+      const ga4Url = `https://www.google-analytics.com/mp/collect?measurement_id=${ga4Id}&api_secret=${ga4Secret}`;
+      fetch(ga4Url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ga4Payload) })
+        .then(r => console.log(`[Analytics] GA4 MP purchase → ${r.status} | res=${transactionId} client=${gaClientId}`))
+        .catch(e => console.error('[Analytics] GA4 MP failed:', e.message));
+    } else {
+      console.log(`[Analytics] GA4 skipped — id=${!!ga4Id} secret=${!!ga4Secret} client=${!!gaClientId}`);
+    }
+
+    // ── 2. Meta Conversions API ───────────────────────────────────────────────
+    const metaPixelId = process.env.META_PIXEL_ID;
+    const metaToken = process.env.META_ACCESS_TOKEN;
+
+    if (metaPixelId && metaToken) {
+      const userData: Record<string, string> = {};
+      if (fbp) userData.fbp = fbp;
+      if (fbc) userData.fbc = fbc;
+      if (res.email) {
+        const { createHash } = await import('crypto');
+        userData.em = createHash('sha256').update(res.email.toLowerCase().trim()).digest('hex');
+      }
+      if (res.phone) {
+        const { createHash } = await import('crypto');
+        userData.ph = createHash('sha256').update(res.phone.replace(/\D/g, '')).digest('hex');
+      }
+      const metaPayload = {
+        data: [{
+          event_name: 'Purchase',
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: `teya_${transactionId}`,
+          action_source: 'website',
+          custom_data: { value: displayAmount, currency: curr, order_id: transactionId },
+          user_data: userData,
+        }],
+      };
+      const metaUrl = `https://graph.facebook.com/v21.0/${metaPixelId}/events?access_token=${metaToken}`;
+      fetch(metaUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(metaPayload) })
+        .then(async r => { const b = await r.text().catch(() => ''); console.log(`[Analytics] Meta CAPI → ${r.status} | ${b.substring(0, 200)}`); })
+        .catch(e => console.error('[Analytics] Meta CAPI failed:', e.message));
+    } else {
+      console.log('[Analytics] Meta CAPI skipped — META_PIXEL_ID or META_ACCESS_TOKEN not configured');
+    }
+  } catch (e: any) {
+    console.error('[Analytics] sendServerSideAnalytics error:', e.message);
+  }
+}
+
