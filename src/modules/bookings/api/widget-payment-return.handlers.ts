@@ -230,5 +230,17 @@ export async function handlePaymentReturn(req: Request) {
   const separator = returnPath.includes('?') ? '&' : '?';
   const redirectUrl = `${returnPath}${separator}payment_status=${status}&session_id=${sessionId}`;
 
-  return NextResponse.redirect(new URL(redirectUrl, url.origin));
+  // If redirectUrl is already absolute (cross-domain return, e.g. kv.kemp-carlsbad.cz),
+  // new URL(absoluteUrl, base) ignores the base and returns the absolute URL — correct.
+  // If it's a relative path, url.origin is used as base — also correct.
+  let finalRedirectUrl: URL;
+  try {
+    finalRedirectUrl = new URL(redirectUrl);
+  } catch {
+    // Relative path — resolve against the PMS origin
+    finalRedirectUrl = new URL(redirectUrl, url.origin);
+  }
+
+  console.log(`[Payment Return] Redirecting → ${finalRedirectUrl.toString()}`);
+  return NextResponse.redirect(finalRedirectUrl);
 }
