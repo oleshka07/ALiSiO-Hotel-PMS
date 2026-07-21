@@ -84,34 +84,18 @@ export const POST = async (
               </tr>
             </table>
 
-            <!-- Primary CTA: fill documents -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
-              <tr>
-                <td align="center">
-                  <a href="${kempRegUrl}"
-                     style="display:inline-block;background:#1a6b3c;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:700;">
-                    📋 Vyplnit doklady hostů →
-                  </a>
-                </td>
-              </tr>
-            </table>
-
-            <!-- Secondary CTA: my bookings cabinet -->
+            <!-- Primary CTA: ALiSiO Guest Portal -->
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
               <tr>
                 <td align="center">
-                  <a href="${kempCabinetUrl}"
-                     style="display:inline-block;background:#fff;color:#1a6b3c;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;border:2px solid #1a6b3c;">
-                    🏠 Osobní kabinet Kemp Carlsbad
+                  <a href="${portalUrl}"
+                     style="display:inline-block;background:#1a6b3c;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:700;">
+                    🏠 Otevřít stránku hosta →
                   </a>
                 </td>
               </tr>
             </table>
 
-            <p style="color:#999;font-size:12px;margin:0 0 4px;">Alternativně — plný portál rezervace:</p>
-            <p style="color:#1a6b3c;font-size:12px;word-break:break-all;margin:0;">
-              <a href="${portalUrl}" style="color:#1a6b3c;">${portalUrl}</a>
-            </p>
           </td>
         </tr>
         <!-- Footer -->

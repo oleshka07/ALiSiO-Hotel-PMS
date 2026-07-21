@@ -49,12 +49,8 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
   const total = fmtPrice(row.total_price || 0, row.currency || 'CZK');
   let guestPageUrl = null;
   if (row.guest_page_token) {
-    if (row.thank_you_url) {
-      const sep = row.thank_you_url.includes('?') ? '&' : '?';
-      guestPageUrl = `${row.thank_you_url}${sep}guest_token=${row.guest_page_token}`;
-    } else if (origin) {
-      guestPageUrl = `${origin}/guest/${row.guest_page_token}`;
-    }
+    const baseUrl = process.env.NEXT_PUBLIC_ALISIO_URL || 'https://alisio.swipescape.eu';
+    guestPageUrl = `${baseUrl}/guest/${row.guest_page_token}`;
   }
 
   let widgetConfig: any = {};

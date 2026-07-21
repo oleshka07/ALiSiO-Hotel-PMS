@@ -442,6 +442,15 @@ export async function createWidgetCheckoutSession(req: Request) {
         } catch { /* */ }
       }
 
+      if (reservation_id) {
+        try {
+          const { sendBookingConfirmationEmail } = await import('../data/send-confirmation-email');
+          sendBookingConfirmationEmail(reservation_id).catch(() => { });
+        } catch (err: any) {
+          console.error('[Checkout Session] Failed to trigger email:', err.message);
+        }
+      }
+
       return NextResponse.json({
         session_token: session.sessionToken,
         session_id: session.sessionId,
