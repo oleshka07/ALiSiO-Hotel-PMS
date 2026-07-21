@@ -79,16 +79,42 @@ export async function handlePaymentReturn(req: Request) {
         // TG notification (only when this handler actually changed the status)
         if (resResult.changes > 0) {
           try {
-            const res = db.prepare('SELECT total_price, currency, unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
+            const res = db.prepare('SELECT r.total_price, r.currency, u.name as unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
             if (res) {
               const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
-              sendTelegramMessage([
+              
+              let draftInfo: any = null;
+              try {
+                draftInfo = db.prepare('SELECT guest_name, guest_phone, check_in, check_out, utm_params FROM booking_drafts WHERE reservation_id = ?').get(reservationId) as any;
+              } catch {}
+              
+              let utmBlock = '';
+              if (draftInfo?.utm_params) {
+                try {
+                  const utm = JSON.parse(draftInfo.utm_params);
+                  if (Object.keys(utm).length > 0) {
+                    utmBlock = `\n🎯 <b>UTM мітки:</b>\n<pre>${Object.entries(utm).map(([k, v]) => `${k}=${v}`).join('\n')}</pre>`;
+                  }
+                } catch {}
+              }
+
+              const msgLines = [
                 `💳 <b>Оплата бронювання підтверджена</b>`,
                 ``,
-                `🏠 ${esc(res.unit_name || '')}`,
-                `💰 ${res.total_price} ${res.currency || 'CZK'} — ✅ Оплачено`,
-                `🔗 Teya session: ${sessionId}`,
-              ].join('\n')).catch(() => {});
+              ];
+              
+              if (draftInfo?.guest_name) msgLines.push(`👤 <b>Гість:</b> ${esc(draftInfo.guest_name)}`);
+              if (draftInfo?.guest_phone) msgLines.push(`📞 <b>Телефон:</b> ${esc(draftInfo.guest_phone)}`);
+              if (res.unit_name) msgLines.push(`🏠 <b>Тип:</b> ${esc(res.unit_name)}`);
+              if (draftInfo?.check_in) msgLines.push(`📅 <b>Терміни:</b> ${draftInfo.check_in} → ${draftInfo.check_out}`);
+              
+              msgLines.push(`💰 <b>Сума:</b> ${res.total_price} ${res.currency || 'CZK'} — ✅ Оплачено (Teya)`);
+              msgLines.push(`📋 <b>Reservation:</b> <code>${reservationId}</code>`);
+              if (utmBlock) msgLines.push(utmBlock);
+
+              const rowButtons = [{ text: '📋 CRM', url: `https://alisio.swipescape.eu/crm/inbox?id=${reservationId}` }];
+
+              sendTelegramMessage(msgLines.join('\n'), [rowButtons] as any).catch(() => {});
             }
           } catch (e: any) { console.error('[Payment Return] Booking TG notify error:', e.message); }
         }
