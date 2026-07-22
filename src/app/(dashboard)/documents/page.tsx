@@ -204,6 +204,55 @@ export default function DocumentsPage() {
     }
   };
 
+  // ── Batch Delete State & Handler ───────────────────────────────────────────
+  const [batchDeleteChannel, setBatchDeleteChannel] = useState<'airbnb' | 'booking' | 'teya' | 'all'>('airbnb');
+  const [batchDeleteMonth, setBatchDeleteMonth] = useState<string>(''); // YYYY-MM
+  const [batchDeleteLoading, setBatchDeleteLoading] = useState<boolean>(false);
+  const [batchDeleteError, setBatchDeleteError] = useState<string | null>(null);
+  const [batchDeleteSuccess, setBatchDeleteSuccess] = useState<string | null>(null);
+
+  const handleClearBatchInvoices = async () => {
+    const channelLabel = batchDeleteChannel === 'all' ? 'всіх каналів' : batchDeleteChannel;
+    const periodLabel = batchDeleteMonth ? `за період ${batchDeleteMonth}` : 'за весь час';
+    if (!window.confirm(`Ви впевнені, що хочете видалити імпортовані фактури для ${channelLabel} ${periodLabel}? Цю дію неможливо скасувати!`)) {
+      return;
+    }
+    setBatchDeleteLoading(true);
+    setBatchDeleteError(null);
+    setBatchDeleteSuccess(null);
+    try {
+      const query = new URLSearchParams();
+      query.set('channel', batchDeleteChannel);
+      if (batchDeleteMonth) query.set('month', batchDeleteMonth);
+      
+      let res = await fetch(`/api/accounting/invoice-batch?${query.toString()}`, { method: 'DELETE' });
+      let data = await res.json();
+      
+      if (!res.ok) {
+        if (data.requiresForce) {
+          if (window.confirm(`${data.error}\n\nБажаєте видалити заблоковані фактури примусово (force)?`)) {
+            query.set('force', 'true');
+            res = await fetch(`/api/accounting/invoice-batch?${query.toString()}`, { method: 'DELETE' });
+            data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Помилка видалення');
+          } else {
+            return;
+          }
+        } else {
+          throw new Error(data.error || 'Помилка видалення');
+        }
+      }
+      setBatchDeleteSuccess(data.message || `Фактури успішно видалені.`);
+      setStmtResult(null);
+      fetchInvoices();
+      fetchAllInvoices(invSourceFilter, invSearch, invDateFrom, invDateTo);
+    } catch (e: unknown) {
+      setBatchDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBatchDeleteLoading(false);
+    }
+  };
+
     // ── Custom Invoice Modal state ────────────────────────────────
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customForm, setCustomForm] = useState({
@@ -1046,6 +1095,106 @@ export default function DocumentsPage() {
                 <div>Жодної транзакції не знайдено у файлі</div>
               </div>
             )}
+
+            {/* ── Danger Zone: Clear/Delete Imported Invoices ── */}
+            <div style={{
+              marginTop: 48,
+              background: 'var(--surface)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: 12,
+              padding: '24px 20px',
+              boxShadow: '0 4px 20px rgba(239, 68, 68, 0.04)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <Trash2 size={20} color="#ef4444" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Небезпечна зона: Видалення імпортованих фактур</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Тут ви можете масово видалити раніше імпортовані фактури з виписок Airbnb, Booking.com або Teya, щоб завантажити нові файли без подвоєння сум.
+                  </p>
+                </div>
+              </div>
+
+              {batchDeleteError && (
+                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '12px 16px', color: '#ef4444', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                  {batchDeleteError}
+                </div>
+              )}
+
+              {batchDeleteSuccess && (
+                <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: 8, padding: '12px 16px', color: '#10b981', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCircle size={14} style={{ flexShrink: 0 }} />
+                  {batchDeleteSuccess}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+                <div style={{ minWidth: 160, flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Джерело виписки</label>
+                  <select
+                    className="form-input"
+                    value={batchDeleteChannel}
+                    onChange={e => {
+                      setBatchDeleteChannel(e.target.value as any);
+                      setBatchDeleteSuccess(null);
+                      setBatchDeleteError(null);
+                    }}
+                    style={{ width: '100%', padding: '7px 10px', fontSize: 13 }}
+                  >
+                    <option value="airbnb">Airbnb (AIR)</option>
+                    <option value="booking">Booking.com (BKG)</option>
+                    <option value="teya">Teya (TEYA)</option>
+                    <option value="all">Усі імпортовані канали</option>
+                  </select>
+                </div>
+
+                <div style={{ minWidth: 160, flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Період / Місяць (необов&apos;язково)</label>
+                  <input
+                    type="month"
+                    className="form-input"
+                    value={batchDeleteMonth}
+                    onChange={e => {
+                      setBatchDeleteMonth(e.target.value);
+                      setBatchDeleteSuccess(null);
+                      setBatchDeleteError(null);
+                    }}
+                    style={{ width: '100%', padding: '6px 10px', fontSize: 13 }}
+                  />
+                </div>
+
+                <div style={{ flexShrink: 0 }}>
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleClearBatchInvoices}
+                    disabled={batchDeleteLoading}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      height: 38,
+                      fontWeight: 600,
+                      background: '#ef4444',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '0 20px',
+                      cursor: 'pointer',
+                      transition: 'opacity 0.2s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                  >
+                    {batchDeleteLoading ? (
+                      <><RefreshCw size={14} className="spin" /> Видалення...</>
+                    ) : (
+                      <><Trash2 size={14} /> Видалити фактури</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </>
         )}
 

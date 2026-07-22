@@ -353,6 +353,102 @@ export interface BatchInvoiceResult {
   created: boolean;
 }
 
+export const DELETE = requireOwner(_DELETE);
+async function _DELETE(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const url = new URL(request.url);
+    const channel = url.searchParams.get('channel')?.toLowerCase(); // 'airbnb', 'booking', 'teya', or 'all'
+    const month = url.searchParams.get('month'); // optional 'YYYY-MM'
+
+    if (!channel || !['airbnb', 'booking', 'teya', 'all'].includes(channel)) {
+      return NextResponse.json({ error: 'channel must be airbnb|booking|teya|all' }, { status: 400 });
+    }
+
+    // Build conditions
+    let notesPattern = '';
+    let seriesVal = '';
+    if (channel === 'airbnb') {
+      notesPattern = 'airbnb:%';
+      seriesVal = 'AIR';
+    } else if (channel === 'booking') {
+      notesPattern = 'booking:%';
+      seriesVal = 'BKG';
+    } else if (channel === 'teya') {
+      notesPattern = 'teya:%';
+      seriesVal = 'TEYA';
+    }
+
+    let query = `DELETE FROM invoices WHERE 1=1`;
+    const params: any[] = [];
+
+    if (channel !== 'all') {
+      query += ` AND (notes LIKE ? OR series = ?)`;
+      params.push(notesPattern, seriesVal);
+    } else {
+      query += ` AND (notes LIKE 'airbnb:%' OR notes LIKE 'booking:%' OR notes LIKE 'teya:%' OR series IN ('AIR', 'BKG', 'TEYA'))`;
+    }
+
+    if (month) {
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return NextResponse.json({ error: 'month must be in YYYY-MM format' }, { status: 400 });
+      }
+      query += ` AND (period = ? OR strftime('%Y-%m', issued_at) = ?)`;
+      params.push(month, month);
+    }
+
+    // Check if we are deleting any locked invoices, unless override is provided
+    const force = url.searchParams.get('force') === 'true';
+    if (!force) {
+      // Find if any matched invoices are locked
+      let checkQuery = `SELECT COUNT(*) as count FROM invoices WHERE locked = 1`;
+      const checkParams: any[] = [];
+      if (channel !== 'all') {
+        checkQuery += ` AND (notes LIKE ? OR series = ?)`;
+        checkParams.push(notesPattern, seriesVal);
+      } else {
+        checkQuery += ` AND (notes LIKE 'airbnb:%' OR notes LIKE 'booking:%' OR notes LIKE 'teya:%' OR series IN ('AIR', 'BKG', 'TEYA'))`;
+      }
+      if (month) {
+        checkQuery += ` AND (period = ? OR strftime('%Y-%m', issued_at) = ?)`;
+        checkParams.push(month, month);
+      }
+      const lockedCount = db.prepare(checkQuery).get(...checkParams) as { count: number };
+      if (lockedCount.count > 0) {
+        return NextResponse.json({
+          error: `Знайдено ${lockedCount.count} заблокованих фактур. Ви не можете видалити їх без примусового прапорця (force=true).`,
+          lockedCount: lockedCount.count,
+          requiresForce: true
+        }, { status: 409 });
+      }
+    }
+
+    // Run delete inside a transaction to keep it atomic
+    const runDelete = db.transaction(() => {
+      const result = db.prepare(query).run(...params);
+      return result.changes;
+    });
+
+    const deletedCount = runDelete();
+
+    const channelLabelMap: Record<string, string> = {
+      airbnb: 'Airbnb',
+      booking: 'Booking.com',
+      teya: 'Teya',
+      all: 'всіх імпортованих каналів',
+    };
+
+    return NextResponse.json({
+      ok: true,
+      message: `Успішно видалено ${deletedCount} фактур для ${channelLabelMap[channel] || channel}${month ? ` за період ${month}` : ''}.`,
+      deletedCount,
+    });
+  } catch (e: any) {
+    console.error('[BatchInvoices] delete error:', e.message);
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
 export const POST = requireOwner(_POST);
 async function _POST(request: NextRequest): Promise<NextResponse> {
   try {
