@@ -17,7 +17,7 @@ import { generateIsdocXml } from '@/lib/isdoc';
 import { requireOwner } from '@core/security/route-guard';
 import type { InvoiceData } from '@/lib/invoice-template';
 import { convertToCzkAuto, foreignNote } from '@/lib/fx';
-import { showBuyerName } from '@/lib/invoice-rules';
+import { showBuyerName, dueDateFor } from '@/lib/invoice-rules';
 import JSZip from 'jszip';
 
 // ─── Helper: build description from invoice or fin_op data ───────────────────
@@ -122,13 +122,13 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
       const xml = generateIsdocXml({
         invoiceNumber:  inv.invoice_number,
         issueDate:      documentDate || (inv.issued_at || '').slice(0, 10),
-        taxPointDate:   (inv.check_out || documentDate || inv.due_date || '').slice(0, 10) || undefined,
+        taxPointDate:   dueDateFor(documentDate || (inv.issued_at || '').slice(0, 10)),
         description:    buildDescription(inv as { unit_name?: string | null; check_in?: string | null; check_out?: string | null; comment?: string | null; source?: string | null }),
         amount:         conv.converted ? conv.amountCzk : (inv.amount || 0),
         currency:       conv.converted ? 'CZK' : (inv.currency || 'CZK'),
         buyer,
         paymentMethod:  inv.payment_method || undefined,
-        paymentDueDate: (inv.due_date || '').slice(0, 10) || undefined,
+        paymentDueDate: dueDateFor(documentDate || (inv.issued_at || '').slice(0, 10)),
         foreignNote:    conv.converted ? foreignNote(conv) : undefined,
       });
 
@@ -182,6 +182,8 @@ async function _GET(request: NextRequest): Promise<NextResponse> {
       const xml = generateIsdocXml({
         invoiceNumber:  virtualNumber,
         issueDate:      documentDate,
+        taxPointDate:   dueDateFor(documentDate),
+        paymentDueDate: dueDateFor(documentDate),
         description:    op.comment || `Ubytování — ${sourceLabel} (${op.source_ref})`,
         amount:         conv.converted ? conv.amountCzk : (op.amount || 0),
         currency:       conv.converted ? 'CZK' : (op.currency || 'EUR'),

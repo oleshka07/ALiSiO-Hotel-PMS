@@ -8,7 +8,7 @@ import { generateIsdocXml } from '@/lib/isdoc';
 import type { InvoiceData } from '@/lib/invoice-template';
 import { requirePermission } from '@core/security/route-guard';
 import { convertToCzkAuto, foreignNote } from '@/lib/fx';
-import { showBuyerName } from '@/lib/invoice-rules';
+import { showBuyerName, dueDateFor } from '@/lib/invoice-rules';
 
 export const GET = requirePermission('manage_documents', _GET);
 async function _GET(
@@ -89,13 +89,14 @@ async function _GET(
     const xml = generateIsdocXml({
       invoiceNumber:  data.invoice_number,
       issueDate:      documentDate || (data.issued_at || '').slice(0, 10),
-      taxPointDate:   (data.check_out || documentDate || data.due_date || '').slice(0, 10) || undefined,
+      // DUZP + splatnost = issue date + 14 days (accounting requirement).
+      taxPointDate:   dueDateFor(documentDate || (data.issued_at || '').slice(0, 10)),
       description:    desc,
       amount:         conv.converted ? conv.amountCzk : (data.amount || 0),
       currency:       conv.converted ? 'CZK' : (data.currency || 'CZK'),
       buyer,
       paymentMethod:  data.payment_method || undefined,
-      paymentDueDate: (data.due_date || '').slice(0, 10) || undefined,
+      paymentDueDate: dueDateFor(documentDate || (data.issued_at || '').slice(0, 10)),
       foreignNote:    conv.converted ? foreignNote(conv) : undefined,
     });
 
