@@ -7,7 +7,7 @@ import { getDb } from '@core/db';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { requirePermission } from '@core/security/route-guard';
 import { convertToCzkAuto, foreignNote } from '@/lib/fx';
-import { showBuyerName } from '@/lib/invoice-rules';
+import { showBuyerName, dueDateFor } from '@/lib/invoice-rules';
 
 export const GET = requirePermission('manage_documents', _GET);
 async function _GET(
@@ -82,7 +82,8 @@ async function _GET(
     const pdfBuffer = await generateInvoicePdf({
       invoiceNumber:  row.invoice_number as string,
       issueDate:      documentDate || (row.issued_at as string).slice(0, 10),
-      dueDate:        row.due_date ? (row.due_date as string).slice(0, 10) : undefined,
+      // Datum splatnosti = issue date + 14 days.
+      dueDate:        dueDateFor(documentDate || (row.issued_at as string).slice(0, 10)),
       paymentMethod:  (row.payment_method as string | null) || 'Příkazem',
       description,
       amount:         conv.converted ? conv.amountCzk : (row.amount as number),

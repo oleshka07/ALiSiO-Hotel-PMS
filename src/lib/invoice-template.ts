@@ -9,7 +9,7 @@
  * Also respects Zákon č. 563/1991 Sb. (Zákon o účetnictví)
  */
 
-import { showBuyerName } from './invoice-rules';
+import { showBuyerName, dueDateFor } from './invoice-rules';
 
 // Inline type — avoids cross-module coupling for a pure template helper.
 // Many fields are nullable because the SQL uses LEFT JOIN on units/guests,
@@ -593,11 +593,11 @@ export function renderInvoiceHtml(data: InvoiceData): string {
         </div>
         <div class="date-cell">
           <div class="label">Datum uskuteč. plnění</div>
-          <div class="value">${formatDate(data.check_out)}</div>
+          <div class="value">${formatDate(dueDateFor(data.document_date || data.issued_at || ''))}</div>
         </div>
         <div class="date-cell">
           <div class="label">Datum splatnosti</div>
-          <div class="value">${formatDate(data.due_date)}</div>
+          <div class="value">${formatDate(dueDateFor(data.document_date || data.issued_at || ''))}</div>
         </div>
         <div class="date-cell">
           <div class="label">Forma úhrady</div>

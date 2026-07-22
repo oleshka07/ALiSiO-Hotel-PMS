@@ -19,3 +19,20 @@ export function showBuyerName(amountCzk: number, hasExplicitBuyer: boolean): boo
   if (hasExplicitBuyer) return true;
   return Math.abs(amountCzk) >= BUYER_NAME_THRESHOLD_CZK;
 }
+
+/** Standard payment term: due date and tax point (DUZP) = issue date + 14 days. */
+export const INVOICE_DUE_DAYS = 14;
+
+/** Add n days to a YYYY-MM-DD date; returns YYYY-MM-DD (input echoed if unparseable). */
+export function addDaysIso(iso: string, n: number): string {
+  const base = (iso || '').slice(0, 10);
+  const d = new Date(`${base}T00:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** DUZP + splatnost date for an invoice = issue date + 14 days. */
+export function dueDateFor(issueDateIso: string): string {
+  return addDaysIso(issueDateIso, INVOICE_DUE_DAYS);
+}
