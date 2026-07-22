@@ -45,6 +45,22 @@ function parseNum(s: string): number {
   return parseFloat(s.replace(/\s/g, '').replace(',', '.')) || 0;
 }
 
+/**
+ * Repair double-encoded UTF-8 (mojibake) that some Booking/Excel CSV exports
+ * produce, e.g. "ÐÐ½Ð°ÑÑ..." instead of "Анаст...". Only applied when the string
+ * looks mis-encoded AND re-decoding yields valid UTF-8 (no replacement char),
+ * so correctly-encoded Latin accents (José, Müller) are left untouched.
+ */
+function fixMojibake(s: string | null | undefined): string {
+  if (!s) return s || '';
+  if (!/[Â-ß][-¿]|[ÐÑÃ]/.test(s)) return s;
+  try {
+    const fixed = Buffer.from(s, 'latin1').toString('utf8');
+    if (fixed && !fixed.includes('�') && fixed !== s) return fixed;
+  } catch { /* keep original */ }
+  return s;
+}
+
 function airbnbDate(s: string): string {
   if (!s) return '';
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -504,7 +520,7 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
       const due    = row.date > today ? row.date : today;
 
       // For rows that need a guest name, store a placeholder
-      const buyerName = row.needs_guest_name ? 'DOPLNIT JMÉNO' : (row.guest_name || null);
+      const buyerName = row.needs_guest_name ? 'DOPLNIT JMÉNO' : (fixMojibake(row.guest_name) || null);
 
       db.prepare(`
         INSERT INTO invoices
@@ -516,7 +532,7 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
         row.amount, row.currency,
         noteKey,
         buyerName,
-        row.description,
+        fixMojibake(row.description),
         row.is_credit_note ? 1 : 0,
         series, period,
         `statement:${row.source}`,
