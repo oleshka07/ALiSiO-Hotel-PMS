@@ -786,7 +786,11 @@ export default function DocumentsPage() {
                               </code>
                               {isCreditNote && <span style={{ marginLeft: 5, fontSize: 10, color: '#dc2626', fontWeight: 700 }}>STORNO</span>}
                             </td>
-                            <td>
+                             <td
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => setDeleteConfirm({ id: inv.id, number: inv.invoice_number })}
+                              title="Видалити фактуру (прихована опція)"
+                            >
                               <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: srcCfg.bg, color: srcCfg.color }}>
                                 {srcCfg.label}
                               </span>
@@ -804,7 +808,11 @@ export default function DocumentsPage() {
                                 {formatAmount(inv.amount, inv.currency)}
                               </span>
                             </td>
-                            <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                            <td
+                              style={{ fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}
+                              onClick={() => setDeleteConfirm({ id: inv.id, number: inv.invoice_number })}
+                              title="Видалити фактуру (прихована опція)"
+                            >
                               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <Calendar size={11} />{formatDate(inv.issued_at)}
                               </span>
@@ -1057,7 +1065,13 @@ export default function DocumentsPage() {
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv.description}</div>
                           </td>
-                          <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{formatDate(inv.date)}</td>
+                          <td
+                            style={{ fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}
+                            onClick={() => setDeleteConfirm({ id: inv.invoice_id, number: inv.invoice_number })}
+                            title="Видалити фактуру (прихована опція)"
+                          >
+                            {formatDate(inv.date)}
+                          </td>
                           <td><span style={{ fontWeight: 700, fontSize: 14, color: inv.is_credit_note ? '#dc2626' : undefined }}>{formatAmount(inv.amount, inv.currency)}</span></td>
                           <td>
                             {inv.is_credit_note
