@@ -192,11 +192,17 @@ export default function DocumentsPage() {
     setDeleteLoading(true);
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      // 404 = already deleted (e.g. a second click) — treat as success so the
+      // row leaves the screen instead of throwing.
+      if (!res.ok && res.status !== 404) throw new Error((await res.json()).error || 'Error');
       setDeleteConfirm(null);
       // Refresh both lists
       fetchInvoices();
       fetchAllInvoices(invSourceFilter, invSearch, invDateFrom, invDateTo);
+      // Also drop it from the import-result table (stmtResult) — that view renders
+      // from POST-response state, not a live fetch, so without this the deleted
+      // row lingers and looks like it "won't delete".
+      setStmtResult(prev => prev ? prev.filter(r => r.invoice_id !== id) : prev);
     } catch (e: unknown) {
       alert('Помилка видалення: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
