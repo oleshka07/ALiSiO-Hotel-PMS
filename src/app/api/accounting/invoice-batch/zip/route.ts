@@ -18,6 +18,8 @@ import { getDb } from '@core/db';
 import { generateIsdocXml } from '@/lib/isdoc';
 import { requireOwner } from '@core/security/route-guard';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
+import { convertToCzkAuto, foreignNote } from '@/lib/fx';
+import { showBuyerName, dueDateFor } from '@/lib/invoice-rules';
 
 // ─── Pure-JS ZIP builder (STORE method — no compression, no deps) ─────────────
 // Implements PKZIP 2.0 local file headers + central directory + EOCD.
@@ -135,7 +137,7 @@ function getInvoiceForIsdoc(db: any, id: string) {
       r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
       r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
       r.invoice_company_email,
-      p.method as payment_method
+      p.method as payment_method, p.paid_at as payment_date
     FROM invoices i
     LEFT JOIN reservations r ON i.reservation_id = r.id
     LEFT JOIN units u ON r.unit_id = u.id
@@ -160,7 +162,7 @@ function getInvoiceForPdf(db: any, id: string) {
       g.first_name as guest_first_name, g.last_name as guest_last_name,
       r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
       r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
-      p.method as payment_method
+      p.method as payment_method, p.paid_at as payment_date
     FROM invoices i
     LEFT JOIN reservations r ON i.reservation_id = r.id
     LEFT JOIN units u ON r.unit_id = u.id
@@ -174,8 +176,15 @@ function getInvoiceForPdf(db: any, id: string) {
 
 // ─── ISDOC generation (reused from /api/invoices/[id]/isdoc) ─────────────────
 
-function buildIsdocBytes(row: any): Uint8Array {
-  const buyer = (row.custom_buyer_name || row.invoice_company_name)?.trim() ? {
+async function buildIsdocBytes(db: any, row: any): Promise<Uint8Array> {
+  // Real document date + CZK conversion + issue+14 dates + 9900 buyer rule —
+  // identical to /api/invoices/[id]/isdoc so single and ZIP output match.
+  const documentDate = (row.check_in || row.payment_date || row.issued_at || '').slice(0, 10);
+  const conv = await convertToCzkAuto(db, row.amount || 0, row.currency || 'CZK', documentDate);
+  const czkAmount = conv.converted ? conv.amountCzk : (row.amount || 0);
+
+  const hasCompany = !!(row.custom_buyer_name || row.invoice_company_name)?.trim();
+  let buyer = hasCompany ? {
     name:    (row.custom_buyer_name || row.invoice_company_name) as string,
     ico:     (row.custom_buyer_ico  || row.invoice_company_ico)  as string | undefined,
     dic:     (row.custom_buyer_dic  || row.invoice_company_dic)  as string | undefined,
@@ -183,6 +192,12 @@ function buildIsdocBytes(row: any): Uint8Array {
     city:    (row.custom_buyer_city    || row.invoice_company_city)    as string | undefined,
     country: (row.custom_buyer_country || row.invoice_company_country) as string | undefined,
   } : undefined;
+  if (!buyer && showBuyerName(czkAmount, false)) {
+    const gname = `${row.guest_first_name || ''} ${row.guest_last_name || ''}`.trim();
+    if (gname) buyer = { name: gname, ico: undefined, dic: undefined, street: undefined, city: undefined, country: undefined };
+  }
+  // Below-threshold anonymisation even when the batch stored a name.
+  if (buyer && !hasCompany && !showBuyerName(czkAmount, false)) buyer = undefined;
 
   let desc = (row.custom_description as string | null) || '';
   if (!desc) {
@@ -196,32 +211,37 @@ function buildIsdocBytes(row: any): Uint8Array {
   }
 
   const isCreditNote = row.is_credit_note === 1;
-  // Extract source ref from notes field (format: 'teya:teya_2026-05-31_...')
   const originalDocRef = isCreditNote && row.notes
     ? (row.notes as string).replace(/^[^:]+:/, '')
     : undefined;
+  const issueDate = documentDate || (row.issued_at || new Date().toISOString()).slice(0, 10);
 
   const xml = generateIsdocXml({
     invoiceNumber:  row.invoice_number,
-    issueDate:      (row.issued_at || new Date().toISOString()).slice(0, 10),
-    taxPointDate:   (row.check_out || row.due_date || row.issued_at || '').slice(0, 10) || undefined,
+    issueDate,
+    taxPointDate:   dueDateFor(issueDate),
     description:    desc,
-    amount:         row.amount || 0,
-    currency:       row.currency || 'CZK',
+    amount:         czkAmount,
+    currency:       conv.converted ? 'CZK' : (row.currency || 'CZK'),
     buyer,
     paymentMethod:  row.payment_method || undefined,
-    paymentDueDate: (row.due_date || '').slice(0, 10) || undefined,
+    paymentDueDate: dueDateFor(issueDate),
     documentType:   isCreditNote ? 2 : 1,
     originalDocRef,
+    foreignNote:    conv.converted ? foreignNote(conv) : undefined,
   });
   return new TextEncoder().encode(xml);
 }
 
 // ─── PDF generation (reused from /api/invoices/[id]/pdf) ─────────────────────
 
-async function buildPdfBytes(row: any): Promise<Uint8Array> {
+async function buildPdfBytes(db: any, row: any): Promise<Uint8Array> {
+  const documentDate = ((row.check_in as string | null) || (row.payment_date as string | null) || (row.issued_at as string | null) || '').slice(0, 10);
+  const conv = await convertToCzkAuto(db, (row.amount as number) || 0, (row.currency as string) || 'CZK', documentDate);
+  const czkAmount = conv.converted ? conv.amountCzk : ((row.amount as number) || 0);
+
   const companyName = (row.custom_buyer_name || row.invoice_company_name) as string | null;
-  const buyer = companyName?.trim() ? {
+  let buyer = companyName?.trim() ? {
     name:    companyName,
     ico:     (row.custom_buyer_ico  || row.invoice_company_ico)  as string | undefined,
     dic:     (row.custom_buyer_dic  || row.invoice_company_dic)  as string | undefined,
@@ -229,6 +249,12 @@ async function buildPdfBytes(row: any): Promise<Uint8Array> {
     city:    (row.custom_buyer_city    || row.invoice_company_city)    as string | undefined,
     country: (row.custom_buyer_country || row.invoice_company_country) as string | undefined,
   } : undefined;
+  if (buyer && !companyName?.trim()) buyer = undefined; // never reached, kept for parity
+  if (!buyer && showBuyerName(czkAmount, false)) {
+    const gname = `${row.guest_first_name || ''} ${row.guest_last_name || ''}`.trim();
+    if (gname) buyer = { name: gname, ico: undefined, dic: undefined, address: undefined, city: undefined, country: undefined };
+  }
+  if (buyer && !companyName?.trim() && !showBuyerName(czkAmount, false)) buyer = undefined;
 
   let description = (row.custom_description as string | null) || '';
   if (!description) {
@@ -242,17 +268,19 @@ async function buildPdfBytes(row: any): Promise<Uint8Array> {
   }
 
   const isCreditNote = row.is_credit_note === 1;
+  const issueDate = documentDate || (row.issued_at as string).slice(0, 10);
 
   const buf = await generateInvoicePdf({
     invoiceNumber:  row.invoice_number as string,
-    issueDate:      (row.issued_at as string).slice(0, 10),
-    dueDate:        row.due_date ? (row.due_date as string).slice(0, 10) : undefined,
+    issueDate,
+    dueDate:        dueDateFor(issueDate),
     paymentMethod:  (row.payment_method as string | null) || 'Příkazem',
     description,
-    amount:         row.amount as number,
-    currency:       (row.currency as string) || 'CZK',
+    amount:         czkAmount,
+    currency:       conv.converted ? 'CZK' : ((row.currency as string) || 'CZK'),
     buyer,
     isCreditNote,
+    foreignNote:    conv.converted ? foreignNote(conv) : undefined,
   });
   return new Uint8Array(buf);
 }
@@ -290,14 +318,14 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
     for (const id of ids) {
       try {
         if (format === 'isdoc') {
-          const row = getInvoiceForIsdoc(db, id);
+          const row = getInvoiceForIsdoc(db, id) as any;
           if (!row || !row.invoice_number) { errors.push(`${id}: not found`); continue; }
-          const data = buildIsdocBytes(row);
+          const data = await buildIsdocBytes(db, row);
           files.push({ name: `faktura-${row.invoice_number}${ext}`, data });
         } else {
-          const row = getInvoiceForPdf(db, id);
+          const row = getInvoiceForPdf(db, id) as any;
           if (!row || !row.invoice_number) { errors.push(`${id}: not found`); continue; }
-          const data = await buildPdfBytes(row);
+          const data = await buildPdfBytes(db, row);
           files.push({ name: `faktura-${row.invoice_number}${ext}`, data });
         }
       } catch (err: any) {

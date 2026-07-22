@@ -148,6 +148,23 @@ export default function DocumentsPage() {
   const [invDateFrom,      setInvDateFrom]      = useState('');
   const [invDateTo,        setInvDateTo]        = useState('');
   const [invSourceFilter,  setInvSourceFilter]  = useState<'all' | 'airbnb' | 'booking' | 'teya' | 'manual' | 'pms'>('all');
+  // Multi-source selection (checkboxes) for combined view + ZIP export.
+  const ALL_SOURCE_KEYS = ['airbnb', 'booking', 'teya', 'manual', 'pms'] as const;
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set(ALL_SOURCE_KEYS));
+  const toggleSource = (key: string) => setSelectedSources(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  // Pick a whole month with one click → sets the from/to range.
+  const applyMonth = (m: string) => {
+    if (!/^\d{4}-\d{2}$/.test(m)) { setInvDateFrom(''); setInvDateTo(''); return; }
+    const [y, mo] = m.split('-').map(Number);
+    const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    setInvDateFrom(`${m}-01`);
+    setInvDateTo(`${m}-${String(last).padStart(2, '0')}`);
+  };
+  const currentMonthValue = (invDateFrom && /^\d{4}-\d{2}-01$/.test(invDateFrom)) ? invDateFrom.slice(0, 7) : '';
 
   // ── Statements tab state ──────────────────────────────────────
   const [stmtLoading, setStmtLoading] = useState(false);
@@ -612,14 +629,15 @@ export default function DocumentsPage() {
             manual:  { label: 'Вручну',  color: '#7c3aed', bg: 'rgba(124,58,237,0.1)'  },
             pms:     { label: 'PMS',     color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
           };
-          const sourcePills = [
-            { id: 'all',     label: 'Усі'     },
+          const sourceCheckboxes = [
             { id: 'airbnb',  label: 'Airbnb'  },
             { id: 'booking', label: 'Booking' },
             { id: 'teya',    label: 'Teya'    },
             { id: 'manual',  label: 'Вручну'  },
             { id: 'pms',     label: 'PMS'     },
           ] as const;
+          // Client-side filter by the checked sources — drives the table + ZIP export.
+          const visibleInvoices = allInvoices.filter(i => selectedSources.has(i.source));
           return (
             <>
               {/* Period lock — freeze a month's numbering per series before the accountant's ISDOC export */}
@@ -700,6 +718,14 @@ export default function DocumentsPage() {
                     </button>
                   )}
                 </div>
+                {/* Quick month picker → sets the from/to range */}
+                <input
+                  type="month"
+                  title="Обрати місяць"
+                  value={currentMonthValue}
+                  onChange={e => applyMonth(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontWeight: 600 }}
+                />
                 {/* Date Filters */}
                 <input
                   type="date"
@@ -724,31 +750,33 @@ export default function DocumentsPage() {
                 >
                   <Download size={13} /> Скачати CSV
                 </a>
-                {/* ZIP ISDOC button */}
+                {/* ZIP ISDOC button — exports the checked sources for the selected range */}
                 <button
-                  onClick={() => downloadZip(allInvoices.map(i => i.id), 'isdoc', invSourceFilter)}
-                  disabled={zipLoading === 'isdoc' || allInvoices.length === 0}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'rgba(79,110,247,0.1)', color: 'var(--accent-primary)', fontSize: 12, fontWeight: 700, cursor: allInvoices.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: allInvoices.length === 0 ? 0.5 : 1 }}
+                  onClick={() => downloadZip(visibleInvoices.map(i => i.id), 'isdoc', [...selectedSources].join('+') || 'batch')}
+                  disabled={zipLoading === 'isdoc' || visibleInvoices.length === 0}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'rgba(79,110,247,0.1)', color: 'var(--accent-primary)', fontSize: 12, fontWeight: 700, cursor: visibleInvoices.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: visibleInvoices.length === 0 ? 0.5 : 1 }}
                 >
                   {zipLoading === 'isdoc'
                     ? <><RefreshCw size={13} className="spin" /> Генеруємо ZIP…</>
-                    : <><Package size={13} /> ZIP ISDOC</>
+                    : <><Package size={13} /> ZIP ISDOC ({visibleInvoices.length})</>
                   }
                 </button>
               </div>
 
-              {/* Source filter pills */}
+              {/* Source checkboxes — multi-select for combined view + ZIP export */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-                {sourcePills.map(pill => {
-                  const active = invSourceFilter === pill.id;
-                  const cfg = sourceConfig[pill.id as keyof typeof sourceConfig];
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Джерела:</span>
+                {sourceCheckboxes.map(src => {
+                  const checked = selectedSources.has(src.id);
+                  const cfg = sourceConfig[src.id as keyof typeof sourceConfig];
                   const color = cfg?.color || 'var(--accent-primary)';
                   return (
-                    <button key={pill.id} onClick={() => setInvSourceFilter(pill.id as typeof invSourceFilter)} style={{ padding: '5px 14px', borderRadius: 20, border: active ? `2px solid ${color}` : '2px solid var(--border-primary)', background: active ? (cfg?.bg || 'rgba(79,110,247,0.1)') : 'transparent', color: active ? color : 'var(--text-secondary)', fontWeight: active ? 700 : 400, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
-                      {pill.label}
+                    <button key={src.id} onClick={() => toggleSource(src.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, border: checked ? `2px solid ${color}` : '2px solid var(--border-primary)', background: checked ? (cfg?.bg || 'rgba(79,110,247,0.1)') : 'transparent', color: checked ? color : 'var(--text-secondary)', fontWeight: checked ? 700 : 400, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
+                      <span style={{ fontSize: 13 }}>{checked ? '☑' : '☐'}</span>{src.label}
                     </button>
                   );
                 })}
+                <button onClick={() => setSelectedSources(new Set(ALL_SOURCE_KEYS))} style={{ padding: '4px 10px', borderRadius: 20, border: '1px dashed var(--border-primary)', background: 'transparent', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer' }}>Усі</button>
                 {allInvLoading && <RefreshCw size={14} className="spin" style={{ color: 'var(--text-tertiary)' }} />}
               </div>
 
@@ -757,11 +785,11 @@ export default function DocumentsPage() {
                 <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--accent-danger)' }}>
                   <AlertCircle size={24} style={{ marginBottom: 8 }} /><div>{allInvError}</div>
                 </div>
-              ) : !allInvLoading && allInvoices.length === 0 ? (
+              ) : !allInvLoading && visibleInvoices.length === 0 ? (
                 <div className="card" style={{ padding: 56, textAlign: 'center' }}>
                   <Receipt size={40} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
                   <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
-                    {invSearch || invSourceFilter !== 'all' ? 'Нічого не знайдено' : 'Фактур ще немає'}
+                    {invSearch || selectedSources.size < ALL_SOURCE_KEYS.length ? 'Нічого не знайдено' : 'Фактур ще немає'}
                   </div>
                   <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                     {invSearch ? `За запитом «${invSearch}»` : 'Завантажте виписки у вкладці «Виписки»'}
@@ -781,7 +809,7 @@ export default function DocumentsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {allInvoices.map(inv => {
+                      {visibleInvoices.map(inv => {
                         const srcCfg = sourceConfig[inv.source] || sourceConfig.manual;
                         const isCreditNote = !!inv.is_credit_note;
                         return (
