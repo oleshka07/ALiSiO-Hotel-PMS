@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CreditCard, RefreshCw, AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { CreditCard, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface SyncStatus {
   never_run?: boolean;
@@ -70,7 +70,7 @@ export default function TeyaSyncTab() {
       const json = await res.json();
       if (!res.ok) setCsvMsg(`❌ ${json.error || 'Помилка імпорту'}`);
       else {
-        setCsvMsg(`✅ Оброблено ${json.parsedRows}, звірено ${json.matched}, створено ${json.created}, пропущено ${json.skippedRows}.`);
+        setCsvMsg(`✅ Звірка (нічого не записано в операції). Оброблено ${json.parsedRows} на ${Number(json.grossTotal || 0).toLocaleString('uk-UA')} ${json.currency}, вже у PMS ${json.matched}, нових ${json.newRows}, пропущено ${json.skippedRows}. Гроші приходять з банк-виписки.`);
         fetchStatus();
       }
     } catch (e: any) { setCsvMsg(`❌ ${e.message}`); }
@@ -166,7 +166,7 @@ export default function TeyaSyncTab() {
       {status && !status.never_run && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16, padding: '8px 12px', borderLeft: '3px solid var(--border-primary)' }}>
           Останній запуск: <b>{status.updated_at}</b> · період <b>{status.from} → {status.to}</b><br />
-          Знайдено <b>{status.fetched}</b> · matched <b>{status.matched}</b> · створено <b>{status.created}</b> · пропущено <b>{status.skipped}</b>
+          Знайдено <b>{status.fetched}</b> · вже у PMS <b>{status.matched}</b> · нових (звірка) <b>{status.created}</b> · пропущено <b>{status.skipped}</b>
           {(status.errors ?? 0) > 0 && <span style={{ color: '#ef4444' }}> · errors <b>{status.errors}</b></span>}
         </div>
       )}
@@ -188,7 +188,7 @@ export default function TeyaSyncTab() {
               <CheckCircle2 size={14} /> Matched (вже у PMS): <b>{result.matched}</b>
             </span>
             <span style={{ color: '#3b82f6', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <RefreshCw size={14} /> Створено нових: <b>{result.created}</b>
+              <RefreshCw size={14} /> Нових (ще не в банку): <b>{result.created}</b>
             </span>
             {result.skipped > 0 && (
               <span style={{ color: 'var(--text-secondary)' }}>Skipped: <b>{result.skipped}</b></span>
@@ -203,11 +203,11 @@ export default function TeyaSyncTab() {
           {result.created > 0 && (
             <details>
               <summary style={{ cursor: 'pointer', fontSize: 12, color: '#3b82f6', fontWeight: 600 }}>
-                Показати створені ({result.created}) — це платежі що йшли повз PMS webhook
+                Показати нові ({result.created}) — є в Teya, ще немає в банк-виписці (не записано)
               </summary>
               <table style={{ width: '100%', marginTop: 8, fontSize: 12, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr><th style={th}>Txn ID</th><th style={th}>Дата</th><th style={th}>Сума</th><th style={th}>Status</th><th style={th}>Operation</th></tr>
+                  <tr><th style={th}>Txn ID</th><th style={th}>Дата</th><th style={th}>Сума</th><th style={th}>Status</th></tr>
                 </thead>
                 <tbody>
                   {result.outcomes.filter((o) => o.outcome === 'created').map((o, i) => (
@@ -216,9 +216,6 @@ export default function TeyaSyncTab() {
                       <td style={td}>{o.created_at?.substring(0, 19).replace('T', ' ')}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{o.amount.toFixed(2)} {o.currency}</td>
                       <td style={td}>{o.status}</td>
-                      <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>
-                        {o.operation_id && <a href={`/finance/operations`} style={{ color: '#3b82f6' }}>{o.operation_id} <ExternalLink size={10} /></a>}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -247,8 +244,8 @@ export default function TeyaSyncTab() {
         <b>Налаштування:</b> Teya OAuth credentials мають містити scope <code style={{ padding: '1px 4px', background: 'var(--bg-primary)', borderRadius: 3 }}>transactions/list</code>.
         Якщо отримуєш 401/403 — зайди в Teya developer портал і додай цей scope до твого app, потім запусти sync знову.
         <br /><br />
-        <b>Що матчиться:</b> існуюча fin_operation з джерелом <code>teia</code> (webhook) або <code>teya_sync</code> + <code>source_ref</code> = Teya transaction ID.
-        <b>Що створюється:</b> нова fin_operation з джерелом <code>teya_sync</code>, attribution до першого активного bank-рахунку у валюті транзакції.
+        <b>Це лише звірка — в операції нічого не пишеться.</b> Гроші в операції приходять <u>тільки</u> з банк-виписки та ручної готівки.
+        Teya виплачує на банк денним батчем, тож запис платежів тут дублював би ті самі гроші. «Нові» = є в Teya, але ще не впали в банк-виписку (зʼявляться пізніше самі).
       </div>
     </div>
   );

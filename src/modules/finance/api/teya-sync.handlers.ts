@@ -90,20 +90,26 @@ export async function importTeyaCsv(request: NextRequest): Promise<NextResponse>
       return NextResponse.json({ error: 'У файлі не знайдено підтверджених транзакцій.' }, { status: 400 });
     }
     const result = reconcileTeyaCsvRows(db, orgId, parsed.rows);
+    const gross = parsed.rows.reduce((s, r) => s + Math.abs(r.amount || 0), 0);
 
     db.prepare(`
       INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
       VALUES ('teya_csv_last_import', ?, datetime('now'))
     `).run(JSON.stringify({
-      currency, parsedRows: parsed.total, skippedRows: parsed.skipped,
-      fetched: result.fetched, matched: result.matched, created: result.created,
+      currency, parsedRows: parsed.total, skippedRows: parsed.skipped, gross,
+      fetched: result.fetched, matched: result.matched, newRows: result.created,
       errors: result.errors, ran_at: new Date().toISOString(),
     }));
 
+    // REPORT ONLY — nothing was written to operations. Cash comes from the bank
+    // statement; Teya settles to the bank so recording it here would double-count.
     return NextResponse.json({
       ok: true, currency,
+      reconcileOnly: true,
+      note: 'Звірка: нічого не записано в операції. Гроші приходять з банк-виписки.',
       parsedRows: parsed.total, skippedRows: parsed.skipped,
-      matched: result.matched, created: result.created, errors: result.errors,
+      grossTotal: gross,
+      matched: result.matched, newRows: result.created, errors: result.errors,
       outcomes: result.outcomes.slice(0, 500),
     });
   } catch (e: unknown) {
