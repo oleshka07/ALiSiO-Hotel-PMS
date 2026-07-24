@@ -1,23 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 //
-// Teya transaction reconciliation engine
+// Teya transaction reconciliation engine — REPORT ONLY.
 //
-// Pulls a date-range of transactions from Teya's API and reconciles them
-// against fin_operations. Three outcomes per transaction:
-//   - matched: existing fin_operation found (source IN ('teia','teya_sync'),
-//     source_ref = txn_id) → skip, count as covered
-//   - created: no match → insert new fin_operation with source='teya_sync',
-//     so terminal/in-app payments that bypassed our checkout flow still
-//     show up in PMS for accounting
-//   - skipped: transaction status is not SUCCEEDED → ignore
+// IMPORTANT: this engine NEVER writes to fin_operations. In this business the
+// only sources of truth for cash movement are (a) the bank statement import and
+// (b) manually-entered cash. Teya settles every payment to the bank as a daily
+// batch, so recording individual Teya payments as operations would DOUBLE-COUNT
+// the same money (400 Teya rows + 1 bank deposit for the same day).
 //
-// This is the safety net for the gap user identified: Teya payments
-// initiated from the Teya phone app or restaurant POS terminal don't
-// fire our webhook, so without this sync they'd never reach PMS.
+// Teya data is used purely to reconcile / cross-check against the bank:
+//   - matched: this Teya payment is already present in PMS (webhook 'teia', or a
+//     prior import) → nothing to do
+//   - new:     present in the Teya export but not yet in PMS — informational only
+//     (it will arrive via the bank statement); NOT written anywhere
+//   - skipped: transaction status is not SUCCEEDED/REFUNDED → ignore
 //
 
 import { listTeyaTransactions, type TeyaTransaction } from '@/modules/payments/domain/teya-client';
-import { createOperationInTx } from '../api/operations.handlers';
 
 export interface ReconcileResult {
   fetched: number;
@@ -39,17 +38,6 @@ export interface ReconcileResult {
 
 const SUCCESS_STATUSES = new Set(['SUCCEEDED', 'PAID', 'COMPLETED', 'SUCCESS', 'paid']);
 const REFUND_STATUSES  = new Set(['REFUNDED', 'PARTIALLY_REFUNDED', 'refunded']);
-
-function defaultBankAccountId(db: any, orgId: string, currency: string): string | null {
-  const row = db.prepare(`
-    SELECT id FROM finance_accounts
-    WHERE organization_id = ? AND currency = ? AND is_active = 1
-      AND type IN ('bank', 'cash')
-    ORDER BY (type = 'bank') DESC, sort_order ASC, created_at ASC
-    LIMIT 1
-  `).get(orgId, currency) as { id: string } | undefined;
-  return row?.id || null;
-}
 
 function findExistingOp(db: any, orgId: string, txnId: string): { id: string } | null {
   // Check webhook ('teia'), API sync ('teya_sync') and CSV import ('teya_csv')
@@ -188,10 +176,9 @@ function reconcileSingleTransaction(
   orgId: string,
   txn: TeyaTransaction,
   result: ReconcileResult,
-  source: 'teya_sync' | 'teya_csv' = 'teya_sync',
 ): void {
-  // Skip non-success transactions (PENDING, FAILED, CANCELLED) — only
-  // record actual money movements. Refunds get recorded as expense ops.
+  // Skip non-success transactions (PENDING, FAILED, CANCELLED). Only
+  // SUCCEEDED/REFUNDED rows are counted in the reconcile summary.
   const isSuccess = SUCCESS_STATUSES.has(txn.status);
   const isRefund = REFUND_STATUSES.has(txn.status) || txn.type === 'REFUND';
 
@@ -225,63 +212,23 @@ function reconcileSingleTransaction(
     return;
   }
 
-  // No existing op — create one. Pick a default bank account in the
-  // transaction's currency.
-  const accountId = defaultBankAccountId(db, orgId, (txn.currency || 'CZK').toUpperCase());
-  if (!accountId) {
-    result.errors++;
-    result.outcomes.push({
-      txn_id: txn.id, status: txn.status, amount: txn.amount, currency: txn.currency,
-      created_at: txn.created_at, outcome: 'error',
-      message: `No active bank account in ${txn.currency} for this organisation`,
-    });
-    return;
-  }
-
-  const opType: 'income' | 'expense' = isRefund ? 'expense' : 'income';
-  const paidAt = txn.created_at || new Date().toISOString();
-
-  try {
-    const operationId = createOperationInTx(db, orgId, {
-      op_type: opType,
-      account_from_id: opType === 'expense' ? accountId : null,
-      account_to_id:   opType === 'income'  ? accountId : null,
-      amount: Math.abs(txn.amount),
-      currency: (txn.currency || 'CZK').toUpperCase(),
-      paid_at: paidAt,
-      method: 'card',
-      payment_subtype: isRefund ? 'refund' : 'service',
-      source,
-      source_ref: txn.id,
-      comment: txn.description || (txn.reference ? `Teya ${txn.reference}` : (source === 'teya_csv' ? 'Teya CSV import' : 'Teya POS / API sync')),
-      // Money sits on Teya's merchant account until the weekly sweep; the fact
-      // lands via the bank statement (bank_import). Keep sync ops as pending so
-      // completed-based reports don't double-count the same money.
-      status: 'pending',
-      needs_review: 1,
-    });
-    result.created++;
-    result.outcomes.push({
-      txn_id: txn.id, status: txn.status, amount: txn.amount, currency: txn.currency,
-      created_at: txn.created_at, outcome: 'created', operation_id: operationId,
-    });
-  } catch (e: any) {
-    result.errors++;
-    result.outcomes.push({
-      txn_id: txn.id, status: txn.status, amount: txn.amount, currency: txn.currency,
-      created_at: txn.created_at, outcome: 'error',
-      message: e.message,
-    });
-  }
+  // Not yet in PMS. REPORT ONLY — never write to fin_operations. This money
+  // will land via the bank statement; recording it here would double-count it.
+  // `created` counts these "new / not-yet-in-bank" rows for the reconcile summary.
+  result.created++;
+  result.outcomes.push({
+    txn_id: txn.id, status: txn.status, amount: txn.amount, currency: txn.currency,
+    created_at: txn.created_at, outcome: 'created',
+    message: 'Є в Teya, ще немає в банк-виписці (звірка, не записано)',
+  });
 }
 
 // ─── CSV import path (Teya Transactions export) ──────────────────────────────
 //
 // The Teya CSV export carries no transaction id, so each row is keyed by a
-// synthetic stable hash (see teya-csv-parser). Reconciliation is otherwise
-// identical to the API path: dedup against existing ops, create a needs_review
-// fin_operation (source='teya_csv') for anything new (terminal / link payments
-// that never reached PMS).
+// synthetic stable hash (see teya-csv-parser). REPORT ONLY, same as the API
+// path: classify each row as matched (already in PMS) or new (not yet in the
+// bank statement) — nothing is written to fin_operations.
 
 export interface TeyaCsvTxn {
   id: string;            // synthetic stable hash — dedup key
@@ -298,7 +245,7 @@ export function reconcileTeyaCsvRows(db: any, orgId: string, rows: TeyaCsvTxn[])
   const result: ReconcileResult = { fetched: 0, matched: 0, created: 0, skipped: 0, errors: 0, outcomes: [] };
   for (const r of rows) {
     result.fetched++;
-    reconcileSingleTransaction(db, orgId, r as unknown as TeyaTransaction, result, 'teya_csv');
+    reconcileSingleTransaction(db, orgId, r as unknown as TeyaTransaction, result);
   }
   return result;
 }

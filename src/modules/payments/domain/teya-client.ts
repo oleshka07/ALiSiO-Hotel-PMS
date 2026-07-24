@@ -218,7 +218,10 @@ export async function createPaymentLink(opts: PaymentLinkOptions): Promise<Payme
   const payload: Record<string, unknown> = {
     store_id: storeId,
     amount: { currency: opts.currency || 'CZK', value: opts.amount },
-    type: 'SALE',
+    // PaymentLinkType (NOT the checkout SALE/REFUND transaction type). Teya
+    // pay-by-links are single-use; combined with no expires_at below the link
+    // never expires but can only be paid once — exactly what a reservation needs.
+    type: 'SINGLE_USE',
     line_items: (opts.items && opts.items.length)
       ? opts.items
       : [{ description: opts.description || 'Platba', quantity: 1, unit_price: opts.amount }],
