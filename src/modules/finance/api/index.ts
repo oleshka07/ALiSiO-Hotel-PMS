@@ -387,15 +387,6 @@ export const saveEntityResolutions  = withPermission('manage_finance_settings', 
 export const reviewRows             = withPermission('manage_finance_settings', _reviewRows);
 export const commitImport           = withPermission('manage_finance_settings', _commitImport);
 
-// ─── Finmap historical import (PR #30) — manage_finance_settings ─
-import {
-  getFinmapImportStatus as _getFinmapImportStatus,
-  importFinmap as _importFinmap, rollbackFinmapImport as _rollbackFinmapImport,
-} from './finmap-import.handlers';
-export const getFinmapImportStatus = withFinanceRead(_getFinmapImportStatus);
-export const importFinmap         = withPermission('manage_finance_settings', _importFinmap);
-export const rollbackFinmapImport = withPermission('manage_finance_settings', _rollbackFinmapImport);
-
 // ─── Investor public portal (PR #32) — portal token auth, no session ─
 export { getInvestorPortalData } from './investor-portal.handlers';
 
