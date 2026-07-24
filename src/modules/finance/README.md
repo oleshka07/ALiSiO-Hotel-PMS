@@ -1,6 +1,6 @@
 # Finance Module
 
-Управляє фінансами: операції (income/expense/transfer), P&L, cashflow, рахунки, бюджети, категорії, контрагенти, теги, CapEx, нарахування, банківські виписки, автоматичні правила, рекурентні шаблони, інвестори, Teya-синхронізація, імпорт з Finmap. Найбільший модуль у системі (~100+ публічних функцій).
+Управляє фінансами: операції (income/expense/transfer), P&L, cashflow, рахунки, бюджети, категорії, контрагенти, теги, CapEx, нарахування, банківські виписки, автоматичні правила, рекурентні шаблони, інвестори, Teya-синхронізація, універсальний імпорт (XLSX/CSV). Найбільший модуль у системі (~100+ публічних функцій).
 
 ## Публічне API
 
@@ -275,14 +275,6 @@ API згруповано за бізнес-доменами. Мутації за
 | `reviewRows(req)` | Ревізія рядків | manage_finance_settings |
 | `commitImport(req)` | Підтвердити імпорт | manage_finance_settings |
 
-### Finmap імпорт (historical)
-
-| Функція | Опис | Дозвіл |
-|---|---|---|
-| `getFinmapImportStatus()` | Статус імпорту Finmap | view_finance |
-| `importFinmap(req)` | Запустити імпорт | manage_finance_settings |
-| `rollbackFinmapImport(req)` | Відкотити імпорт | manage_finance_settings |
-
 ### Інвестори
 
 | Функція | Опис | Дозвіл |
@@ -458,7 +450,6 @@ finance/
     attachments.handlers.ts
     teya-sync.handlers.ts
     import-wizard.handlers.ts
-    finmap-import.handlers.ts
     investors.handlers.ts
     investor-audit.handlers.ts
     investor-notes.handlers.ts
@@ -479,7 +470,6 @@ finance/
     clearing-engine.ts
     entity-matcher.ts
     export-utils.ts
-    finmap-import-engine.ts
     import-commit-engine.ts
     import-wizard-engine.ts
     investor-portal-engine.ts

@@ -5,7 +5,7 @@ import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Plus, Pencil, Trash2, X, Check, Shield, Eye, EyeOff, Search, ChevronDown,
-  MessageCircle,
+  MessageCircle, Key,
 } from 'lucide-react';
 import {
   ROLE_LABELS, ROLE_COLORS, PERMISSION_GROUPS, ROLE_DEFAULTS,
@@ -225,6 +225,25 @@ export default function UsersPage() {
     }
   }
 
+  // Quick reset password — for staff who forget their password
+  async function handleResetPassword(user: UserData) {
+    const pwd = window.prompt(`Новий пароль для «${user.full_name}» (мінімум 6 символів):`);
+    if (pwd === null) return; // cancelled
+    if (pwd.length < 6) { alert('Пароль замалий — мінімум 6 символів.'); return; }
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Не вдалося скинути пароль'); return; }
+      alert(`✅ Пароль для «${user.full_name}» оновлено.`);
+    } catch {
+      alert('Помилка мережі');
+    }
+  }
+
   // Delete user
   async function handleDelete(id: string) {
     try {
@@ -363,6 +382,9 @@ export default function UsersPage() {
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(user)} title="Редагувати">
                           <Pencil size={14} />
+                        </button>
+                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleResetPassword(user)} title="Скинути пароль">
+                          <Key size={14} />
                         </button>
                         {deleteConfirm === user.id ? (
                           <>

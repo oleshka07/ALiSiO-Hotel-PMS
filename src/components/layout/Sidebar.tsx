@@ -179,19 +179,19 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (!user || !item.permission) return true;
-        if (!hasPermission(user.permissions, item.permission)) return false;
+        if (!user) return true;
 
-        // For non-owner finance users: filter by allowed_tabs
+        // For non-owner finance users: filter by allowed_tabs FIRST — independent
+        // of item.permission, otherwise finance links without a permission field
+        // would bypass the tab restriction and always show.
         if (financeAccess && !financeAccess.is_owner && item.href.startsWith('/finance')) {
           const tabId = FINANCE_TAB_MAP[item.href];
-          if (tabId && tabId !== 'overview') {
-            return financeAccess.allowed_tabs.includes(tabId);
+          if (tabId && tabId !== 'overview' && !financeAccess.allowed_tabs.includes(tabId)) {
+            return false;
           }
-          // Overview is always visible if user has finance access
-          if (tabId === 'overview') return true;
         }
 
+        if (item.permission && !hasPermission(user.permissions, item.permission)) return false;
         return true;
       }),
     }))
