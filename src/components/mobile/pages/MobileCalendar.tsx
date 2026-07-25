@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, X, Search, Building2 } from 'lucide-react';
 import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow, type BookingFormValues } from '@/components/booking/BookingForm';
 import RoomAllocationModal from '@/components/booking/RoomAllocationModal';
+import MobileShiftChecklists from '@/components/mobile/MobileShiftChecklists';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -262,7 +264,15 @@ export default function MobileCalendar() {
   const [showSearch, setShowSearch] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<'gantt' | 'shift'>('gantt');
+
+  useEffect(() => {
+    if (searchParams?.get('view') === 'shift') {
+      setViewMode('shift');
+    }
+  }, [searchParams]);
+
   const [viewBlock, setViewBlock] = useState<AvailabilityBlock | null>(null);
 
   const [viewBooking, setViewBooking] = useState<BookingRow | null>(null);
@@ -823,6 +833,9 @@ export default function MobileCalendar() {
               ))
             )}
           </div>
+
+          {/* Operational Role Checklists */}
+          <MobileShiftChecklists />
         </div>
       ) : (
         /* Gantt */

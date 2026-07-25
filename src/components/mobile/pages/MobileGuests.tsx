@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Search, RefreshCw, Phone, Mail, MapPin, X, ChevronRight, User, Plus, Edit2, MessageCircle, Save } from 'lucide-react';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface GuestRow {
   id: string;
@@ -116,6 +117,8 @@ function GuestFormSheet({
       setSaving(false);
     }
   };
+
+  useBodyScrollLock(true);
 
   return (
     <>
@@ -282,6 +285,8 @@ function GuestDetailSheet({
 }) {
   const [stays, setStays] = useState<ReservationRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useBodyScrollLock(Boolean(guest));
 
   useEffect(() => {
     fetch(`/api/guests/${guest.id}/reservations`)

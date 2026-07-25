@@ -8,6 +8,7 @@ import {
   LogOut, MessageSquare, GitBranch, List,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface MobileMoreSheetProps {
   open: boolean;
@@ -39,6 +40,8 @@ const moreItems = [
 export default function MobileMoreSheet({ open, onClose }: MobileMoreSheetProps) {
   const pathname = usePathname();
   const { user, logout } = useCurrentUser();
+
+  useBodyScrollLock(open);
 
   if (!open) return null;
 

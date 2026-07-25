@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   X, MoreVertical, Phone, Mail, MessageCircle, Check, Clock, Lock,
   Plus, Copy, ExternalLink, Edit3, Loader2, Save, Receipt,
@@ -87,6 +88,7 @@ export default function MobileBookingDetail({
 }: MobileBookingDetailProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+  useBodyScrollLock(Boolean(b));
   const [tab, setTab] = useState<'payment' | 'registration' | 'groups' | 'audit'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });

@@ -40,6 +40,7 @@ const CLEAN_COLORS: Record<string, { label: string; color: string }> = {
 
 const QUICK_ACTIONS = [
   { label: 'Бронювання',  href: '/bookings',       icon: BookOpen,     color: '#3b82f6' },
+  { label: 'Денна зміна', href: '/calendar?view=shift', icon: RefreshCw, color: '#3b82f6' },
   { label: 'Календар',    href: '/calendar',        icon: CalendarDays, color: '#14b8a6' },
   { label: 'Гості',       href: '/guests',          icon: Users,        color: '#8b5cf6' },
   { label: 'Журнал',      href: '/finance/operations',     icon: List,         color: '#22c55e' },
@@ -112,6 +113,39 @@ export default function MobileDashboard() {
         </svg>
       </div>
 
+      {/* Operational Shift Banner */}
+      <Link
+        href="/calendar?view=shift"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, rgba(59,130,246,0.18) 0%, rgba(139,92,246,0.18) 100%)',
+          border: '1px solid rgba(59,130,246,0.35)',
+          borderRadius: 16,
+          padding: '12px 16px',
+          marginBottom: 12,
+          textDecoration: 'none',
+          color: 'inherit',
+          boxShadow: '0 2px 8px rgba(59,130,246,0.1)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18 }}>
+            ⚡
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>ДЕННА ЗМІНА</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              🛬 {data.arrivalsToday} заїздів · 🛫 {data.departuresToday} виїздів
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#3b82f6', background: 'var(--bg-card)', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(59,130,246,0.25)' }}>
+          Відкрити →
+        </div>
+      </Link>
+
       {/* Tabs */}
       <div className="m-chips" style={{ marginBottom: 10 }}>
         {([
@@ -134,20 +168,20 @@ export default function MobileDashboard() {
       {(tab === 'today' || tab === 'tomorrow') && (
         <div className="m-kpi-grid" style={{ marginBottom: 14 }}>
           {[
-            { value: data.arrivalsToday,   label: 'Заїздів',  icon: ArrowDownRight, color: '#34d399', bg: 'rgba(52,211,153,0.15)' },
-            { value: data.departuresToday, label: 'Виїздів',  icon: ArrowUpRight,   color: '#60a5fa', bg: 'rgba(96,165,250,0.15)'  },
-            { value: data.freeUnits,       label: 'Вільних',  icon: BedDouble,      color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
-            { value: `${data.occupancyRate}%`, label: 'Зайн.', icon: Home,          color: '#fbbf24', bg: 'rgba(251,191,36,0.15)'  },
+            { value: data.arrivalsToday,   label: 'Заїздів',  icon: ArrowDownRight, color: '#34d399', bg: 'rgba(52,211,153,0.15)', href: '/calendar?view=shift' },
+            { value: data.departuresToday, label: 'Виїздів',  icon: ArrowUpRight,   color: '#60a5fa', bg: 'rgba(96,165,250,0.15)', href: '/calendar?view=shift'  },
+            { value: data.freeUnits,       label: 'Вільних',  icon: BedDouble,      color: '#a78bfa', bg: 'rgba(167,139,250,0.15)', href: '/bookings' },
+            { value: `${data.occupancyRate}%`, label: 'Зайн.', icon: Home,          color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', href: '/calendar'  },
           ].map((kpi, i) => {
             const Icon = kpi.icon;
             return (
-              <div key={i} className="m-kpi-card">
+              <Link key={i} href={kpi.href} className="m-kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
                 <div style={{ width: 32, height: 32, borderRadius: 10, background: kpi.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 6px' }}>
                   <Icon size={16} style={{ color: kpi.color }} />
                 </div>
                 <div className="m-kpi-value">{kpi.value}</div>
                 <div className="m-kpi-label">{kpi.label}</div>
-              </div>
+              </Link>
             );
           })}
         </div>
