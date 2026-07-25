@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut, Building2 } from 'lucide-react';
+import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut, Building2, Pencil, Info, Link, MessageCircle } from 'lucide-react';
 import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow } from '@/components/booking/BookingForm';
 import RoomAllocationModal from '@/components/booking/RoomAllocationModal';
@@ -409,16 +409,18 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                 <button
                   className="m-action-btn"
                   onClick={e => { e.stopPropagation(); setEditBooking(b); }}
-                  title="Редагувати"
+                  title="Змінити"
+                  aria-label="Змінити"
                 >
-                  ✏️ Редагувати
+                  <Pencil size={18} />
                 </button>
                 <button
                   className="m-action-btn"
                   onClick={e => { e.stopPropagation(); openBooking(b); }}
                   title="Деталі"
+                  aria-label="Деталі"
                 >
-                  ℹ️ Деталі
+                  <Info size={18} />
                 </button>
                 {b.guest_page_token && (
                   <button
@@ -429,21 +431,24 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                       navigator.clipboard.writeText(link);
                       alert('🔗 Посилання на сторінку гостя скопійовано!');
                     }}
-                    title="Скопіювати посилання для гостя"
+                    title="Скопіювати посилання"
+                    aria-label="Скопіювати посилання"
                   >
-                    🔗 Посилання
+                    <Link size={18} />
                   </button>
                 )}
                 {b.guest_phone && (
                   <a
-                    className="m-action-btn"
+                    className="m-action-btn m-action-btn-whatsapp"
                     href={`https://wa.me/${b.guest_phone.replace(/[^\d+]/g, '').replace(/^\+/, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}
                     style={{ textDecoration: 'none' }}
+                    title="WhatsApp"
+                    aria-label="WhatsApp"
                   >
-                    💬 WhatsApp
+                    <MessageCircle size={18} />
                   </a>
                 )}
                 <button
@@ -455,8 +460,9 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                     }
                   }}
                   title="Скасувати"
+                  aria-label="Скасувати"
                 >
-                  ✕ Скасувати
+                  <X size={18} />
                 </button>
               </div>
             </div>

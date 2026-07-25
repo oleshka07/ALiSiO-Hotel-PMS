@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
@@ -160,12 +160,20 @@ function Modal({ open, onClose, title, children, footer, size }: {
 /* ================================================================
    Main
    ================================================================ */
-export default function BookingsPage() {
+function BookingsPageContent() {
   const { isMobile } = useDevice();
   const searchParams = useSearchParams();
   const openNew = searchParams?.get('new') === '1' || searchParams?.get('create') === '1';
   if (isMobile) return <MobileBookings openNew={openNew} />;
   return <BookingsDesktop />;
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingsPageContent />
+    </Suspense>
+  );
 }
 
 const getSourceIconEmoji = (code: string) => {

@@ -2,6 +2,7 @@
 
 import { X, BookOpen, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface MobileQuickCreateSheetProps {
   open: boolean;
@@ -9,6 +10,8 @@ interface MobileQuickCreateSheetProps {
 }
 
 export default function MobileQuickCreateSheet({ open, onClose }: MobileQuickCreateSheetProps) {
+  useBodyScrollLock(open);
+
   if (!open) return null;
 
   return (
