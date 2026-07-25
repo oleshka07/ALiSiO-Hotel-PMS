@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, MoreVertical, Phone, Mail, MessageCircle, Check, Clock, Lock,
   Plus, Copy, ExternalLink, Edit3, Loader2, Save, Receipt,
@@ -84,6 +85,8 @@ export default function MobileBookingDetail({
   onFetchPayments, onFetchBookings, onFetchRegistrations,
   showToast, setBooking,
 }: MobileBookingDetailProps) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const [tab, setTab] = useState<'payment' | 'registration' | 'groups' | 'audit'>('payment');
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
@@ -273,36 +276,129 @@ export default function MobileBookingDetail({
   };
 
   // ── Render helpers
-  const StatusIcon = ({ kind, label, sub }: { kind: 'ok' | 'wait' | 'fail' | 'default'; label: string; sub?: string }) => {
-    const colors: Record<string, { bg: string; fg: string }> = {
-      ok:      { bg: 'rgba(74,222,128,0.14)',  fg: '#4ADE80' },
-      wait:    { bg: 'rgba(245,184,71,0.14)',  fg: '#F5B847' },
-      fail:    { bg: 'rgba(242,107,107,0.14)', fg: '#F26B6B' },
-      default: { bg: 'var(--bg-tertiary)',     fg: 'var(--text-tertiary)' },
-    };
-    const c = colors[kind];
-    const Icon = kind === 'ok' ? Check : kind === 'wait' ? Clock : kind === 'fail' ? X : Lock;
+  const PipelineStep = ({
+    stepNum,
+    label,
+    sub,
+    status,
+    onClick,
+  }: {
+    stepNum: number;
+    label: string;
+    sub?: string;
+    status: 'ok' | 'wait' | 'fail' | 'default';
+    onClick?: () => void;
+  }) => {
+    const isOk = status === 'ok';
+    const isWait = status === 'wait';
+    const isFail = status === 'fail';
+
+    let bg = 'var(--bg-tertiary)';
+    let border = 'var(--border-primary)';
+    let color = 'var(--text-tertiary)';
+    let badgeBg = 'var(--bg-secondary)';
+
+    if (isOk) {
+      bg = 'rgba(34, 197, 94, 0.16)';
+      border = '#22c55e';
+      color = '#22c55e';
+      badgeBg = '#22c55e';
+    } else if (isWait) {
+      bg = 'rgba(245, 158, 11, 0.16)';
+      border = '#f59e0b';
+      color = '#f59e0b';
+      badgeBg = '#f59e0b';
+    } else if (isFail) {
+      bg = 'rgba(239, 68, 68, 0.16)';
+      border = '#ef4444';
+      color = '#ef4444';
+      badgeBg = '#ef4444';
+    }
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center' }}>
-        <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: c.bg, color: c.fg }}>
-          <Icon size={16} strokeWidth={2.2} />
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 3,
+          padding: '8px 4px',
+          borderRadius: 10,
+          background: bg,
+          border: `1px solid ${border}`,
+          color: color,
+          cursor: onClick ? 'pointer' : 'default',
+          transition: 'all 0.15s ease',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        <div style={{
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: badgeBg,
+          color: isOk || isWait || isFail ? '#fff' : 'var(--text-tertiary)',
+          fontSize: 10,
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {isOk ? <Check size={11} strokeWidth={3} /> : stepNum}
         </div>
-        <div style={{ fontSize: 11, color: kind === 'default' ? 'var(--text-secondary)' : c.fg, fontWeight: 500 }}>{label}</div>
-        {sub && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'ui-monospace, monospace' }}>{sub}</div>}
-      </div>
+        <div style={{ fontSize: 10.5, fontWeight: 700, textAlign: 'center', lineHeight: 1.1 }}>
+          {label}
+        </div>
+        {sub && (
+          <div style={{ fontSize: 9.5, opacity: 0.9, fontWeight: 600, fontFamily: 'ui-monospace, monospace' }}>
+            {sub}
+          </div>
+        )}
+      </button>
     );
   };
 
-  return (
-    <>
-      <div className="m-sheet-backdrop" onClick={onClose} />
-      <div className="m-sheet mbd-sheet" style={{ maxHeight: '94dvh', display: 'flex', flexDirection: 'column' }}>
+  if (!mounted) return null;
 
+  const content = (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
+      <div
+        className="m-sheet-backdrop"
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          touchAction: 'none',
+        }}
+      />
+      <div
+        className="m-sheet mbd-sheet"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 'calc(100dvh - 12px)',
+          maxHeight: 'calc(100dvh - 12px)',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 1001,
+          borderRadius: '20px 20px 0 0',
+          overflow: 'hidden',
+          background: 'var(--bg-card)',
+        }}
+      >
         {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', minHeight: 0 }}>
 
           {/* Multi-room warning */}
-          {b.is_multi_room && (
+          {Boolean(b.is_multi_room) && (
             <div style={{
               margin: '10px 14px', padding: '8px 12px', borderRadius: 8,
               background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
@@ -405,28 +501,40 @@ export default function MobileBookingDetail({
             )}
           </div>
 
-          {/* Statuses */}
+          {/* Interactive Pipeline Stepper */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-            padding: '10px 8px', borderBottom: '1px solid var(--border-primary)',
+            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6,
+            padding: '10px 12px', borderBottom: '1px solid var(--border-primary)',
+            background: 'var(--bg-secondary)',
           }}>
-            <StatusIcon
-              kind={['confirmed','checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
-              label="Підтверджено"
+            <PipelineStep
+              stepNum={1}
+              label="Бронь"
+              status={['confirmed','checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
+              onClick={onEdit}
             />
-            <StatusIcon
-              kind={isPaid ? 'ok' : (b.payment_status === 'payment_requested' ? 'wait' : 'fail')}
+            <PipelineStep
+              stepNum={2}
               label="Оплата"
-              sub={isPaid ? undefined : `${pct}%`}
+              sub={isPaid ? '100%' : `${pct}%`}
+              status={isPaid ? 'ok' : (b.payment_status === 'payment_requested' ? 'wait' : 'fail')}
+              onClick={() => setTab('payment')}
             />
-            <StatusIcon
-              kind={isRegistered ? 'ok' : 'fail'}
+            <PipelineStep
+              stepNum={3}
               label="Реєстрація"
               sub={regBadge}
+              status={isRegistered ? 'ok' : 'fail'}
+              onClick={() => setTab('registration')}
             />
-            <StatusIcon
-              kind={['checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
+            <PipelineStep
+              stepNum={4}
               label="Заселено"
+              status={['checked_in','checked_out'].includes(b.status) ? 'ok' : 'default'}
+              onClick={() => {
+                if (b.status === 'confirmed') onChangeStatus(b.id, 'checked_in');
+                else setTab('payment');
+              }}
             />
           </div>
 
@@ -832,8 +940,10 @@ export default function MobileBookingDetail({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
+
+  return createPortal(content, document.body);
 }
 
 // ── Helpers ───────────────────────────────────────────────
