@@ -233,13 +233,31 @@ export default function MobileDashboard() {
             </span>
           </div>
           {data.upcomingArrivals.slice(0, 5).map(a => (
-            <div key={a.id} className="m-card" style={{ padding: '12px 14px' }}>
-              <div className="m-card-row">
+            <div key={a.id} className="m-card" style={{ padding: '12px 14px', marginBottom: 8 }}>
+              <div className="m-card-row" style={{ alignItems: 'center' }}>
                 <div>
                   <div className="m-card-title">{a.first_name} {a.last_name}</div>
                   <div className="m-card-subtitle">{a.unit_code} · {a.nights} ноч. · {a.check_in}</div>
                 </div>
-                <CheckSquare size={18} color="#34d399" />
+                {a.status === 'confirmed' ? (
+                  <button
+                    onClick={async () => {
+                      await fetch(`/api/bookings/${a.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'checked_in' }),
+                      });
+                      fetchData();
+                    }}
+                    style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--accent-primary)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Заселити
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(20,184,166,0.15)', color: '#14b8a6' }}>
+                    Заселено
+                  </span>
+                )}
               </div>
             </div>
           ))}
