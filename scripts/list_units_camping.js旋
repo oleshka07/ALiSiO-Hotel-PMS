@@ -1,8 +1,0 @@
-const Database = require('better-sqlite3');
-const db = new Database('/root/projects/alisio-pms/data/alisio.db');
-try {
-  const rows = db.prepare("SELECT id, name FROM units WHERE category_id = 'cat_camping'").all();
-  console.log(JSON.stringify(rows, null, 2));
-} catch (err) {
-  console.error(err.message);
-}
