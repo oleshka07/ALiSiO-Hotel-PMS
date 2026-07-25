@@ -11,10 +11,10 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const db = getDb();
-    const id = params.id;
+    const { id } = await params;
 
     if (!id) {
       return NextResponse.json({ error: 'Missing reservation ID' }, { status: 400, headers: CORS_HEADERS });

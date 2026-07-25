@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { useDevice } from '@/lib/useDevice';
@@ -161,7 +162,9 @@ function Modal({ open, onClose, title, children, footer, size }: {
    ================================================================ */
 export default function BookingsPage() {
   const { isMobile } = useDevice();
-  if (isMobile) return <MobileBookings />;
+  const searchParams = useSearchParams();
+  const openNew = searchParams?.get('new') === '1' || searchParams?.get('create') === '1';
+  if (isMobile) return <MobileBookings openNew={openNew} />;
   return <BookingsDesktop />;
 }
 

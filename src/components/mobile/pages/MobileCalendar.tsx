@@ -262,6 +262,9 @@ export default function MobileCalendar() {
   const [showSearch, setShowSearch] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  const [viewMode, setViewMode] = useState<'gantt' | 'shift'>('gantt');
+  const [viewBlock, setViewBlock] = useState<AvailabilityBlock | null>(null);
+
   const [viewBooking, setViewBooking] = useState<BookingRow | null>(null);
   const [editBooking, setEditBooking] = useState<BookingRow | null>(null);
   const [payments, setPayments] = useState<unknown[]>([]);
@@ -280,6 +283,10 @@ export default function MobileCalendar() {
   const days = useMemo(() => Array.from({ length: DAYS }, (_, i) => addDays(startDay, i)), [startDay]);
   const today = useMemo(() => { const t = new Date(); t.setHours(0,0,0,0); return t; }, []);
   const todayISO = toISO(today);
+
+  const shiftCheckIns = useMemo(() => bookings.filter(b => b.check_in === todayISO && b.status !== 'cancelled'), [bookings, todayISO]);
+  const shiftCheckOuts = useMemo(() => bookings.filter(b => b.check_out === todayISO && b.status !== 'cancelled'), [bookings, todayISO]);
+  const dirtyUnits = useMemo(() => units.filter(u => u.cleaning_status === 'dirty' || u.cleaning_status === 'in_progress'), [units]);
 
   const sourceMap = useMemo(() => {
     const map: Record<string, { label: string; color: string }> = {};
@@ -533,19 +540,47 @@ export default function MobileCalendar() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
 
-      {/* Category toggle */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-        {[
-          { key: 'glamping', label: 'Glamping' },
-          { key: 'resort', label: 'Resort' },
-          { key: 'camping', label: 'Camping' },
-        ].map(c => (
-          <button key={c.key} onClick={() => setCategory(c.key)} style={{
-            padding: '5px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-            background: category === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-            color: category === c.key ? '#fff' : 'var(--text-secondary)',
-          }}>{c.label}</button>
-        ))}
+      {/* Top Header: Category toggle & View Mode switcher */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 6 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[
+            { key: 'glamping', label: 'Glamping' },
+            { key: 'resort', label: 'Resort' },
+            { key: 'camping', label: 'Camping' },
+          ].map(c => (
+            <button key={c.key} onClick={() => setCategory(c.key)} style={{
+              padding: '5px 10px', borderRadius: 16, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+              background: category === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+              color: category === c.key ? '#fff' : 'var(--text-secondary)',
+            }}>{c.label}</button>
+          ))}
+        </div>
+
+        {/* View Mode Switcher */}
+        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: 2, borderRadius: 16 }}>
+          <button
+            onClick={() => setViewMode('gantt')}
+            style={{
+              padding: '4px 10px', borderRadius: 14, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              background: viewMode === 'gantt' ? 'var(--bg-card)' : 'transparent',
+              color: viewMode === 'gantt' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              boxShadow: viewMode === 'gantt' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+            }}
+          >
+            📊 Сітка
+          </button>
+          <button
+            onClick={() => setViewMode('shift')}
+            style={{
+              padding: '4px 10px', borderRadius: 14, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              background: viewMode === 'shift' ? 'var(--bg-card)' : 'transparent',
+              color: viewMode === 'shift' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              boxShadow: viewMode === 'shift' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+            }}
+          >
+            📋 Зміна
+          </button>
+        </div>
       </div>
 
       {/* Search bar (toggleable) */}
@@ -618,20 +653,180 @@ export default function MobileCalendar() {
       {/* Range selection indicator */}
       {rangeStart && (
         <div style={{
-          padding: '6px 10px', borderRadius: 10, marginBottom: 6,
-          background: 'rgba(96,165,250,0.15)', color: 'var(--accent-primary)',
-          fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px', borderRadius: 12, marginBottom: 8,
+          background: 'var(--bg-card)', border: '1px solid var(--accent-primary)',
+          fontSize: 12, fontWeight: 600, display: 'flex', flexDirection: 'column', gap: 6,
         }}>
-          <span>📅 Заїзд: {rangeStart.date} — натисніть дату виїзду</span>
-          <button
-            onClick={() => setRangeStart(null)}
-            style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 4 }}
-          ><X size={14} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>📅 Заїзд: {rangeStart.date} (натисніть другу дату на сітці)</span>
+            <button
+              onClick={() => setRangeStart(null)}
+              style={{ border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 2 }}
+            ><X size={16} /></button>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={async () => {
+                const dateStr = rangeStart.date;
+                const unitId = rangeStart.unitId;
+                const nextD = toISO(addDays(new Date(dateStr + 'T00:00:00'), 1));
+                const res = await fetch('/api/availability-blocks', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ unit_id: unitId, date_from: dateStr, date_to: nextD, notes: 'Закрито з мобільного' }),
+                });
+                if (res.ok) {
+                  setRangeStart(null);
+                  fetchData();
+                } else {
+                  alert('Не вдалося заблокувати доступ');
+                }
+              }}
+              style={{ padding: '4px 10px', borderRadius: 8, border: 'none', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+            >
+              🔒 Закрити доступ
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Gantt */}
-      <div style={{ height: gridH, overflow: 'hidden', display: 'flex', borderRadius: 14, border: '1px solid var(--border-primary)', background: 'var(--bg-card)' }}>
+      {/* Shift View vs Gantt Grid */}
+      {viewMode === 'shift' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 24 }}>
+          {/* Operational Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 12, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700 }}>🛬 ЗАЇЗДИ</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#3b82f6', marginTop: 2 }}>{shiftCheckIns.length}</div>
+            </div>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 12, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700 }}>🛫 ВИЇЗДИ</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#8b5cf6', marginTop: 2 }}>{shiftCheckOuts.length}</div>
+            </div>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 12, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700 }}>🧹 БРУДНО</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444', marginTop: 2 }}>{dirtyUnits.length}</div>
+            </div>
+          </div>
+
+          {/* Arrivals List */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+              🛬 Заїзди сьогодні ({shiftCheckIns.length})
+            </div>
+            {shiftCheckIns.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', background: 'var(--bg-card)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border-primary)' }}>
+                Сьогодні немає нових заїздів
+              </div>
+            ) : (
+              shiftCheckIns.map(b => (
+                <div key={b.id} className="m-card" style={{ padding: '12px 14px', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{b.first_name} {b.last_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        Юніт: <strong style={{ color: 'var(--text-primary)' }}>{b.unit_code}</strong> · {b.nights} ноч.
+                      </div>
+                    </div>
+                    {b.status === 'confirmed' ? (
+                      <button
+                        onClick={() => handleChangeStatus(b.id, 'checked_in')}
+                        className="m-action-btn m-action-btn-primary"
+                        style={{ padding: '6px 12px', fontSize: 12 }}
+                      >
+                        Заселити
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(20,184,166,0.15)', color: '#14b8a6' }}>
+                        Заселено
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Departures List */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+              🛫 Виїзди сьогодні ({shiftCheckOuts.length})
+            </div>
+            {shiftCheckOuts.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', background: 'var(--bg-card)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border-primary)' }}>
+                Сьогодні немає виїздів
+              </div>
+            ) : (
+              shiftCheckOuts.map(b => (
+                <div key={b.id} className="m-card" style={{ padding: '12px 14px', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{b.first_name} {b.last_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        Юніт: <strong style={{ color: 'var(--text-primary)' }}>{b.unit_code}</strong>
+                      </div>
+                    </div>
+                    {b.status === 'checked_in' ? (
+                      <button
+                        onClick={() => handleChangeStatus(b.id, 'checked_out')}
+                        className="m-action-btn"
+                        style={{ padding: '6px 12px', fontSize: 12, background: 'rgba(139,92,246,0.15)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)' }}
+                      >
+                        Виселити
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(139,92,246,0.15)', color: '#8b5cf6' }}>
+                        Виселено
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Cleaning / Dirty Units */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+              🧹 Прибирання ({dirtyUnits.length} брудних)
+            </div>
+            {dirtyUnits.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', background: 'var(--bg-card)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border-primary)' }}>
+                Всі номери прибрані! ✨
+              </div>
+            ) : (
+              dirtyUnits.map(u => (
+                <div key={u.id} className="m-card" style={{ padding: '12px 14px', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{u.code} ({u.name})</div>
+                      <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 600, marginTop: 2 }}>
+                        {u.cleaning_status === 'in_progress' ? '⏳ В процесі прибирання' : '❌ Потребує прибирання'}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/units/${u.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ cleaning_status: 'clean' }),
+                        });
+                        fetchData();
+                      }}
+                      className="m-action-btn"
+                      style={{ padding: '6px 12px', fontSize: 12, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}
+                    >
+                      ✓ Позначити чисто
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Gantt */
+        <div style={{ height: gridH, overflow: 'hidden', display: 'flex', borderRadius: 14, border: '1px solid var(--border-primary)', background: 'var(--bg-card)' }}>
 
         {/* LEFT STICKY COLUMN */}
         <div style={{ width: LEFT_W, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-primary)', zIndex: 2 }}>
@@ -764,6 +959,7 @@ export default function MobileCalendar() {
                               <div
                                 key={s.block.id}
                                 title={`🔒 Закрито: ${s.block.notes || ''}`}
+                                onClick={(e) => { e.stopPropagation(); setViewBlock(s.block); }}
                                 style={{
                                   position: 'absolute',
                                   top: 4,
@@ -779,6 +975,7 @@ export default function MobileCalendar() {
                                   overflow: 'hidden',
                                   zIndex: 1,
                                   opacity: 0.85,
+                                  cursor: 'pointer',
                                 }}
                               >
                                 <span style={{ fontSize: 10, fontWeight: 700, color: '#aaa', whiteSpace: 'nowrap' }}>🔒</span>
@@ -833,6 +1030,7 @@ export default function MobileCalendar() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '6px 0 0', flexShrink: 0 }}>
@@ -905,6 +1103,48 @@ export default function MobileCalendar() {
           showToast={() => {}}
           setBooking={(b: unknown) => setViewBooking(b as BookingRow | null)}
         />
+      )}
+
+      {/* Block detail sheet */}
+      {viewBlock && (
+        <>
+          <div className="m-sheet-backdrop" onClick={() => setViewBlock(null)} />
+          <div className="m-sheet" style={{ maxHeight: '60dvh' }}>
+            <div className="m-sheet-handle" />
+            <div className="m-sheet-header">
+              <h2 style={{ fontSize: 17 }}>🔒 Блокування номера</h2>
+              <button className="m-header-btn" onClick={() => setViewBlock(null)}><X size={20} /></button>
+            </div>
+            <div style={{ padding: '0 16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                  Юніт: {units.find(u => u.id === viewBlock.unit_id)?.code || viewBlock.unit_id}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Дати закриття: <strong>{viewBlock.date_from}</strong> → <strong>{viewBlock.date_to}</strong>
+                </div>
+                {viewBlock.notes && (
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+                    Примітка: {viewBlock.notes}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={async () => {
+                  if (confirm('Видалити блокування номера на вказані дати?')) {
+                    await fetch(`/api/availability-blocks?id=${viewBlock.id}`, { method: 'DELETE' });
+                    setViewBlock(null);
+                    fetchData();
+                  }
+                }}
+                className="m-action-btn m-action-btn-danger"
+                style={{ width: '100%', padding: 12, borderRadius: 10, fontSize: 14, fontWeight: 700 }}
+              >
+                🔓 Видалити блокування (Розблокувати)
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Room allocation modal (Building F) */}

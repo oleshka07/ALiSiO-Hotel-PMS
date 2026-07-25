@@ -27,6 +27,25 @@ export async function listAvailabilityBlocks() {
   }
 }
 
+export async function createAvailabilityBlock(request: Request) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { unit_id, date_from, date_to, reason, notes } = body;
+    if (!unit_id || !date_from || !date_to) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+    const id = `blk_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
+    db.prepare(`
+      INSERT INTO availability_blocks (id, unit_id, date_from, date_to, reason, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(id, unit_id, date_from, date_to, reason || 'maintenance', notes || null);
+    return NextResponse.json({ ok: true, id });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
 export async function deleteAvailabilityBlock(request: Request) {
   try {
     const db = getDb();
