@@ -4883,6 +4883,11 @@ function runMigrations(database: any) {
     addDl('project_id', 'project_id TEXT');
     addDl('counterparty_id', 'counterparty_id TEXT');
     addDl('items_json', 'items_json TEXT');
+    // Clarification loop: the bot asks about an unclear entry and remembers the
+    // id of its own question, so a Telegram reply to it re-parses that entry.
+    addDl('question_message_id', 'question_message_id INTEGER');
+    addDl('asked_user_id', 'asked_user_id TEXT');
+    addDl('asked_user_name', 'asked_user_name TEXT');
   } catch (e: any) {
     console.log('[DB] daylog_entries ref-columns migration:', e.message);
   }

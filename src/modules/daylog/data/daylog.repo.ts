@@ -19,6 +19,9 @@ export interface DaylogRow extends DaylogInsert {
   created_at: string;
   corrected: number;
   items_json: string | null;
+  question_message_id: number | null;
+  asked_user_id: string | null;
+  asked_user_name: string | null;
 }
 
 export function insertEntry(e: DaylogInsert): string {
@@ -145,4 +148,38 @@ function parseItems(s: string | null | undefined): Array<{ qty: number; name: st
   } catch {
     return [];
   }
+}
+
+/** Entries awaiting a clarification reply to a specific bot question. */
+export function findPendingByQuestion(questionMessageId: number): DaylogRow[] {
+  const db = getDb();
+  return db.prepare(
+    'SELECT * FROM daylog_entries WHERE question_message_id = ? ORDER BY created_at',
+  ).all(questionMessageId) as DaylogRow[];
+}
+
+export function markQuestionAsked(
+  ids: string[],
+  questionMessageId: number,
+  userId: string | null,
+  userName: string | null,
+): void {
+  if (!ids.length || !questionMessageId) return;
+  const db = getDb();
+  const stmt = db.prepare(
+    `UPDATE daylog_entries
+     SET question_message_id = ?, asked_user_id = ?, asked_user_name = ?
+     WHERE id = ?`,
+  );
+  const tx = db.transaction(() => { for (const id of ids) stmt.run(questionMessageId, userId, userName, id); });
+  tx();
+}
+
+/** Replace the entries produced by an unclear message with the re-parsed ones. */
+export function deleteEntries(ids: string[]): void {
+  if (!ids.length) return;
+  const db = getDb();
+  const stmt = db.prepare('DELETE FROM daylog_entries WHERE id = ?');
+  const tx = db.transaction(() => { for (const id of ids) stmt.run(id); });
+  tx();
 }
