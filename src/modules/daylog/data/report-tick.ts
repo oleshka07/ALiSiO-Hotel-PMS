@@ -5,9 +5,9 @@ import { formatDailyReport, formatReconcile } from '../domain/format';
 import { sendToChat } from '../domain/telegram';
 import { DAYLOG_CHAT_ID, DAYLOG_REPORT_HOUR } from '../domain/config';
 
-// Posts the day-log summary to the chat once per day, after DAYLOG_REPORT_HOUR
-// (Europe/Prague). Runs off the existing getDb() tick — no cron/systemd timer
-// needed. Fire-and-forget: never throws into the DB bootstrap path.
+// Posts the day-log summary + PMS cross-check to the chat once per day, after
+// DAYLOG_REPORT_HOUR (Europe/Prague). Driven by the getDb() tick and by the
+// dedicated scheduler. Never throws into the DB bootstrap path.
 
 function pragueParts(): { date: string; hour: number } {
   const now = new Date();
@@ -18,7 +18,7 @@ function pragueParts(): { date: string; hour: number } {
   return { date, hour: isFinite(hour) ? hour : 0 };
 }
 
-// Guards against two ticks (getDb + scheduler) sending at the same time.
+// Guards against the two tick sources (getDb + scheduler) sending at once.
 let sending = false;
 
 export function runDaylogReportTickIfDue(db: any): void {
@@ -47,8 +47,8 @@ export function runDaylogReportTickIfDue(db: any): void {
   const text = formatDailyReport(summary) + (reconcile ? formatReconcile(reconcile) : '');
 
   // Mark only AFTER Telegram accepted the message — marking first meant a failed
-  // send silently lost the whole day's report. The in-flight flag prevents the
-  // concurrent double-post that the early marker used to guard against.
+  // send silently lost the whole day's report. The in-flight flag above replaces
+  // the early marker as the concurrent-double-post guard.
   sending = true;
   sendToChat(DAYLOG_CHAT_ID, text)
     .then((messageId) => {
