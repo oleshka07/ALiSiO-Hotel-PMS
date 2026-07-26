@@ -159,8 +159,9 @@
 .m-sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
   animation: m-fade-in 0.2s ease;
   /* Prevent scroll on backdrop */
   touch-action: none;
@@ -171,10 +172,10 @@
   bottom: 0;
   left: 0;
   right: 0;
-  max-height: 94dvh;
+  max-height: 96dvh;
   background: var(--bg-card);
   border-radius: 20px 20px 0 0;
-  z-index: 101;
+  z-index: 1001;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -510,6 +511,91 @@
   color: var(--text-secondary);
 }
 
+.m-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0 16px 24px;
+}
+
+.m-sheet-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-primary);
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.m-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-primary);
+  flex-wrap: wrap;
+}
+
+.m-action-btn {
+  flex: 1;
+  min-width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.m-action-btn:active {
+  transform: scale(0.92);
+  background: var(--bg-secondary);
+}
+
+.m-action-btn-whatsapp {
+  background: rgba(37, 211, 102, 0.15);
+  color: #25D366;
+  border-color: rgba(37, 211, 102, 0.3);
+}
+
+.m-action-btn-whatsapp:active {
+  background: rgba(37, 211, 102, 0.3);
+}
+
+.m-action-btn-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.m-action-btn-danger:active {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.m-action-btn-primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+.m-action-btn-danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
 /* ─── Empty State ───────────────────────────────────── */
 .m-empty {
   display: flex;
@@ -556,11 +642,23 @@
   align-items: flex-end;
 }
 
-.m-app .modal-content {
+.m-app .modal-content,
+.m-app .modal {
   border-radius: 20px 20px 0 0;
-  max-height: 90dvh;
+  max-height: 92dvh;
   width: 100%;
   max-width: 100%;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: m-slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 }
+
+.m-app .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+

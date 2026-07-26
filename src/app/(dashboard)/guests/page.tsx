@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import { useDevice } from '@/lib/useDevice';
@@ -860,12 +861,22 @@ function DesktopGuests() {
   );
 }
 
-export default function GuestsPage() {
+function GuestsPageContent() {
   const { isMobile } = useDevice();
-  
+  const searchParams = useSearchParams();
+  const openNew = searchParams?.get('new') === '1' || searchParams?.get('create') === '1';
+
   if (isMobile) {
-    return <MobileGuests />;
+    return <MobileGuests openNew={openNew} />;
   }
-  
+
   return <DesktopGuests />;
+}
+
+export default function GuestsPage() {
+  return (
+    <Suspense fallback={null}>
+      <GuestsPageContent />
+    </Suspense>
+  );
 }

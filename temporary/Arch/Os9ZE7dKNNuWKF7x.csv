@@ -1,4 +1,0 @@
-Type,"Booking number",Check-in,Checkout,"Guest name","Reservation status",Currency,"Payment status",Amount,"Payout date","Payout ID"
-Reservation,6953460834,"30 May 2026","31 May 2026","Štěpánka Brožková",ok,EUR,"Paid Online",106.11,"4 Jun 2026",Os9ZE7dKNNuWKF7x
-Reservation,5401705958,"30 May 2026","31 May 2026","Tadeáš Mojžíš",ok,EUR,"Paid Online",188.10,"4 Jun 2026",Os9ZE7dKNNuWKF7x
-Reservation,6839133308,"25 May 2026","28 May 2026","Angelina Stock",ok,EUR,"Paid Online",342.90,"4 Jun 2026",Os9ZE7dKNNuWKF7x

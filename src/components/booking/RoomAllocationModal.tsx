@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { X, Building2, GripVertical, Check, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface UnitRow {
   id: string;
@@ -642,6 +643,8 @@ export default function RoomAllocationModal({ open, onClose, onChanged, building
   useEffect(() => {
     if (selectedId) applyValidHighlights(selectedId);
   }, [bookings, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useBodyScrollLock(open);
 
   if (!open) return null;
 

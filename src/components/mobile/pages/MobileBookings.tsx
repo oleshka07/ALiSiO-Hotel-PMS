@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut, Building2 } from 'lucide-react';
+import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut, Building2, Pencil, Info, Link, MessageCircle } from 'lucide-react';
 import MobileBookingDetail from '@/components/booking/MobileBookingDetail';
 import BookingForm, { type UnitTypeRow as BFUnitTypeRow, type UnitRow as BFUnitRow, type BookingSourceRow as BFBookingSourceRow } from '@/components/booking/BookingForm';
 import RoomAllocationModal from '@/components/booking/RoomAllocationModal';
@@ -160,9 +160,15 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const [dateFilter, setDateFilter] = useState<'all' | 'today_in' | 'today_out' | 'staying'>('all');
+
   const filtered = useMemo(() => {
     let result = bookings.filter(b => b.status !== 'cancelled');
     if (statusFilter) result = result.filter(b => b.status === statusFilter);
+    if (dateFilter === 'today_in') result = result.filter(b => b.check_in === todayISO);
+    if (dateFilter === 'today_out') result = result.filter(b => b.check_out === todayISO);
+    if (dateFilter === 'staying') result = result.filter(b => b.check_in <= todayISO && b.check_out >= todayISO);
+
     if (search) {
       const s = search.toLowerCase();
       result = result.filter(b =>
@@ -172,7 +178,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
       );
     }
     return result.sort((a, b) => a.check_in.localeCompare(b.check_in));
-  }, [bookings, statusFilter, search]);
+  }, [bookings, statusFilter, dateFilter, todayISO, search]);
 
   const openBooking = async (booking: BookingRow) => {
     setViewBooking(booking);
@@ -256,7 +262,25 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
         ))}
       </div>
 
-      {/* Filter chips */}
+      {/* Date Filter chips */}
+      <div className="m-chips" style={{ marginBottom: 4 }}>
+        {[
+          { key: 'all', label: 'Всі' },
+          { key: 'today_in', label: '🛬 Заїзди сьогодні' },
+          { key: 'today_out', label: '🛫 Виїзди сьогодні' },
+          { key: 'staying', label: '🏠 Проживають' },
+        ].map(chip => (
+          <button
+            key={chip.key}
+            className={`m-chip ${dateFilter === chip.key ? 'm-chip-active' : ''}`}
+            onClick={() => setDateFilter(chip.key as any)}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Status Filter chips */}
       <div className="m-chips">
         {FILTER_CHIPS.map(chip => (
           <button
@@ -330,8 +354,8 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
           const cleanLabel = b.cleaning_status === 'clean' ? 'Чисто' : b.cleaning_status === 'dirty' ? 'Брудно' : b.cleaning_status === 'in_progress' ? 'В процесі' : null;
           const cleanColor = b.cleaning_status === 'clean' ? '#22c55e' : b.cleaning_status === 'dirty' ? '#ef4444' : '#f59e0b';
           return (
-            <div key={b.id} className="m-card" style={{ padding: '12px 14px', cursor: 'pointer' }}>
-              <div className="m-card-row" onClick={() => openBooking(b)}>
+            <div key={b.id} className="m-card" style={{ padding: '12px 14px' }}>
+              <div className="m-card-row" onClick={() => openBooking(b)} style={{ cursor: 'pointer' }}>
                 <div style={{ flex: 1 }}>
                   <div className="m-card-title">{b.first_name} {b.last_name}</div>
                   <div className="m-card-subtitle">
@@ -347,6 +371,8 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                   </span>
                 </div>
               </div>
+
+              {/* Sub-row with phone and cleaning status */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {b.guest_phone && (
@@ -376,6 +402,68 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                     <LogOut size={12} /> Виселити
                   </button>
                 )}
+              </div>
+
+              {/* Action Toolbar on Card */}
+              <div className="m-card-actions">
+                <button
+                  className="m-action-btn"
+                  onClick={e => { e.stopPropagation(); setEditBooking(b); }}
+                  title="Змінити"
+                  aria-label="Змінити"
+                >
+                  <Pencil size={18} />
+                </button>
+                <button
+                  className="m-action-btn"
+                  onClick={e => { e.stopPropagation(); openBooking(b); }}
+                  title="Деталі"
+                  aria-label="Деталі"
+                >
+                  <Info size={18} />
+                </button>
+                {b.guest_page_token && (
+                  <button
+                    className="m-action-btn"
+                    onClick={e => {
+                      e.stopPropagation();
+                      const link = `${window.location.origin}/guest/${b.guest_page_token}`;
+                      navigator.clipboard.writeText(link);
+                      alert('🔗 Посилання на сторінку гостя скопійовано!');
+                    }}
+                    title="Скопіювати посилання"
+                    aria-label="Скопіювати посилання"
+                  >
+                    <Link size={18} />
+                  </button>
+                )}
+                {b.guest_phone && (
+                  <a
+                    className="m-action-btn m-action-btn-whatsapp"
+                    href={`https://wa.me/${b.guest_phone.replace(/[^\d+]/g, '').replace(/^\+/, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    style={{ textDecoration: 'none' }}
+                    title="WhatsApp"
+                    aria-label="WhatsApp"
+                  >
+                    <MessageCircle size={18} />
+                  </a>
+                )}
+                <button
+                  className="m-action-btn m-action-btn-danger"
+                  onClick={async e => {
+                    e.stopPropagation();
+                    if (confirm(`Скасувати бронювання ${b.first_name} ${b.last_name}?`)) {
+                      await handleChangeStatus(b.id, 'cancelled');
+                    }
+                  }}
+                  title="Скасувати"
+                  aria-label="Скасувати"
+                >
+                  <X size={18} />
+                </button>
               </div>
             </div>
           );

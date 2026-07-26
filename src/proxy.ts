@@ -13,6 +13,7 @@ const PUBLIC_PREFIXES = [
   '/api/cron/',          // cron jobs (own secret-header auth)
   '/api/finance/telegram-bridge/', // Telegram bot (Bearer token auth)
   '/api/registration/telegram-bridge', // Telegram bot guest registration (Bearer token auth)
+  '/api/guest-registry',               // Ubyport / Guest registry (session or Bearer token auth)
   '/api/crm/channels/',            // CRM email poll + telegram callback (own auth)
   '/api/crm/leads/from-bot',       // Telegram bot → PMS lead creation
   '/api/hostex/sync',              // Hostex sync (cron secret in route.ts)
@@ -50,13 +51,35 @@ const MOBILE_UA = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ─── Special case for /api/guest-registry ──────────────────────────
+  if (pathname.startsWith('/api/guest-registry')) {
+    const sessionId = request.cookies.get('session_id')?.value;
+    const authHeader = request.headers.get('authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
+    const expectedToken = process.env.TELEGRAM_BRIDGE_TOKEN;
+    const isBridgeAuthorized = Boolean(expectedToken && token === expectedToken);
+
+    if (!sessionId && !isBridgeAuthorized) {
+      return NextResponse.json(
+        { error: 'Unauthorized — session or Bearer token required' },
+        { status: 401 }
+      );
+    }
+  }
+
   // ─── Auth gate ──────────────────────────────────────────────────────
   if (!isPublicRoute(pathname)) {
     const sessionId = request.cookies.get('session_id')?.value;
 
     if (pathname.startsWith('/api/')) {
-      // API routes: return 401 JSON
-      if (!sessionId) {
+      // Allow internal requests authenticated with TELEGRAM_BRIDGE_TOKEN
+      const authHeader = request.headers.get('authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
+      const expectedToken = process.env.TELEGRAM_BRIDGE_TOKEN;
+      const isBridgeAuthorized = Boolean(expectedToken && token === expectedToken);
+
+      // API routes: return 401 JSON if neither session nor bridge token is present
+      if (!sessionId && !isBridgeAuthorized) {
         return NextResponse.json(
           { error: 'Unauthorized — session required' },
           { status: 401 }
