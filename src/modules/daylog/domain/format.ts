@@ -1,5 +1,6 @@
 import type { ParsedEntry } from './parse-entry';
 import type { DaylogSummary } from '../data/daylog.repo';
+import type { DayReconcile } from '../data/reconcile';
 
 const DIR_ICON: Record<string, string> = { income: '💰', expense: '💸', unknown: '❔' };
 
@@ -71,6 +72,52 @@ export function mentionUser(userId: string | null, name: string | null, username
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Evening cross-check block appended to the daily report. */
+export function formatReconcile(r: DayReconcile): string {
+  const n = (v: number) => Math.round(v).toLocaleString('uk-UA');
+  const out: string[] = ['\n━━━━━━━━━━━━━━', '🔍 <b>Звірка з PMS</b>'];
+
+  const cardOk = Math.abs(r.card.diff) < 1;
+  out.push(
+    `  💳 Карта: журнал ${n(r.card.daylog)} · PMS ${n(r.card.pms)} CZK ${
+      cardOk ? '✅' : `⚠️ різниця ${n(Math.abs(r.card.diff))}`
+    }`,
+  );
+
+  if (r.cash.pms > 0) {
+    const cashOk = Math.abs(r.cash.diff) < 1;
+    out.push(
+      `  💵 Готівка: журнал ${n(r.cash.daylog)} · PMS ${n(r.cash.pms)} CZK ${
+        cashOk ? '✅' : `⚠️ різниця ${n(Math.abs(r.cash.diff))}`
+      }`,
+    );
+  }
+
+  out.push(
+    `  🛎 Заїзди: ${r.arrivals.total} — оплачено ${r.arrivals.paid}, без оплати ${r.arrivals.unpaid}` +
+      (r.arrivals.total ? ` · у журналі ${r.loggedLodging}` : ''),
+  );
+
+  if (r.arrivals.unpaid) {
+    out.push(`  💰 Очікується до оплати: ${n(r.arrivals.expectedUnpaidTotal)} CZK`);
+    for (const a of r.arrivals.unpaidList.slice(0, 10)) {
+      out.push(`     • ${a.guest || 'без імені'}${a.unit ? ` — ${a.unit}` : ''} — ${n(a.total_price)} ${a.currency}`);
+    }
+    if (r.arrivals.unpaidList.length > 10) {
+      out.push(`     …ще ${r.arrivals.unpaidList.length - 10}`);
+    }
+  }
+
+  if (r.issues.length) {
+    out.push('\n❗️ <b>Не сходиться</b>');
+    for (const i of r.issues) out.push(`  • ${i}`);
+  } else {
+    out.push('\n✅ Все сходиться.');
+  }
+
+  return out.join('\n');
 }
 
 /** End-of-day summary report. */
