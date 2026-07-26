@@ -23,11 +23,17 @@ function money(map: Record<string, number>): string {
 }
 
 /** Reply sent right after a message is logged, so Andrey can spot mistakes. */
-export function formatConfirmation(entries: ParsedEntry[]): string {
-  if (!entries.length) return '🤔 Не зрозумів повідомлення. Напиши коротко: що прийняв/витратив і скільки.';
+export function formatConfirmation(entries: ParsedEntry[], mention?: string): string {
+  if (!entries.length) {
+    return `${mention ? mention + ' ' : ''}🤔 Не зрозумів повідомлення. Напиши коротко: що прийняв/витратив і скільки. Можеш відповісти на це повідомлення.`;
+  }
   const lines = entries.map((e) => {
     const icon = DIR_ICON[e.direction] || '❔';
-    const amt = e.amount != null && e.currency ? `${Math.round(e.amount).toLocaleString('uk-UA')} ${e.currency}` : '—';
+    // Show the amount even when the currency is missing — hiding it made a
+    // correctly-heard "700" look like nothing was captured.
+    const amt = e.amount != null
+      ? `${Math.round(e.amount).toLocaleString('uk-UA')}${e.currency ? ` ${e.currency}` : ''}`
+      : '—';
     const bits = [e.category, amt];
     if (e.items.length) bits.push(e.items.map((i) => `${i.qty}× ${i.name}`).join(', '));
     if (e.counterparty) bits.push(e.counterparty);
@@ -39,7 +45,24 @@ export function formatConfirmation(entries: ParsedEntry[]): string {
     }
     return `✅ ${icon} ${bits.join(' · ')}`;
   });
+
+  // Tag the author only when something actually needs them, and tell them the
+  // reply is what resolves it.
+  if (entries.some((e) => e.needs_review)) {
+    lines.push(`\n${mention ? mention + ' — ' : ''}відповідь на це повідомлення допише, чого бракує.`);
+  }
   return lines.join('\n');
+}
+
+/** HTML mention that works even for users without a @username. */
+export function mentionUser(userId: string | null, name: string | null, username: string | null): string {
+  if (username) return `@${username}`;
+  if (userId) return `<a href="tg://user?id=${userId}">${escapeHtml(name || 'колего')}</a>`;
+  return '';
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** End-of-day summary report. */

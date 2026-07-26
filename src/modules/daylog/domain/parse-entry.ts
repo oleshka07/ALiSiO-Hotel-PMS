@@ -1,6 +1,16 @@
 import OpenAI from 'openai';
 import { toFile } from 'openai';
 import { renderReferenceForPrompt, type DaylogReference } from '../data/reference';
+import { extractAmount, mentionsEur } from './amount-fallback';
+
+// Vocabulary hint for Whisper — without it "700 крон" comes back as "700 хрон"
+// and the amount is lost. Covers the words that actually occur in these logs.
+const WHISPER_HINT =
+  'Кемпінг і глемпінг у Чехії. Суми в кронах (крон, крони, Kč) та в євро. ' +
+  'Слова: заїзд, караван, кемпер, палатка, авто, будова, глемпінг, кемпінг, сауна, купель, ' +
+  'проживання, доба, доби, особи, дорослих, готівка, готівкою, картою, ' +
+  'зарплата, покос трави, будматеріали, пиво, Пілзнер, Козел, Бехеровка, кола, ' +
+  'рахунок, чек, крон, євро.';
 
 // Free-form day-log parser. Turns a mixed UA/CZ message (received money, a
 // purchase, a walk-in booking) into one or more structured entries. Amounts may
@@ -83,7 +93,7 @@ async function parseText(text: string, reference?: string, ref?: DaylogReference
       { role: 'user', content: text },
     ],
   });
-  return normalize(res.choices[0]?.message?.content, ref);
+  return normalize(res.choices[0]?.message?.content, ref, text);
 }
 
 /** Transcribe a Telegram voice note (OGG/Opus) then parse the transcript. */
@@ -92,7 +102,13 @@ export async function parseVoice(
   ref?: DaylogReference,
 ): Promise<{ transcript: string; entries: ParsedEntry[] }> {
   const file = await toFile(audio, 'voice.ogg', { type: 'audio/ogg' });
-  const tr = await client().audio.transcriptions.create({ file, model: 'whisper-1' });
+  const tr = await client().audio.transcriptions.create({
+    file,
+    model: 'whisper-1',
+    language: 'uk',
+    temperature: 0,
+    prompt: WHISPER_HINT,
+  });
   const transcript = (tr.text || '').trim();
   const entries = transcript ? await parseText(transcript, renderRef(ref), ref) : [];
   return { transcript, entries };
@@ -125,25 +141,79 @@ export async function parsePhoto(
 }
 
 export async function parseMessageText(text: string, ref?: DaylogReference): Promise<ParsedEntry[]> {
-  return parseText(text, renderRef(ref), ref);
+  return verifyPass(await parseText(text, renderRef(ref), ref), text, ref);
+}
+
+/**
+ * Second opinion for entries the first pass left unclear. Re-reads the original
+ * wording with an explicit warning that speech-to-text mangles words, and keeps
+ * whichever fields the re-read manages to recover. Only runs for the unclear
+ * ones, so clean messages cost a single call.
+ */
+async function verifyPass(
+  entries: ParsedEntry[],
+  sourceText: string,
+  ref?: DaylogReference,
+): Promise<ParsedEntry[]> {
+  const unclear = entries.filter((e) => e.needs_review);
+  if (!unclear.length || !sourceText) return entries;
+
+  const hint = `Це повідомлення розібрали, але дещо лишилось незрозумілим: ${unclear
+    .map((e) => e.review_reason || 'незрозуміло')
+    .join('; ')}.
+Текст міг постраждати від розпізнавання голосу: "крон" часто чується як "хрон"/"корон", імена спотворюються.
+Перечитай ОРИГІНАЛ і дістань те, чого бракує. Якщо суму названо цифрами — обовʼязково поверни її.
+Валюта — крони (CZK), якщо явно не сказано «євро».
+ОРИГІНАЛ: "${sourceText}"`;
+
+  try {
+    const retry = await parseText(hint, renderRef(ref), ref);
+    if (!retry.length) return entries;
+    // Prefer the re-read when it actually resolved something.
+    const better = retry.filter((r) => !r.needs_review);
+    if (!better.length) return entries;
+    const clean = entries.filter((e) => !e.needs_review);
+    return [...clean, ...better];
+  } catch (e) {
+    console.warn('[daylog] verify pass failed:', (e as Error).message);
+    return entries;
+  }
 }
 
 function renderRef(ref?: DaylogReference): string | undefined {
   return ref ? renderReferenceForPrompt(ref) : undefined;
 }
 
-function normalize(content: string | null | undefined, ref?: DaylogReference): ParsedEntry[] {
+function normalize(content: string | null | undefined, ref?: DaylogReference, sourceText?: string): ParsedEntry[] {
   if (!content) return [];
   let raw: unknown;
   try { raw = JSON.parse(content); } catch { return []; }
   const list = Array.isArray(raw) ? raw : (raw as { entries?: unknown[] })?.entries;
   if (!Array.isArray(list)) return [];
-  return list.map((e) => coerce(e as Record<string, unknown>, ref));
+  const single = list.length === 1;
+  return list.map((e) => coerce(e as Record<string, unknown>, ref, single ? sourceText : undefined));
 }
 
-function coerce(e: Record<string, unknown>, ref?: DaylogReference): ParsedEntry {
-  const amount = typeof e.amount === 'number' ? e.amount : (e.amount != null ? Number(e.amount) : null);
-  const currency = e.currency === 'CZK' || e.currency === 'EUR' ? e.currency : null;
+function coerce(e: Record<string, unknown>, ref?: DaylogReference, sourceText?: string): ParsedEntry {
+  let amount = typeof e.amount === 'number' ? e.amount : (e.amount != null ? Number(e.amount) : null);
+  let currency: 'CZK' | 'EUR' | null = e.currency === 'CZK' || e.currency === 'EUR' ? e.currency : null;
+
+  // Recover from mangled speech ("700 хрон") before bothering anyone: pull the
+  // number straight out of the raw text when the model dropped it.
+  if ((amount == null || !isFinite(amount)) && sourceText) {
+    const found = extractAmount(sourceText);
+    if (found) {
+      amount = found.amount;
+      currency = currency ?? found.currency;
+    }
+  }
+
+  // House rule: everything is CZK unless euro was actually said. A known amount
+  // therefore never needs a currency follow-up.
+  if (amount != null && isFinite(amount) && currency == null) {
+    currency = sourceText && mentionsEur(sourceText) ? 'EUR' : 'CZK';
+  }
+
   const missingAmount = amount == null || !isFinite(amount);
   const direction: DaylogDirection =
     e.direction === 'income' || e.direction === 'expense' ? e.direction : 'unknown';

@@ -10,17 +10,30 @@ function botToken(): string {
   );
 }
 
-export async function sendToChat(chatId: string, text: string): Promise<void> {
+/** Send a message; returns its message_id so replies to it can be tracked. */
+export async function sendToChat(
+  chatId: string,
+  text: string,
+  replyToMessageId?: number | null,
+): Promise<number | null> {
   const token = botToken();
-  if (!token || !chatId) return;
+  if (!token || !chatId) return null;
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const body: Record<string, unknown> = { chat_id: chatId, text, parse_mode: 'HTML' };
+    if (replyToMessageId) {
+      body.reply_to_message_id = replyToMessageId;
+      body.allow_sending_without_reply = true;
+    }
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      body: JSON.stringify(body),
     });
+    const data = await res.json();
+    return data?.result?.message_id ?? null;
   } catch (e) {
     console.error('[daylog] sendToChat failed:', (e as Error).message);
+    return null;
   }
 }
 
