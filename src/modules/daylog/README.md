@@ -40,8 +40,28 @@ HTTP: `POST /api/daylog/telegram`, `GET /api/daylog/report?date=YYYY-MM-DD`.
 `payment_method` (cash/card), `counterparty`, `description`, `needs_review`,
 `review_reason`, `confidence`, `parsed_json`.
 
-Одне повідомлення може дати кілька записів. Якщо суму не названо або валюта
-неясна — `needs_review = 1`, і бот перепитує в чаті.
+**Готові до перекидання в операції:** `category_id` (`expense_categories`),
+`project_id` (`business_units`), `counterparty_id` (`finance_counterparties`) —
+ті самі ID, які приймає `createOperationInTx`.
+
+`items_json` — позиції продажу на барі: `[{"qty":3,"name":"пиво"}]`.
+
+Одне повідомлення може дати кілька записів. Якщо суму не названо, валюта неясна
+або категорія не визначилась — `needs_review = 1`, і бот перепитує в чаті.
+
+## Довідники (`data/reference.ts`)
+
+Категорії / проєкти / контрагенти читаються **з БД** (не хардкод) і підставляються
+в промпт разом з їхніми ID. Модель обирає ID зі списку; вигадані ID
+відкидаються — приймаються лише ті, що реально існують, і лише з боку, який
+відповідає напрямку (дохід ↔ Revenue-категорії). Кеш 5 хв.
+
+## Бар / ресторан
+
+Голосове на кшталт «150 крон готівкою три пива» → один запис-продаж:
+`direction=income`, `category_id=ec_restaurant`, `project_id=bu_restaurant`,
+`amount=150`, `payment_method=cash`, `items=[{qty:3,name:"пиво"}]`.
+У звіті — окремий блок «🍺 Бар — продано» з кількостями по позиціях.
 
 ## Автоматика
 

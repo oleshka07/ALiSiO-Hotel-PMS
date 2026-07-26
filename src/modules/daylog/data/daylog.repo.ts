@@ -14,7 +14,12 @@ export interface DaylogInsert extends ParsedEntry {
   parsed_json: string;
 }
 
-export interface DaylogRow extends DaylogInsert { id: string; created_at: string; corrected: number }
+export interface DaylogRow extends DaylogInsert {
+  id: string;
+  created_at: string;
+  corrected: number;
+  items_json: string | null;
+}
 
 export function insertEntry(e: DaylogInsert): string {
   const db = getDb();
@@ -22,13 +27,15 @@ export function insertEntry(e: DaylogInsert): string {
   db.prepare(`
     INSERT INTO daylog_entries (
       id, entry_date, chat_id, telegram_message_id, author, input_type, raw_text,
-      media_file_id, media_path, direction, category, amount, currency,
-      qty_guests, qty_nights, payment_method, counterparty, description,
+      media_file_id, media_path, direction, category, category_id, project_id,
+      counterparty_id, amount, currency,
+      qty_guests, qty_nights, payment_method, counterparty, items_json, description,
       needs_review, review_reason, confidence, parsed_json
     ) VALUES (
       @id, @entry_date, @chat_id, @telegram_message_id, @author, @input_type, @raw_text,
-      @media_file_id, @media_path, @direction, @category, @amount, @currency,
-      @qty_guests, @qty_nights, @payment_method, @counterparty, @description,
+      @media_file_id, @media_path, @direction, @category, @category_id, @project_id,
+      @counterparty_id, @amount, @currency,
+      @qty_guests, @qty_nights, @payment_method, @counterparty, @items_json, @description,
       @needs_review, @review_reason, @confidence, @parsed_json
     )
   `).run({
@@ -43,12 +50,16 @@ export function insertEntry(e: DaylogInsert): string {
     media_path: e.media_path,
     direction: e.direction,
     category: e.category,
+    category_id: e.category_id,
+    project_id: e.project_id,
+    counterparty_id: e.counterparty_id,
     amount: e.amount,
     currency: e.currency,
     qty_guests: e.qty_guests,
     qty_nights: e.qty_nights,
     payment_method: e.payment_method,
     counterparty: e.counterparty,
+    items_json: e.items?.length ? JSON.stringify(e.items) : null,
     description: e.description,
     needs_review: e.needs_review ? 1 : 0,
     review_reason: e.review_reason,
@@ -72,22 +83,45 @@ export interface DaylogSummary {
   totals: { income: Record<string, number>; expense: Record<string, number> };
   cash: Record<string, number>;
   card: Record<string, number>;
+  byProject: Record<string, Record<string, number>>; // project name -> currency -> net
+  barItems: Record<string, number>;                  // item name -> qty sold
+  unmapped: number;                                  // entries with no category_id
   reviewItems: Array<{ category: string; description: string; reason: string | null }>;
+}
+
+function projectNames(): Record<string, string> {
+  const db = getDb();
+  const rows = db.prepare('SELECT id, name FROM business_units').all() as Array<{ id: string; name: string }>;
+  return Object.fromEntries(rows.map((r) => [r.id, r.name]));
 }
 
 export function summarizeDate(date: string): DaylogSummary {
   const rows = listByDate(date);
+  const names = projectNames();
   const s: DaylogSummary = {
     date, count: rows.length, needsReview: 0,
     income: {}, expense: {}, totals: { income: {}, expense: {} },
-    cash: {}, card: {}, reviewItems: [],
+    cash: {}, card: {}, byProject: {}, barItems: {}, unmapped: 0, reviewItems: [],
   };
   for (const r of rows) {
     if (r.needs_review) {
       s.needsReview++;
       s.reviewItems.push({ category: r.category, description: r.description || r.raw_text || '', reason: r.review_reason });
     }
+    if (!r.category_id) s.unmapped++;
+
+    for (const it of parseItems(r.items_json)) {
+      s.barItems[it.name] = (s.barItems[it.name] || 0) + (it.qty || 1);
+    }
+
     if (r.amount == null || !r.currency) continue;
+
+    if (r.project_id) {
+      const pname = names[r.project_id] || r.project_id;
+      s.byProject[pname] = s.byProject[pname] || {};
+      const net = r.direction === 'expense' ? -r.amount : r.amount;
+      s.byProject[pname][r.currency] = (s.byProject[pname][r.currency] || 0) + net;
+    }
     const bucket = r.direction === 'expense' ? s.expense : (r.direction === 'income' ? s.income : null);
     if (!bucket) continue;
     bucket[r.category] = bucket[r.category] || {};
@@ -101,4 +135,14 @@ export function summarizeDate(date: string): DaylogSummary {
     else if (r.payment_method === 'card') s.card[r.currency] = (s.card[r.currency] || 0) + signed;
   }
   return s;
+}
+
+function parseItems(s: string | null | undefined): Array<{ qty: number; name: string }> {
+  if (!s) return [];
+  try {
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v.filter((i) => i && typeof i.name === 'string') : [];
+  } catch {
+    return [];
+  }
 }
