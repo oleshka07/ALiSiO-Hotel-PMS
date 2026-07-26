@@ -34,8 +34,16 @@ export function formatConfirmation(entries: ParsedEntry[], mention?: string): st
     const amt = e.amount != null
       ? `${Math.round(e.amount).toLocaleString('uk-UA')}${e.currency ? ` ${e.currency}` : ''}`
       : '—';
-    const bits = [e.category, amt];
+    // Show category › project so it is visible at a glance whether both were
+    // assigned — an unassigned one shows as «?» instead of silently missing.
+    const head = `${e.category}${e.project ? ` › ${e.project}` : ' › ❓проєкт'}`;
+    const bits = [head, amt];
     if (e.items.length) bits.push(e.items.map((i) => `${i.qty}× ${i.name}`).join(', '));
+    const qty = [
+      e.qty_guests ? `${e.qty_guests} ос.` : null,
+      e.qty_nights ? `${e.qty_nights} ноч.` : null,
+    ].filter(Boolean).join(' × ');
+    if (qty) bits.push(qty);
     if (e.counterparty) bits.push(e.counterparty);
     if (e.payment_method === 'card') bits.push('картою');
     if (e.payment_method === 'cash') bits.push('готівка');

@@ -63,6 +63,30 @@ export function extractAmount(text: string): { amount: number; currency: 'CZK' |
   return { amount: max, currency };
 }
 
+// Strong wording signals for the direction. Used only to catch a contradiction
+// (an "expense" that is clearly a guest payment) — recording income as a
+// construction expense corrupts the books twice over, so we rather ask.
+const INCOME_SIGNALS = /(заплатил|оплатил|сплатил|розрахувал|заїзд|проживанн|ноч[іи]|доб[ауи]\b|гост[іяе]|прийня[вл]|продав|взяв)/i;
+const EXPENSE_SIGNALS = /(купи[влв]|придба[влв]|вида[влв]|зарплат|постачальник|заправ|оплатив рахунок|рахунок за)/i;
+
+/** 'income' | 'expense' when the wording is unambiguous, otherwise null. */
+export function directionSignal(text: string): 'income' | 'expense' | null {
+  if (!text) return null;
+  const inc = INCOME_SIGNALS.test(text);
+  const exp = EXPENSE_SIGNALS.test(text);
+  if (inc && !exp) return 'income';
+  if (exp && !inc) return 'expense';
+  return null;
+}
+
+/**
+ * "будова F" / "будова Д" — an accommodation building, never construction.
+ * Note: \b is ASCII-only in JS, so a Cyrillic "Д" needs an explicit lookahead.
+ */
+export function mentionsLodgingBuilding(text: string): boolean {
+  return /будов[аиуі]\s*["«]?\s*[fdфд](?![a-zа-яіїєґ0-9])/i.test(text);
+}
+
 function toNumber(raw: string): number | null {
   const cleaned = raw.replace(/\s/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
   const n = parseFloat(cleaned);
