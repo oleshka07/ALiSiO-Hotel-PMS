@@ -18,9 +18,13 @@ function pragueParts(): { date: string; hour: number } {
   return { date, hour: isFinite(hour) ? hour : 0 };
 }
 
+// Guards against two ticks (getDb + scheduler) sending at the same time.
+let sending = false;
+
 export function runDaylogReportTickIfDue(db: any): void {
   const { date, hour } = pragueParts();
   if (hour < DAYLOG_REPORT_HOUR) return;
+  if (sending) return;
 
   const row = db
     .prepare("SELECT value FROM fin_system_state WHERE key = 'daylog_report_last_date'")
@@ -40,17 +44,26 @@ export function runDaylogReportTickIfDue(db: any): void {
     || (reconcile ? reconcile.arrivals.total > 0 || reconcile.issues.length > 0 : false);
   if (!worthPosting) return;
 
-  // Mark first so a slow send can't double-post on a concurrent tick.
-  db.prepare(`
-    INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
-    VALUES ('daylog_report_last_date', ?, datetime('now'))
-  `).run(date);
-
   const text = formatDailyReport(summary) + (reconcile ? formatReconcile(reconcile) : '');
-  sendToChat(DAYLOG_CHAT_ID, text).catch((e: any) =>
-    console.log('[daylog] report tick send error:', e?.message),
-  );
-  console.log(
-    `[daylog] posted daily report for ${date} (${summary.count} entries, ${reconcile?.issues.length ?? 0} issues)`,
-  );
+
+  // Mark only AFTER Telegram accepted the message — marking first meant a failed
+  // send silently lost the whole day's report. The in-flight flag prevents the
+  // concurrent double-post that the early marker used to guard against.
+  sending = true;
+  sendToChat(DAYLOG_CHAT_ID, text)
+    .then((messageId) => {
+      if (messageId == null) {
+        console.log('[daylog] report send failed — will retry on the next tick');
+        return;
+      }
+      db.prepare(`
+        INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
+        VALUES ('daylog_report_last_date', ?, datetime('now'))
+      `).run(date);
+      console.log(
+        `[daylog] posted daily report for ${date} (${summary.count} entries, ${reconcile?.issues.length ?? 0} issues)`,
+      );
+    })
+    .catch((e: any) => console.log('[daylog] report tick send error:', e?.message))
+    .finally(() => { sending = false; });
 }
