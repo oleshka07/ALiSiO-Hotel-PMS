@@ -1,14 +1,15 @@
 import OpenAI from 'openai';
 import { toFile } from 'openai';
 import { renderReferenceForPrompt, type DaylogReference } from '../data/reference';
-import { extractAmount, mentionsEur } from './amount-fallback';
+import { extractAmount, mentionsEur, directionSignal, mentionsLodgingBuilding } from './amount-fallback';
 
 // Vocabulary hint for Whisper — without it "700 крон" comes back as "700 хрон"
 // and the amount is lost. Covers the words that actually occur in these logs.
 const WHISPER_HINT =
   'Кемпінг і глемпінг у Чехії. Суми в кронах (крон, крони, Kč) та в євро. ' +
   'Слова: заїзд, караван, кемпер, палатка, авто, будова, глемпінг, кемпінг, сауна, купель, ' +
-  'проживання, доба, доби, особи, дорослих, готівка, готівкою, картою, ' +
+  'проживання, доба, доби, ночі, особи, дорослих, готівка, готівкою, картою, '
+  + 'будова F, будова D, будова Ф, будова Д, корпус, каравани, намет, шатро, ' +
   'зарплата, покос трави, будматеріали, пиво, Пілзнер, Козел, Бехеровка, кола, ' +
   'рахунок, чек, крон, євро.';
 
@@ -27,6 +28,7 @@ export interface ParsedEntry {
   category: string;              // human label, kept for the chat reply
   category_id: string | null;    // expense_categories.id — ready for fin_operations
   project_id: string | null;     // business_units.id
+  project: string | null;        // resolved name, shown in the chat reply
   counterparty_id: string | null;// finance_counterparties.id (null when new/unknown)
   amount: number | null;         // null when the speaker didn't state it
   currency: 'CZK' | 'EUR' | null;
@@ -74,11 +76,42 @@ function systemPrompt(reference?: string): string {
 - review_reason: чому потребує уточнення (укр., коротко) або null.
 - confidence: 0..1.
 
+━━━ НАПРЯМОК (найчастіша помилка) ━━━
+Це журнал ПРИЙМАЛЬНИКА грошей у кемпінгу. Більшість повідомлень — це ДОХІД.
+- ДОХІД (income): гості заплатили/оплатили/сплатили/дали/розрахувались; «прийняв», «взяв», «продав»,
+  заїзд, проживання, ночі, доби, бар. Навіть якщо підмет не названо — «Заплатили картою 1200» означає,
+  що ЗАПЛАТИЛИ НАМ гості → income.
+- ВИТРАТА (expense): тільки коли МИ віддали гроші — «купив», «оплатив рахунок», «видав зарплату»,
+  «заправив», «заплатив постачальнику».
+Якщо в повідомленні є прізвище гостей, кількість ночей або назва обʼєкта проживання — це майже завжди ДОХІД.
+
+━━━ ГЛОСАРІЙ (без нього категорія буде хибна) ━━━
+- «будова F», «будова Д», «будова Ф», «будова D», «корпус» — це КОРПУСИ ПРОЖИВАННЯ.
+  Категорія = Проживання, проєкт = Будова F/D. Це НЕ будівництво і НЕ Стройка!
+- «караван», «кемпер», «палатка», «намет», «авто», «місце», «кемпінг» → проєкт Кемпинг,
+  категорія Проживання.
+- «шатро», «глемпінг», «купол» → проєкт Глемпинг, категорія Проживання.
+- «сауна» → проєкт Сауна; «бар», «ресторан», «пиво», «кава» → проєкт Ресторан.
+- Категорію Стройка/будівництво став ЛИШЕ коли справді купували будматеріали чи оплачували роботи.
+- «два каравани», «дві ночі» — це кількості (qty_guests / qty_nights), а НЕ сума.
+
 БАР/РЕСТОРАН: типове повідомлення — сума + спосіб оплати + що продано ("150 крон готівкою три пива").
 Це ОДИН запис-продаж: direction=income, amount=повна сума, items=перелік позицій, project_id=Ресторан.
 Кожен окремий чек — окремий запис.
 
 Валюта за замовчуванням — крони (CZK), якщо явно не сказано «євро».
+
+━━━ ПРИКЛАДИ ━━━
+"Кемпінг, два каравани, 1700 крон на дві ночі. Готівкою."
+  → income, Проживання, проєкт Кемпинг, amount 1700, qty_nights 2, cash
+"Заплатили картою 1200, будова F. Гості по прізвищу Неймовірні."
+  → income, Проживання, проєкт Будова F/D, amount 1200, card, counterparty "Неймовірні"
+"Видав зарплату Олексію дві тисячі крон за 3 дні"
+  → expense, Зарплати, проєкт Загальне, amount 2000, counterparty "Олексій"
+"Купив будівельні матеріали в Cafe картою"
+  → expense, Стройка, amount null, card, counterparty "Cafe", needs_review (немає суми)
+"150 крон готівкою три пива"
+  → income, Ресторан, проєкт Ресторан, amount 150, cash, items [{"qty":3,"name":"пиво"}]
 ${reference ? `\n─── ДОВІДНИКИ (використовуй ТІЛЬКИ ці ID) ───\n${reference}\n` : ''}
 Відповідай СТРОГО JSON: {"entries":[ ... ]}. Без пояснень.`;
 }
@@ -227,6 +260,7 @@ function coerce(e: Record<string, unknown>, ref?: DaylogReference, sourceText?: 
   const projectId = pickId(e.project_id, ref?.projects ?? []);
   const counterpartyId = pickId(e.counterparty_id, ref?.counterparties ?? []);
   const catName = allowedCats.find((c) => c.id === catId)?.name;
+  const projName = ref?.projects.find((p) => p.id === projectId)?.name ?? null;
 
   const items = Array.isArray(e.items)
     ? (e.items as unknown[])
@@ -239,12 +273,22 @@ function coerce(e: Record<string, unknown>, ref?: DaylogReference, sourceText?: 
         .filter((x): x is ParsedItem => x !== null)
     : [];
 
+  // Contradiction guard: the wording clearly says the guests paid us, but the
+  // model recorded an expense (the «будова F» → «будівництво» trap). Don't
+  // silently book it the wrong way round — ask.
+  const signal = sourceText ? directionSignal(sourceText) : null;
+  const directionConflict = !!signal && direction !== 'unknown' && signal !== direction;
+  const lodgingAsBuild = !!sourceText
+    && mentionsLodgingBuilding(sourceText)
+    && direction === 'expense';
+
   const unmapped = !!ref && catId === null;
   return {
     direction,
     category: catName || (typeof e.category === 'string' && e.category ? e.category : 'Інше'),
     category_id: catId,
     project_id: projectId,
+    project: projName,
     counterparty_id: counterpartyId,
     amount: missingAmount ? null : amount,
     currency,
@@ -254,12 +298,14 @@ function coerce(e: Record<string, unknown>, ref?: DaylogReference, sourceText?: 
     counterparty: typeof e.counterparty === 'string' && e.counterparty ? e.counterparty : null,
     items,
     description: typeof e.description === 'string' ? e.description : '',
-    needs_review: !!e.needs_review || missingAmount || currency == null || unmapped,
+    needs_review: !!e.needs_review || missingAmount || unmapped || directionConflict || lodgingAsBuild,
     review_reason: firstReason(
       typeof e.review_reason === 'string' && e.review_reason ? e.review_reason : null,
       missingAmount ? 'Не вказано суму' : null,
       currency == null ? 'Неясна валюта' : null,
       unmapped ? 'Не визначено категорію' : null,
+      lodgingAsBuild ? 'Це «будова F/D» — проживання чи справді будівництво?' : null,
+      directionConflict ? 'Це дохід чи витрата?' : null,
     ),
     confidence: typeof e.confidence === 'number' ? e.confidence : 0.5,
   };
