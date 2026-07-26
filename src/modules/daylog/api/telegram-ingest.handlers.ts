@@ -7,6 +7,7 @@ import { sendToChat, downloadFile } from '../domain/telegram';
 import { formatConfirmation } from '../domain/format';
 import { DAYLOG_CHAT_ID } from '../domain/config';
 import { authorizeDaylog } from '../domain/auth';
+import { loadReference } from '../data/reference';
 
 // POST /api/daylog/telegram — called by the @kemptimebot Python poller for every
 // message in Andrey's day-log chat. Auth: shared secret header. This add-on is
@@ -41,6 +42,7 @@ export async function ingestTelegram(request: NextRequest): Promise<NextResponse
   const entryDate = pragueDate(msg?.date);
 
   try {
+    const ref = loadReference();
     let inputType: 'text' | 'voice' | 'photo' = 'text';
     let rawText: string | null = null;
     let entries: ParsedEntry[] = [];
@@ -52,7 +54,7 @@ export async function ingestTelegram(request: NextRequest): Promise<NextResponse
       mediaFileId = msg.voice?.file_id || msg.audio?.file_id;
       const dl = await downloadFile(mediaFileId!);
       if (!dl) throw new Error('Не вдалося завантажити голосове');
-      const { transcript, entries: parsed } = await parseVoice(dl.buffer);
+      const { transcript, entries: parsed } = await parseVoice(dl.buffer, ref);
       rawText = transcript;
       entries = parsed;
       mediaPath = await saveMedia(dl.buffer, mediaFileId!, 'ogg');
@@ -64,13 +66,13 @@ export async function ingestTelegram(request: NextRequest): Promise<NextResponse
       rawText = caption || null;
       const dl = await downloadFile(mediaFileId!);
       if (!dl) throw new Error('Не вдалося завантажити фото');
-      entries = await parsePhoto(dl.buffer, 'image/jpeg', caption);
+      entries = await parsePhoto(dl.buffer, 'image/jpeg', caption, ref);
       mediaPath = await saveMedia(dl.buffer, mediaFileId!, 'jpg');
     } else {
       const text: string = msg?.text || msg?.caption || '';
       if (!text.trim()) return NextResponse.json({ ok: true, skipped: 'empty' });
       rawText = text;
-      entries = await parseMessageText(text);
+      entries = await parseMessageText(text, ref);
     }
 
     for (const e of entries) {

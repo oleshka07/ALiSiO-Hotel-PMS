@@ -4867,6 +4867,25 @@ function runMigrations(database: any) {
     )
   `);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_daylog_date ON daylog_entries(entry_date)`);
+
+  // --- Migration: daylog_entries — resolved finance refs + bar line items ---
+  // Entries are captured already mapped onto the real finance dictionaries
+  // (expense_categories / business_units / finance_counterparties) so they can
+  // later be pushed straight into fin_operations without re-classification.
+  try {
+    const dlCols = database.prepare('PRAGMA table_info(daylog_entries)').all() as { name: string }[];
+    const addDl = (col: string, ddl: string) => {
+      if (!dlCols.some((c) => c.name === col)) {
+        database.exec(`ALTER TABLE daylog_entries ADD COLUMN ${ddl}`);
+      }
+    };
+    addDl('category_id', 'category_id TEXT');
+    addDl('project_id', 'project_id TEXT');
+    addDl('counterparty_id', 'counterparty_id TEXT');
+    addDl('items_json', 'items_json TEXT');
+  } catch (e: any) {
+    console.log('[DB] daylog_entries ref-columns migration:', e.message);
+  }
   console.log('[DB] daylog_entries table ready');
   }
 
