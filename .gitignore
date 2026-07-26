@@ -73,7 +73,11 @@ next-env.d.ts
 widget.md
 
 # graphify
-graphify-out/data/daylog-media/
+graphify-out/
+
+# daylog add-on media (Telegram photos/voice)
+data/daylog-media/
+
 qa-glamping-booking-v2.html
 qa-glamping-booking-v3.html
 src/modules/bookings/api/check_schema.js
