@@ -72,6 +72,16 @@ export function getDb(): any {
     console.log('[Teya] tick-if-due error:', e.message);
   }
 
+  // Day-log: post Andrey's daily summary to Telegram once per day (after 22:00
+  // Prague). Runs here so no cron/systemd timer is required.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runDaylogReportTickIfDue } = require('@/modules/daylog/data/report-tick');
+    runDaylogReportTickIfDue(db);
+  } catch (e: any) {
+    console.log('[daylog] tick-if-due error:', e.message);
+  }
+
   // PR #27: receipt inboxes — IMAP poll for forwarded invoices (15 min)
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

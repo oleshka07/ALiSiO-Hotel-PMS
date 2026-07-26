@@ -6,6 +6,7 @@ import { insertEntry } from '../data/daylog.repo';
 import { sendToChat, downloadFile } from '../domain/telegram';
 import { formatConfirmation } from '../domain/format';
 import { DAYLOG_CHAT_ID } from '../domain/config';
+import { authorizeDaylog } from '../domain/auth';
 
 // POST /api/daylog/telegram — called by the @kemptimebot Python poller for every
 // message in Andrey's day-log chat. Auth: shared secret header. This add-on is
@@ -19,13 +20,8 @@ function pragueDate(unixSeconds?: number): string {
 }
 
 export async function ingestTelegram(request: NextRequest): Promise<NextResponse> {
-  const secret = process.env.DAYLOG_BRIDGE_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: 'DAYLOG_BRIDGE_SECRET not configured on server' }, { status: 503 });
-  }
-  if (request.headers.get('x-daylog-secret') !== secret) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  const auth = authorizeDaylog(request);
+  if (!auth.ok) return auth.response;
 
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }

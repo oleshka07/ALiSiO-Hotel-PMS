@@ -87,6 +87,17 @@ PMS (Next.js, port 3001)  ←→  kemptimebot (Python, polling)
    - Response: `{ success: true, guests_registered: N, guests: [...] }`
    - Bot handler spec: `bot-specs/registration.py`
 
+6. **Бот → PMS Day-log (щоденний журнал Андрія)**
+   - Чат: `-5407249737` (закрита група). Бот форвардить УСІ повідомлення цього чату:
+     `POST /api/daylog/telegram` з тілом `{"message": <Telegram Message>}`
+   - Auth: `Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>` (той самий, що й вище)
+   - Бот нічого не парсить. PMS: голос → Whisper, фото чеку → gpt-4o vision,
+     текст → gpt-4o; зберігає в `daylog_entries` і відповідає підтвердженням у чат.
+   - Звіт за день: `GET /api/daylog/report?date=YYYY-MM-DD[&post=1]`.
+     Авто-постинг о 22:00 (Прага) виконує сам PMS через tick — cron не потрібен.
+   - Bot handler spec: `bot-specs/daylog.py`
+   - Модуль PMS: `src/modules/daylog/` (ізольований, фінансів не чіпає)
+
 ### Як додати нову інтеграцію
 
 **PMS → Telegram**: Використовуй `sendTelegramMessage()` з `src/lib/channels/telegram-bot.ts`  
