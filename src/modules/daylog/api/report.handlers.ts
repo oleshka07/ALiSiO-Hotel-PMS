@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { summarizeDate, listByDate } from '../data/daylog.repo';
 import { reconcileDay } from '../data/reconcile';
-import { formatDailyReport, formatReconcile } from '../domain/format';
+import { formatDailyReport, formatReconcile, formatReconcileError } from '../domain/format';
 import { sendToChat } from '../domain/telegram';
 import { DAYLOG_CHAT_ID } from '../domain/config';
 import { authorizeDaylog } from '../domain/auth';
@@ -21,15 +21,18 @@ export async function daylogReport(request: NextRequest): Promise<NextResponse> 
   const date = url.searchParams.get('date') || pragueToday();
   const summary = summarizeDate(date);
   let reconcile = null;
+  let reconcileError: string | null = null;
   try { reconcile = reconcileDay(date); } catch (e) {
-    console.error('[daylog] reconcile failed:', (e as Error).message);
+    reconcileError = (e as Error).message;
+    console.error('[daylog] reconcile failed:', reconcileError);
   }
-  const text = formatDailyReport(summary) + (reconcile ? formatReconcile(reconcile) : '');
+  const text = formatDailyReport(summary)
+    + (reconcile ? formatReconcile(reconcile) : formatReconcileError(reconcileError || 'невідома помилка'));
 
   if (url.searchParams.get('post') === '1') {
     const chatId = url.searchParams.get('chat_id') || DAYLOG_CHAT_ID || '';
     if (chatId) await sendToChat(chatId, text);
   }
 
-  return NextResponse.json({ ok: true, date, summary, reconcile, text, entries: listByDate(date) });
+  return NextResponse.json({ ok: true, date, summary, reconcile, reconcileError, text, entries: listByDate(date) });
 }

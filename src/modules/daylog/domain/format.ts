@@ -77,37 +77,34 @@ function escapeHtml(s: string): string {
 /** Evening cross-check block appended to the daily report. */
 export function formatReconcile(r: DayReconcile): string {
   const n = (v: number) => Math.round(v).toLocaleString('uk-UA');
-  const out: string[] = ['\n━━━━━━━━━━━━━━', '🔍 <b>Звірка з PMS</b>'];
+  const out: string[] = ['\n━━━━━━━━━━━━━━', '🔍 <b>Звірка джерел</b>'];
 
-  const cardOk = Math.abs(r.card.diff) < 1;
-  out.push(
-    `  💳 Карта: журнал ${n(r.card.daylog)} · PMS ${n(r.card.pms)} CZK ${
-      cardOk ? '✅' : `⚠️ різниця ${n(Math.abs(r.card.diff))}`
-    }`,
-  );
-
-  if (r.cash.pms > 0) {
-    const cashOk = Math.abs(r.cash.diff) < 1;
-    out.push(
-      `  💵 Готівка: журнал ${n(r.cash.daylog)} · PMS ${n(r.cash.pms)} CZK ${
-        cashOk ? '✅' : `⚠️ різниця ${n(Math.abs(r.cash.diff))}`
-      }`,
-    );
+  // Where the money was recorded, channel by channel.
+  out.push('\n📥 <b>Зафіксовано доходу</b>');
+  out.push(`  📱 Журнал Telegram: ${n(r.daylog.income)} CZK`);
+  for (const s of r.sources) {
+    if (!s.count) continue;
+    const parts = [`${n(s.income)} CZK`];
+    if (s.expense) parts.push(`витрати ${n(s.expense)}`);
+    out.push(`  🏦 ${s.label}: ${parts.join(' · ')} (${s.count})`);
   }
+  out.push(`  <b>Разом у PMS: ${n(r.pmsIncome)} CZK</b>`);
 
-  out.push(
-    `  🛎 Заїзди: ${r.arrivals.total} — оплачено ${r.arrivals.paid}, без оплати ${r.arrivals.unpaid}` +
-      (r.arrivals.total ? ` · у журналі ${r.loggedLodging}` : ''),
-  );
+  out.push('\n💳 <b>Спосіб оплати</b>');
+  out.push(`  Карта: журнал ${n(r.daylog.card)} · PMS ${n(r.pmsCard)} CZK ${okMark(r.daylog.card - r.pmsCard)}`);
+  out.push(`  Готівка: журнал ${n(r.daylog.cash)} · PMS ${n(r.pmsCash)} CZK ${okMark(r.daylog.cash - r.pmsCash)}`);
 
-  if (r.arrivals.unpaid) {
-    out.push(`  💰 Очікується до оплати: ${n(r.arrivals.expectedUnpaidTotal)} CZK`);
-    for (const a of r.arrivals.unpaidList.slice(0, 10)) {
+  out.push('\n🛎 <b>Календар</b>');
+  out.push(`  Заїзди сьогодні: ${r.bookings.arrivalsToday} — оплачено ${r.bookings.paid}, без оплати ${r.bookings.unpaid}`);
+  out.push(`  Записів про проживання в журналі: ${r.loggedLodging}`);
+  if (r.bookings.createdToday) out.push(`  Нових броней створено сьогодні: ${r.bookings.createdToday}`);
+
+  if (r.bookings.unpaid) {
+    out.push(`  💰 Очікується до оплати: ${n(r.bookings.expectedUnpaidTotal)} CZK`);
+    for (const a of r.bookings.unpaidList.slice(0, 10)) {
       out.push(`     • ${a.guest || 'без імені'}${a.unit ? ` — ${a.unit}` : ''} — ${n(a.total_price)} ${a.currency}`);
     }
-    if (r.arrivals.unpaidList.length > 10) {
-      out.push(`     …ще ${r.arrivals.unpaidList.length - 10}`);
-    }
+    if (r.bookings.unpaidList.length > 10) out.push(`     …ще ${r.bookings.unpaidList.length - 10}`);
   }
 
   if (r.issues.length) {
@@ -118,6 +115,15 @@ export function formatReconcile(r: DayReconcile): string {
   }
 
   return out.join('\n');
+}
+
+function okMark(diff: number): string {
+  return Math.abs(diff) < 1 ? '✅' : '⚠️';
+}
+
+/** Shown instead of silence when the cross-check itself fails. */
+export function formatReconcileError(message: string): string {
+  return `\n━━━━━━━━━━━━━━\n🔍 <b>Звірка джерел</b>\n  ⚠️ Не вдалося звірити: ${message}`;
 }
 
 /** End-of-day summary report. */
