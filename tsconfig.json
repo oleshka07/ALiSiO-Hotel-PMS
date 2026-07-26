@@ -32,6 +32,8 @@
       "@pricing/*": ["./src/modules/pricing/api/*"],
       "@finance": ["./src/modules/finance/api"],
       "@finance/*": ["./src/modules/finance/api/*"],
+      "@daylog": ["./src/modules/daylog/api"],
+      "@daylog/*": ["./src/modules/daylog/api/*"],
       "@crm": ["./src/modules/crm/api"],
       "@crm/*": ["./src/modules/crm/api/*"],
       "@channels": ["./src/modules/channels/api"],
