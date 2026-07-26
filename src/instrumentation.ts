@@ -12,6 +12,10 @@ export async function register() {
     const { startHostexCron } = await import('./lib/channels/hostex-cron');
     startHostexCron();
 
+    // Evening day-log report — own timer so it doesn't depend on traffic.
+    const { startDaylogScheduler } = await import('./modules/daylog/data/scheduler');
+    startDaylogScheduler();
+
     // Register event subscribers
     const { registerCrmSubscribers } = await import('@crm');
     registerCrmSubscribers();
