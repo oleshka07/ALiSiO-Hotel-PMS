@@ -5,9 +5,9 @@ import { formatDailyReport, formatReconcile } from '../domain/format';
 import { sendToChat } from '../domain/telegram';
 import { DAYLOG_CHAT_ID, DAYLOG_REPORT_HOUR } from '../domain/config';
 
-// Posts the day-log summary to the chat once per day, after DAYLOG_REPORT_HOUR
-// (Europe/Prague). Runs off the existing getDb() tick — no cron/systemd timer
-// needed. Fire-and-forget: never throws into the DB bootstrap path.
+// Posts the day-log summary + PMS cross-check to the chat once per day, after
+// DAYLOG_REPORT_HOUR (Europe/Prague). Driven by the getDb() tick and by the
+// dedicated scheduler. Never throws into the DB bootstrap path.
 
 function pragueParts(): { date: string; hour: number } {
   const now = new Date();
@@ -18,9 +18,13 @@ function pragueParts(): { date: string; hour: number } {
   return { date, hour: isFinite(hour) ? hour : 0 };
 }
 
+// Guards against the two tick sources (getDb + scheduler) sending at once.
+let sending = false;
+
 export function runDaylogReportTickIfDue(db: any): void {
   const { date, hour } = pragueParts();
   if (hour < DAYLOG_REPORT_HOUR) return;
+  if (sending) return;
 
   const row = db
     .prepare("SELECT value FROM fin_system_state WHERE key = 'daylog_report_last_date'")
@@ -40,17 +44,26 @@ export function runDaylogReportTickIfDue(db: any): void {
     || (reconcile ? reconcile.arrivals.total > 0 || reconcile.issues.length > 0 : false);
   if (!worthPosting) return;
 
-  // Mark first so a slow send can't double-post on a concurrent tick.
-  db.prepare(`
-    INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
-    VALUES ('daylog_report_last_date', ?, datetime('now'))
-  `).run(date);
-
   const text = formatDailyReport(summary) + (reconcile ? formatReconcile(reconcile) : '');
-  sendToChat(DAYLOG_CHAT_ID, text).catch((e: any) =>
-    console.log('[daylog] report tick send error:', e?.message),
-  );
-  console.log(
-    `[daylog] posted daily report for ${date} (${summary.count} entries, ${reconcile?.issues.length ?? 0} issues)`,
-  );
+
+  // Mark only AFTER Telegram accepted the message — marking first meant a failed
+  // send silently lost the whole day's report. The in-flight flag above replaces
+  // the early marker as the concurrent-double-post guard.
+  sending = true;
+  sendToChat(DAYLOG_CHAT_ID, text)
+    .then((messageId) => {
+      if (messageId == null) {
+        console.log('[daylog] report send failed — will retry on the next tick');
+        return;
+      }
+      db.prepare(`
+        INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
+        VALUES ('daylog_report_last_date', ?, datetime('now'))
+      `).run(date);
+      console.log(
+        `[daylog] posted daily report for ${date} (${summary.count} entries, ${reconcile?.issues.length ?? 0} issues)`,
+      );
+    })
+    .catch((e: any) => console.log('[daylog] report tick send error:', e?.message))
+    .finally(() => { sending = false; });
 }
