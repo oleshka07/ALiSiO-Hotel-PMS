@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { summarizeDate, listByDate } from '../data/daylog.repo';
 import { formatDailyReport } from '../domain/format';
 import { sendToChat } from '../domain/telegram';
+import { DAYLOG_CHAT_ID } from '../domain/config';
 
 function pragueToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Prague' });
@@ -23,7 +24,7 @@ export async function daylogReport(request: NextRequest): Promise<NextResponse> 
   const text = formatDailyReport(summary);
 
   if (url.searchParams.get('post') === '1') {
-    const chatId = url.searchParams.get('chat_id') || process.env.DAYLOG_CHAT_ID || '';
+    const chatId = url.searchParams.get('chat_id') || DAYLOG_CHAT_ID || '';
     if (chatId) await sendToChat(chatId, text);
   }
 

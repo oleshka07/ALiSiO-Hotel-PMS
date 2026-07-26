@@ -5,6 +5,7 @@ import { parseMessageText, parseVoice, parsePhoto, type ParsedEntry } from '../d
 import { insertEntry } from '../data/daylog.repo';
 import { sendToChat, downloadFile } from '../domain/telegram';
 import { formatConfirmation } from '../domain/format';
+import { DAYLOG_CHAT_ID } from '../domain/config';
 
 // POST /api/daylog/telegram — called by the @kemptimebot Python poller for every
 // message in Andrey's day-log chat. Auth: shared secret header. This add-on is
@@ -31,6 +32,13 @@ export async function ingestTelegram(request: NextRequest): Promise<NextResponse
 
   const msg = body?.message ?? body;
   const chatId = String(msg?.chat?.id ?? '');
+
+  // Isolation: only the configured day-log chat is processed, even if the bot
+  // forwards other chats by mistake.
+  if (DAYLOG_CHAT_ID && chatId !== String(DAYLOG_CHAT_ID)) {
+    return NextResponse.json({ ok: true, skipped: 'other_chat' });
+  }
+
   const messageId: number | null = msg?.message_id ?? null;
   const author = [msg?.from?.first_name, msg?.from?.last_name].filter(Boolean).join(' ')
     || msg?.from?.username || null;
