@@ -74,3 +74,11 @@ widget.md
 
 # graphify
 graphify-out/
+
+# daylog add-on media (Telegram photos/voice)
+data/daylog-media/
+
+qa-glamping-booking-v2.html
+qa-glamping-booking-v3.html
+src/modules/bookings/api/check_schema.js
+src/assets/fonts/*.ttf

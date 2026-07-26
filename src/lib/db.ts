@@ -4823,6 +4823,41 @@ function runMigrations(database: any) {
     )
   `);
   console.log('[DB] finance_user_access table ready');
+
+  // --- Migration: daylog_entries — Andrey's free-form Telegram day-log ---
+  // Standalone add-on. NOT wired to finance/CRM — a raw capture of what was
+  // received/spent/booked during the day (text/voice/photo), parsed by OpenAI.
+  // Reconciliation into finance operations is a separate, later step.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS daylog_entries (
+      id                  TEXT PRIMARY KEY,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      entry_date          TEXT NOT NULL,
+      chat_id             TEXT,
+      telegram_message_id INTEGER,
+      author              TEXT,
+      input_type          TEXT,
+      raw_text            TEXT,
+      media_file_id       TEXT,
+      media_path          TEXT,
+      direction           TEXT,
+      category            TEXT,
+      amount              REAL,
+      currency            TEXT,
+      qty_guests          INTEGER,
+      qty_nights          INTEGER,
+      payment_method      TEXT,
+      counterparty        TEXT,
+      description         TEXT,
+      needs_review        INTEGER NOT NULL DEFAULT 0,
+      review_reason       TEXT,
+      confidence          REAL,
+      parsed_json         TEXT,
+      corrected           INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_daylog_date ON daylog_entries(entry_date)`);
+  console.log('[DB] daylog_entries table ready');
   }
 
 // Generate a cryptographically secure random token for guest pages
