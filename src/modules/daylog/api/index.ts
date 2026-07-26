@@ -4,3 +4,4 @@
 export { ingestTelegram } from './telegram-ingest.handlers';
 export { daylogReport } from './report.handlers';
 export { summarizeDate, listByDate, type DaylogSummary } from '../data/daylog.repo';
+export { reconcileDay, type DayReconcile } from '../data/reconcile';
