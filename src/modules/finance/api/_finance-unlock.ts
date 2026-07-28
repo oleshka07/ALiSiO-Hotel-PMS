@@ -39,6 +39,21 @@ export function setFinancePassphrase(userId: string, passphrase: string): void {
   `).run(userId, hash, salt);
 }
 
+/**
+ * Remove a user's finance passphrase. Used by the owner when someone forgets
+ * theirs — the hash is one-way, so recovery is impossible and clearing it is
+ * the only way back in. Finance then behaves as if the user never set one
+ * (their tab/account permissions still apply). Any active unlock is dropped
+ * too, so nothing keeps working off a stale session.
+ */
+export function clearFinancePassphrase(userId: string): boolean {
+  const db = getDb();
+  const info = db.prepare('DELETE FROM finance_security WHERE user_id = ?').run(userId);
+  db.prepare('UPDATE sessions SET finance_unlocked_until = NULL WHERE user_id = ?').run(userId);
+  clearUnlockRateLimit(userId);
+  return info.changes > 0;
+}
+
 export function verifyFinancePassphrase(userId: string, passphrase: string): boolean {
   const db = getDb();
   const row = db.prepare(

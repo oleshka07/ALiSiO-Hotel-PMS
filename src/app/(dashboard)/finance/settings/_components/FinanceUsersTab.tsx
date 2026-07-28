@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Settings, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Settings, ShieldCheck, ShieldOff, KeyRound } from 'lucide-react';
 import FinanceUserModal from './FinanceUserModal';
 
 export interface FinanceAccess {
@@ -19,6 +19,8 @@ export interface FinanceUser {
   email: string;
   role: string;
   access: FinanceAccess | null;
+  /** true when this person set their own finance passphrase (step-up lock). */
+  has_passphrase?: boolean;
 }
 
 interface Account {
@@ -43,6 +45,7 @@ export default function FinanceUsersTab() {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<FinanceUser | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +80,26 @@ export default function FinanceUsersTab() {
       console.error(e);
     }
     setTogglingId(null);
+  }
+
+  async function handleResetPassphrase(user: FinanceUser) {
+    if (!confirm(
+      `Скинути пароль фінансів для «${user.full_name}»?\n\n` +
+      'Сам пароль показати неможливо — він зберігається у вигляді незворотного хешу. ' +
+      'Після скидання людина зайде у Фінанси без пароля і зможе встановити новий. ' +
+      'Права на вкладки та рахунки не зміняться.'
+    )) return;
+    setResettingId(user.id);
+    try {
+      const res = await fetch(`/api/finance/access/${user.id}/passphrase`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) alert(data.error || 'Не вдалося скинути пароль');
+      else { alert(data.message || 'Пароль фінансів скинуто'); fetchData(); }
+    } catch {
+      alert('Помилка мережі');
+    } finally {
+      setResettingId(null);
+    }
   }
 
   const enabledCount = users.filter((u) => u.access?.is_enabled).length;
@@ -163,6 +186,22 @@ export default function FinanceUsersTab() {
                         title="Налаштувати доступ"
                       >
                         <Settings size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleResetPassphrase(user)}
+                        disabled={resettingId === user.id || !user.has_passphrase}
+                        style={{
+                          ...iconBtn,
+                          marginLeft: 4,
+                          opacity: user.has_passphrase ? (resettingId === user.id ? 0.5 : 1) : 0.25,
+                          cursor: user.has_passphrase ? 'pointer' : 'not-allowed',
+                          color: user.has_passphrase ? '#f59e0b' : undefined,
+                        }}
+                        title={user.has_passphrase
+                          ? 'Скинути забутий пароль фінансів'
+                          : 'Пароль фінансів не встановлено'}
+                      >
+                        <KeyRound size={16} />
                       </button>
                     </td>
                   </tr>

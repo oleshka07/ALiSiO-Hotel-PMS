@@ -83,9 +83,11 @@ export async function listFinanceAccess(): Promise<NextResponse> {
     const users = db.prepare(`
       SELECT u.id, u.full_name, u.email, u.role, u.is_active,
              fa.is_enabled, fa.period_mode, fa.allowed_tabs,
-             fa.allowed_accounts, fa.can_export, fa.read_only
+             fa.allowed_accounts, fa.can_export, fa.read_only,
+             (fs.user_id IS NOT NULL) AS has_passphrase
       FROM app_users u
       LEFT JOIN finance_user_access fa ON fa.user_id = u.id
+      LEFT JOIN finance_security    fs ON fs.user_id = u.id
       WHERE u.role != 'owner'
       ORDER BY u.full_name
     `).all() as any[];
@@ -96,6 +98,7 @@ export async function listFinanceAccess(): Promise<NextResponse> {
       email: u.email,
       role: u.role,
       is_active: !!u.is_active,
+      has_passphrase: !!u.has_passphrase,
       access: u.is_enabled !== null ? {
         is_enabled: !!u.is_enabled,
         period_mode: u.period_mode || 'month',
@@ -192,6 +195,40 @@ export async function deleteFinanceAccess(_request: NextRequest, context: any): 
     db.prepare('DELETE FROM finance_user_access WHERE user_id = ?').run(userId);
 
     return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/finance/access/[id]/passphrase
+ * Clear a user's forgotten finance passphrase. The hash is one-way, so it can
+ * never be recovered or shown — removing it and letting the person set a new
+ * one is the only route back in. Their tab/account restrictions are untouched.
+ * Owner-only (guarded by manage_users at the module boundary).
+ */
+export async function resetUserFinancePassphrase(_request: NextRequest, context: any): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const params = await context.params;
+    const userId = params?.id;
+    if (!userId) return NextResponse.json({ error: 'Missing user id' }, { status: 400 });
+
+    const user = db.prepare('SELECT id, full_name, role FROM app_users WHERE id = ?').get(userId) as any;
+    if (!user) return NextResponse.json({ error: 'Користувача не знайдено' }, { status: 404 });
+
+    const { clearFinancePassphrase } = await import('./_finance-unlock');
+    const cleared = clearFinancePassphrase(userId);
+
+    console.log(`[FinanceSecurity] passphrase reset for ${user.full_name} (${userId}) — existed=${cleared}`);
+
+    return NextResponse.json({
+      ok: true,
+      cleared,
+      message: cleared
+        ? `Пароль фінансів для «${user.full_name}» скинуто. Хай зайде у Фінанси та встановить новий.`
+        : `У «${user.full_name}» пароль фінансів не був встановлений.`,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
