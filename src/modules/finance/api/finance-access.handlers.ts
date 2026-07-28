@@ -226,7 +226,7 @@ export async function resetUserFinancePassphrase(_request: NextRequest, context:
       ok: true,
       cleared,
       message: cleared
-        ? `Пароль фінансів для «${user.full_name}» скинуто. Хай зайде у Фінанси та встановить новий.`
+        ? `Пароль фінансів для «${user.full_name}» скинуто. При наступному вході у Фінанси вона/він встановить новий — до того часу дані закриті.`
         : `У «${user.full_name}» пароль фінансів не був встановлений.`,
     });
   } catch (error: any) {

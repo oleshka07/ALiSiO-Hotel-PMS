@@ -151,8 +151,16 @@ async function requireFinanceUser(
   if (!isFinanceAuthorized(user)) {
     return forbidden('Доступ до фінансів лише для власника');
   }
-  // Opt-in step-up: once a finance passphrase is set, every session must unlock.
-  if (hasFinancePassphrase(user.id) && !isFinanceUnlocked(sessionId)) {
+  // Step-up passphrase is MANDATORY, not opt-in. It used to apply only to
+  // people who had chosen to set one, which meant anyone who simply never set
+  // it kept unprotected access — and a stolen laptop with a live session read
+  // the whole finance module. No passphrase → no finance data, set one first.
+  if (!hasFinancePassphrase(user.id)) {
+    return forbidden('Щоб відкрити Фінанси, спершу встановіть пароль фінансів.', {
+      code: 'FINANCE_SETUP_REQUIRED',
+    });
+  }
+  if (!isFinanceUnlocked(sessionId)) {
     return forbidden('Фінансовий розділ заблоковано. Введіть пароль фінансів.', {
       code: 'FINANCE_LOCKED',
     });

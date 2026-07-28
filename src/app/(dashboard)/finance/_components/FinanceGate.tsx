@@ -8,7 +8,7 @@ type Status = { hasPassphrase: boolean; unlocked: boolean };
 export default function FinanceGate({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<Status | null>(null);
-  const [panel, setPanel] = useState<null | 'setup' | 'manage'>(null);
+  const [panel, setPanel] = useState<null | 'manage'>(null);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -16,12 +16,11 @@ export default function FinanceGate({ children }: { children: React.ReactNode })
       if (res.ok) {
         setStatus(await res.json());
       } else {
-        // Not the owner, or a transient error — enforcement still lives in the
-        // API layer, so fail open here and let the page's own calls 401/403.
-        setStatus({ hasPassphrase: false, unlocked: true });
+        // Fail CLOSED: never render finance on an unknown security state.
+        setStatus(null);
       }
     } catch {
-      setStatus({ hasPassphrase: false, unlocked: true });
+      setStatus(null);
     } finally {
       setLoading(false);
     }
@@ -38,32 +37,23 @@ export default function FinanceGate({ children }: { children: React.ReactNode })
     );
   }
 
-  const locked = !!status && status.hasPassphrase && !status.unlocked;
+  // Unknown security state → show nothing rather than risk exposing finance.
+  if (!status) return <BlockedScreen />;
 
-  if (locked) {
-    return <UnlockScreen onUnlocked={loadStatus} />;
-  }
+  // The passphrase is mandatory: without one there is no way into finance.
+  if (!status.hasPassphrase) return <SetupScreen onDone={loadStatus} />;
+
+  if (!status.unlocked) return <UnlockScreen onUnlocked={loadStatus} />;
 
   return (
     <>
       {children}
 
-      <button
-        onClick={() => setPanel(status?.hasPassphrase ? 'manage' : 'setup')}
-        title="Безпека фінансів"
-        style={fab}
-      >
-        {status?.hasPassphrase
-          ? <ShieldCheck size={16} color="#16a34a" />
-          : <ShieldPlus size={16} color="#64748b" />}
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
-          {status?.hasPassphrase ? 'Пароль увімкнено' : 'Увімкнути пароль'}
-        </span>
+      <button onClick={() => setPanel('manage')} title="Безпека фінансів" style={fab}>
+        <ShieldCheck size={16} color="#16a34a" />
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>Заблокувати</span>
       </button>
 
-      {panel === 'setup' && (
-        <SetupModal onClose={() => setPanel(null)} onDone={() => { setPanel(null); loadStatus(); }} />
-      )}
       {panel === 'manage' && (
         <ManageModal onClose={() => setPanel(null)} onLocked={() => { setPanel(null); loadStatus(); }} />
       )}
@@ -115,8 +105,25 @@ function UnlockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   );
 }
 
-// ─── Setup (enable the passphrase) ─────────────────────────────────────────
-function SetupModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+// ─── Blocked (security state unknown / no finance access) ──────────────────
+function BlockedScreen() {
+  return (
+    <div style={center}>
+      <div style={card}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={iconCircle}><Lock size={22} color="#b91c1c" /></div>
+          <h2 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>Доступ до Фінансів закрито</h2>
+          <p style={{ margin: 0, fontSize: 13, color: '#64748b', textAlign: 'center' }}>
+            Не вдалося перевірити права. Оновіть сторінку або зверніться до власника.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Setup (mandatory before any finance data is shown) ────────────────────
+function SetupScreen({ onDone }: { onDone: () => void }) {
   const [p1, setP1] = useState('');
   const [p2, setP2] = useState('');
   const [err, setErr] = useState('');
@@ -140,19 +147,23 @@ function SetupModal({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   };
 
   return (
-    <Modal onClose={onClose} title="Увімкнути пароль фінансів">
-      <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>
-        Окремий пароль, який запитуватиметься при вході у Фінанси — додатковий
-        захист, навіть якщо хтось отримає доступ до вашого облікового запису.
-        Запам’ятайте його: відновлення немає.
-      </p>
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={center}>
+      <form onSubmit={submit} style={card}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ ...iconCircle, background: '#e0f2fe' }}><ShieldPlus size={22} color="#0369a1" /></div>
+          <h2 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>Встановіть пароль фінансів</h2>
+          <p style={{ margin: 0, fontSize: 13, color: '#64748b', textAlign: 'center' }}>
+            Це окремий пароль для розділу Фінанси — обовʼязковий. Він захищає дані,
+            навіть якщо хтось отримає доступ до вашого компʼютера чи облікового запису.
+            Якщо забудете — власник зможе його скинути (показати неможливо).
+          </p>
+        </div>
         <input type="password" autoFocus value={p1} onChange={(e) => setP1(e.target.value)} placeholder="Новий пароль фінансів" style={input} />
         <input type="password" value={p2} onChange={(e) => setP2(e.target.value)} placeholder="Повторіть пароль" style={input} />
         {err && <div style={errBox}>{err}</div>}
-        <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Збереження…' : 'Увімкнути'}</button>
+        <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Збереження…' : 'Встановити і увійти'}</button>
       </form>
-    </Modal>
+    </div>
   );
 }
 
