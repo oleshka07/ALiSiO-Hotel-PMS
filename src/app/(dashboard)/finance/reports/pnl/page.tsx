@@ -7,6 +7,7 @@ import DrillDownModal from '../_components/DrillDownModal';
 import ExportButton from '../../_components/ExportButton';
 import Sparkline from '../../_components/Sparkline';
 import TagFilter from '../../_components/TagFilter';
+import VisualPnlDashboard from './_components/VisualPnlDashboard';
 
 interface MatrixRow {
   category_id: string | null;
@@ -58,6 +59,7 @@ function defaultRange(): { from: string; to: string } {
 }
 
 export default function PnlMatrixPage() {
+  const [viewTab, setViewTab] = useState<'visual' | 'table'>('visual');
   const [data, setData] = useState<PnlData | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(defaultRange());
@@ -89,24 +91,44 @@ export default function PnlMatrixPage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Link href="/finance/reports" style={backLink}><ArrowLeft size={14} /></Link>
-        <h1 style={{ margin: 0, flex: 1 }}>📊 P&amp;L</h1>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', borderRadius: 8, padding: 3, border: '1px solid var(--border-primary)' }}>
-          <button onClick={() => setBasis('accrued')} style={{ ...tabBtn, ...(basis === 'accrued' ? tabActive : {}) }}>По нарахуванню</button>
-          <button onClick={() => setBasis('paid')} style={{ ...tabBtn, ...(basis === 'paid' ? tabActive : {}) }}>По факту</button>
+        <h1 style={{ margin: 0 }}>📊 P&amp;L Звіт</h1>
+
+        {/* View Switcher */}
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', borderRadius: 8, padding: 3, border: '1px solid var(--border-primary)', marginLeft: 12 }}>
+          <button onClick={() => setViewTab('visual')} style={{ ...tabBtn, ...(viewTab === 'visual' ? tabActive : {}) }}>📊 Visual P&amp;L</button>
+          <button onClick={() => setViewTab('table')} style={{ ...tabBtn, ...(viewTab === 'table' ? tabActive : {}) }}>📄 Таблиця P&amp;L</button>
         </div>
-        <input type="month" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
-        <span style={{ color: 'var(--text-secondary)' }}>—</span>
-        <input type="month" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
-        <TagFilter selected={tagIds} onChange={setTagIds} />
-        <ExportButton
-          endpoint="/api/finance/export/pnl"
-          params={{ from: range.from, to: range.to, basis }}
-        />
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {viewTab === 'table' && (
+            <>
+              <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', borderRadius: 8, padding: 3, border: '1px solid var(--border-primary)' }}>
+                <button onClick={() => setBasis('accrued')} style={{ ...tabBtn, ...(basis === 'accrued' ? tabActive : {}) }}>По нарахуванню</button>
+                <button onClick={() => setBasis('paid')} style={{ ...tabBtn, ...(basis === 'paid' ? tabActive : {}) }}>По факту</button>
+              </div>
+              <input type="month" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
+              <span style={{ color: 'var(--text-secondary)' }}>—</span>
+              <input type="month" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
+              <TagFilter selected={tagIds} onChange={setTagIds} />
+            </>
+          )}
+          <ExportButton
+            endpoint="/api/finance/export/pnl"
+            params={{ from: range.from, to: range.to, basis }}
+          />
+        </div>
       </div>
 
-      {loading || !data ? (
+      {viewTab === 'visual' ? (
+        <VisualPnlDashboard
+          initialFrom={range.from}
+          initialTo={range.to}
+          initialBasis={basis}
+          tagIds={tagIds}
+        />
+      ) : loading || !data ? (
         <div style={{ padding: 80, textAlign: 'center', color: 'var(--text-secondary)' }}>Завантаження…</div>
       ) : (
         <div style={{ marginTop: 20, overflowX: 'auto', border: '1px solid var(--border-primary)', borderRadius: 10 }}>
