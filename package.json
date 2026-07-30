@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "NODE_OPTIONS='--max-old-space-size=3072' ./node_modules/.bin/next build",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=3072\" next build",
     "build:win": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -40,6 +40,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/xml2js": "^0.4.14",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.28.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
