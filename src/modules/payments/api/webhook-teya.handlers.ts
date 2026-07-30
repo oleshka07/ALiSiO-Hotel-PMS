@@ -337,6 +337,12 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
       for (const row of paid) {
         const invId = generateInvoiceForReservation(row.id, { confirmed: true, source: 'teya_webhook' });
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
+        try {
+          const { sendBookingConfirmationEmail } = await import('../../bookings/data/send-confirmation-email');
+          await sendBookingConfirmationEmail(row.id);
+        } catch (emailErr: any) {
+          console.error('[Teya Webhook] Confirmation email error:', emailErr.message);
+        }
       }
     } catch (e: any) {
       console.error('[Teya Webhook] Auto-invoice error:', e.message);

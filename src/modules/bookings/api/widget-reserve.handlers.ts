@@ -666,10 +666,10 @@ export async function createWidgetReservation(request: NextRequest) {
         const customizedSubject = replacePlaceholders(rawSubject, replaceDict);
         const customizedBody = replacePlaceholders(rawBody, replaceDict);
 
-        // Fire-and-forget immediate email sending via standard ALiSiO mail (email.cz)
-        // We use import() dynamically so we don't have to await it, preventing UI freezing
-        import('@/lib/email').then(({ sendEmail }) => {
-          sendEmail({
+        // Await immediate email sending so Vercel/serverless container doesn't terminate before completion
+        try {
+          const { sendEmail } = await import('@/lib/email');
+          await sendEmail({
             to: email,
             subject: customizedSubject,
             html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head>
@@ -697,8 +697,12 @@ export async function createWidgetReservation(request: NextRequest) {
     </div>
   </div>
 </body></html>`,
-          }).catch(err => console.error('[Widget Reserve] Immediate email failed:', err));
-        });
+          });
+          console.log(`[Widget Reserve] Immediate email sent to ${email} for res ${resId}`);
+        } catch (err: any) {
+          testEmailStatus = `failed: ${err.message}`;
+          console.error('[Widget Reserve] Immediate email failed:', err.message);
+        }
       } catch (err: any) {
         testEmailStatus = `failed: ${err.message}`;
         console.error('[Widget Reserve] Setup failed:', err.message);
