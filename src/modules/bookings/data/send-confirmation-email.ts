@@ -40,7 +40,15 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
     return false;
   }
 
-  if (!row.email) {
+  let recipientEmail = row.email;
+  if (!recipientEmail) {
+    try {
+      const draft = db.prepare('SELECT guest_email FROM booking_drafts WHERE reservation_id = ?').get(reservationId) as any;
+      if (draft?.guest_email) recipientEmail = draft.guest_email;
+    } catch { /* ignore */ }
+  }
+
+  if (!recipientEmail) {
     console.log(`[BookingEmail] No email on reservation ${reservationId} — skipping`);
     return false;
   }
@@ -68,6 +76,15 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
     } catch (e: any) {
       console.error('[BookingEmail] Failed to fetch site widget_config:', e.message);
     }
+  }
+
+  if (!widgetConfig?.email_confirmed_body) {
+    try {
+      const defaultSite = db.prepare("SELECT widget_config FROM booking_sites WHERE slug LIKE '%kemp-carlsbad%' OR id = 'kemp-carlsbad' LIMIT 1").get() as any;
+      if (defaultSite?.widget_config) {
+        widgetConfig = JSON.parse(defaultSite.widget_config);
+      }
+    } catch { /* ignore */ }
   }
 
   const propertyName = row.property_name || 'ALiSiO';
@@ -177,8 +194,8 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
 </html>`;
 
   try {
-    await sendEmail({ to: row.email, subject, html });
-    console.log(`[BookingEmail] Sent confirmation to ${row.email} for reservation ${row.id}`);
+    await sendEmail({ to: recipientEmail, subject, html });
+    console.log(`[BookingEmail] Sent confirmation to ${recipientEmail} for reservation ${row.id}`);
     return true;
   } catch (err: any) {
     console.error(`[BookingEmail] Failed for ${row.id}:`, err.message);

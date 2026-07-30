@@ -97,7 +97,7 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
     const refs = extractPaymentRef(event);
 
     if (isPaymentSuccess(eventType, event)) {
-      const outcome = handlePaymentSuccess(db, event, eventType);
+      const outcome = await handlePaymentSuccess(db, event, eventType);
       logWebhook(db, outcome.result, {
         eventType, sessionId: refs.sessionId, transactionId: refs.transactionId,
         paymentRef: outcome.effectiveRef || refs.sessionId || refs.transactionId,
@@ -192,7 +192,7 @@ interface SuccessOutcome {
   reservationId?: string;
 }
 
-function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOutcome {
+async function handlePaymentSuccess(db: any, event: any, eventType: string): Promise<SuccessOutcome> {
   const { sessionId, transactionId, amount, currency } = extractPaymentRef(event);
 
   const merchantRef: string = event.data?.merchant_reference || event.merchant_reference || '';
@@ -337,6 +337,12 @@ function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOu
       for (const row of paid) {
         const invId = generateInvoiceForReservation(row.id, { confirmed: true, source: 'teya_webhook' });
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
+        try {
+          const { sendBookingConfirmationEmail } = await import('../../bookings/data/send-confirmation-email');
+          await sendBookingConfirmationEmail(row.id);
+        } catch (emailErr: any) {
+          console.error('[Teya Webhook] Confirmation email error:', emailErr.message);
+        }
       }
     } catch (e: any) {
       console.error('[Teya Webhook] Auto-invoice error:', e.message);
