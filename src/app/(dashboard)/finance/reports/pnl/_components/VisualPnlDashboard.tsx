@@ -131,20 +131,29 @@ export default function VisualPnlDashboard({
     fetchData();
   }, [fetchData]);
 
-  // Derived sections
+  // Derived sections matching backend keys in getPnlMatrix
   const revenueSec = data?.sections.find((s) => s.key === 'revenue');
+  const cogsSec = data?.sections.find((s) => s.key === 'cogs');
+  const grossProfitSec = data?.sections.find((s) => s.key === 'gross');
   const variableSec = data?.sections.find((s) => s.key === 'variable');
-  const grossProfitSec = data?.sections.find((s) => s.key === 'gross_profit');
-  const opexSec = data?.sections.find((s) => s.key === 'opex');
+  const marginalSec = data?.sections.find((s) => s.key === 'marginal');
+  const opexSec = data?.sections.find((s) => s.key === 'operational');
   const ebitdaSec = data?.sections.find((s) => s.key === 'ebitda');
+  const taxSec = data?.sections.find((s) => s.key === 'tax');
+  const otherSec = data?.sections.find((s) => s.key === 'other');
   const netSec = data?.sections.find((s) => s.key === 'net');
 
   const totalRevenue = revenueSec?.total || 0;
+  const totalCogs = Math.abs(cogsSec?.total || 0);
   const totalVariable = Math.abs(variableSec?.total || 0);
-  const totalGrossProfit = grossProfitSec?.total || 0;
   const totalOpex = Math.abs(opexSec?.total || 0);
+  const totalTax = Math.abs(taxSec?.total || 0);
+  const totalOther = Math.abs(otherSec?.total || 0);
+
+  const totalExpenses = totalCogs + totalVariable + totalOpex + totalTax + totalOther;
+  const totalGrossProfit = grossProfitSec?.total ?? (totalRevenue - totalCogs);
   const totalEbitda = ebitdaSec?.total || 0;
-  const totalNet = netSec?.total || 0;
+  const totalNet = netSec?.total ?? (totalRevenue - totalExpenses);
 
   const grossMarginPct = totalRevenue > 0 ? (totalGrossProfit / totalRevenue) * 100 : 0;
   const ebitdaMarginPct = totalRevenue > 0 ? (totalEbitda / totalRevenue) * 100 : 0;
@@ -155,10 +164,14 @@ export default function VisualPnlDashboard({
     if (!data || !data.months) return [];
     return data.months.map((m) => {
       const rev = revenueSec?.byMonth[m] || 0;
+      const cogs = Math.abs(cogsSec?.byMonth[m] || 0);
       const vExp = Math.abs(variableSec?.byMonth[m] || 0);
       const oExp = Math.abs(opexSec?.byMonth[m] || 0);
-      const exp = vExp + oExp;
-      const net = netSec?.byMonth[m] || 0;
+      const tExp = Math.abs(taxSec?.byMonth[m] || 0);
+      const othExp = Math.abs(otherSec?.byMonth[m] || 0);
+
+      const exp = cogs + vExp + oExp + tExp + othExp;
+      const net = netSec?.byMonth[m] ?? (rev - exp);
 
       // Simulated planned/future items if month is in current/future
       const isFuture = m >= new Date().toISOString().substring(0, 7);
@@ -177,7 +190,7 @@ export default function VisualPnlDashboard({
         marginPct: rev > 0 ? (net / rev) * 100 : 0,
       };
     });
-  }, [data, revenueSec, variableSec, opexSec, netSec]);
+  }, [data, revenueSec, cogsSec, variableSec, opexSec, taxSec, otherSec, netSec]);
 
   // Max value for chart scaling
   const maxBarValue = useMemo(() => {
@@ -190,7 +203,6 @@ export default function VisualPnlDashboard({
     return maxVal > 0 ? maxVal * 1.15 : 100000;
   }, [monthlyStats]);
 
-  // Filtered rows for the selected month or entire range
   const activeMonthFilter = selectedMonth;
 
   // Income categories breakdown
@@ -211,24 +223,29 @@ export default function VisualPnlDashboard({
       .sort((a, b) => b.value - a.value);
   }, [revenueSec, activeMonthFilter, totalRevenue]);
 
-  // Expense categories breakdown
+  // Expense categories breakdown (all expense classifiers)
   const expenseCategories = useMemo(() => {
-    const rows = [...(variableSec?.rows || []), ...(opexSec?.rows || [])];
+    const rows = [
+      ...(cogsSec?.rows || []),
+      ...(variableSec?.rows || []),
+      ...(opexSec?.rows || []),
+      ...(taxSec?.rows || []),
+      ...(otherSec?.rows || []),
+    ];
     return rows
       .map((r) => {
         const val = Math.abs(activeMonthFilter ? r.months[activeMonthFilter] || 0 : r.total);
-        const totalExp = totalVariable + totalOpex;
         return {
           id: r.category_id,
           name: r.category_name,
           icon: r.category_icon,
           value: val,
-          pct: totalExp > 0 ? (val / totalExp) * 100 : 0,
+          pct: totalExpenses > 0 ? (val / totalExpenses) * 100 : 0,
         };
       })
       .filter((c) => c.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [variableSec, opexSec, activeMonthFilter, totalVariable, totalOpex]);
+  }, [cogsSec, variableSec, opexSec, taxSec, otherSec, activeMonthFilter, totalExpenses]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 16 }}>
@@ -367,16 +384,16 @@ export default function VisualPnlDashboard({
         {/* Expenses */}
         <div style={kpiCardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={kpiTitleStyle}>Витрати (COGS + OPEX)</span>
+            <span style={kpiTitleStyle}>Всі витрати (Expenses)</span>
             <div style={{ ...kpiIconBadge, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
               <TrendingDown size={18} />
             </div>
           </div>
           <div style={{ ...kpiValueStyle, color: '#ef4444' }}>
-            {formatMoney(totalVariable + totalOpex)}
+            {formatMoney(totalExpenses)}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-            COGS: {formatCompactMoney(totalVariable)} · OPEX: {formatCompactMoney(totalOpex)}
+            COGS: {formatCompactMoney(totalCogs + totalVariable)} · OPEX: {formatCompactMoney(totalOpex)}
           </div>
         </div>
 
