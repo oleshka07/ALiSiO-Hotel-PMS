@@ -896,3 +896,132 @@ export function recalcReservationPaymentStatus(db: any, reservationId: string): 
     }).catch(() => {});
   }
 }
+
+/**
+ * POST /api/finance/operations/bulk-update
+ * Body: {
+ *   ids: string[];
+ *   project_id?: string | null;
+ *   counterparty_id?: string | null;
+ *   category_id?: string | null;
+ *   status?: string;
+ *   comment?: string;
+ *   tag_ids?: string[];
+ * }
+ */
+export async function bulkUpdateOperations(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    const { ids, project_id, counterparty_id, category_id, status, comment, tag_ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'Не вибрано жодної операції' }, { status: 400 });
+    }
+
+    const actor = await getOptionalActor();
+    const ph = ids.map(() => '?').join(',');
+    const ops = db.prepare(
+      `SELECT * FROM fin_operations WHERE id IN (${ph}) AND organization_id = ?`
+    ).all(...ids, orgId) as any[];
+
+    if (ops.length === 0) {
+      return NextResponse.json({ error: 'Операції не знайдено' }, { status: 404 });
+    }
+
+    db.transaction(() => {
+      for (const op of ops) {
+        const effectiveCategory = op.op_type === 'transfer' ? null : (category_id !== undefined ? category_id : op.category_id);
+        const effectiveProject = project_id !== undefined ? project_id : op.project_id;
+        const effectiveCounterparty = counterparty_id !== undefined ? counterparty_id : op.counterparty_id;
+        const effectiveStatus = status !== undefined && (STATUSES as readonly string[]).includes(status) ? status : op.status;
+        const effectiveComment = comment !== undefined ? comment : op.comment;
+
+        db.prepare(`
+          UPDATE fin_operations
+          SET category_id     = ?,
+              project_id      = ?,
+              counterparty_id = ?,
+              status          = ?,
+              comment         = ?,
+              updated_at      = datetime('now'),
+              updated_by_user_id = ?
+          WHERE id = ?
+        `).run(
+          effectiveCategory,
+          effectiveProject,
+          effectiveCounterparty,
+          effectiveStatus,
+          effectiveComment,
+          actor?.id || null,
+          op.id
+        );
+
+        if (tag_ids !== undefined && Array.isArray(tag_ids)) {
+          db.prepare('DELETE FROM fin_operation_tags WHERE operation_id = ?').run(op.id);
+          if (tag_ids.length > 0) {
+            const insertTag = db.prepare('INSERT OR IGNORE INTO fin_operation_tags (operation_id, tag_id) VALUES (?, ?)');
+            for (const tagId of tag_ids) insertTag.run(op.id, tagId);
+          }
+        }
+
+        const updatedRow = db.prepare('SELECT * FROM fin_operations WHERE id = ?').get(op.id);
+        writeOperationAudit(db, op.id, 'update', actor, op, updatedRow);
+
+        if (op.reservation_id) {
+          recalcReservationPaymentStatus(db, op.reservation_id);
+        }
+      }
+    })();
+
+    return NextResponse.json({ ok: true, updated_count: ops.length });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/operations/bulk-delete
+ * Body: { ids: string[] }
+ */
+export async function bulkDeleteOperations(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'Не вибрано жодної операції' }, { status: 400 });
+    }
+
+    const actor = await getOptionalActor();
+    const ph = ids.map(() => '?').join(',');
+    const ops = db.prepare(
+      `SELECT * FROM fin_operations WHERE id IN (${ph}) AND organization_id = ?`
+    ).all(...ids, orgId) as any[];
+
+    if (ops.length === 0) {
+      return NextResponse.json({ error: 'Операції не знайдено' }, { status: 404 });
+    }
+
+    db.transaction(() => {
+      for (const op of ops) {
+        db.prepare('UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id = ?').run(op.id);
+        db.prepare('DELETE FROM fin_operation_tags WHERE operation_id = ?').run(op.id);
+        db.prepare('DELETE FROM fin_operations WHERE id = ?').run(op.id);
+
+        writeOperationAudit(db, op.id, 'delete', actor, op, null);
+
+        if (op.reservation_id) {
+          recalcReservationPaymentStatus(db, op.reservation_id);
+        }
+      }
+    })();
+
+    return NextResponse.json({ ok: true, deleted_count: ops.length });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

@@ -6,6 +6,7 @@ import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, 
 import OperationModal from './_components/OperationModal';
 import AdvancedFilterModal from './_components/AdvancedFilterModal';
 import InlinePicker, { type InlinePickerOption } from './_components/InlinePicker';
+import BulkEditModal from './_components/BulkEditModal';
 import ExportButton from '../_components/ExportButton';
 
 type OpType = 'income' | 'expense' | 'transfer';
@@ -99,6 +100,8 @@ export default function OperationsPage() {
 
   const [selectedOpsForMerge, setSelectedOpsForMerge] = useState<Set<string>>(new Set());
   const [isMerging, setIsMerging] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const handleMerge = async () => {
     if (selectedOpsForMerge.size !== 2) return;
@@ -117,6 +120,50 @@ export default function OperationsPage() {
       alert("Помилка об'єднання: " + err.message);
     } finally {
       setIsMerging(false);
+    }
+  };
+
+  const handleBulkUpdate = async (payload: {
+    category_id?: string | null;
+    project_id?: string | null;
+    counterparty_id?: string | null;
+    status?: string;
+    tag_ids?: string[];
+  }) => {
+    if (selectedOpsForMerge.size === 0) return;
+    const res = await fetch('/api/finance/operations/bulk-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: Array.from(selectedOpsForMerge),
+        ...payload,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Помилка групового оновлення');
+    setSelectedOpsForMerge(new Set());
+    await fetchOps();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedOpsForMerge.size === 0) return;
+    if (!confirm(`Ви дійсно бажаєте видалити ${selectedOpsForMerge.size} виділених операцій?`)) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const res = await fetch('/api/finance/operations/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedOpsForMerge) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Помилка групового видалення');
+      setSelectedOpsForMerge(new Set());
+      await fetchOps();
+    } catch (err: any) {
+      alert('Помилка видалення: ' + err.message);
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -405,22 +452,66 @@ export default function OperationsPage() {
             </div>
           ) : (
             <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
-              {selectedOpsForMerge.size === 2 && (
-                <div style={{ padding: 12, background: 'rgba(99,102,241,0.1)', borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 500, color: '#4f46e5' }}>Вибрано 2 операції для об'єднання.</span>
-                  <button 
-                    onClick={handleMerge}
-                    disabled={isMerging}
-                    style={{ background: '#4f46e5', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontWeight: 500, cursor: isMerging ? 'not-allowed' : 'pointer', opacity: isMerging ? 0.7 : 1 }}
-                  >
-                    {isMerging ? "Об'єднання..." : "З'єднати в переміщення"}
-                  </button>
+              {selectedOpsForMerge.size > 0 && (
+                <div style={{ padding: '10px 16px', background: 'rgba(99,102,241,0.08)', borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontWeight: 600, color: '#4f46e5', fontSize: 13 }}>
+                      Вибрано {selectedOpsForMerge.size} {selectedOpsForMerge.size === 1 ? 'операцію' : selectedOpsForMerge.size < 5 ? 'операції' : 'операцій'}
+                    </span>
+                    <button 
+                      onClick={() => setSelectedOpsForMerge(new Set())}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}
+                    >
+                      Скинути
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {selectedOpsForMerge.size === 2 && (
+                      <button 
+                        onClick={handleMerge}
+                        disabled={isMerging}
+                        style={{ background: '#4f46e5', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontWeight: 500, cursor: isMerging ? 'not-allowed' : 'pointer', opacity: isMerging ? 0.7 : 1, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        ⇄ {isMerging ? "Об'єднання..." : "З'єднати в переміщення"}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setShowBulkModal(true)}
+                      style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', padding: '6px 14px', borderRadius: 6, fontWeight: 500, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Pencil size={13} /> Масове редагування
+                    </button>
+
+                    <button
+                      onClick={handleBulkDelete}
+                      disabled={isBulkDeleting}
+                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '6px 14px', borderRadius: 6, fontWeight: 500, cursor: isBulkDeleting ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Trash2 size={13} /> {isBulkDeleting ? 'Видалення…' : `Видалити (${selectedOpsForMerge.size})`}
+                    </button>
+                  </div>
                 </div>
               )}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
-                    <th style={{ ...th, width: 30, textAlign: 'center' }}></th>
+                    <th style={{ ...th, width: 30, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={displayedOps.length > 0 && displayedOps.every(o => selectedOpsForMerge.has(o.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedOpsForMerge(new Set(displayedOps.map(o => o.id)));
+                          } else {
+                            setSelectedOpsForMerge(new Set());
+                          }
+                        }}
+                        title="Вибрати всі операції на сторінці"
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
                     <SortableTh label="Дата" sortKey="paid_at" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
                     <SortableTh label="Сума" sortKey="amount" currentKey={sortKey} dir={sortDir} onClick={clickSort} align="right" />
                     <SortableTh label="Рахунок / залишок" sortKey="account" currentKey={sortKey} dir={sortDir} onClick={clickSort} />
@@ -615,6 +706,18 @@ export default function OperationsPage() {
           setFilterOpTypes(opTypes);
         }}
       />
+
+      {showBulkModal && (
+        <BulkEditModal
+          selectedCount={selectedOpsForMerge.size}
+          categories={categories}
+          projects={projects}
+          counterparties={counterparties}
+          tags={tags}
+          onClose={() => setShowBulkModal(false)}
+          onApply={handleBulkUpdate}
+        />
+      )}
     </div>
   );
 }
