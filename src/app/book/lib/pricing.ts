@@ -215,6 +215,13 @@ export function calcCampingPrice(
 ) {
   const nightDates = getNightDates(checkIn, checkOut);
 
+  // If Test Product is selected, override total to 1 CZK (or 1 CZK per test item) to allow quick 1 CZK testing
+  if (selectedItems.includes('svc_test_stone')) {
+    const testCount = selectedItems.filter(c => c === 'svc_test_stone').length;
+    const total = testCount * 1;
+    return { total, deposit: total, remaining: 0, nights: nightDates.length || 1 };
+  }
+
   // Get rates from price list
   const adultItem = getRate(prices, 'adult_person');
   const childItem = getRate(prices, 'child_person');
