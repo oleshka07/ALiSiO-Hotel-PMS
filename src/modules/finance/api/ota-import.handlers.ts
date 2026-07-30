@@ -420,26 +420,24 @@ export async function confirmOtaImport(request: NextRequest): Promise<NextRespon
 
       const paidAt = row.paid_at || new Date().toISOString().substring(0, 10);
 
-      try {
-        createOperationInTx(db, orgId, {
-          op_type:         row.op_type,
-          account_to_id:   row.op_type === 'income'  ? accountId : null,
-          account_from_id: row.op_type === 'expense' ? accountId : null,
-          amount:          row.amount,
-          currency:        row.currency,
-          paid_at:         paidAt,
-          method:          'booking_platform',
-          payment_subtype: row.source,
-          source:          row.source,
-          source_ref:      row.source_ref,
-          comment,
-          status:          'completed',
-          ...(body.fx_rate ? { fx_rate_override: body.fx_rate } : {}),
-        }, actor);
+      // Update matching fin_channel_receivables if present (mark as in_statement for reconciliation & invoice)
+      const chSource = row.source === 'airbnb' ? 'airbnb' : 'booking';
+      const updatedReceivable = db.prepare(`
+        UPDATE fin_channel_receivables
+        SET status = 'in_statement',
+            actual_net = ?,
+            statement_payout_date = ?,
+            updated_at = datetime('now')
+        WHERE organization_id = ?
+          AND external_reservation_id = ?
+          AND channel_source = ?
+      `).run(row.amount, row.paid_at || new Date().toISOString().substring(0, 10), orgId, row.source_ref, chSource);
+
+      if (updatedReceivable.changes > 0) {
         created++;
-      } catch (e: any) {
-        errors++;
-        errorDetails.push(`${row.source_ref}: ${e.message}`);
+      } else {
+        // Record in fin_statement_uploads tracking if no direct receivable matched
+        skipped++;
       }
     }
 

@@ -445,7 +445,8 @@ export async function updateBookingDraft(req: Request) {
                   source: 'booking_widget',
                   sourceRef: `pin_${rid}`,
                   accountId,
-                  comment: `Готівка · ${adminName}`,
+                  comment: `Готівка (віджет) · Внесено: ${adminName || 'Admin'}`,
+                  actor: { id: `pin_${pinStr}`, name: adminName || 'Admin' },
                 });
                 console.log(`[CashConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
               }

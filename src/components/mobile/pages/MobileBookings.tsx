@@ -241,25 +241,53 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
         </div>
       )}
 
-      {/* Category toggle */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-        {[
-          { key: 'glamping', label: 'Glamping' },
-          { key: 'resort', label: 'Resort' },
-          { key: 'camping', label: 'Camping' },
-        ].map(c => (
+      {/* Category toggle & Quick Utilities */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[
+            { key: 'glamping', label: 'Glamping' },
+            { key: 'resort', label: 'Resort' },
+            { key: 'camping', label: 'Camping' },
+          ].map(c => (
+            <button
+              key={c.key}
+              onClick={() => setCategoryFilter(c.key)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                background: categoryFilter === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                color: categoryFilter === c.key ? '#fff' : 'var(--text-secondary)',
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
-            key={c.key}
-            onClick={() => setCategoryFilter(c.key)}
+            onClick={() => setShowSearch(p => !p)}
             style={{
-              padding: '5px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-              background: categoryFilter === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-              color: categoryFilter === c.key ? '#fff' : 'var(--text-secondary)',
+              padding: '5px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              background: showSearch ? 'rgba(91,124,255,0.18)' : 'var(--bg-tertiary)',
+              color: showSearch ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}
+            title="Пошук"
           >
-            {c.label}
+            <Search size={15} />
           </button>
-        ))}
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            style={{
+              padding: '5px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
+            title="Оновити"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-pulse' : ''} />
+          </button>
+        </div>
       </div>
 
       {/* Date Filter chips */}
@@ -294,15 +322,15 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
             {filtered.length} {showArchive ? 'всього' : 'актуальних'}
           </span>
           <button
             onClick={() => setShowArchive(p => !p)}
             style={{
-              padding: '3px 9px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              padding: '3px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
               fontSize: 10, fontWeight: 700,
               background: showArchive ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
               color: showArchive ? '#fff' : 'var(--text-tertiary)',
@@ -312,11 +340,11 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
             {showArchive ? 'Архів' : 'Актуальні'}
           </button>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {categoryFilter === 'resort' && (
             <button
               onClick={() => setShowRoomAllocation(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 10, background: 'rgba(91,124,255,0.12)', border: '1px solid rgba(91,124,255,0.3)', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 10, background: 'rgba(91,124,255,0.12)', border: '1px solid rgba(91,124,255,0.3)', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
               title="Розселення гостей по кімнатах Будови F"
             >
               <Building2 size={13} /> Розселення
@@ -324,15 +352,9 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
           )}
           <button
             onClick={() => setShowNewBooking(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 10, background: 'var(--accent-primary)', border: 'none', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 10, background: 'var(--accent-primary)', border: 'none', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             <Plus size={14} /> Нове
-          </button>
-          <button onClick={() => setShowSearch(p => !p)} style={{ background: 'transparent', border: 'none', color: showSearch ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>
-            <Search size={16} />
-          </button>
-          <button onClick={fetchData} disabled={loading} style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>
-            <RefreshCw size={14} className={loading ? 'animate-pulse' : ''} />
           </button>
         </div>
       </div>

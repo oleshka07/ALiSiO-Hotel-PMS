@@ -98,8 +98,7 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
   // operations list immediately sees which booking the money is for
   // («Hostex Airbnb · RES-123 · John Doe · 2026-05-20»). Caller's
   // explicit comment always wins.
-  const autoComment = (() => {
-    if (comment) return comment;
+  const resContext = (() => {
     try {
       const ctx = db.prepare(`
         SELECT r.id, r.check_in,
@@ -109,14 +108,7 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
         WHERE r.id = ?
       `).get(reservationId) as { id: string; check_in: string | null; guest_name: string | null } | undefined;
       if (!ctx) return null;
-      const sourceLabel = source === 'hostex'
-        ? `Hostex${input.channelType ? ' ' + input.channelType : ''}`
-        : source === 'teia' ? 'Teya'
-        : source === 'booking_widget' ? 'Booking widget'
-        : 'Manual';
-      const subtypeLabel = isRefund ? 'refund' : paymentSubtype;
       const parts = [
-        `${sourceLabel} · ${subtypeLabel}`,
         `RES ${ctx.id.slice(0, 8)}`,
         ctx.guest_name && ctx.guest_name.length > 0 ? ctx.guest_name : null,
         ctx.check_in ? `check-in ${ctx.check_in.substring(0, 10)}` : null,
@@ -124,6 +116,10 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
       return parts.join(' · ');
     } catch { return null; }
   })();
+
+  const fullComment = comment
+    ? `${comment}${resContext ? ' | ' + resContext : ''}`
+    : `${source === 'booking_widget' ? 'Віджет (готівка)' : 'Готівка'} · ${paymentSubtype}${resContext ? ' | ' + resContext : ''}`;
 
   // Resolve account in 3 stages:
   //   1) Explicit accountId from caller — always honoured.
@@ -144,17 +140,20 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
       ORDER BY sort_order ASC, created_at ASC LIMIT 1
     `).get(row.org_id, currency) as { id: string } | undefined;
     resolvedAccountId = fallback?.id || undefined;
-    // Channel signals that fell back to cash deserve admin attention —
-    // ideally a clearing account should have matched.
     if (source === 'hostex' || source === 'teia' || source === 'booking_widget') {
       needsReview = 1;
     }
   }
 
-  // Accrual attribution: booking revenue belongs to the STAY period, not the
-  // payment date. A March prepayment for an August stay is August revenue on
-  // the accrual basis; paid_at keeps the cash truth.
   const accruedAt = (!isRefund && row.check_in) ? row.check_in : undefined;
+
+  // ONLY cash payments create an operation in fin_operations (the central ledger).
+  // Non-cash methods (card, bank_transfer, online, booking_platform, etc.) arrive
+  // via bank statement import and will be recorded when the real bank transaction lands.
+  if (method !== 'cash') {
+    recalcReservationPaymentStatus(db, reservationId);
+    return { operationId: '' };
+  }
 
   const operationId = createOperationInTx(db, row.org_id, {
     op_type: opType,
@@ -166,11 +165,12 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     ...(accruedAt ? { accrued_at: accruedAt } : {}),
     ...(row.check_in ? { period_from: row.check_in } : {}),
     ...(row.check_out ? { period_to: row.check_out } : {}),
+    category_id: isRefund ? 'ec_other_exp' : 'ec_accommodation',
     reservation_id: reservationId,
     status,
     method,
     payment_subtype: paymentSubtype,
-    comment: autoComment,
+    comment: fullComment,
     source,
     source_ref: sourceRef || reservationId,
     needs_review: needsReview,

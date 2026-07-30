@@ -287,13 +287,13 @@ export async function restoreOrphanPayment(req: Request): Promise<NextResponse> 
       reservationId: order.reservation_id,
       amount: Math.abs(Number(order.total_price)),
       currency,
-      method: 'online',
+      method: 'cash',
       paymentSubtype: 'service',
-      source: 'teia',
+      source: 'manual',
       sourceRef: paymentRef,
       status: 'completed',
       paidAt: paid_at || order.created_at || new Date().toISOString(),
-      comment: `Orphan recovery: ${source_table} ${order.id}`,
+      comment: `Orphan recovery (cash): ${source_table} ${order.id}`,
     });
 
     return NextResponse.json({ ok: true, operation_id: operationId });

@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { getDb } from '@core/db';
 import { getSessionUser } from '@/lib/auth';
 
+import { loadActiveRules, isRuleApplicable } from '../data/auto-rules-engine';
+
 const OP_TYPES = ['income', 'expense', 'transfer'] as const;
 type OpType = typeof OP_TYPES[number];
 
@@ -382,6 +384,58 @@ interface CreateOperationInput {
   fx_rate_override?: number;
 }
 
+export function autoResolveCategory(
+  db: any,
+  orgId: string,
+  opType: string,
+  comment?: string | null,
+  source?: string | null,
+): string | null {
+  if (opType === 'transfer') return null;
+
+  const text = `${comment || ''} ${source || ''}`.toLowerCase();
+
+  // 1. Try active auto-rules
+  try {
+    const rules = loadActiveRules(db, orgId);
+    for (const rule of rules) {
+      if (rule.actions.set_category_id && rule.conditions) {
+        if (isRuleApplicable(rule, { comment, source, op_type: opType } as any)) {
+          return rule.actions.set_category_id;
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Keyword matching
+  if (text.includes('сауна') || text.includes('sauna')) return 'ec_sauna';
+  if (text.includes('ресторан') || text.includes('кухня') || text.includes('їжа')) return 'ec_restaurant';
+  if (text.includes('сніданок') || text.includes('сніданки') || text.includes('breakfast')) return 'ec_breakfast';
+  if (text.includes('зарплат') || text.includes('аванс') || text.includes('премія') || text.includes('payroll')) return 'ec_payroll';
+  if (text.includes('продукт') || text.includes('закупка')) return 'ec_products';
+  if (text.includes('розхідник') || text.includes('химия') || text.includes('товары')) return 'ec_consumables';
+  if (text.includes('оренда') || text.includes('rent')) return 'ec_rent';
+  if (text.includes('стройка') || text.includes('ремонт') || text.includes('строительство')) return 'ec_capex';
+  if (text.includes('податк') || text.includes('tax')) return 'ec_taxes';
+  if (text.includes('маркетинг') || text.includes('реклама')) return 'ec_marketing';
+
+  if (text.includes('проживання') || text.includes('res ') || text.includes('booking') || text.includes('widget') || text.includes('готівка') || source === 'booking_widget' || source === 'manual') {
+    if (opType === 'income') return 'ec_accommodation';
+  }
+
+  // 3. Fallbacks by op_type
+  if (opType === 'income') {
+    const defaultInc = db.prepare("SELECT id FROM expense_categories WHERE organization_id = ? AND op_type = 'income' ORDER BY sort_order ASC LIMIT 1").get(orgId) as { id: string } | undefined;
+    return defaultInc?.id || 'ec_accommodation';
+  }
+  if (opType === 'expense') {
+    const defaultExp = db.prepare("SELECT id FROM expense_categories WHERE organization_id = ? AND op_type = 'expense' ORDER BY sort_order ASC LIMIT 1").get(orgId) as { id: string } | undefined;
+    return defaultExp?.id || 'ec_other_exp';
+  }
+
+  return null;
+}
+
 export function createOperationInTx(
   db: any,
   orgId: string,
@@ -417,10 +471,13 @@ export function createOperationInTx(
   const fxRate = (input.fx_rate_override && input.fx_rate_override > 0)
     ? input.fx_rate_override
     : (currency === 'CZK' ? null : (amountCompany / amount) || null);
+
   const status: Status = input.status && (STATUSES as readonly string[]).includes(input.status) ? input.status : 'completed';
   const source = input.source || 'manual';
   const idPrefix = op_type === 'income' ? 'inc' : op_type === 'expense' ? 'exp' : 'txfr';
   const id = `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  const categoryId = op_type === 'transfer' ? null : (input.category_id || autoResolveCategory(db, orgId, op_type, input.comment, source));
 
   db.prepare(`
     INSERT INTO fin_operations
@@ -439,7 +496,7 @@ export function createOperationInTx(
     amount, currency, input.amount_to || null, input.currency_to || null,
     fxRate, amountCompany,
     paid_at, accruedAt, input.period_from || null, input.period_to || null,
-    op_type === 'transfer' ? null : (input.category_id || null),
+    categoryId,
     input.project_id || null,
     input.counterparty_id || null,
     input.reservation_id || null, status, input.method || null, input.payment_subtype || null,

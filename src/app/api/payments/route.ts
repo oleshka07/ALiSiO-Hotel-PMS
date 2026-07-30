@@ -91,6 +91,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         accountId = userRow?.default_cash_account_id || undefined;
       }
 
+      const formattedComment = actor?.name
+        ? `Внесено: ${actor.name}${notes ? ' · ' + notes : ''}`
+        : (notes || null);
+
       const { operationId } = createPaymentOperation({
         reservationId: reservation_id,
         amount: Math.abs(Number(amount)),
@@ -99,7 +103,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         source: 'manual',
         status: 'completed',
         paidAt: paid_at || new Date().toISOString(),
-        comment: notes || null,
+        comment: formattedComment,
         actor,
         accountId,
       });

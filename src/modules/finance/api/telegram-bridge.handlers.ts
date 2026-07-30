@@ -60,7 +60,27 @@ function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; resp
   return { ok: true };
 }
 
-function defaultCashAccountId(db: any, orgId: string, currency: string): string | null {
+function defaultCashAccountId(db: any, orgId: string, currency: string, recordedBy?: string | null): { accountId: string | null; actorUser: { id: string; name: string } | null } {
+  let actorUser: { id: string; name: string } | null = null;
+  if (recordedBy && recordedBy.trim().length > 0) {
+    const cleanName = recordedBy.trim();
+    const userRow = db.prepare(`
+      SELECT id, name, default_cash_account_id FROM app_users
+      WHERE is_active = 1 AND (name LIKE ? OR first_name LIKE ? OR username LIKE ?)
+      LIMIT 1
+    `).get(`%${cleanName}%`, `%${cleanName}%`, `%${cleanName}%`) as { id: string; name: string; default_cash_account_id: string | null } | undefined;
+
+    if (userRow) {
+      actorUser = { id: userRow.id, name: userRow.name };
+      if (userRow.default_cash_account_id) {
+        const acct = db.prepare(`
+          SELECT id FROM finance_accounts WHERE id = ? AND is_active = 1
+        `).get(userRow.default_cash_account_id) as { id: string } | undefined;
+        if (acct) return { accountId: acct.id, actorUser };
+      }
+    }
+  }
+
   const row = db.prepare(`
     SELECT id FROM finance_accounts
     WHERE organization_id = ? AND currency = ? AND is_active = 1
@@ -68,7 +88,7 @@ function defaultCashAccountId(db: any, orgId: string, currency: string): string 
     ORDER BY (type = 'cash') DESC, sort_order ASC, created_at ASC
     LIMIT 1
   `).get(orgId, currency) as { id: string } | undefined;
-  return row?.id || null;
+  return { accountId: row?.id || null, actorUser };
 }
 
 /**
@@ -133,7 +153,9 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       return NextResponse.json({ operation_id: existing.id, was_new: false }, { status: 200 });
     }
 
-    // Resolve accounts — for transfers use explicit from/to, otherwise derive from op_type
+    // Resolve account & actor
+    const { accountId, actorUser } = defaultCashAccountId(db, orgId, currency, body.recorded_by);
+
     let accountFromId: string | null = null;
     let accountToId: string | null = null;
 
@@ -144,22 +166,28 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
         return NextResponse.json({ error: 'transfer requires account_from_id and account_to_id' }, { status: 400 });
       }
     } else {
-      const accountId = body.account_id || defaultCashAccountId(db, orgId, currency);
-      if (!accountId) {
+      const resolvedAccount = body.account_id || accountId;
+      if (!resolvedAccount) {
         return NextResponse.json({
           error: `No active cash/bank account in ${currency} for this organization`,
         }, { status: 400 });
       }
-      accountFromId = opType === 'expense' ? accountId : null;
-      accountToId = opType === 'income' ? accountId : null;
+      accountFromId = opType === 'expense' ? resolvedAccount : null;
+      accountToId = opType === 'income' ? resolvedAccount : null;
     }
 
-    const commentParts: string[] = [];
-    if (body.comment) commentParts.push(body.comment);
-    if (body.recorded_by) commentParts.push(`(via ${body.recorded_by})`);
-    const comment = commentParts.length > 0
-      ? commentParts.join(' ')
-      : (opType === 'income' ? 'Дохід (бот)' : opType === 'expense' ? 'Витрата (бот)' : 'Переміщення (бот)');
+    // Build clear, informative comment
+    const userLabel = body.recorded_by || 'Бот (Telegram)';
+    const typeLabel = type === 'sauna_income' ? 'Сауна (готівка)'
+      : type === 'cash_expense' ? 'Витрата (готівка)'
+      : opType === 'income' ? 'Дохід (готівка)'
+      : 'Витрата (готівка)';
+
+    const userComment = body.comment ? ` · ${body.comment}` : '';
+    const comment = `Готівка · ${typeLabel} | Внесено через Telegram: ${userLabel}${userComment}`;
+
+    // Auto-resolve category (e.g. sauna_income -> ec_sauna)
+    const categoryId = body.category_id || (type === 'sauna_income' ? 'ec_sauna' : null);
 
     // No hardcoded fallback rate: without an explicit fx_rate the operation
     // voronka (createOperationInTx → computeAmountCompany) resolves the rate
@@ -174,7 +202,7 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       currency,
       paid_at: paidAt,
       ...(fxRate ? { fx_rate_override: fxRate } : {}),
-      category_id: body.category_id || null,
+      category_id: categoryId,
       project_id: body.project_id || null,
       counterparty_id: body.counterparty_id || null,
       comment,
@@ -182,7 +210,7 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       source: sourceTag,
       source_ref: sourceRef,
       status: 'completed',
-    });
+    }, actorUser || null);
 
     return NextResponse.json({ operation_id: operationId, was_new: true }, { status: 201 });
   } catch (error: any) {
@@ -429,7 +457,7 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
     if (payment_status === 'paid') {
       try {
         const currency = (service.currency || 'CZK').toUpperCase();
-        const accountId = defaultCashAccountId(db, orgId, currency);
+        const { accountId, actorUser } = defaultCashAccountId(db, orgId, currency, recorded_by);
 
         if (accountId) {
           const finResId = (reservation_id && reservation_id !== 'none') ? reservation_id : null;
@@ -439,13 +467,13 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
             amount: total_price,
             currency,
             paid_at: service_date || now.substring(0, 10),
-            comment: `Service: ${service.name}` + (recorded_by ? ` (via ${recorded_by})` : ''),
+            comment: `Дохід · Послуга: ${service.name}` + (recorded_by ? ` | Внесено: ${recorded_by}` : ''),
             method: payment_method || 'cash',
             source: 'telegram_service',
             source_ref: `tg_service:${orderId}`,
             reservation_id: finResId,
             status: 'completed',
-          });
+          }, actorUser || null);
         }
       } catch (finErr: any) {
         console.error('[telegram-bridge] fin_operation creation failed:', finErr.message);
