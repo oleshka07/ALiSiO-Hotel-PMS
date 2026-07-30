@@ -326,26 +326,41 @@ async function handlePaymentSuccess(db: any, event: any, eventType: string): Pro
   // Until now this only happened on manual PATCH (admin marking paid). Public Teya
   // payments would mark payment_status='paid' but never call generateInvoiceForReservation,
   // leaving recently-paid bookings without an invoice (PAVEL MICHALEK, Ann-Kathrin Rechner).
-  if (result3.changes > 0 || result4.changes > 0 || result5.changes > 0 || bsoTotal > 0) {
+  if (result3.changes > 0 || result4.changes > 0 || result5.changes > 0 || bsoTotal > 0 || payByLinkMatched) {
     try {
+      const searchRef = merchantRef || effectiveRef;
       const paid = db.prepare(`
-        SELECT DISTINCT r.id FROM reservations r
+        SELECT DISTINCT r.id, r.guest_page_token FROM reservations r
         WHERE r.payment_status = 'paid'
-          AND (r.payment_id = ?
+          AND (r.id = ?
+               OR r.payment_id = ?
                OR r.id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL))
-      `).all(effectiveRef, effectiveRef) as Array<{ id: string }>;
+      `).all(searchRef, effectiveRef, effectiveRef) as Array<{ id: string; guest_page_token?: string }>;
       for (const row of paid) {
         const invId = generateInvoiceForReservation(row.id, { confirmed: true, source: 'teya_webhook' });
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
+        
+        // 1. Send detailed Booking Confirmation email
         try {
           const { sendBookingConfirmationEmail } = await import('../../bookings/data/send-confirmation-email');
           await sendBookingConfirmationEmail(row.id);
         } catch (emailErr: any) {
           console.error('[Teya Webhook] Confirmation email error:', emailErr.message);
         }
+
+        // 2. Also send Guest Portal link email with "✅ Rezervace potvrzena" badge & links
+        if (row.guest_page_token) {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_ALISIO_URL || 'https://alisio.swipescape.eu';
+            await fetch(`${baseUrl}/api/guest/${row.guest_page_token}/send-links`, { method: 'POST' });
+            console.log('[Teya Webhook] Sent guest portal links to email for reservation', row.id);
+          } catch (portalErr: any) {
+            console.error('[Teya Webhook] Guest portal send-links error:', portalErr.message);
+          }
+        }
       }
     } catch (e: any) {
-      console.error('[Teya Webhook] Auto-invoice error:', e.message);
+      console.error('[Teya Webhook] Auto-invoice & email error:', e.message);
     }
   }
 
