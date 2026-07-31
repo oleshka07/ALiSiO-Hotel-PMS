@@ -374,10 +374,13 @@ export async function updateBookingDraft(req: Request) {
 
     // ─── Confirm payment ───────────────────────────────────────────────────
     if (status === 'paid' && rid) {
+      const isEur = payment_method === 'cash_eur' || body.currency === 'EUR';
       const now = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Prague' });
       const note = isTerminal
         ? `💳 Оплата терміналом, прийняв: ${adminName} · ${now}`
-        : `✅ Готівку прийняв: ${adminName} · ${now}`;
+        : isEur
+          ? `💶 Готівку (€ EUR) прийняв: ${adminName} · ${now}`
+          : `✅ Готівку прийняв: ${adminName} · ${now}`;
 
       // Guard: only update if not already paid. Lets us detect first-time
       // confirmation and avoid double-sending confirmation emails on a
@@ -418,18 +421,45 @@ export async function updateBookingDraft(req: Request) {
             // Prevent double-creation if widget retries
             if (!hasPaymentOperation(rid, 'booking_widget', `pin_${rid}`)) {
               const reservation = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(rid) as any;
-              const amount = reservation?.total_price || 0;
-              const currency = reservation?.currency || 'CZK';
+              let amount = Number(body.amount) || reservation?.total_price || 0;
+              let currency = isEur ? 'EUR' : (reservation?.currency || 'CZK');
 
-              // Resolve admin's cash account by name from PIN mapping
+              if (isEur && reservation?.currency !== 'EUR' && amount > 0) {
+                const { getCzkRate } = await import('@/lib/fx');
+                const rate = getCzkRate(db, 'EUR', new Date().toISOString()) || 25;
+                amount = Math.round((amount / rate) * 100) / 100;
+              }
+
+              // Resolve cash account
               let accountId: string | undefined;
-              const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
-              if (wantedName) {
-                const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
-                if (orgRow?.organization_id) {
+              const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
+              const orgId = orgRow?.organization_id;
+
+              if (isEur && orgId) {
+                const eurAcct = db.prepare(`
+                  SELECT id FROM finance_accounts
+                  WHERE organization_id = ? AND currency = 'EUR' AND type = 'cash' AND is_active = 1
+                  ORDER BY (name LIKE '%EUR%' OR name LIKE '%Готівка%') DESC, sort_order ASC, created_at ASC
+                  LIMIT 1
+                `).get(orgId) as { id: string } | undefined;
+
+                if (eurAcct) {
+                  accountId = eurAcct.id;
+                } else {
+                  const newEurId = `acct_cash_eur_${Date.now()}`;
+                  db.prepare(`
+                    INSERT INTO finance_accounts (id, organization_id, name, type, currency, is_active, sort_order)
+                    VALUES (?, ?, 'Готівка EUR', 'cash', 'EUR', 1, 5)
+                  `).run(newEurId, orgId);
+                  accountId = newEurId;
+                  console.log(`[AdminConfirm] Auto-created EUR cash account "Готівка EUR" (${newEurId})`);
+                }
+              } else if (orgId) {
+                const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
+                if (wantedName) {
                   const acct = db.prepare(
                     "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
-                  ).get(orgRow.organization_id, wantedName) as any;
+                  ).get(orgId, wantedName) as any;
                   accountId = acct?.id;
                   if (!accountId) console.warn(`[AdminConfirm] Account "${wantedName}" not found for PIN ${pinStr.substring(0,2)}**`);
                 }
@@ -445,7 +475,9 @@ export async function updateBookingDraft(req: Request) {
                   source: 'booking_widget',
                   sourceRef: `pin_${rid}`,
                   accountId,
-                  comment: `Готівка (віджет) · Внесено: ${adminName || 'Admin'}`,
+                  comment: isEur
+                    ? `Готівка EUR (віджет) · Внесено: ${adminName || 'Admin'}`
+                    : `Готівка (віджет) · Внесено: ${adminName || 'Admin'}`,
                   actor: { id: `pin_${pinStr}`, name: adminName || 'Admin' },
                 });
                 console.log(`[CashConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);

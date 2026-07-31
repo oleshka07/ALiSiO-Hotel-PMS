@@ -69,7 +69,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const body = await request.json();
-    const { reservation_id, amount, method = 'cash', type = 'partial', notes, paid_at } = body;
+    const { reservation_id, amount, method = 'cash', type = 'partial', notes, paid_at, currency } = body;
     if (!reservation_id || !amount) {
       return NextResponse.json({ error: 'reservation_id and amount are required' }, { status: 400 });
     }
@@ -77,14 +77,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Cash on hand → real money, create the fin_operation as before.
     // Capture who recorded it (Andriy taking cash at check-in shows up
     // attributed to him in the operations audit log, not anonymous).
-    if (CASH_METHODS.has(method)) {
+    if (CASH_METHODS.has(method) || method === 'cash_eur') {
       const actor = await getOptionalActor();
 
-      // Route to the logged-in user's personal cash account.
-      // Each admin has a default_cash_account_id in app_users (e.g. Андрій → 'Андріїв cash').
-      // Without this, every cash payment falls to the first cash account by sort_order (Олег's).
+      const isEur = currency === 'EUR' || method === 'cash_eur';
+      const effCurrency = isEur ? 'EUR' : (currency || 'CZK');
+
+      // Route to EUR cash account if EUR, or user's default cash account
       let accountId: string | undefined;
-      if (actor?.id) {
+      if (isEur) {
+        const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
+        if (orgRow?.organization_id) {
+          const eurAcct = db.prepare(`
+            SELECT id FROM finance_accounts
+            WHERE organization_id = ? AND currency = 'EUR' AND type = 'cash' AND is_active = 1
+            ORDER BY (name LIKE '%EUR%' OR name LIKE '%Готівка%') DESC, sort_order ASC LIMIT 1
+          `).get(orgRow.organization_id) as { id: string } | undefined;
+          if (eurAcct) {
+            accountId = eurAcct.id;
+          } else {
+            const newEurId = `acct_cash_eur_${Date.now()}`;
+            db.prepare(`
+              INSERT INTO finance_accounts (id, organization_id, name, type, currency, is_active, sort_order)
+              VALUES (?, ?, 'Готівка EUR', 'cash', 'EUR', 1, 5)
+            `).run(newEurId, orgRow.organization_id);
+            accountId = newEurId;
+          }
+        }
+      } else if (actor?.id) {
         const userRow = db.prepare(
           'SELECT default_cash_account_id FROM app_users WHERE id = ?'
         ).get(actor.id) as { default_cash_account_id: string | null } | undefined;
@@ -98,7 +118,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const { operationId } = createPaymentOperation({
         reservationId: reservation_id,
         amount: Math.abs(Number(amount)),
-        method,
+        currency: effCurrency,
+        method: 'cash',
         paymentSubtype: type,
         source: 'manual',
         status: 'completed',
