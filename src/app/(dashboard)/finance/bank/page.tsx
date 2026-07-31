@@ -66,8 +66,7 @@ export default function BankPage() {
 
   useEffect(() => { fetchStatements(); }, [fetchStatements]);
   useEffect(() => {
-    if (selectedStatement) fetchTransactions(selectedStatement);
-    else { setTransactions([]); setLoading(false); }
+    fetchTransactions(selectedStatement);
   }, [selectedStatement, fetchTransactions]);
 
   // Parse CSV text and import
@@ -177,6 +176,24 @@ export default function BankPage() {
         <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1rem', fontWeight: 600 }}>📋 Завантажені виписки</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div
+              onClick={() => setSelectedStatement('')}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.75rem 1rem', borderRadius: '8px', cursor: 'pointer',
+                border: selectedStatement === '' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: selectedStatement === '' ? 'rgba(99,102,241,0.08)' : 'var(--surface)',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <FileText size={20} style={{ color: 'var(--accent)' }} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>📂 Всі виписки та транзакції</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Показати всі банківські транзакції за всіма завантаженими виписками
+                  </div>
+                </div>
+              </div>
+            </div>
             {statements.map(s => (
               <div key={s.id}
                 onClick={() => setSelectedStatement(selectedStatement === s.id ? '' : s.id)}
@@ -208,7 +225,7 @@ export default function BankPage() {
       )}
 
       {/* Transactions Review */}
-      {selectedStatement && (
+      {(statements.length > 0 || transactions.length > 0) && (
         <>
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center' }}>
             <h3 style={{ fontWeight: 600 }}>🔍 Перегляд транзакцій</h3>
