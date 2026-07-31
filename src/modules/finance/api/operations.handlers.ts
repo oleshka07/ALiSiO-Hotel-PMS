@@ -294,12 +294,16 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
       //   CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
       const allOps = db.prepare(`
         SELECT id, account_to_id, account_from_id,
-          CASE WHEN currency = ? THEN amount ELSE amount_company END AS effective_amount
+          CASE
+            WHEN currency = ? THEN amount
+            WHEN ? = 'CZK' THEN amount_company
+            ELSE CASE WHEN fx_rate > 0 THEN amount_company / fx_rate ELSE amount END
+          END AS effective_amount
         FROM fin_operations
         WHERE (account_to_id = ? OR account_from_id = ?)
           AND status = 'completed'
         ORDER BY paid_at ASC, created_at ASC, id ASC
-      `).all(acct.currency, acctId, acctId) as any[];
+      `).all(acct.currency, acct.currency, acctId, acctId) as any[];
 
       // Walk through ALL ops computing cumulative balance
       let running = Number(acct.initial_balance || 0);
