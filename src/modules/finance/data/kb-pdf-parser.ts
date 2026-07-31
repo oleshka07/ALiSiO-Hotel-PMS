@@ -28,7 +28,7 @@ import { ensurePdfWorker } from './pdf-worker-init';
 // ────────────────────────────────────────────────────────────────────
 
 const DATE_RE = /^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(.+))?$/;
-const AMOUNT_RE = /^-?\s?\d{1,3}(?:[\s ]\d{3})*,\d{2}$/;
+const AMOUNT_RE = /(?:^|\s)(-?\s?\d{1,3}(?:[\s ]\d{3})*,\d{2})\s*$/;
 // Type lines are all-caps Czech words; allow letters, spaces, slash and dash.
 const TYPE_RE = /^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ\s/-]{4,}$/;
 
@@ -191,10 +191,12 @@ function parseBlocks(lines: string[]): RawBlock[] {
       i = j;
       continue;
     }
-    const amountStr = clean[amountLineIndex];
+    const fullAmountLine = clean[amountLineIndex];
+    const amountMatch = fullAmountLine.match(AMOUNT_RE);
+    const amountStr = amountMatch ? amountMatch[1] : fullAmountLine;
     const amount = parseAmount(amountStr);
     const signedAmount = /^-/.test(amountStr.trim()) ? -Math.abs(amount) : Math.abs(amount);
-    const desc = rawLines.filter((l) => l !== amountStr);
+    const desc = rawLines.filter((l) => l !== fullAmountLine);
     blocks.push({ settlementDate, transactionDate, type, rawLines: desc, signedAmount });
     i = j;
   }
