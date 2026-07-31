@@ -60,9 +60,12 @@ async function handleSync() {
     const db = getDb();
     console.log('[SyncStatements] Running statement sync on DB...');
 
-    // 1. Ensure Komerční banka account has correct IBAN
+    // 1. Ensure Restaurante account has correct IBAN and is prioritized
     const account = db.prepare(`
-      SELECT * FROM finance_accounts WHERE type = 'bank' AND is_active = 1 LIMIT 1
+      SELECT * FROM finance_accounts
+      WHERE name LIKE '%Restaurante%' OR type = 'bank'
+      ORDER BY (name LIKE '%Restaurante%') DESC, sort_order ASC
+      LIMIT 1
     `).get() as any;
 
     if (!account) {
@@ -70,9 +73,15 @@ async function handleSync() {
     }
 
     const targetIban = 'CZ2601000001314361940207';
-    if (account.iban !== targetIban) {
-      db.prepare(`UPDATE finance_accounts SET iban = ? WHERE id = ?`).run(targetIban, account.id);
-    }
+    db.prepare(`UPDATE finance_accounts SET iban = ? WHERE id = ?`).run(targetIban, account.id);
+
+    // Re-link any bank_import operations to this target account
+    db.prepare(`
+      UPDATE fin_operations
+      SET account_to_id = CASE WHEN op_type = 'income' THEN ? ELSE account_to_id END,
+          account_from_id = CASE WHEN op_type = 'expense' THEN ? ELSE account_from_id END
+      WHERE source = 'bank_import'
+    `).run(account.id, account.id);
 
     // Inbox config
     const inbox = db.prepare(`SELECT * FROM fin_bank_inboxes LIMIT 1`).get() as any || {
