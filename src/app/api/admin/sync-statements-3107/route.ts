@@ -55,7 +55,7 @@ export async function POST() {
   return handleSync();
 }
 
-async function handleSync() {
+export async function handleSync() {
   try {
     const db = getDb();
     console.log('[SyncStatements] Running statement sync on DB...');
@@ -75,12 +75,13 @@ async function handleSync() {
     const targetIban = 'CZ2601000001314361940207';
     db.prepare(`UPDATE finance_accounts SET iban = ? WHERE id = ?`).run(targetIban, account.id);
 
-    // Re-link any bank_import operations to this target account
+    // Re-link ONLY 3107 bank import operations to this target account
     db.prepare(`
       UPDATE fin_operations
       SET account_to_id = CASE WHEN op_type = 'income' THEN ? ELSE account_to_id END,
           account_from_id = CASE WHEN op_type = 'expense' THEN ? ELSE account_from_id END
       WHERE source = 'bank_import'
+        AND (source_ref LIKE '%3107%' OR comment LIKE '%131-4361940207%' OR comment LIKE '%4361940207%')
     `).run(account.id, account.id);
 
     // Inbox config

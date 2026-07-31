@@ -96,13 +96,14 @@ async function main() {
     console.log('Примітка щодо парсингу PDF:', err.message);
   }
 
-  // 3. Закріплюємо всі bank_import операції за KB Restaurante
-  console.log('\n[4/4] Оновлення прив\'язки всіх виписок до рахунку KB Restaurante...');
+  // 3. Закріплюємо ТІЛЬКИ 31.07 банківські операції за KB Restaurante
+  console.log('\n[4/4] Оновлення прив\'язки виписок 31.07 до рахунку KB Restaurante...');
   db.prepare(`
     UPDATE fin_operations
     SET account_to_id = CASE WHEN op_type = 'income' THEN ? ELSE account_to_id END,
         account_from_id = CASE WHEN op_type = 'expense' THEN ? ELSE account_from_id END
     WHERE source = 'bank_import'
+      AND (source_ref LIKE '%3107%' OR comment LIKE '%131-4361940207%' OR comment LIKE '%4361940207%')
   `).run(account.id, account.id);
 
   // Отримуємо підсумковий список транзакцій для виводу
