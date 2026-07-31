@@ -1252,32 +1252,34 @@ export default function GuestPage() {
       {/* Entry */}
       <BottomSheet open={sheet === 'entry'} onClose={() => setSheet(null)} title={t.entryTitle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* STEP 1: Territory & Gate */}
-          <div style={{ background: 'var(--gp-card, #f8fafc)', borderRadius: 14, padding: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🚪</span> {t.step1TerritoryTitle}
-            </div>
+          {/* STEP 1: Territory & Gate (Glamping only) */}
+          {((r?.category_type === 'glamping') || (r?.category_name?.toLowerCase().includes('glamp') ?? false) || (r?.category_name?.toLowerCase().includes('глемп') ?? false)) && (
+            <div style={{ background: 'var(--gp-card, #f8fafc)', borderRadius: 14, padding: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🚪</span> {t.step1TerritoryTitle}
+              </div>
 
-            {cfg?.gate_photo_url ? (
-              <img src={cfg.gate_photo_url} alt="Gate" style={{ width: '100%', borderRadius: 10, marginBottom: 12, objectFit: 'cover', maxHeight: 180 }} />
-            ) : (
-              <div className="gp-entry-photo" style={{ marginBottom: 12 }}>📷 Photo of gate / entrance</div>
-            )}
+              {cfg?.gate_photo_url ? (
+                <img src={cfg.gate_photo_url} alt="Gate" style={{ width: '100%', borderRadius: 10, marginBottom: 12, objectFit: 'cover', maxHeight: 180 }} />
+              ) : (
+                <div className="gp-entry-photo" style={{ marginBottom: 12 }}>📷 Photo of gate / entrance</div>
+              )}
 
-            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>
-              🅿️ {t.step1ParkingDesc}
-            </div>
-            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
-              {t.step1GateInstructions}
-            </div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>
+                🅿️ {t.step1ParkingDesc}
+              </div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
+                {t.step1GateInstructions}
+              </div>
 
-            <div style={{ padding: '10px 14px', background: 'var(--gp-green, #1e4d2b)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, color: '#fff' }}>
-              <span style={{ fontSize: 20 }}>🔑</span>
-              <span style={{ fontWeight: 600, fontSize: 15 }}>
-                {t.gateCodeLabel}: <span className="gp-entry-code" style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 10px', borderRadius: 6, color: '#fff' }}>{cfg?.gate_code || '4545'}</span>
-              </span>
+              <div style={{ padding: '10px 14px', background: 'var(--gp-green, #1e4d2b)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, color: '#fff' }}>
+                <span style={{ fontSize: 20 }}>🔑</span>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>
+                  {t.gateCodeLabel}: <span className="gp-entry-code" style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 10px', borderRadius: 6, color: '#fff' }}>{cfg?.gate_code || '4545'}</span>
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* STEP 2: Accommodation & Lockbox */}
           <div style={{ background: 'var(--gp-card, #f8fafc)', borderRadius: 14, padding: 16, border: '1px solid rgba(0,0,0,0.06)' }}>

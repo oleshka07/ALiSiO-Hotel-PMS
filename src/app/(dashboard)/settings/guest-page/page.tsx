@@ -331,9 +331,12 @@ export default function GuestPageSettingsPage() {
                 </div>
 
                 {/* Gate & Territory */}
-                <SH id="gate" title="Вхід на територію (Ворота та калітка)" icon="🚪" />
+                <SH id="gate" title="Вхід на територію глемпінга (Ворота та калітка)" icon="🚪" />
                 {openSections.has('gate') && (
                   <div style={{ padding: '16px 0' }}>
+                    <div style={{ padding: '8px 12px', marginBottom: 12, background: 'rgba(167,139,250,0.12)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-secondary)', border: '1px solid rgba(167,139,250,0.25)' }}>
+                      🏕️ Інформація про калітку та ворота показується <strong>тільки для гостей Глемпінгу (6 будиночків)</strong>.
+                    </div>
                     <div className="form-group">
                       <label className="form-label">Код від калітки (на панелі при вході)</label>
                       <input className="form-input" value={pGateCode} placeholder="4545" onChange={e => setPGateCode(e.target.value)} />
