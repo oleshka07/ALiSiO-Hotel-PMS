@@ -7,12 +7,6 @@ import { loadActiveRules, applyRulesToOperation } from '../data/auto-rules-engin
 export async function listBankStatements(): Promise<NextResponse> {
   try {
     const db = getDb();
-    // Auto-sync 31.07 statements if not yet imported on server DB
-    try {
-      const { handleSync } = await import('@/app/api/admin/sync-statements-3107/route');
-      await handleSync();
-    } catch { /* non-fatal */ }
-
     return NextResponse.json(db.prepare(`SELECT * FROM bank_statements ORDER BY uploaded_at DESC`).all());
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
