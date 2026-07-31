@@ -136,7 +136,7 @@ if (changes.length > 10) console.log(`    …ще ${changes.length - 10}`);
 // fresh operations. Restoring field values cannot remove those — they are
 // listed here for a human decision, never deleted automatically.
 const created = db.prepare(`
-  SELECT o.id, o.op_type, o.amount, o.currency, o.source, o.comment,
+  SELECT o.id, o.op_type, o.amount, o.currency, o.source, o.comment, o.paid_at,
          COALESCE(a.performed_at, o.paid_at) AS at,
          (SELECT name FROM finance_accounts WHERE id = COALESCE(o.account_to_id, o.account_from_id)) AS account
   FROM fin_operations o
@@ -148,13 +148,18 @@ const created = db.prepare(`
 
 if (created.length) {
   const sum = created.reduce((t, r) => t + Number(r.amount || 0), 0);
-  console.log(`\n─── СТВОРЕНІ ПІСЛЯ ${CUTOFF} ────────────────────`);
+  console.log(`\n─── ЗАПИСАНІ В БАЗУ ПІСЛЯ ${CUTOFF} ──────────`);
   console.log(`  ${created.length} операцій на суму ~${Math.round(sum).toLocaleString('uk-UA')}`);
-  console.log('  (цей скрипт їх НЕ видаляє — переглянь і вирішуй окремо)\n');
+  console.log('  УВАГА: це час ЗАПИСУ, а не дата транзакції. Пізній імпорт справжньої');
+  console.log('  банківської операції теж потрапляє сюди. Дивись колонку "дата" —');
+  console.log('  якщо вона давніша за інцидент, це реальна транзакція, а не сміття.');
+  console.log('  Скрипт нічого не видаляє.\n');
+  console.log('    записано о          дата        тип      сума            рахунок');
   for (const r of created.slice(0, 25)) {
     console.log(
-      `    ${r.at}  ${String(r.op_type).padEnd(8)} ${String(Math.round(r.amount)).padStart(8)} ${r.currency}` +
-      `  ${String(r.account || '—').padEnd(20)} ${String(r.source || '')}  ${String(r.comment || '').slice(0, 40)}`,
+      `    ${r.at}  ${String(r.paid_at || '?').padEnd(10)}  ${String(r.op_type).padEnd(8)}` +
+      ` ${String(Math.round(r.amount)).padStart(8)} ${r.currency}  ${String(r.account || '—').padEnd(18)}` +
+      ` ${String(r.comment || '').slice(0, 32)}`,
     );
   }
   if (created.length > 25) console.log(`    …ще ${created.length - 25}`);
