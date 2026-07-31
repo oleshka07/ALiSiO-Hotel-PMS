@@ -6,10 +6,17 @@
 set -e
 cd /root/projects/alisio-pms
 
-echo "=== [1/6] Stopping service ==="
+echo "=== [0/7] Backup before touching anything ==="
+# Never deploy without a restore point. If this fails, the deploy stops here.
+bash /root/projects/alisio-pms/scripts/backup-all.sh --tag predeploy || {
+  echo "❌ Backup failed — ABORTING deploy. Fix the backup first."
+  exit 1
+}
+
+echo "=== [1/7] Stopping service ==="
 systemctl stop alisio-pms || true
 
-echo "=== [2/6] Pulling latest code ==="
+echo "=== [2/7] Pulling latest code ==="
 git reset --hard origin/main
 git clean -fd \
   --exclude='src/assets/fonts/*.ttf' \
@@ -17,7 +24,7 @@ git clean -fd \
 
 git pull --ff-only
 
-echo "=== [3/6] Restoring fonts ==="
+echo "=== [3/7] Restoring fonts ==="
 mkdir -p src/assets/fonts
 for f in DejaVuSans.ttf DejaVuSans-Bold.ttf; do
   if [ ! -f "src/assets/fonts/$f" ]; then
@@ -28,16 +35,16 @@ for f in DejaVuSans.ttf DejaVuSans-Bold.ttf; do
   fi
 done
 
-echo "=== [4/6] Installing packages ==="
+echo "=== [4/7] Installing packages ==="
 rm -rf node_modules .next
 npm install --ignore-scripts 2>&1 | tail -4
 chmod -R +x node_modules/.bin/ 2>/dev/null || true
 npm rebuild 2>&1 | tail -3
 
-echo "=== [5/6] Building ==="
+echo "=== [5/7] Building ==="
 npm run build
 
-echo "=== [6/6] Starting service ==="
+echo "=== [6/7] Starting service ==="
 systemctl start alisio-pms
 sleep 3
 systemctl is-active alisio-pms && echo "✅ Deploy successful!" || echo "❌ Service failed to start"
