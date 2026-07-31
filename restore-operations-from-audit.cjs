@@ -131,6 +131,52 @@ for (const c of changes.slice(0, 10)) {
 }
 if (changes.length > 10) console.log(`    …ще ${changes.length - 10}`);
 
+// ── operations created AFTER the incident ───────────────────────────────────
+// The bank page used to run an import on every load, so opening it created
+// fresh operations. Restoring field values cannot remove those — they are
+// listed here for a human decision, never deleted automatically.
+const created = db.prepare(`
+  SELECT o.id, o.op_type, o.amount, o.currency, o.source, o.comment,
+         COALESCE(a.performed_at, o.paid_at) AS at,
+         (SELECT name FROM finance_accounts WHERE id = COALESCE(o.account_to_id, o.account_from_id)) AS account
+  FROM fin_operations o
+  LEFT JOIN fin_operation_audit a
+    ON a.operation_id = o.id AND a.action = 'create'
+  WHERE COALESCE(a.performed_at, '') >= ?
+  ORDER BY at DESC
+`).all(CUTOFF);
+
+if (created.length) {
+  const sum = created.reduce((t, r) => t + Number(r.amount || 0), 0);
+  console.log(`\n─── СТВОРЕНІ ПІСЛЯ ${CUTOFF} ────────────────────`);
+  console.log(`  ${created.length} операцій на суму ~${Math.round(sum).toLocaleString('uk-UA')}`);
+  console.log('  (цей скрипт їх НЕ видаляє — переглянь і вирішуй окремо)\n');
+  for (const r of created.slice(0, 25)) {
+    console.log(
+      `    ${r.at}  ${String(r.op_type).padEnd(8)} ${String(Math.round(r.amount)).padStart(8)} ${r.currency}` +
+      `  ${String(r.account || '—').padEnd(20)} ${String(r.source || '')}  ${String(r.comment || '').slice(0, 40)}`,
+    );
+  }
+  if (created.length > 25) console.log(`    …ще ${created.length - 25}`);
+  console.log('\n  Видалити конкретну: node restore-operations-from-audit.cjs --delete-id <id> --apply');
+}
+
+// Optional targeted deletion of a post-incident operation.
+const delIdx = argv.indexOf('--delete-id');
+if (delIdx !== -1) {
+  const victim = argv[delIdx + 1];
+  const row = db.prepare('SELECT id, amount, currency, comment FROM fin_operations WHERE id = ?').get(victim);
+  if (!row) { console.log(`\n❌ Операцію ${victim} не знайдено.`); db.close(); process.exit(1); }
+  console.log(`\nВидалення: ${row.id}  ${row.amount} ${row.currency}  ${row.comment || ''}`);
+  if (!APPLY) { console.log('(перегляд — додай --apply щоб видалити)'); db.close(); process.exit(0); }
+  const stampD = new Date().toISOString().replace(/[:.]/g, '-');
+  db.prepare('VACUUM INTO ?').run(`${DB_PATH}.before-delete-${stampD}`);
+  db.prepare('DELETE FROM fin_operations WHERE id = ?').run(victim);
+  console.log('✅ Видалено (копію бази збережено).');
+  db.close();
+  process.exit(0);
+}
+
 if (!APPLY) {
   console.log('\n(перегляд — нічого не змінено. Додай --apply щоб записати)');
   db.close();
