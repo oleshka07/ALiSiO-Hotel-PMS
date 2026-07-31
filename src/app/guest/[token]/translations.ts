@@ -86,6 +86,13 @@ export interface Translations {
   entryStep2: string;
   entryStep3Code: string;
   entryStep4: string;
+  step1TerritoryTitle: string;
+  step1ParkingDesc: string;
+  step1GateInstructions: string;
+  gateCodeLabel: string;
+  step2CabinTitle: string;
+  step2CabinInstructions: string;
+  lockCodeLabel: string;
   lateArrival: string;
   yourAccommodation: string;
   // Services tab
@@ -228,6 +235,13 @@ const translations: Record<Lang, Translations> = {
     network: 'Network', password: 'Password', copyPassword: 'Copy Password', copied: 'Copied!',
     entryStep1: 'Walk to your cabin (follow signs)', entryStep2: 'Lockbox is on the right side of the door',
     entryStep3Code: 'Code:', entryStep4: 'Turn the key left to open',
+    step1TerritoryTitle: 'Step 1: Territory & Gate',
+    step1ParkingDesc: 'Parking is located right in front of the gate.',
+    step1GateInstructions: 'To enter the territory, enter the code on the gate keypad:',
+    gateCodeLabel: 'Gate Code',
+    step2CabinTitle: 'Step 2: Your Accommodation',
+    step2CabinInstructions: 'Walk to your cabin. Find the lockbox on or next to the door and enter the code to get the key:',
+    lockCodeLabel: 'Lockbox Code',
     lateArrival: '🌙 Arriving after dark? Pathway lights turn on automatically at sunset.',
     yourAccommodation: 'Your accommodation',
     servicesTitle: 'Services', servicesSubtitle: 'Add something special to your stay',
@@ -301,6 +315,13 @@ const translations: Record<Lang, Translations> = {
     network: 'Netzwerk', password: 'Passwort', copyPassword: 'Passwort kopieren', copied: 'Kopiert!',
     entryStep1: 'Gehen Sie zu Ihrer Kabine (Schilder folgen)', entryStep2: 'Schlüsselbox rechts neben der Tür',
     entryStep3Code: 'Code:', entryStep4: 'Schlüssel nach links drehen zum Öffnen',
+    step1TerritoryTitle: 'Schritt 1: Gelände & Tor',
+    step1ParkingDesc: 'Parkplätze befinden sich direkt vor dem Tor.',
+    step1GateInstructions: 'Um das Gelände zu betreten, geben Sie den Code am Tor ein:',
+    gateCodeLabel: 'Tor-Code',
+    step2CabinTitle: 'Schritt 2: Ihre Unterkunft',
+    step2CabinInstructions: 'Gehen Sie zu Ihrer Hütte. Öffnen Sie den Schlüsselsafe an der Tür mit dem Code:',
+    lockCodeLabel: 'Schlüsselsafe-Code',
     lateArrival: '🌙 Nachts anreisen? Wegbeleuchtung schaltet sich automatisch ein.',
     yourAccommodation: 'Ihre Unterkunft',
     servicesTitle: 'Services', servicesSubtitle: 'Etwas Besonderes für Ihren Aufenthalt',
@@ -373,7 +394,7 @@ const translations: Record<Lang, Translations> = {
     openGoogleMaps: 'Otevřít v Google Maps',
     network: 'Síť', password: 'Heslo', copyPassword: 'Kopírovat heslo', copied: 'Zkopírováno!',
     entryStep1: 'Jděte ke své chatě (sledujte značky)', entryStep2: 'Schránka na klíče je vpravo od dveří',
-    entryStep3Code: 'Kód:', entryStep4: 'Otočte klíčem doleva',
+    entryStep3Code: 'Kód:', entryStep4: 'Otočte klíčem doleva pro otevření',
     lateArrival: '🌙 Přijíždíte po setmění? Osvětlení cest se zapíná automaticky.',
     yourAccommodation: 'Vaše ubytování',
     servicesTitle: 'Služby', servicesSubtitle: 'Přidejte něco speciálního k pobytu',
@@ -420,7 +441,13 @@ const translations: Record<Lang, Translations> = {
     cartItems: (n: number) => `${n} ${n === 1 ? 'položka' : n < 5 ? 'položky' : 'položek'}`,
     hour: 'h', hours: 'h', dishes: 'jídel', daysShort: 'd',
     myOrders: 'Moje objednávky', ordersTitle: 'Vaše služby', awaitingPayment: '⏳ Čeká na platbu', orderRefunded: '↩️ Vráceno',
-
+    step1TerritoryTitle: 'Krok 1: Vstup do areálu',
+    step1ParkingDesc: 'Parkování se nachází přímo před branou.',
+    step1GateInstructions: 'Pro vstup do areálu zadejte kód na brance:',
+    gateCodeLabel: 'Kód branky',
+    step2CabinTitle: 'Krok 2: Vaše ubytování',
+    step2CabinInstructions: 'Jděte k Vašemu domku. Najděte trezor na klíče u dveří a zadejte kód:',
+    lockCodeLabel: 'Kód trezoru',
   },
 
   // ════════════════ УКРАЇНСЬКА ════════════════
@@ -446,7 +473,7 @@ const translations: Record<Lang, Translations> = {
     openGoogleMaps: 'Відкрити в Google Maps',
     network: 'Мережа', password: 'Пароль', copyPassword: 'Копіювати пароль', copied: 'Скопійовано!',
     entryStep1: 'Йдіть до своєї кабіни (за вказівниками)', entryStep2: 'Скринька з ключем — праворуч від дверей',
-    entryStep3Code: 'Код:', entryStep4: 'Поверніть ключ вліво',
+    entryStep3Code: 'Код:', entryStep4: 'Поверніть ключ ліворуч, щоб відкрити',
     lateArrival: '🌙 Приїжджаєте після заходу сонця? Освітлення доріжок вмикається автоматично.',
     yourAccommodation: 'Ваше помешкання',
     servicesTitle: 'Послуги', servicesSubtitle: 'Додайте щось особливе до перебування',
@@ -493,7 +520,13 @@ const translations: Record<Lang, Translations> = {
     cartItems: (n: number) => `${n} ${n === 1 ? 'товар' : n < 5 ? 'товари' : 'товарів'}`,
     hour: 'год', hours: 'год', dishes: 'страв', daysShort: 'дн',
     myOrders: 'Мої замовлення', ordersTitle: 'Ваші послуги', awaitingPayment: '⏳ Очікує оплати', orderRefunded: '↩️ Повернено',
-
+    step1TerritoryTitle: 'Крок 1: Вхід на територію',
+    step1ParkingDesc: 'Паркування розташоване безпосередньо перед воротами.',
+    step1GateInstructions: 'Щоб потрапити на територію, введіть код на калітці:',
+    gateCodeLabel: 'Код калітки',
+    step2CabinTitle: 'Крок 2: Вхід у ваш будиночок',
+    step2CabinInstructions: 'Пройдіть до свого будиночка. Знайдіть сейф біля дверей та введіть код, щоб забрати ключ:',
+    lockCodeLabel: 'Код сейфа',
   },
 
   // ════════════════ POLSKI ════════════════
@@ -519,7 +552,7 @@ const translations: Record<Lang, Translations> = {
     openGoogleMaps: 'Otwórz w Google Maps',
     network: 'Sieć', password: 'Hasło', copyPassword: 'Kopiuj hasło', copied: 'Skopiowano!',
     entryStep1: 'Idź do swojej chatki (podążaj za znakami)', entryStep2: 'Skrzynka na klucze po prawej stronie drzwi',
-    entryStep3Code: 'Kod:', entryStep4: 'Obróć klucz w lewo',
+    entryStep3Code: 'Kod:', entryStep4: 'Obróć klucz w lewo, aby otworzyć',
     lateArrival: '🌙 Przyjeżdżasz po zmroku? Oświetlenie ścieżek włącza się automatycznie.',
     yourAccommodation: 'Twoje zakwaterowanie',
     servicesTitle: 'Usługi', servicesSubtitle: 'Dodaj coś szczególnego do pobytu',
@@ -566,7 +599,13 @@ const translations: Record<Lang, Translations> = {
     cartItems: (n: number) => `${n} ${n === 1 ? 'element' : 'elementy'}`,
     hour: 'h', hours: 'h', dishes: 'dań', daysShort: 'd',
     myOrders: 'Moje zamówienia', ordersTitle: 'Twoje usługi', awaitingPayment: '⏳ Oczekuje na płatność', orderRefunded: '↩️ Zwrócono',
-
+    step1TerritoryTitle: 'Krok 1: Wejście na teren',
+    step1ParkingDesc: 'Parking znajduje się bezpośrednio przed bramą.',
+    step1GateInstructions: 'Aby wejść na teren, wpisz kod na furtce:',
+    gateCodeLabel: 'Kod do furtki',
+    step2CabinTitle: 'Krok 2: Twój domek',
+    step2CabinInstructions: 'Podejdź do swojego domku. Znajdź sejf na klucze przy drzwiach i wpisz kod:',
+    lockCodeLabel: 'Kod do sejfu',
   },
 
   // ════════════════ NEDERLANDS ════════════════
@@ -592,7 +631,7 @@ const translations: Record<Lang, Translations> = {
     openGoogleMaps: 'Openen in Google Maps',
     network: 'Netwerk', password: 'Wachtwoord', copyPassword: 'Wachtwoord kopiëren', copied: 'Gekopieerd!',
     entryStep1: 'Loop naar uw cabin (volg de borden)', entryStep2: 'Sleutelkastje rechts naast de deur',
-    entryStep3Code: 'Code:', entryStep4: 'Draai de sleutel naar links',
+    entryStep3Code: 'Code:', entryStep4: 'Draai de sleutel naar links om te openen',
     lateArrival: '🌙 Komt u na zonsondergang? Padverlichting gaat automatisch aan.',
     yourAccommodation: 'Uw accommodatie',
     servicesTitle: 'Diensten', servicesSubtitle: 'Voeg iets bijzonders toe aan uw verblijf',
@@ -639,7 +678,13 @@ const translations: Record<Lang, Translations> = {
     cartItems: (n: number) => `${n} ${n === 1 ? 'artikel' : 'artikelen'}`,
     hour: 'u', hours: 'u', dishes: 'gerechten', daysShort: 'd',
     myOrders: 'Mijn bestellingen', ordersTitle: 'Uw diensten', awaitingPayment: '⏳ Wacht op betaling', orderRefunded: '↩️ Terugbetaald',
-
+    step1TerritoryTitle: 'Stap 1: Terrein & Poort',
+    step1ParkingDesc: 'Parkeren bevindt zich direct voor de poort.',
+    step1GateInstructions: 'Om het terrein te betreden, voer de code in op de poort:',
+    gateCodeLabel: 'Poortcode',
+    step2CabinTitle: 'Stap 2: Uw accommodatie',
+    step2CabinInstructions: 'Loop naar uw accommodatie. Open het sleutelkluisje bij de deur met de code:',
+    lockCodeLabel: 'Kluiscode',
   },
 
   // ════════════════ FRANÇAIS (BE) ════════════════
@@ -665,7 +710,7 @@ const translations: Record<Lang, Translations> = {
     openGoogleMaps: 'Ouvrir dans Google Maps',
     network: 'Réseau', password: 'Mot de passe', copyPassword: 'Copier le mot de passe', copied: 'Copié !',
     entryStep1: 'Dirigez-vous vers votre chalet (suivez les panneaux)', entryStep2: 'Boîte à clé à droite de la porte',
-    entryStep3Code: 'Code :', entryStep4: 'Tournez la clé à gauche',
+    entryStep3Code: 'Code :', entryStep4: 'Tournez la clé vers la gauche pour ouvrir',
     lateArrival: '🌙 Arrivée de nuit ? L\'éclairage des chemins s\'active automatiquement.',
     yourAccommodation: 'Votre hébergement',
     servicesTitle: 'Services', servicesSubtitle: 'Ajoutez quelque chose de spécial à votre séjour',
@@ -712,7 +757,13 @@ const translations: Record<Lang, Translations> = {
     cartItems: (n: number) => `${n} ${n === 1 ? 'article' : 'articles'}`,
     hour: 'h', hours: 'h', dishes: 'plats', daysShort: 'j',
     myOrders: 'Mes commandes', ordersTitle: 'Vos services', awaitingPayment: '⏳ En attente de paiement', orderRefunded: '↩️ Remboursé',
-
+    step1TerritoryTitle: 'Étape 1 : Territoire et portail',
+    step1ParkingDesc: 'Le parking est situé juste devant le portail.',
+    step1GateInstructions: 'Pour entrer sur le territoire, saisissez le code sur le portillon :',
+    gateCodeLabel: 'Code portillon',
+    step2CabinTitle: 'Étape 2 : Votre hébergement',
+    step2CabinInstructions: 'Marchez jusqu\'à votre hébergement. Trouvez le boîtier à clés près de la porte et saisissez le code :',
+    lockCodeLabel: 'Code boîtier',
   },
 };
 

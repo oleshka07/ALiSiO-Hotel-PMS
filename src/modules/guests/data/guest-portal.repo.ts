@@ -147,6 +147,8 @@ export function getGuestPageConfig(unitTypeId: string, propertyId: string, unitI
     check_in_instructions: unitTypeConfig?.check_in_instructions,
     lock_code: unitTypeConfig?.lock_code,
     entry_photo_url: unitTypeConfig?.entry_photo_url,
+    gate_code: unitTypeConfig?.gate_code || propertyConfig?.gate_code || '4545',
+    gate_photo_url: unitTypeConfig?.gate_photo_url || propertyConfig?.gate_photo_url,
   };
 
   // Per-unit override: if unit has its own lock_code or entry_photo_url, use it
