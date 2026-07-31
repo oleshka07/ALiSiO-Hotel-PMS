@@ -374,7 +374,6 @@ function normalizeIban(s: string | null): string {
 function findAccountByIban(db: any, orgId: string, statement: ParsedStatement): string | null {
   const iban = normalizeIban(statement.iban);
   const acctNum = normalizeIban(statement.account_number);
-  if (!iban && !acctNum) return null;
 
   // Try exact IBAN match first
   if (iban) {
@@ -394,6 +393,24 @@ function findAccountByIban(db: any, orgId: string, statement: ParsedStatement): 
     `).get(orgId, acctNum) as { id: string } | undefined;
     if (row) return row.id;
   }
+
+  // Fallback: match bank account by name keywords (Glamping / Kemp for KEMP CARLSBAD statements) or first active bank account, and auto-set its IBAN
+  const fallback = db.prepare(`
+    SELECT id, iban FROM finance_accounts
+    WHERE organization_id = ? AND is_active = 1 AND type = 'bank'
+    ORDER BY (name LIKE '%Glamping%' OR name LIKE '%Kemp%' OR name LIKE '%Komerční%') DESC, sort_order ASC, created_at ASC
+    LIMIT 1
+  `).get(orgId) as { id: string; iban: string | null } | undefined;
+
+  if (fallback) {
+    if (statement.iban && !fallback.iban) {
+      try {
+        db.prepare('UPDATE finance_accounts SET iban = ? WHERE id = ?').run(statement.iban, fallback.id);
+      } catch { /* non-fatal */ }
+    }
+    return fallback.id;
+  }
+
   return null;
 }
 
