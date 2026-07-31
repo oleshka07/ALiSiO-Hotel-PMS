@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { syncReservationGuestData } from '../../guests/data/registration.repo';
 
 export async function listRegistrations(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const db = getDb();
     const { id } = await params;
+    syncReservationGuestData(db, id);
     const rows = db.prepare(`
       SELECT gr.id as reg_id, gr.is_primary, gr.registered_at,
              g.id as guest_id, g.first_name, g.last_name, g.email, g.phone,
@@ -73,7 +75,8 @@ export async function registerGuest(request: NextRequest, { params }: { params: 
       VALUES (?, ?, ?, ?, datetime('now'))
     `).run(regId, id, guestId, isPrimary ? 1 : 0);
 
-    updateRegistrationStatus(db, id);
+    // Run bi-directional sync to update reservation_guests, guests, and registration_status
+    syncReservationGuestData(db, id);
 
     return NextResponse.json({ id: regId, guestId }, { status: 201 });
   } catch (e: any) {
@@ -90,19 +93,12 @@ export async function removeRegistration(request: NextRequest, { params }: { par
     if (!regId) return NextResponse.json({ error: 'reg_id required' }, { status: 400 });
 
     db.prepare('DELETE FROM guest_registrations WHERE id = ? AND reservation_id = ?').run(regId, id);
-    updateRegistrationStatus(db, id);
+
+    // Run bi-directional sync to update reservation_guests and registration_status
+    syncReservationGuestData(db, id);
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
-}
-
-function updateRegistrationStatus(db: any, reservationId: string) {
-  const reservation = db.prepare('SELECT adults FROM reservations WHERE id = ?').get(reservationId) as { adults: number } | undefined;
-  const regCount = (db.prepare('SELECT COUNT(*) as cnt FROM guest_registrations WHERE reservation_id = ?').get(reservationId) as { cnt: number }).cnt;
-
-  const needed = reservation?.adults || 1;
-  const status = regCount >= needed ? 'registered' : 'not_registered';
-  db.prepare('UPDATE reservations SET registration_status = ? WHERE id = ?').run(status, reservationId);
 }

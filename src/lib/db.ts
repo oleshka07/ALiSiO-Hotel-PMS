@@ -4909,7 +4909,20 @@ function runMigrations(database: any) {
     console.log('[DB] daylog_entries ref-columns migration:', e.message);
   }
   console.log('[DB] daylog_entries table ready');
+
+  // --- Migration: Auto-sync reservation_guests and guest_registrations for all reservations ---
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { syncReservationGuestData } = require('@/modules/guests/data/registration.repo');
+    const allRes = database.prepare("SELECT id FROM reservations").all();
+    for (const r of allRes) {
+      syncReservationGuestData(database, r.id);
+    }
+    console.log(`[DB] Synced ${allRes.length} reservations guest registrations`);
+  } catch (e: any) {
+    console.log('[DB] Guest registration sync migration note:', e.message);
   }
+}
 
 // Generate a cryptographically secure random token for guest pages
 export function generateGuestToken(): string {

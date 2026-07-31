@@ -67,9 +67,15 @@ export function findOrCreateGuest(args: GuestDedupArgs): GuestDedupResult {
 
   if (!existing && firstName && lastName) {
     existing = db.prepare(
-      'SELECT id FROM guests WHERE LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?) AND organization_id = ? LIMIT 1',
-    ).get(firstName, lastName, orgId);
-    if (existing) matchedBy = 'name';
+      'SELECT id, first_name, last_name FROM guests WHERE organization_id = ? AND ((LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?)) OR (LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?))) LIMIT 1',
+    ).get(orgId, firstName, lastName, lastName, firstName) as any;
+    if (existing) {
+      matchedBy = 'name';
+      // If first/last name were stored in reverse order (e.g. from OTA import), correct them now
+      if (existing.first_name && existing.last_name && existing.first_name.toLowerCase() === lastName.toLowerCase() && existing.last_name.toLowerCase() === firstName.toLowerCase()) {
+        db.prepare("UPDATE guests SET first_name = ?, last_name = ?, updated_at = datetime('now') WHERE id = ?").run(firstName, lastName, existing.id);
+      }
+    }
   }
 
   if (existing) {

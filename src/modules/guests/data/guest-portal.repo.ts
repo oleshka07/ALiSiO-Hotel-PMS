@@ -65,8 +65,12 @@ export function getUnitTypesForRebooking() {
   `).all();
 }
 
+import { syncReservationGuestData } from './registration.repo';
+
 export function getRegisteredGuests(reservationId: string) {
-  return getDb().prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at').all(reservationId);
+  const db = getDb();
+  syncReservationGuestData(db, reservationId);
+  return db.prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at').all(reservationId);
 }
 
 export function getPaymentsSummary(reservationId: string) {

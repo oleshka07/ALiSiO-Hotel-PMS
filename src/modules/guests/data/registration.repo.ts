@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
 import type { RegisteredGuest } from '../domain/types';
+import { findOrCreateGuest } from './guest-dedup.repo';
+import crypto from 'crypto';
 
 export function getReservationForRegistration(token: string) {
   return getDb().prepare(`
@@ -19,6 +21,194 @@ export function getReservationForRegistration(token: string) {
   `).get(token) as any;
 }
 
+/**
+ * Bi-directional sync helper that guarantees 100% data parity between:
+ *  1) `reservation_guests` (Guest Portal & Foreigners/Police Registry view)
+ *  2) `guest_registrations` JOIN `guests` (PMS Admin Modal & Invoices view)
+ *  3) `reservations.registration_status` and primary guest profile
+ */
+export function syncReservationGuestData(db: any, reservationId: string) {
+  const res = db.prepare('SELECT id, adults, nights, guest_id FROM reservations WHERE id = ?').get(reservationId) as any;
+  if (!res) return;
+
+  const nights = res.nights || 0;
+  const neededAdults = res.adults || 1;
+
+  // 1. Fetch current rows from both tables
+  const regGuests = db.prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at ASC').all(reservationId) as any[];
+  const grGuests = db.prepare(`
+    SELECT gr.id as gr_id, gr.is_primary, gr.purpose_of_stay as gr_purpose, gr.visa_number as gr_visa,
+           g.id as guest_id, g.first_name, g.last_name, g.date_of_birth, g.country as nationality,
+           g.document_type, g.document_number, g.address, g.email, g.phone
+    FROM guest_registrations gr
+    JOIN guests g ON gr.guest_id = g.id
+    WHERE gr.reservation_id = ?
+    ORDER BY gr.is_primary DESC, gr.created_at ASC
+  `).all(reservationId) as any[];
+
+  // 2. Merge into unified list
+  const merged: any[] = [];
+  const processedGuestIds = new Set<string>();
+
+  // Process grGuests (PMS Admin entries)
+  for (const gr of grGuests) {
+    merged.push({
+      guest_id: gr.guest_id,
+      first_name: gr.first_name,
+      last_name: gr.last_name,
+      date_of_birth: gr.date_of_birth,
+      nationality: gr.nationality,
+      document_type: gr.document_type,
+      document_number: gr.document_number,
+      address: gr.address,
+      email: gr.email,
+      phone: gr.phone,
+      purpose_of_stay: gr.gr_purpose || 'Tourism',
+      visa_number: gr.gr_visa || null,
+      is_primary: gr.is_primary ? 1 : 0,
+    });
+    if (gr.guest_id) processedGuestIds.add(gr.guest_id);
+  }
+
+  // Process regGuests (Guest Portal entries)
+  for (const rg of regGuests) {
+    let existingIndex = -1;
+    if (rg.guest_id && processedGuestIds.has(rg.guest_id)) {
+      existingIndex = merged.findIndex(m => m.guest_id === rg.guest_id);
+    } else if (rg.document_number) {
+      existingIndex = merged.findIndex(m => m.document_number && m.document_number.toLowerCase() === rg.document_number.toLowerCase());
+    } else if (rg.first_name && rg.last_name) {
+      existingIndex = merged.findIndex(m =>
+        (m.first_name?.toLowerCase() === rg.first_name.toLowerCase() && m.last_name?.toLowerCase() === rg.last_name.toLowerCase()) ||
+        (m.first_name?.toLowerCase() === rg.last_name.toLowerCase() && m.last_name?.toLowerCase() === rg.first_name.toLowerCase())
+      );
+    }
+
+    if (existingIndex >= 0) {
+      const m = merged[existingIndex];
+      m.first_name = rg.first_name || m.first_name;
+      m.last_name = rg.last_name || m.last_name;
+      m.date_of_birth = rg.date_of_birth || m.date_of_birth;
+      m.nationality = rg.nationality || m.nationality;
+      m.document_type = rg.document_type || m.document_type;
+      m.document_number = rg.document_number || m.document_number;
+      m.address = rg.address || m.address;
+      m.purpose_of_stay = rg.purpose_of_stay || m.purpose_of_stay;
+      m.visa_number = rg.visa_number || m.visa_number;
+      if (rg.guest_id) m.guest_id = rg.guest_id;
+    } else {
+      merged.push({
+        guest_id: rg.guest_id,
+        first_name: rg.first_name,
+        last_name: rg.last_name,
+        date_of_birth: rg.date_of_birth,
+        nationality: rg.nationality,
+        document_type: rg.document_type,
+        document_number: rg.document_number,
+        address: rg.address,
+        email: null,
+        phone: null,
+        purpose_of_stay: rg.purpose_of_stay || 'Tourism',
+        visa_number: rg.visa_number || null,
+        is_primary: merged.length === 0 ? 1 : 0,
+      });
+      if (rg.guest_id) processedGuestIds.add(rg.guest_id);
+    }
+  }
+
+  const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
+  const orgId = org?.id || 'org_alisio_001';
+
+  // 3. Rewrite both tables in a single transaction
+  db.transaction(() => {
+    db.prepare('DELETE FROM reservation_guests WHERE reservation_id = ?').run(reservationId);
+    db.prepare('DELETE FROM guest_registrations WHERE reservation_id = ?').run(reservationId);
+
+    const insertRg = db.prepare(`
+      INSERT INTO reservation_guests (
+        reservation_id, first_name, last_name, date_of_birth, address,
+        nationality, document_type, document_number, guest_id, fee_amount,
+        fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertGr = db.prepare(`
+      INSERT INTO guest_registrations (
+        id, reservation_id, guest_id, is_primary, reg_status, registered_at,
+        purpose_of_stay, visa_number
+      ) VALUES (?, ?, ?, ?, 'completed', datetime('now'), ?, ?)
+    `);
+
+    let isPrimary = 1;
+    for (const item of merged) {
+      if (!item.first_name || !item.last_name) continue;
+
+      let feeExempt = 0;
+      let feeAmount = nights * 20;
+      let feeReason: string | null = null;
+      if (item.date_of_birth) {
+        const dob = new Date(item.date_of_birth);
+        const ageDifMs = Date.now() - dob.getTime();
+        const ageDate = new Date(ageDifMs);
+        const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+        if (age < 18) {
+          feeExempt = 1;
+          feeAmount = 0;
+          feeReason = 'Dítě do 18 let';
+        }
+      }
+
+      let guestId = item.guest_id;
+      if (!guestId) {
+        const dedupped = findOrCreateGuest({
+          organizationId: orgId,
+          firstName: item.first_name,
+          lastName: item.last_name,
+          email: item.email,
+          phone: item.phone,
+          dateOfBirth: item.date_of_birth,
+          documentType: item.document_type,
+          documentNumber: item.document_number,
+          nationality: item.nationality,
+          address: item.address,
+        });
+        guestId = dedupped.id;
+      } else {
+        db.prepare(`
+          UPDATE guests
+          SET first_name = ?, last_name = ?, date_of_birth = COALESCE(?, date_of_birth),
+              document_type = COALESCE(?, document_type), document_number = COALESCE(?, document_number),
+              country = COALESCE(?, country), address = COALESCE(?, address), updated_at = datetime('now')
+          WHERE id = ?
+        `).run(item.first_name, item.last_name, item.date_of_birth || null,
+               item.document_type || null, item.document_number || null,
+               item.nationality || null, item.address || null, guestId);
+      }
+
+      insertRg.run(
+        reservationId, item.first_name, item.last_name, item.date_of_birth || null,
+        item.address || null, item.nationality || null, item.document_type || null,
+        item.document_number || null, guestId, feeAmount, feeExempt, feeReason,
+        item.purpose_of_stay || 'Tourism', item.visa_number || null
+      );
+
+      if (guestId) {
+        const grId = `gr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        insertGr.run(grId, reservationId, guestId, isPrimary, item.purpose_of_stay || 'Tourism', item.visa_number || null);
+      }
+
+      if (isPrimary && guestId) {
+        db.prepare('UPDATE reservations SET guest_id = ? WHERE id = ?').run(guestId, reservationId);
+      }
+
+      isPrimary = 0;
+    }
+
+    const status = merged.length >= neededAdults ? 'registered' : 'not_registered';
+    db.prepare('UPDATE reservations SET registration_status = ? WHERE id = ?').run(status, reservationId);
+  })();
+}
+
 export function saveRegistrations(reservationId: string, organizationId: string, guests: RegisteredGuest[], clientIp?: string) {
   const db = getDb();
 
@@ -30,51 +220,27 @@ export function saveRegistrations(reservationId: string, organizationId: string,
     INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const findGuest = db.prepare(`SELECT id FROM guests WHERE organization_id = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?) LIMIT 1`);
-  const insertGuest = db.prepare(`INSERT INTO guests (organization_id, first_name, last_name, date_of_birth, country, address, document_type, document_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-  const updateGuest = db.prepare(`UPDATE guests SET date_of_birth = COALESCE(?, date_of_birth), country = COALESCE(?, country), address = COALESCE(?, address), document_type = COALESCE(?, document_type), document_number = COALESCE(?, document_number), updated_at = datetime('now') WHERE id = ?`);
-
-  // guest_registrations sync — so dashboard sees the data, plus GDPR consent tracking
-  // reg_status = 'completed' because this is the final submit (POST), not a draft (PATCH)
-  const insertGr = db.prepare(`
-    INSERT INTO guest_registrations (id, reservation_id, guest_id, is_primary, reg_status, registered_at, consent_given, consent_at, consent_ip, purpose_of_stay, visa_number)
-    VALUES (?, ?, ?, ?, 'completed', datetime('now'), 1, datetime('now'), ?, ?, ?)
-    ON CONFLICT(id) DO NOTHING
-  `);
-  const updateGrCompleted = db.prepare(`
-    UPDATE guest_registrations
-    SET guest_id = ?, reg_status = 'completed', consent_given = 1, consent_at = datetime('now'), consent_ip = ?, purpose_of_stay = ?, visa_number = ?, registered_at = datetime('now')
-    WHERE reservation_id = ? AND is_primary = ?
-  `);
-  const findExistingGr = db.prepare(`
-    SELECT id FROM guest_registrations WHERE reservation_id = ? AND is_primary = ?
-  `);
 
   db.transaction(() => {
-    // Get reservation nights for fee calculation
     const reservation = db.prepare('SELECT adults, nights FROM reservations WHERE id = ?').get(reservationId) as any;
     const nights = reservation?.nights || 0;
-    const needed = reservation?.adults || 1;
 
-    let isPrimary = 1;
     for (const guest of guests) {
       if (!guest.firstName || !guest.lastName) throw new Error('firstName and lastName are required');
 
-      let guestId: string | null = null;
-      const existing = findGuest.get(organizationId, guest.firstName, guest.lastName) as any;
+      const dedupped = findOrCreateGuest({
+        organizationId,
+        firstName: guest.firstName,
+        lastName: guest.lastName,
+        dateOfBirth: guest.dateOfBirth,
+        documentType: guest.documentType,
+        documentNumber: guest.documentNumber,
+        nationality: guest.nationality,
+        address: guest.address,
+      });
 
-      if (existing) {
-        guestId = existing.id;
-        updateGuest.run(guest.dateOfBirth ?? null, guest.nationality ?? null, guest.address ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId);
-      } else {
-        const result = insertGuest.run(organizationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.nationality ?? null, guest.address ?? null, guest.documentType ?? null, guest.documentNumber ?? null);
-        const newGuest = db.prepare('SELECT id FROM guests WHERE rowid = ?').get(result.lastInsertRowid) as any;
-        guestId = newGuest?.id ?? null;
-      }
-
-      // Calculate age for fee exemption
       let feeExempt = 0;
-      let feeAmount = nights * 20; // 20 CZK per night
+      let feeAmount = nights * 20;
       let feeReason: string | null = null;
       if (guest.dateOfBirth) {
         const dob = new Date(guest.dateOfBirth);
@@ -88,38 +254,26 @@ export function saveRegistrations(reservationId: string, organizationId: string,
         }
       }
 
-      // Write to reservation_guests (guest portal view)
-      insertRg.run(reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null, guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null, guest.documentNumber ?? null, guestId, feeAmount, feeExempt, feeReason, guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null);
-
-      // Write to guest_registrations (dashboard view) — syncs data to PMS
-      if (guestId) {
-        const existingGr = findExistingGr.get(reservationId, isPrimary) as any;
-        if (existingGr) {
-          // Draft exists — upgrade to completed
-          updateGrCompleted.run(guestId, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null, reservationId, isPrimary);
-        } else {
-          const grId = crypto.randomUUID();
-          insertGr.run(grId, reservationId, guestId, isPrimary, clientIp ?? null, guest.purposeOfStay ?? null, guest.visaNumber ?? null);
-        }
-        isPrimary = 0; // only first guest is primary
-      }
+      insertRg.run(
+        reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null,
+        guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null,
+        guest.documentNumber ?? null, dedupped.id, feeAmount, feeExempt, feeReason,
+        guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null
+      );
     }
 
-    // Update reservation registration_status
-    const status = guests.length >= needed ? 'registered' : 'not_registered';
-    db.prepare("UPDATE reservations SET registration_status = ? WHERE id = ?").run(status, reservationId);
+    // Now run bi-directional sync to ensure guest_registrations, guests, and reservations are all aligned
+    syncReservationGuestData(db, reservationId);
   })();
 
   return db.prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at').all(reservationId);
 }
+
 // ── GDPR Data Retention ───────────────────────────────────────────────────
 
 export function anonymizeOldRegistrations(monthsToKeep = 6): number {
   try {
     const db = getDb();
-    
-    // Find all registrations where the associated reservation check_out is older than X months
-    // and the data is not already anonymized
     const stmt = db.prepare(`
       UPDATE guest_registrations
       SET 
