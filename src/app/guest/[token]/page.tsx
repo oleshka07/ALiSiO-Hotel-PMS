@@ -1213,14 +1213,17 @@ export default function GuestPage() {
 
       {/* Parking */}
       <BottomSheet open={sheet === 'parking'} onClose={() => setSheet(null)} title={t.parkingTitle}>
-        {cfg?.parking_photo_url && (
+        {cfg?.parking_photo_url ? (
           <img src={cfg.parking_photo_url} alt="Parking" style={{ width: '100%', borderRadius: 12, marginBottom: 16, objectFit: 'cover', maxHeight: 200 }} />
-        )}
-        <div className="gp-sheet-info" style={{ textAlign: 'center', padding: '20px 0' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🅿️</div>
+        ) : cfg?.gate_photo_url ? (
+          <img src={cfg.gate_photo_url} alt="Parking" style={{ width: '100%', borderRadius: 12, marginBottom: 16, objectFit: 'cover', maxHeight: 200 }} />
+        ) : null}
+        <div className="gp-sheet-info" style={{ textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🅿️</div>
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.parkingFree}</div>
-          {r.property_address && (
-            <div style={{ fontSize: 14, color: 'var(--gp-sub)' }}>{r.property_address}</div>
+          <div style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 8 }}>{t.step1ParkingDesc}</div>
+          {r?.property_address && (
+            <div style={{ fontSize: 13, color: 'var(--gp-sub)', opacity: 0.8 }}>{r.property_address}</div>
           )}
         </div>
         {cfg?.maps_url && (
@@ -1248,33 +1251,65 @@ export default function GuestPage() {
 
       {/* Entry */}
       <BottomSheet open={sheet === 'entry'} onClose={() => setSheet(null)} title={t.entryTitle}>
-        {cfg?.entry_photo_url ? (
-          <img src={cfg.entry_photo_url} alt="Entrance" style={{ width: '100%', borderRadius: 12, marginBottom: 16, objectFit: 'cover', maxHeight: 200 }} />
-        ) : (
-          <div className="gp-entry-photo">📷 Photo of entrance / lockbox</div>
-        )}
-        {cfg?.check_in_instructions ? (
-          <div className="gp-entry-steps">{tc(cfg.check_in_instructions)}</div>
-        ) : (
-          <div className="gp-entry-steps">
-            <strong>1.</strong> {t.entryStep1}<br />
-            <strong>2.</strong> {t.entryStep2}<br />
-            <strong>3.</strong> {t.entryStep3Code} <span className="gp-entry-code">{cfg?.lock_code || '4971#'}</span><br />
-            <strong>4.</strong> {t.entryStep4}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* STEP 1: Territory & Gate */}
+          <div style={{ background: 'var(--gp-card, #f8fafc)', borderRadius: 14, padding: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🚪</span> {t.step1TerritoryTitle}
+            </div>
+
+            {cfg?.gate_photo_url ? (
+              <img src={cfg.gate_photo_url} alt="Gate" style={{ width: '100%', borderRadius: 10, marginBottom: 12, objectFit: 'cover', maxHeight: 180 }} />
+            ) : (
+              <div className="gp-entry-photo" style={{ marginBottom: 12 }}>📷 Photo of gate / entrance</div>
+            )}
+
+            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>
+              🅿️ {t.step1ParkingDesc}
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
+              {t.step1GateInstructions}
+            </div>
+
+            <div style={{ padding: '10px 14px', background: 'var(--gp-green, #1e4d2b)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, color: '#fff' }}>
+              <span style={{ fontSize: 20 }}>🔑</span>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>
+                {t.gateCodeLabel}: <span className="gp-entry-code" style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 10px', borderRadius: 6, color: '#fff' }}>{cfg?.gate_code || '4545'}</span>
+              </span>
+            </div>
           </div>
-        )}
-        {cfg?.lock_code && (
-          <>
-            <div style={{ margin: '12px 0 6px', padding: '10px 14px', background: 'var(--gp-green, #1e4d2b)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 20 }}>🏠</span>
-              <span style={{ fontWeight: 600, color: '#fff', fontSize: 15 }}>{t.yourAccommodation}: <span style={{ opacity: 0.9 }}>{unitName}</span></span>
+
+          {/* STEP 2: Accommodation & Lockbox */}
+          <div style={{ background: 'var(--gp-card, #f8fafc)', borderRadius: 14, padding: 16, border: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🏠</span> {t.step2CabinTitle}: <span style={{ color: 'var(--gp-green, #1e4d2b)' }}>{unitName}</span>
             </div>
-            <div style={{ margin: '0 0 12px', padding: '10px 14px', background: 'var(--gp-card)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 20 }}>🔐</span>
-              <span style={{ fontWeight: 600 }}>Code: <span className="gp-entry-code">{cfg.lock_code}</span></span>
-            </div>
-          </>
-        )}
+
+            {cfg?.entry_photo_url ? (
+              <img src={cfg.entry_photo_url} alt="Entrance" style={{ width: '100%', borderRadius: 10, marginBottom: 12, objectFit: 'cover', maxHeight: 180 }} />
+            ) : (
+              <div className="gp-entry-photo" style={{ marginBottom: 12 }}>📷 Photo of accommodation entrance</div>
+            )}
+
+            {cfg?.check_in_instructions ? (
+              <div className="gp-entry-steps" style={{ marginBottom: 10 }}>{tc(cfg.check_in_instructions)}</div>
+            ) : (
+              <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
+                {t.step2CabinInstructions}
+              </div>
+            )}
+
+            {cfg?.lock_code && (
+              <div style={{ padding: '10px 14px', background: 'var(--gp-card, #edf2f7)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, border: '1px solid rgba(0,0,0,0.08)' }}>
+                <span style={{ fontSize: 20 }}>🔐</span>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>
+                  {t.lockCodeLabel}: <span className="gp-entry-code">{cfg.lock_code}</span>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="gp-sheet-tip orange" style={{ marginTop: 16 }}>{t.lateArrival}</div>
       </BottomSheet>
 

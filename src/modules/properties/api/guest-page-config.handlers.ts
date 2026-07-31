@@ -48,7 +48,7 @@ export async function updateGuestPageConfig(request: NextRequest, { params }: { 
 
       const fields = ['amenities', 'check_in_instructions', 'external_amenities', 'faq_items', 'rules',
         'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url', 'useful_info',
-        'lock_code', 'maps_url', 'territory_map_url', 'pets_policy', 'entry_photo_url'];
+        'lock_code', 'maps_url', 'territory_map_url', 'pets_policy', 'entry_photo_url', 'gate_code', 'gate_photo_url'];
 
       for (const f of fields) {
         if (body[f] !== undefined) {
@@ -66,8 +66,8 @@ export async function updateGuestPageConfig(request: NextRequest, { params }: { 
       db.prepare(`
         INSERT INTO guest_page_config (unit_type_id, amenities, check_in_instructions, external_amenities, faq_items, rules,
           wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, useful_info,
-          lock_code, maps_url, territory_map_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          lock_code, maps_url, territory_map_url, gate_code, gate_photo_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         unitTypeId,
         typeof body.amenities === 'object' ? JSON.stringify(body.amenities) : body.amenities || '[]',
@@ -84,6 +84,8 @@ export async function updateGuestPageConfig(request: NextRequest, { params }: { 
         body.lock_code || '4971#',
         body.maps_url || 'https://maps.app.goo.gl/WH2CKhTydtDx9EBe7',
         body.territory_map_url || null,
+        body.gate_code || '4545',
+        body.gate_photo_url || null,
       );
     }
 

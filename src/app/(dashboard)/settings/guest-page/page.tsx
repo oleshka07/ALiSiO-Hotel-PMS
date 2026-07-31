@@ -110,6 +110,8 @@ export default function GuestPageSettingsPage() {
   const [pWeatherLon, setPWeatherLon] = useState('');
   const [pEmergency, setPEmergency] = useState('');
   const [pVideoGuide, setPVideoGuide] = useState('');
+  const [pGateCode, setPGateCode] = useState('4545');
+  const [pGatePhoto, setPGatePhoto] = useState('');
 
   // ═══ UNIT TYPE STATE ═══
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
@@ -120,6 +122,8 @@ export default function GuestPageSettingsPage() {
   const [lockCode, setLockCode] = useState('');
   const [petsPolicy, setPetsPolicy] = useState('');
   const [entryPhotoUrl, setEntryPhotoUrl] = useState('');
+  const [gateCode, setGateCode] = useState('');
+  const [gatePhotoUrl, setGatePhotoUrl] = useState('');
 
   // ─── Fetch ─────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -179,6 +183,8 @@ export default function GuestPageSettingsPage() {
     setPWeatherLon(cfg.weather_lon?.toString() || '');
     setPEmergency(cfg.emergency_phone || '');
     setPVideoGuide(cfg.video_guide_url || '');
+    setPGateCode(cfg.gate_code || '4545');
+    setPGatePhoto(cfg.gate_photo_url || '');
   };
 
   // ─── Load unit type config ────────────────────
@@ -188,6 +194,8 @@ export default function GuestPageSettingsPage() {
     setLockCode((cfg as any).lock_code || '');
     setPetsPolicy((cfg as any).pets_policy || '');
     setEntryPhotoUrl((cfg as any).entry_photo_url || '');
+    setGateCode((cfg as any).gate_code || '');
+    setGatePhotoUrl((cfg as any).gate_photo_url || '');
   };
 
   const handleSelectUnitType = (utId: string) => {
@@ -213,6 +221,7 @@ export default function GuestPageSettingsPage() {
           weather_lat: pWeatherLat ? parseFloat(pWeatherLat) : null,
           weather_lon: pWeatherLon ? parseFloat(pWeatherLon) : null,
           emergency_phone: pEmergency || null, video_guide_url: pVideoGuide || null,
+          gate_code: pGateCode || '4545', gate_photo_url: pGatePhoto || null,
         }),
       });
       if (res.ok) { showToast('Збережено!'); fetchAll(); } else showToast('Помилка збереження');
@@ -234,6 +243,8 @@ export default function GuestPageSettingsPage() {
           lock_code: lockCode || null,
           pets_policy: petsPolicy || null,
           entry_photo_url: entryPhotoUrl || null,
+          gate_code: gateCode || null,
+          gate_photo_url: gatePhotoUrl || null,
         }),
       });
       if (res.ok) { showToast('Збережено!'); fetchAll(); } else showToast('Помилка збереження');
@@ -318,6 +329,26 @@ export default function GuestPageSettingsPage() {
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Ці дані відображаються для ВСІХ типів проживання</div>
                   </div>
                 </div>
+
+                {/* Gate & Territory */}
+                <SH id="gate" title="Вхід на територію (Ворота та калітка)" icon="🚪" />
+                {openSections.has('gate') && (
+                  <div style={{ padding: '16px 0' }}>
+                    <div className="form-group">
+                      <label className="form-label">Код від калітки (на панелі при вході)</label>
+                      <input className="form-input" value={pGateCode} placeholder="4545" onChange={e => setPGateCode(e.target.value)} />
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <ImageUploadField
+                        label="📸 Фото калітки та ворот"
+                        value={pGatePhoto}
+                        onChange={url => setPGatePhoto(url)}
+                        folder="guest-config"
+                        aspectRatio="16/9"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* WiFi */}
                 <SH id="wifi" title="Wi-Fi" icon="📶" />
@@ -610,12 +641,26 @@ export default function GuestPageSettingsPage() {
                           <option value="not_allowed">🚫 Не допускаються</option>
                         </select>
                       </div>
-                      <ImageUploadField
-                        label="Фото входу / лок-бокса"
-                        value={entryPhotoUrl}
-                        onChange={setEntryPhotoUrl}
-                        folder="entry-photos"
-                      />
+                      <div style={{ marginTop: 16 }}>
+                        <ImageUploadField
+                          label="Фото входу / лок-бокса будиночка"
+                          value={entryPhotoUrl}
+                          onChange={setEntryPhotoUrl}
+                          folder="entry-photos"
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginTop: 16 }}>
+                        <label className="form-label">Код калітки (override)</label>
+                        <input className="form-input" value={gateCode} placeholder="4545 (за замовчуванням)" onChange={e => setGateCode(e.target.value)} />
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <ImageUploadField
+                          label="Фото калітки та ворот (override)"
+                          value={gatePhotoUrl}
+                          onChange={setGatePhotoUrl}
+                          folder="gate-photos"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

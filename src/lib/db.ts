@@ -2884,7 +2884,7 @@ function runMigrations(database: any) {
     console.log('[DB] Created guest_chat_messages table');
   }
 
-  // --- Migration: add pets_policy, entry_photo_url to guest_page_config ---
+  // --- Migration: add pets_policy, entry_photo_url, gate_code, gate_photo_url to guest_page_config ---
   try {
     const gpcCols2 = database.prepare("PRAGMA table_info(guest_page_config)").all().map((c: any) => c.name);
     if (!gpcCols2.includes('pets_policy')) {
@@ -2892,6 +2892,23 @@ function runMigrations(database: any) {
     }
     if (!gpcCols2.includes('entry_photo_url')) {
       database.exec("ALTER TABLE guest_page_config ADD COLUMN entry_photo_url TEXT");
+    }
+    if (!gpcCols2.includes('gate_code')) {
+      database.exec("ALTER TABLE guest_page_config ADD COLUMN gate_code TEXT DEFAULT '4545'");
+    }
+    if (!gpcCols2.includes('gate_photo_url')) {
+      database.exec("ALTER TABLE guest_page_config ADD COLUMN gate_photo_url TEXT");
+    }
+  } catch { /* ok */ }
+
+  // --- Migration: add gate_code, gate_photo_url to property_guest_config ---
+  try {
+    const pgcCols = database.prepare("PRAGMA table_info(property_guest_config)").all().map((c: any) => c.name);
+    if (!pgcCols.includes('gate_code')) {
+      database.exec("ALTER TABLE property_guest_config ADD COLUMN gate_code TEXT DEFAULT '4545'");
+    }
+    if (!pgcCols.includes('gate_photo_url')) {
+      database.exec("ALTER TABLE property_guest_config ADD COLUMN gate_photo_url TEXT");
     }
   } catch { /* ok */ }
 

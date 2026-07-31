@@ -35,7 +35,7 @@ export async function updatePropertyGuestConfig(request: NextRequest) {
       'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url',
       'rules', 'useful_info', 'faq_items', 'maps_url', 'territory_map_url',
       'pets_policy', 'parking_info', 'parking_photo_url', 'video_guide_url', 'emergency_phone',
-      'weather_lat', 'weather_lon',
+      'weather_lat', 'weather_lon', 'gate_code', 'gate_photo_url',
     ];
 
     if (existing) {
@@ -54,8 +54,8 @@ export async function updatePropertyGuestConfig(request: NextRequest) {
       }
     } else {
       db.prepare(`
-        INSERT INTO property_guest_config (property_id, wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, rules, useful_info, faq_items, maps_url, territory_map_url, pets_policy, parking_info, video_guide_url, emergency_phone, weather_lat, weather_lon)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO property_guest_config (property_id, wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, rules, useful_info, faq_items, maps_url, territory_map_url, pets_policy, parking_info, video_guide_url, emergency_phone, weather_lat, weather_lon, gate_code, gate_photo_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         property_id,
         body.wifi_network || 'ALiSiO_Guest', body.wifi_password || '',
@@ -66,6 +66,7 @@ export async function updatePropertyGuestConfig(request: NextRequest) {
         body.maps_url || null, body.territory_map_url || null,
         body.pets_policy || 'welcome', body.parking_info || '', body.video_guide_url || null,
         body.emergency_phone || null, body.weather_lat || null, body.weather_lon || null,
+        body.gate_code || '4545', body.gate_photo_url || null,
       );
     }
 
