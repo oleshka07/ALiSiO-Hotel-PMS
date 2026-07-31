@@ -8,14 +8,21 @@
  *
  *   CASE WHEN o.currency = fa.currency THEN o.amount ELSE o.amount_company END
  *
- * For a CZK account that is right — amount_company IS the CZK value. For a EUR
- * account paired with a CZK operation it subtracts a crown figure as if it were
- * euros, which is how «Олег Євро» reached −104 560 EUR.
+ * For a CZK account that is right — amount_company IS the CZK value. For a
+ * non-CZK account paired with an operation in another currency it subtracts a
+ * crown figure as if it were the account's own currency.
  *
- * This shows each account under the current formula and under a corrected one
- * that converts amount_company into the account currency using the rate
- * effective on the operation date, so the fix can be judged on real numbers
- * BEFORE any code changes.
+ * NOTE: this is a real but small bug. It does NOT explain the −104 560 EUR once
+ * seen on «Олег Євро» — every operation on that account is EUR on a EUR
+ * account, so the faulty branch never fires there. That figure came from the
+ * 31.07 incident temporarily re-linking CZK operations to it.
+ *
+ * Conversion uses the operation's own fx_rate first: finance_exchange_rates
+ * holds a single row, while operations carry per-operation rates, so a lookup
+ * by date is the less trustworthy source here.
+ *
+ * This shows each account under the current formula and under a corrected one,
+ * so the fix can be judged on real numbers BEFORE any code changes.
  *
  * STRICTLY READ-ONLY.
  *
@@ -59,7 +66,7 @@ const accounts = db.prepare(
 
 const ops = db.prepare(
   `SELECT account_to_id, account_from_id, op_type, amount, amount_to, currency, currency_to,
-          amount_company, paid_at
+          amount_company, fx_rate, paid_at
    FROM fin_operations WHERE status = 'completed'`,
 ).all();
 
@@ -77,7 +84,10 @@ function leg(op, acc, side) {
   const czk = Number(op.amount_company || 0);
   if (acc.currency === 'CZK') return czk;
 
-  const rate = czkPerUnit(acc.currency, op.paid_at || '');
+  // The operation's own rate is the most reliable conversion we have.
+  const rate = (op.fx_rate && op.fx_rate > 0)
+    ? op.fx_rate
+    : czkPerUnit(acc.currency, op.paid_at || '');
   if (!rate) { noRate++; return null; }
   return czk / rate;
 }
