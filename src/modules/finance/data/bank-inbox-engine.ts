@@ -394,11 +394,11 @@ function findAccountByIban(db: any, orgId: string, statement: ParsedStatement): 
     if (row) return row.id;
   }
 
-  // Fallback: match bank account by name keywords (Glamping / Kemp for KEMP CARLSBAD statements) or first active bank account, and auto-set its IBAN
+  // Fallback: match bank account by name keywords or first active bank account, and auto-set its IBAN
   const fallback = db.prepare(`
     SELECT id, iban FROM finance_accounts
     WHERE organization_id = ? AND is_active = 1 AND type = 'bank'
-    ORDER BY (name LIKE '%Glamping%' OR name LIKE '%Kemp%' OR name LIKE '%Komerční%') DESC, sort_order ASC, created_at ASC
+    ORDER BY (name LIKE '%Restaurante%' OR name LIKE '%Glamping%' OR name LIKE '%Kemp%' OR name LIKE '%Komerční%') DESC, sort_order ASC, created_at ASC
     LIMIT 1
   `).get(orgId) as { id: string; iban: string | null } | undefined;
 
