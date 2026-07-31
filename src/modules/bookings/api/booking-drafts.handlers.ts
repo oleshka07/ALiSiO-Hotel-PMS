@@ -376,11 +376,35 @@ export async function updateBookingDraft(req: Request) {
     if (status === 'paid' && rid) {
       const isEur = payment_method === 'cash_eur' || body.currency === 'EUR';
       const now = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Prague' });
+
+      // Fetch guest name & phone for clear audit trail
+      const guestRow = db.prepare(`
+        SELECT
+          TRIM(COALESCE(g.first_name, '') || ' ' || COALESCE(g.last_name, '')) AS name,
+          g.phone
+        FROM reservations r
+        LEFT JOIN guests g ON g.id = r.guest_id
+        WHERE r.id = ?
+      `).get(rid) as { name: string | null; phone: string | null } | undefined;
+
+      const draftRow = db.prepare(`
+        SELECT guest_name, guest_phone FROM booking_drafts WHERE reservation_id = ? OR id = ? LIMIT 1
+      `).get(rid, id) as { guest_name: string | null; guest_phone: string | null } | undefined;
+
+      const guestName = (guestRow?.name && guestRow.name.trim().length > 0)
+        ? guestRow.name.trim()
+        : (draftRow?.guest_name || 'Гість');
+      const guestPhone = (guestRow?.phone && guestRow.phone.trim().length > 0)
+        ? guestRow.phone.trim()
+        : (draftRow?.guest_phone || '');
+
+      const guestContactStr = `${guestName}${guestPhone ? ' (' + guestPhone + ')' : ''}`;
+
       const note = isTerminal
-        ? `💳 Оплата терміналом, прийняв: ${adminName} · ${now}`
+        ? `💳 Оплата терміналом, прийняв: ${adminName} від ${guestContactStr} · ${now}`
         : isEur
-          ? `💶 Готівку (€ EUR) прийняв: ${adminName} · ${now}`
-          : `✅ Готівку прийняв: ${adminName} · ${now}`;
+          ? `💶 Готівку (€ EUR) прийняв: ${adminName} від ${guestContactStr} · ${now}`
+          : `✅ Готівку прийняв: ${adminName} від ${guestContactStr} · ${now}`;
 
       // Guard: only update if not already paid. Lets us detect first-time
       // confirmation and avoid double-sending confirmation emails on a
@@ -466,6 +490,9 @@ export async function updateBookingDraft(req: Request) {
               }
 
               if (amount > 0) {
+                const commentBase = isEur ? 'Готівка EUR (віджет)' : 'Готівка (віджет)';
+                const fullComment = `${commentBase} · Внесено: ${adminName || 'Admin'} | Оплата від: ${guestContactStr}`;
+
                 createPaymentOperation({
                   reservationId: rid,
                   amount,
@@ -475,9 +502,7 @@ export async function updateBookingDraft(req: Request) {
                   source: 'booking_widget',
                   sourceRef: `pin_${rid}`,
                   accountId,
-                  comment: isEur
-                    ? `Готівка EUR (віджет) · Внесено: ${adminName || 'Admin'}`
-                    : `Готівка (віджет) · Внесено: ${adminName || 'Admin'}`,
+                  comment: fullComment,
                   actor: { id: `pin_${pinStr}`, name: adminName || 'Admin' },
                 });
                 console.log(`[CashConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
