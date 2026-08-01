@@ -78,38 +78,62 @@ for (const a of accounts) {
 
 if (!suspects.length) { console.log('\n✅ Усі рахунки збігаються.'); db.close(); process.exit(0); }
 
-// ── 2. statements split across accounts ─────────────────────────────────────
-// source_ref looks like "inbox:<inbox_id>:<statement>:<line>" — the first three
-// parts identify one statement, which can only belong to one bank account.
-console.log('\n─── ВИПИСКИ, РОЗІРВАНІ МІЖ РАХУНКАМИ ─────────────────────────────');
-const split = db.prepare(`
-  WITH s AS (
-    SELECT o.id, o.amount, o.currency, o.op_type, o.paid_at, o.comment,
-           COALESCE(o.account_to_id, o.account_from_id) AS acct,
-           CASE WHEN instr(o.source_ref,':') > 0
-                THEN substr(o.source_ref, 1, length(o.source_ref) - length(replace(o.source_ref,':','')) )
-                ELSE o.source_ref END AS grp,
-           o.source_ref
-    FROM fin_operations o
-    WHERE o.source = 'bank_import' AND o.source_ref IS NOT NULL AND o.status='completed'
-  )
-  SELECT
-    substr(s.source_ref, 1, instr(s.source_ref || ':', ':') - 1) || ':' ||
-    substr(s.source_ref, instr(s.source_ref,':')+1,
-           instr(substr(s.source_ref, instr(s.source_ref,':')+1) || ':', ':') - 1) AS statement_key,
-    COUNT(*) n, COUNT(DISTINCT s.acct) accounts_used,
-    GROUP_CONCAT(DISTINCT (SELECT name FROM finance_accounts WHERE id = s.acct)) names
-  FROM s GROUP BY statement_key HAVING accounts_used > 1 ORDER BY n DESC
-`).all();
-
-if (!split.length) {
-  console.log('  (жодна виписка не розірвана — масової перепривʼязки в поточному стані немає)');
-} else {
-  for (const r of split) {
-    console.log(`  ${r.statement_key}  ${r.n} операцій розкидано по ${r.accounts_used} рахунках:`);
-    console.log(`      ${r.names}`);
+// ── 2. statement lines whose operation no longer exists ─────────────────────
+// bank_transactions keeps one row per imported statement line and points at the
+// operation it created. The rollback deleted operations AND their audit rows, so
+// those are invisible in fin_operations — but the statement line survives. This
+// is where money that simply vanished from an account shows up.
+console.log('\n─── РЯДКИ ВИПИСОК БЕЗ ОПЕРАЦІЇ (зниклі гроші) ────────────────────');
+try {
+  const orphans = db.prepare(`
+    SELECT bt.transaction_date d, bt.amount, bt.counterparty, bt.description,
+           bs.account_number, bs.file_name
+    FROM bank_transactions bt
+    LEFT JOIN bank_statements bs ON bs.id = bt.statement_id
+    WHERE bt.matched_operation_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM fin_operations o WHERE o.id = bt.matched_operation_id)
+    ORDER BY bt.transaction_date
+  `).all();
+  if (!orphans.length) {
+    console.log('  (немає — жоден рядок виписки не втратив свою операцію)');
+  } else {
+    const sum = orphans.reduce((t, r) => t + Number(r.amount || 0), 0);
+    console.log(`  ${orphans.length} рядків на суму ${sum.toFixed(2)} — операції видалено, рядок лишився`);
+    for (const r of orphans.slice(0, 25)) {
+      console.log(`    ${r.d}  ${String(r.amount).padStart(12)}  ${String(r.counterparty || '').slice(0, 26).padEnd(26)} ${String(r.file_name || '').slice(0, 28)}`);
+    }
+    if (orphans.length > 25) console.log(`    …ще ${orphans.length - 25}`);
+    console.log('  ↑ ЦЕ найімовірніше джерело «зниклих» сум на рахунку.');
   }
+} catch (e) {
+  console.log(`  (не вдалось перевірити: ${e.message})`);
 }
+
+// Statement grouping: source_ref is "inbox:<inbox_id>:<message_id>:<line>", so a
+// statement is the first THREE parts. Grouping by two compared mailboxes, not
+// statements. Even grouped correctly, splits turned out to be how the importer
+// behaves — the authoritative check is the create-snapshot comparison below.
+console.log('\n─── ЧИ СТОЯТЬ БАНКІВСЬКІ ОПЕРАЦІЇ ТАМ, КУДИ ЇХ ПОКЛАВ ІМПОРТ ─────');
+const impCmp = db.prepare(`
+  SELECT COUNT(*) total,
+         SUM(CASE WHEN snap IS NULL THEN 1 ELSE 0 END) no_audit,
+         SUM(CASE WHEN snap IS NOT NULL
+                   AND COALESCE(json_extract(snap,'$.account_to_id'),'')   = COALESCE(o.account_to_id,'')
+                   AND COALESCE(json_extract(snap,'$.account_from_id'),'') = COALESCE(o.account_from_id,'')
+              THEN 1 ELSE 0 END) same,
+         SUM(CASE WHEN snap IS NOT NULL
+                   AND (COALESCE(json_extract(snap,'$.account_to_id'),')   <> COALESCE(o.account_to_id,'')
+                     OR COALESCE(json_extract(snap,'$.account_from_id'),'') <> COALESCE(o.account_from_id,''))
+              THEN 1 ELSE 0 END) moved
+  FROM (
+    SELECT o2.*, (SELECT a.after_json FROM fin_operation_audit a
+                  WHERE a.operation_id = o2.id AND a.action='create' LIMIT 1) snap
+    FROM fin_operations o2 WHERE o2.source='bank_import'
+  ) o
+`.replace("(COALESCE(json_extract(snap,'$.account_to_id'),')", "(COALESCE(json_extract(snap,'$.account_to_id'),'')")).get();
+console.log(`  усього bank_import: ${impCmp.total}   без аудиту: ${impCmp.no_audit}`);
+console.log(`  стоять як при імпорті: ${impCmp.same}   перенесені пізніше: ${impCmp.moved}`);
+if (impCmp.moved) console.log('  (перенесені — див. деталі по рахунках нижче)');
 
 // ── 3. per-suspect account: what the audit says ─────────────────────────────
 for (const s of suspects) {
@@ -118,6 +142,7 @@ for (const s of suspects) {
   // operations whose latest audit snapshot names a DIFFERENT account
   const moved = db.prepare(`
     SELECT o.id, o.op_type, o.amount, o.currency, o.paid_at, o.source,
+           o.account_to_id, o.account_from_id,
            substr(COALESCE(o.comment,''),1,38) cmt,
            (SELECT a.after_json FROM fin_operation_audit a
             WHERE a.operation_id = o.id AND a.after_json IS NOT NULL
@@ -127,23 +152,39 @@ for (const s of suspects) {
     ORDER BY o.paid_at DESC LIMIT 400
   `).all(s.id, s.id);
 
+  // Compare BOTH sides. Picking one side with to-priority reported every
+  // transfer whose other leg is elsewhere — which is simply how transfers work.
   const wrong = [];
   for (const m of moved) {
     if (!m.snap) continue;
     let j; try { j = JSON.parse(m.snap); } catch { continue; }
-    const other = j.account_to_id || j.account_from_id;
-    if (other && other !== s.id) wrong.push({ ...m, should: other });
+    const sameTo = String(j.account_to_id ?? '') === String(m.account_to_id ?? '');
+    const sameFrom = String(j.account_from_id ?? '') === String(m.account_from_id ?? '');
+    if (sameTo && sameFrom) continue;                 // untouched
+    wrong.push({
+      ...m,
+      wasTo: j.account_to_id ?? null, wasFrom: j.account_from_id ?? null,
+    });
   }
 
   if (wrong.length) {
     console.log(`  ${wrong.length} операцій, які за аудитом належать ІНШОМУ рахунку:`);
     let sum = 0;
+    const nameOf = (id) => {
+      if (!id) return '—';
+      const r = db.prepare('SELECT name FROM finance_accounts WHERE id = ?').get(id);
+      return r ? r.name : id;
+    };
     for (const w of wrong.slice(0, 20)) {
-      const nm = db.prepare('SELECT name FROM finance_accounts WHERE id = ?').get(w.should);
       sum += Number(w.amount || 0) * (w.op_type === 'expense' ? -1 : 1);
       console.log(
-        `    ${w.paid_at}  ${String(w.op_type).padEnd(8)} ${String(w.amount).padStart(10)} ${w.currency}` +
-        `  → має бути: ${nm ? nm.name : w.should}   ${w.cmt}`,
+        `    ${w.paid_at}  ${String(w.op_type).padEnd(8)} ${String(w.amount).padStart(10)} ${w.currency}  ${w.cmt}`,
+      );
+      console.log(
+        `        зараз:    ${nameOf(w.account_from_id)} → ${nameOf(w.account_to_id)}`,
+      );
+      console.log(
+        `        в аудиті: ${nameOf(w.wasFrom)} → ${nameOf(w.wasTo)}`,
       );
     }
     if (wrong.length > 20) console.log(`    …ще ${wrong.length - 20}`);
