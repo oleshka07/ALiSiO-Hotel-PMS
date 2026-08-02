@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git checkout*)",
+      "Bash(git stash*)",
+      "Bash(git blame*)",
+      "Bash(git remote*)",
+      "Bash(npm run build*)",
+      "Bash(npm run lint*)",
+      "Bash(npm ci*)",
+      "Bash(npm install*)",
+      "Bash(npx tsc*)",
+      "Bash(node *)",
+      "Bash(sqlite3 *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(ls *)",
+      "Bash(pwd*)",
+      "Bash(du *)",
+      "Bash(df *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(rg *)",
+      "Bash(curl *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)"
+    ],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "Bash(systemctl *)",
+      "Bash(bash scripts/deploy-vps.sh*)",
+      "Bash(./scripts/deploy-vps.sh*)"
+    ]
+  }
+}
