@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
+import { registerNationalitySql } from '../domain/nationality';
 
 // ─── Types ────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export interface RegistryEntry {
   visa_number: string | null;
   purpose_of_stay: string | null;
   is_foreigner: number;
+  nationality_unknown: number;
   fee_amount: number;
   fee_exempt: number;
   fee_exempt_reason: string | null;
@@ -41,6 +43,7 @@ export interface RegistryEntry {
 export interface RegistrySummary {
   totalGuests: number;
   foreigners: number;
+  unknownNationality: number;
   registeredPolice: number;
   unregisteredPolice: number;
   totalFees: number;
@@ -76,7 +79,8 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
       rg.address,
       rg.visa_number,
       COALESCE(rg.purpose_of_stay, 'Tourism') as purpose_of_stay,
-      CASE WHEN rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END as is_foreigner,
+      CASE WHEN COALESCE(norm_nat(rg.nationality),'') <> 'CZ' THEN 1 ELSE 0 END as is_foreigner,
+      CASE WHEN norm_nat(rg.nationality) IS NULL THEN 1 ELSE 0 END as nationality_unknown,
       CASE WHEN COALESCE(rg.fee_exempt, 0) = 1 THEN 0 ELSE r.nights * 20 END as fee_amount,
       COALESCE(rg.fee_exempt, 0) as fee_exempt,
       rg.fee_exempt_reason,
@@ -104,11 +108,11 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
   }
 
   if (filters.foreignersOnly) {
-    query += " AND rg.nationality != 'CZ' AND rg.nationality IS NOT NULL";
+    query += " AND COALESCE(norm_nat(rg.nationality),'') <> 'CZ'";
   }
 
   if (filters.unregisteredOnly) {
-    query += " AND COALESCE(rg.police_reported, 0) = 0 AND rg.nationality != 'CZ'";
+    query += " AND COALESCE(rg.police_reported, 0) = 0 AND COALESCE(norm_nat(rg.nationality),'') <> 'CZ'";
   }
 
   if (filters.search) {
@@ -120,7 +124,9 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
 
   query += ' ORDER BY r.check_in, rg.last_name, rg.first_name';
 
-  return getDb().prepare(query).all(...params) as RegistryEntry[];
+  const db = getDb();
+  registerNationalitySql(db);
+  return db.prepare(query).all(...params) as RegistryEntry[];
 }
 
 export function getRegistrySummary(filters: { month: string; propertyId?: string }): RegistrySummary {
@@ -130,9 +136,10 @@ export function getRegistrySummary(filters: { month: string; propertyId?: string
   let query = `
     SELECT
       COUNT(*) as totalGuests,
-      SUM(CASE WHEN rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END) as foreigners,
+      SUM(CASE WHEN COALESCE(norm_nat(rg.nationality),'') <> 'CZ' THEN 1 ELSE 0 END) as foreigners,
+      SUM(CASE WHEN norm_nat(rg.nationality) IS NULL THEN 1 ELSE 0 END) as unknownNationality,
       SUM(CASE WHEN rg.police_reported = 1 THEN 1 ELSE 0 END) as registeredPolice,
-      SUM(CASE WHEN COALESCE(rg.police_reported, 0) = 0 AND rg.nationality IS NOT NULL AND rg.nationality != 'CZ' THEN 1 ELSE 0 END) as unregisteredPolice,
+      SUM(CASE WHEN COALESCE(rg.police_reported, 0) = 0 AND COALESCE(norm_nat(rg.nationality),'') <> 'CZ' THEN 1 ELSE 0 END) as unregisteredPolice,
       SUM(CASE WHEN COALESCE(rg.fee_exempt, 0) = 1 THEN 0 ELSE r.nights * 20 END) as totalFees,
       SUM(CASE WHEN rg.fee_exempt = 1 THEN 1 ELSE 0 END) as exemptGuests
     FROM reservation_guests rg
@@ -149,11 +156,14 @@ export function getRegistrySummary(filters: { month: string; propertyId?: string
 
   query += ' AND COALESCE(rg.is_hidden, 0) = 0';
 
-  const row = getDb().prepare(query).get(...params) as any;
+  const db = getDb();
+  registerNationalitySql(db);
+  const row = db.prepare(query).get(...params) as any;
 
   return {
     totalGuests: row?.totalGuests ?? 0,
     foreigners: row?.foreigners ?? 0,
+    unknownNationality: row?.unknownNationality ?? 0,
     registeredPolice: row?.registeredPolice ?? 0,
     unregisteredPolice: row?.unregisteredPolice ?? 0,
     totalFees: row?.totalFees ?? 0,
