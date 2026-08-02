@@ -27,6 +27,25 @@ export function getReservationForRegistration(token: string) {
  *  2) `guest_registrations` JOIN `guests` (PMS Admin Modal & Invoices view)
  *  3) `reservations.registration_status` and primary guest profile
  */
+// This module rebuilds reservation_guests with DELETE-then-INSERT. Everything
+// the operator or the Ubyport sender wrote onto the row — the police flag, its
+// reference, a hidden entry, a manual fee exemption — lives ONLY on that row and
+// is not derivable from guests/guest_registrations. Without carrying it across,
+// every rebuild resets police_reported to 0 and the next morning run reports the
+// whole season to the foreign police again. The row id is carried too, so any
+// external system that remembers what it already sent keeps its references.
+const REGISTRY_STATE = [
+  'id', 'police_reported', 'police_reported_at', 'police_report_ref',
+  'is_hidden', 'fee_exempt', 'fee_exempt_reason',
+] as const;
+
+function carryRegistryState(target: any, row: any) {
+  if (!row) return;
+  for (const f of REGISTRY_STATE) {
+    if (row[f] !== undefined && row[f] !== null) target[f] = row[f];
+  }
+}
+
 export function syncReservationGuestData(db: any, reservationId: string) {
   const res = db.prepare('SELECT id, adults, nights, guest_id FROM reservations WHERE id = ?').get(reservationId) as any;
   if (!res) return;
@@ -96,8 +115,9 @@ export function syncReservationGuestData(db: any, reservationId: string) {
       m.purpose_of_stay = rg.purpose_of_stay || m.purpose_of_stay;
       m.visa_number = rg.visa_number || m.visa_number;
       if (rg.guest_id) m.guest_id = rg.guest_id;
+      carryRegistryState(m, rg);
     } else {
-      merged.push({
+      const entry = {
         guest_id: rg.guest_id,
         first_name: rg.first_name,
         last_name: rg.last_name,
@@ -111,7 +131,9 @@ export function syncReservationGuestData(db: any, reservationId: string) {
         purpose_of_stay: rg.purpose_of_stay || 'Tourism',
         visa_number: rg.visa_number || null,
         is_primary: merged.length === 0 ? 1 : 0,
-      });
+      };
+      carryRegistryState(entry, rg);
+      merged.push(entry);
       if (rg.guest_id) processedGuestIds.add(rg.guest_id);
     }
   }
@@ -126,10 +148,11 @@ export function syncReservationGuestData(db: any, reservationId: string) {
 
     const insertRg = db.prepare(`
       INSERT INTO reservation_guests (
-        reservation_id, first_name, last_name, date_of_birth, address,
+        id, reservation_id, first_name, last_name, date_of_birth, address,
         nationality, document_type, document_number, guest_id, fee_amount,
-        fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number,
+        police_reported, police_reported_at, police_report_ref, is_hidden
+      ) VALUES (COALESCE(?, lower(hex(randomblob(16)))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertGr = db.prepare(`
@@ -156,6 +179,13 @@ export function syncReservationGuestData(db: any, reservationId: string) {
           feeAmount = 0;
           feeReason = 'Dítě do 18 let';
         }
+      }
+      // An exemption the operator granted by hand is not re-derivable from the
+      // date of birth, so the age rule must not silently revoke it.
+      if (!feeExempt && item.fee_exempt) {
+        feeExempt = 1;
+        feeAmount = 0;
+        feeReason = item.fee_exempt_reason ?? null;
       }
 
       let guestId = item.guest_id;
@@ -186,10 +216,13 @@ export function syncReservationGuestData(db: any, reservationId: string) {
       }
 
       insertRg.run(
+        item.id ?? null,
         reservationId, item.first_name, item.last_name, item.date_of_birth || null,
         item.address || null, item.nationality || null, item.document_type || null,
         item.document_number || null, guestId, feeAmount, feeExempt, feeReason,
-        item.purpose_of_stay || 'Tourism', item.visa_number || null
+        item.purpose_of_stay || 'Tourism', item.visa_number || null,
+        item.police_reported ? 1 : 0, item.police_reported_at ?? null,
+        item.police_report_ref ?? null, item.is_hidden ? 1 : 0,
       );
 
       if (guestId) {
@@ -212,13 +245,25 @@ export function syncReservationGuestData(db: any, reservationId: string) {
 export function saveRegistrations(reservationId: string, organizationId: string, guests: RegisteredGuest[], clientIp?: string) {
   const db = getDb();
 
+  // A re-submit must not look like a brand-new guest to the Ubyport sender:
+  // keep the police flag, the report reference and the row id from the row this
+  // one replaces. Matched on document number first, then on the name pair.
+  const prior = db.prepare(
+    'SELECT * FROM reservation_guests WHERE reservation_id = ?',
+  ).all(reservationId) as any[];
+  const priorOf = (g: RegisteredGuest) => prior.find((p) =>
+    (g.documentNumber && p.document_number
+      && String(p.document_number).toLowerCase() === String(g.documentNumber).toLowerCase())
+    || (String(p.first_name || '').toLowerCase() === String(g.firstName || '').toLowerCase()
+      && String(p.last_name || '').toLowerCase() === String(g.lastName || '').toLowerCase()));
+
   // Clear both tables for this reservation (idempotent re-submit)
   db.prepare('DELETE FROM reservation_guests WHERE reservation_id = ?').run(reservationId);
   db.prepare('DELETE FROM guest_registrations WHERE reservation_id = ?').run(reservationId);
 
   const insertRg = db.prepare(`
-    INSERT INTO reservation_guests (reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO reservation_guests (id, reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number, police_reported, police_reported_at, police_report_ref, is_hidden)
+    VALUES (COALESCE(?, lower(hex(randomblob(16)))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   db.transaction(() => {
@@ -239,13 +284,15 @@ export function saveRegistrations(reservationId: string, organizationId: string,
         address: guest.address,
       });
 
+      const was = priorOf(guest);
+
       let feeExempt = 0;
       let feeAmount = nights * 20;
       let feeReason: string | null = null;
       if (guest.dateOfBirth) {
         const dob = new Date(guest.dateOfBirth);
         const ageDifMs = Date.now() - dob.getTime();
-        const ageDate = new Date(ageDifMs); 
+        const ageDate = new Date(ageDifMs);
         const age = Math.abs(ageDate.getUTCFullYear() - 1970);
         if (age < 18) {
           feeExempt = 1;
@@ -253,12 +300,20 @@ export function saveRegistrations(reservationId: string, organizationId: string,
           feeReason = 'Dítě do 18 let';
         }
       }
+      if (!feeExempt && was?.fee_exempt) {
+        feeExempt = 1;
+        feeAmount = 0;
+        feeReason = was.fee_exempt_reason ?? null;
+      }
 
       insertRg.run(
+        was?.id ?? null,
         reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null,
         guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null,
         guest.documentNumber ?? null, dedupped.id, feeAmount, feeExempt, feeReason,
-        guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null
+        guest.purposeOfStay || 'Tourism', guest.visaNumber ?? null,
+        was?.police_reported ? 1 : 0, was?.police_reported_at ?? null,
+        was?.police_report_ref ?? null, was?.is_hidden ? 1 : 0,
       );
     }
 

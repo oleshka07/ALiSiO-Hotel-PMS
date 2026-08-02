@@ -12,10 +12,13 @@
  * This does not adjust anything. It locates the operations responsible:
  *
  *  1. every account against its expected balance
- *  2. for bank-imported operations, whether a statement's rows are split across
- *     several accounts — one statement belongs to exactly one bank account, so
- *     a split is the fingerprint of the mass re-link
- *  3. what the audit trail says each suspect account should be
+ *  2. statement lines whose operation is gone — cross-checked by (date + amount),
+ *     because a dangling id usually means a re-import, not lost money
+ *  3. whether bank-imported operations still sit where the import put them
+ *  4. what the audit trail says each suspect account should be
+ *  5. a month-by-month walk of each suspect account, split by source, so a gap
+ *     that lands in one month (a single episode) is told apart from one that
+ *     spreads evenly (two sources counting the same money)
  *
  * STRICTLY READ-ONLY.
  *
@@ -29,7 +32,14 @@ const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'alisio.
 if (!fs.existsSync(DB_PATH)) { console.error(`❌ База не знайдена: ${DB_PATH}`); process.exit(1); }
 const db = new Database(DB_PATH, { readonly: true });
 
-// Balances the operator recorded before the incident.
+// Balances the operator recorded before touching Antigravity — i.e. the state of
+// the accounts on 31.07 before ~18:00, taken verbatim from their own notes.
+//
+// That timing matters: statement lines dated 07.07–23.07 were only imported at
+// 22:27 on 31.07, AFTER the snapshot was written down. They are real bank
+// movements, so the database legitimately holds money the snapshot does not.
+// LATE_IMPORTS shifts the target for those accounts instead of pretending the
+// difference is damage.
 const EXPECTED = {
   'Андріїв cash': 1398.00,
   'Готівка EUR': 252.00,
@@ -43,6 +53,8 @@ const EXPECTED = {
   'KB KEMP Gold': 400660.68,
   'Інвест. СвайпСкейп': -82661.00,
 };
+
+const SNAPSHOT_AT = process.env.SNAPSHOT_AT || '2026-07-31 18:00:00';
 
 const norm = (s) => String(s || '').replace(/[💶💰🏦\s]+/g, ' ').trim().toLowerCase();
 
@@ -60,19 +72,37 @@ const balFrom = db.prepare(`
   FROM fin_operations o WHERE o.status='completed' AND o.account_from_id = ?
 `);
 
+// Money the snapshot could not have known about: written to the database after
+// the snapshot was taken, but dated before it. Computed, never hardcoded.
+const lateStmt = db.prepare(`
+  SELECT COALESCE(SUM(
+    CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END
+    * CASE WHEN o.account_to_id = ? THEN 1 ELSE -1 END
+  ),0) t, COUNT(*) n
+  FROM fin_operations o
+  JOIN fin_operation_audit a ON a.operation_id = o.id AND a.action = 'create'
+  WHERE o.status='completed'
+    AND (o.account_to_id = ? OR o.account_from_id = ?)
+    AND a.performed_at >= ?
+    AND COALESCE(o.paid_at,'') < ?
+`);
+
 console.log('─── БАЛАНСИ ПРОТИ ЗБЕРЕЖЕНИХ ─────────────────────────────────────');
-console.log('рахунок                        зараз          очікується      різниця');
+console.log(`знімок оператора: ${SNAPSHOT_AT}   (пізніші імпорти старих дат враховано окремо)`);
+console.log('рахунок                        зараз          очікується      різниця   пізній імпорт');
 const suspects = [];
 for (const a of accounts) {
   const cur = a.init + balStmt.get(a.currency, a.id).t - balFrom.get(a.currency, a.id).t;
   const key = Object.keys(EXPECTED).find((k) => norm(k) === norm(a.name));
   if (key === undefined) { continue; }
-  const exp = EXPECTED[key];
+  const late = lateStmt.get(a.currency, a.id, a.id, a.id, SNAPSHOT_AT, SNAPSHOT_AT.slice(0, 10));
+  const exp = EXPECTED[key] + late.t;   // target the snapshot WOULD have had
   const diff = cur - exp;
   const mark = Math.abs(diff) >= 0.5 ? ' ←' : '';
-  if (Math.abs(diff) >= 0.5) suspects.push({ ...a, cur, exp, diff });
+  if (Math.abs(diff) >= 0.5) suspects.push({ ...a, cur, exp, diff, late: late.t });
   console.log(
-    `${String(a.name).padEnd(30)} ${cur.toFixed(2).padStart(13)} ${exp.toFixed(2).padStart(15)} ${diff.toFixed(2).padStart(12)}${mark}`,
+    `${String(a.name).padEnd(30)} ${cur.toFixed(2).padStart(13)} ${exp.toFixed(2).padStart(15)} ${diff.toFixed(2).padStart(12)}${mark}` +
+    (late.n ? `   ${late.t.toFixed(2)} у ${late.n} оп.` : ''),
   );
 }
 
@@ -80,10 +110,16 @@ if (!suspects.length) { console.log('\n✅ Усі рахунки збігают�
 
 // ── 2. statement lines whose operation no longer exists ─────────────────────
 // bank_transactions keeps one row per imported statement line and points at the
-// operation it created. The rollback deleted operations AND their audit rows, so
-// those are invisible in fin_operations — but the statement line survives. This
-// is where money that simply vanished from an account shows up.
-console.log('\n─── РЯДКИ ВИПИСОК БЕЗ ОПЕРАЦІЇ (зниклі гроші) ────────────────────');
+// operation it created. A dangling matched_operation_id is NOT proof the money
+// vanished: the 31.07 statement was imported twice ~80 minutes apart and the
+// first batch was deleted, leaving every pointer aimed at a dead id while the
+// second batch sits in fin_operations perfectly intact. Matching by id alone
+// reported all 20 such rows as "зниклі гроші" — following that list would have
+// re-created 22 391 CZK of duplicates.
+//
+// So the id is only the starting point: a row counts as genuinely lost only if
+// no live operation carries the same date and the same amount.
+console.log('\n─── РЯДКИ ВИПИСОК БЕЗ ОПЕРАЦІЇ ──────────────────────────────────');
 try {
   const orphans = db.prepare(`
     SELECT bt.transaction_date d, bt.amount, bt.counterparty, bt.description,
@@ -94,16 +130,45 @@ try {
       AND NOT EXISTS (SELECT 1 FROM fin_operations o WHERE o.id = bt.matched_operation_id)
     ORDER BY bt.transaction_date
   `).all();
+
+  // A live operation with the same date and magnitude means the line is present
+  // under a different id — re-imported, not lost.
+  const twin = db.prepare(`
+    SELECT COUNT(*) n FROM fin_operations o
+    WHERE substr(COALESCE(o.paid_at,''),1,10) = ?
+      AND ABS(COALESCE(o.amount,0) - ?) < 0.005
+  `);
+
+  const lost = [];
+  let reimported = 0;
+  let reimportedSum = 0;
+  for (const r of orphans) {
+    const date = String(r.d || '').slice(0, 10);
+    const amt = Math.abs(Number(r.amount || 0));
+    if (twin.get(date, amt).n > 0) { reimported++; reimportedSum += Number(r.amount || 0); continue; }
+    lost.push(r);
+  }
+
   if (!orphans.length) {
     console.log('  (немає — жоден рядок виписки не втратив свою операцію)');
   } else {
-    const sum = orphans.reduce((t, r) => t + Number(r.amount || 0), 0);
-    console.log(`  ${orphans.length} рядків на суму ${sum.toFixed(2)} — операції видалено, рядок лишився`);
-    for (const r of orphans.slice(0, 25)) {
-      console.log(`    ${r.d}  ${String(r.amount).padStart(12)}  ${String(r.counterparty || '').slice(0, 26).padEnd(26)} ${String(r.file_name || '').slice(0, 28)}`);
+    console.log(`  рядків із мертвим посиланням: ${orphans.length}`);
+    if (reimported) {
+      console.log(
+        `  з них ${reimported} (${reimportedSum.toFixed(2)}) мають живу операцію з тією ж датою і сумою —`,
+      );
+      console.log('  виписку імпортували двічі, посилання лишилось на видалений батч. Гроші НА МІСЦІ.');
     }
-    if (orphans.length > 25) console.log(`    …ще ${orphans.length - 25}`);
-    console.log('  ↑ ЦЕ найімовірніше джерело «зниклих» сум на рахунку.');
+    if (!lost.length) {
+      console.log('  ✅ жоден рядок виписки не втратив свої гроші.');
+    } else {
+      const sum = lost.reduce((t, r) => t + Number(r.amount || 0), 0);
+      console.log(`\n  ${lost.length} рядків на суму ${sum.toFixed(2)} НЕ мають живої операції ні за id, ні за (дата+сума):`);
+      for (const r of lost.slice(0, 25)) {
+        console.log(`    ${r.d}  ${String(r.amount).padStart(12)}  ${String(r.counterparty || '').slice(0, 26).padEnd(26)} ${String(r.file_name || '').slice(0, 28)}`);
+      }
+      if (lost.length > 25) console.log(`    …ще ${lost.length - 25}`);
+    }
   }
 } catch (e) {
   console.log(`  (не вдалось перевірити: ${e.message})`);
@@ -206,6 +271,55 @@ for (const s of suspects) {
   console.log('  найбільші операції на рахунку (для ока):');
   for (const t of top) {
     console.log(`    ${t.paid_at}  ${String(t.op_type).padEnd(8)} ${String(t.amount).padStart(10)} ${t.currency}  ${t.source || ''}  ${t.cmt}`);
+  }
+
+  // ── month-by-month walk ───────────────────────────────────────────────────
+  // A gap that lands in one month is a single episode and can be repaired by
+  // hand. A gap that grows a little every month is a method difference — most
+  // likely the same money counted twice because two import sources feed this
+  // one account. The per-source columns say which of the two it is.
+  const months = db.prepare(`
+    SELECT substr(COALESCE(o.paid_at,'?'),1,7) ym,
+           COALESCE(o.source,'—') src,
+           COUNT(*) n,
+           SUM((CASE WHEN o.currency = ? THEN o.amount ELSE o.amount_company END)
+               * CASE WHEN o.account_to_id = ? THEN 1 ELSE -1 END) net
+    FROM fin_operations o
+    WHERE (o.account_to_id = ? OR o.account_from_id = ?) AND o.status='completed'
+    GROUP BY ym, src ORDER BY ym, src
+  `).all(s.currency, s.id, s.id, s.id);
+
+  if (months.length) {
+    const bySrc = new Map();
+    const byMonth = new Map();
+    for (const m of months) {
+      bySrc.set(m.src, (bySrc.get(m.src) || 0) + m.net);
+      if (!byMonth.has(m.ym)) byMonth.set(m.ym, { net: 0, n: 0, src: new Map() });
+      const b = byMonth.get(m.ym);
+      b.net += m.net; b.n += m.n; b.src.set(m.src, (b.src.get(m.src) || 0) + m.net);
+    }
+
+    const srcNames = [...bySrc.keys()].sort();
+    console.log('\n  по місяцях (наростаючий баланс від початкового):');
+    console.log(`    місяць    оп.        за місяць      наростаючим   ${srcNames.map((x) => x.slice(0, 12).padStart(13)).join('')}`);
+    let run = s.init;
+    for (const [ym, b] of [...byMonth.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+      run += b.net;
+      const cols = srcNames.map((x) => (b.src.has(x) ? b.src.get(x).toFixed(0) : '·').padStart(13)).join('');
+      console.log(
+        `    ${ym.padEnd(9)} ${String(b.n).padStart(4)} ${b.net.toFixed(2).padStart(15)} ${run.toFixed(2).padStart(15)}   ${cols}`,
+      );
+    }
+    console.log('    ' + '─'.repeat(46 + srcNames.length * 13));
+    console.log(
+      `    разом по джерелах: ${srcNames.map((x) => `${x}=${bySrc.get(x).toFixed(2)}`).join('  ')}`,
+    );
+
+    const bankish = srcNames.filter((x) => /bank|import|kb|statement/i.test(x));
+    if (bankish.length > 1) {
+      console.log(`    ⚠️  на рахунку ДВА банківські джерела (${bankish.join(', ')}) —`);
+      console.log('        перевір, чи не записані ті самі рухи двічі.');
+    }
   }
 }
 

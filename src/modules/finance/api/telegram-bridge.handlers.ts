@@ -64,14 +64,19 @@ function defaultCashAccountId(db: any, orgId: string, currency: string, recorded
   let actorUser: { id: string; name: string } | null = null;
   if (recordedBy && recordedBy.trim().length > 0) {
     const cleanName = recordedBy.trim();
+    // app_users holds full_name — there is no name / first_name / username
+    // column. Naming any of them makes SQLite reject the statement at prepare
+    // time, which took down every bot-recorded operation that carried a
+    // recorded_by (i.e. all of them).
     const userRow = db.prepare(`
-      SELECT id, name, default_cash_account_id FROM app_users
-      WHERE is_active = 1 AND (name LIKE ? OR first_name LIKE ? OR username LIKE ?)
+      SELECT id, full_name, default_cash_account_id FROM app_users
+      WHERE organization_id = ? AND is_active = 1 AND full_name LIKE ?
       LIMIT 1
-    `).get(`%${cleanName}%`, `%${cleanName}%`, `%${cleanName}%`) as { id: string; name: string; default_cash_account_id: string | null } | undefined;
+    `).get(orgId, `%${cleanName}%`) as
+      { id: string; full_name: string; default_cash_account_id: string | null } | undefined;
 
     if (userRow) {
-      actorUser = { id: userRow.id, name: userRow.name };
+      actorUser = { id: userRow.id, name: userRow.full_name };
       if (userRow.default_cash_account_id) {
         const acct = db.prepare(`
           SELECT id FROM finance_accounts WHERE id = ? AND is_active = 1

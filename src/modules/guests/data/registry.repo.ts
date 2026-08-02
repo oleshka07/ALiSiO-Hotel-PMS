@@ -94,6 +94,7 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
     JOIN reservations r ON rg.reservation_id = r.id
     JOIN units u ON r.unit_id = u.id
     WHERE r.check_in >= ? AND r.check_in < ?
+      AND r.status NOT IN ('cancelled', 'no_show')
   `;
   const params: (string | number)[] = [monthStart, monthEnd];
 
@@ -137,6 +138,7 @@ export function getRegistrySummary(filters: { month: string; propertyId?: string
     FROM reservation_guests rg
     JOIN reservations r ON rg.reservation_id = r.id
     WHERE r.check_in >= ? AND r.check_in < ?
+      AND r.status NOT IN ('cancelled', 'no_show')
   `;
   const params: (string | number)[] = [monthStart, monthEnd];
 
