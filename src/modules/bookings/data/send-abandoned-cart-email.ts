@@ -12,7 +12,10 @@ export async function sendAbandonedCartEmail(reservationId: string, origin?: str
   const row = db.prepare(`
     SELECT r.id, r.check_in, r.check_out, r.nights, r.total_price, r.currency, r.guest_page_token,
            g.first_name, g.email, g.phone,
-           u.name as unit_name, u.thank_you_url,
+           u.name as unit_name,
+           (SELECT sl.thank_you_url FROM site_listings sl
+             WHERE sl.unit_id = r.unit_id AND sl.thank_you_url IS NOT NULL
+             ORDER BY sl.sort_order ASC LIMIT 1) AS thank_you_url,
            p.name as property_name
     FROM reservations r
     LEFT JOIN guests g ON r.guest_id = g.id

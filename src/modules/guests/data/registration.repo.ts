@@ -35,7 +35,7 @@ export function getReservationForRegistration(token: string) {
 // whole season to the foreign police again. The row id is carried too, so any
 // external system that remembers what it already sent keeps its references.
 const REGISTRY_STATE = [
-  'id', 'police_reported', 'police_reported_at', 'police_report_ref',
+  'id', 'created_at', 'police_reported', 'police_reported_at', 'police_report_ref',
   'is_hidden', 'fee_exempt', 'fee_exempt_reason',
 ] as const;
 
@@ -148,11 +148,11 @@ export function syncReservationGuestData(db: any, reservationId: string) {
 
     const insertRg = db.prepare(`
       INSERT INTO reservation_guests (
-        id, reservation_id, first_name, last_name, date_of_birth, address,
+        id, created_at, reservation_id, first_name, last_name, date_of_birth, address,
         nationality, document_type, document_number, guest_id, fee_amount,
         fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number,
         police_reported, police_reported_at, police_report_ref, is_hidden
-      ) VALUES (COALESCE(?, lower(hex(randomblob(16)))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (COALESCE(?, lower(hex(randomblob(16)))), COALESCE(?, datetime('now')), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertGr = db.prepare(`
@@ -216,7 +216,7 @@ export function syncReservationGuestData(db: any, reservationId: string) {
       }
 
       insertRg.run(
-        item.id ?? null,
+        item.id ?? null, item.created_at ?? null,
         reservationId, item.first_name, item.last_name, item.date_of_birth || null,
         item.address || null, item.nationality || null, item.document_type || null,
         item.document_number || null, guestId, feeAmount, feeExempt, feeReason,
@@ -262,8 +262,8 @@ export function saveRegistrations(reservationId: string, organizationId: string,
   db.prepare('DELETE FROM guest_registrations WHERE reservation_id = ?').run(reservationId);
 
   const insertRg = db.prepare(`
-    INSERT INTO reservation_guests (id, reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number, police_reported, police_reported_at, police_report_ref, is_hidden)
-    VALUES (COALESCE(?, lower(hex(randomblob(16)))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO reservation_guests (id, created_at, reservation_id, first_name, last_name, date_of_birth, address, nationality, document_type, document_number, guest_id, fee_amount, fee_exempt, fee_exempt_reason, purpose_of_stay, visa_number, police_reported, police_reported_at, police_report_ref, is_hidden)
+    VALUES (COALESCE(?, lower(hex(randomblob(16)))), COALESCE(?, datetime('now')), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   db.transaction(() => {
@@ -307,7 +307,7 @@ export function saveRegistrations(reservationId: string, organizationId: string,
       }
 
       insertRg.run(
-        was?.id ?? null,
+        was?.id ?? null, was?.created_at ?? null,
         reservationId, guest.firstName, guest.lastName, guest.dateOfBirth ?? null,
         guest.address ?? null, guest.nationality ?? null, guest.documentType ?? null,
         guest.documentNumber ?? null, dedupped.id, feeAmount, feeExempt, feeReason,

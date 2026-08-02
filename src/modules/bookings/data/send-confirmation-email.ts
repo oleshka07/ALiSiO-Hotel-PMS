@@ -26,7 +26,7 @@ export async function sendBookingConfirmationEmail(reservationId: string, origin
     SELECT r.id, r.unit_id, r.check_in, r.check_out, r.nights, r.adults, r.children,
            r.total_price, r.currency, r.guest_page_token, r.payment_status,
            g.first_name, g.last_name, g.email,
-           u.name as unit_name, u.thank_you_url,
+           u.name as unit_name,
            p.name as property_name, p.phone as property_phone
     FROM reservations r
     LEFT JOIN guests g ON r.guest_id = g.id
