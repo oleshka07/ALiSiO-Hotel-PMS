@@ -40,17 +40,45 @@ const t = one(`
 `);
 console.log(`  рядків гостей:        ${t.rows}   у ${t.res} бронюваннях`);
 console.log(`  іноземців:            ${t.foreigners}`);
-console.log(`  з них НЕ відзвітовано: ${t.unreported}   ← стільки піде в Ubyport завтра`);
+console.log(`  невідзвітованих усього: ${t.unreported}   (за ВСІ місяці — не те, що піде завтра)`);
 
-// Cancelled / no-show reservations must never reach the foreign police.
-const dead = one(`
-  SELECT COUNT(*) n FROM reservation_guests rg
+// What actually goes out tomorrow. The sender walks the registry API month by
+// month and only asks for the current and the previous one, so the all-time
+// count above is not the size of the next run — reporting it as such made a
+// backlog of old months read like an imminent mass send.
+const ym = (d) => d.toISOString().slice(0, 7);
+const nowM = ym(new Date());
+const prevM = ym(new Date(new Date().setMonth(new Date().getMonth() - 1)));
+const due = db.prepare(`
+  SELECT substr(r.check_in,1,7) m, COUNT(*) n
+  FROM reservation_guests rg
   JOIN reservations r ON r.id = rg.reservation_id
-  WHERE r.status IN ('cancelled','no_show')
+  WHERE substr(r.check_in,1,7) IN (?, ?)
+    AND r.status NOT IN ('cancelled','no_show')
+    AND COALESCE(rg.is_hidden,0) = 0
     AND rg.nationality IS NOT NULL AND rg.nationality <> 'CZ'
-`);
-if (dead.n) {
-  console.log(`  ⚠️  ${dead.n} іноземців на СКАСОВАНИХ бронюваннях — вони теж потрапляли у відправку`);
+    AND COALESCE(rg.police_reported,0) = 0
+  GROUP BY m ORDER BY m
+`).all(prevM, nowM);
+const dueTotal = due.reduce((s, r) => s + r.n, 0);
+console.log(`  піде в наступну відправку: ${dueTotal}   (${prevM} + ${nowM})`);
+for (const d of due) console.log(`      ${d.m}: ${d.n}`);
+console.log('  ↑ ще не остаточно: відправник додатково відкидає записи без номера');
+console.log('    документа і з недійсним кодом країни — див. блок нижче.');
+
+// Nationality is free text, and both directions of the resulting error matter.
+const badNat = db.prepare(`
+  SELECT rg.nationality nat, COUNT(*) n
+  FROM reservation_guests rg
+  WHERE rg.nationality IS NOT NULL AND TRIM(rg.nationality) <> ''
+    AND LENGTH(TRIM(rg.nationality)) <> 2
+  GROUP BY rg.nationality ORDER BY n DESC
+`).all();
+if (badNat.length) {
+  console.log('\n─── ГРОМАДЯНСТВО НЕ ДВОЛІТЕРНИМ КОДОМ ────────────────────────────');
+  console.log('  Ubyport приймає лише 2-літерні коди. Все інше відвалюється на');
+  console.log('  валідації — а «Cze» ще й робить чеха іноземцем.');
+  for (const b of badNat) console.log(`    ${String(b.nat).padEnd(16)} ${b.n}`);
 }
 
 // ── the fingerprint of a mass rebuild ───────────────────────────────────────
@@ -58,12 +86,14 @@ console.log('\n─── СЛІД МАСОВОЇ ПЕРЕЗБІРКИ ───�
 console.log('  Рядок гостя створюється раз — при реєстрації. Якщо сотні рядків');
 console.log('  мають однаковий created_at, їх переписали всі разом (деплой).\n');
 
+// reservations also has created_at, so an unqualified reference is ambiguous
+// and SQLite refuses the statement.
 const bursts = db.prepare(`
-  SELECT created_at, COUNT(*) n,
+  SELECT rg.created_at created_at, COUNT(*) n,
          MIN(r.check_in) first_stay, MAX(r.check_in) last_stay
   FROM reservation_guests rg
   JOIN reservations r ON r.id = rg.reservation_id
-  GROUP BY created_at HAVING n >= 5
+  GROUP BY rg.created_at HAVING n >= 5
   ORDER BY n DESC LIMIT 15
 `).all();
 
