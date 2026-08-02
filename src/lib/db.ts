@@ -4910,15 +4910,31 @@ function runMigrations(database: any) {
   }
   console.log('[DB] daylog_entries table ready');
 
-  // --- Migration: Auto-sync reservation_guests and guest_registrations for all reservations ---
+  // --- Migration: Auto-sync reservation_guests and guest_registrations ---
+  // This is a BACKFILL, and it must run exactly once. It rebuilds every guest
+  // row of every reservation, and it used to run on each process start — so
+  // each deploy handed the Ubyport morning job a database in which the whole
+  // season looked unreported, and the entire season was sent to the foreign
+  // police again. The marker below makes it one-time; the sync itself now
+  // carries the police flag across, so a repeat run is no longer destructive.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { syncReservationGuestData } = require('@/modules/guests/data/registration.repo');
-    const allRes = database.prepare("SELECT id FROM reservations").all();
-    for (const r of allRes) {
-      syncReservationGuestData(database, r.id);
+    const MARK = 'migration:sync_reservation_guests_backfill';
+    const done = database.prepare('SELECT value FROM settings WHERE key = ?').get(MARK) as
+      { value: string } | undefined;
+    if (done) {
+      console.log('[DB] Guest registration backfill already done — skipped');
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { syncReservationGuestData } = require('@/modules/guests/data/registration.repo');
+      const allRes = database.prepare('SELECT id FROM reservations').all();
+      for (const r of allRes) {
+        syncReservationGuestData(database, r.id);
+      }
+      database.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, datetime('now'), datetime('now'))",
+      ).run(MARK);
+      console.log(`[DB] Synced ${allRes.length} reservations guest registrations (one-time backfill)`);
     }
-    console.log(`[DB] Synced ${allRes.length} reservations guest registrations`);
   } catch (e: any) {
     console.log('[DB] Guest registration sync migration note:', e.message);
   }
