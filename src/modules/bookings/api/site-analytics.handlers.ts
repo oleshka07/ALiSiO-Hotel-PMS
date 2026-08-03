@@ -1,6 +1,8 @@
-﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+
+const EXCHANGE_RATES: Record<string, number> = { CZK: 1, EUR: 25.0, USD: 23.0 };
 
 function getToday(): string {
   return new Date().toISOString().split('T')[0];
@@ -37,6 +39,7 @@ function getSourceParams(siteId: string, propertyId: string | null) {
 function getReservationsStats(db: any, siteId: string, propertyId: string | null, from: string, to: string, dateType: string) {
   let sql = `
     SELECT 
+      COALESCE(currency, 'CZK') as currency,
       COUNT(*) as count,
       COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END), 0) as revenue,
       COALESCE(SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END), 0) as unpaid_revenue,
@@ -52,17 +55,37 @@ function getReservationsStats(db: any, siteId: string, propertyId: string | null
     sql += ' AND created_at >= ? AND created_at <= ?';
     params.push(`${from} 00:00:00`, `${to} 23:59:59`);
   }
-  return db.prepare(sql).get(...params) as { count: number; revenue: number; unpaid_revenue: number; avg_check: number };
+  sql += " GROUP BY COALESCE(currency, 'CZK')";
+
+  const rows = db.prepare(sql).all(...params) as any[];
+
+  let totalCount = 0, totalRevenue = 0, totalUnpaid = 0, totalAvgCheck = 0, avgCount = 0;
+  for (const row of rows) {
+    const rate = EXCHANGE_RATES[row.currency] ?? 1;
+    totalCount += row.count;
+    totalRevenue += row.revenue * rate;
+    totalUnpaid += row.unpaid_revenue * rate;
+    if (row.avg_check > 0) { totalAvgCheck += row.avg_check * rate; avgCount++; }
+  }
+
+  return {
+    count: totalCount,
+    revenue: totalRevenue,
+    unpaid_revenue: totalUnpaid,
+    avg_check: avgCount > 0 ? totalAvgCheck / avgCount : 0,
+  };
 }
 
 function getSessionsCount(db: any, siteId: string, from: string, to: string) {
+  const fromTime = `${from}T00:00:00Z`;
+  const toTime = `${to}T23:59:59Z`;
   if (siteId === 'all') {
     const sql = `SELECT COUNT(DISTINCT session_id) as count FROM widget_events WHERE created_at >= ? AND created_at <= ?`;
-    const row = db.prepare(sql).get(`T00:00:00Z`, `T23:59:59Z`) as { count: number };
+    const row = db.prepare(sql).get(fromTime, toTime) as { count: number };
     return row ? row.count : 0;
   }
   const sql = `SELECT COUNT(DISTINCT session_id) as count FROM widget_events WHERE site_id = ? AND created_at >= ? AND created_at <= ?`;
-  const row = db.prepare(sql).get(siteId, `T00:00:00Z`, `T23:59:59Z`) as { count: number };
+  const row = db.prepare(sql).get(siteId, fromTime, toTime) as { count: number };
   return row ? row.count : 0;
 }
 
@@ -174,6 +197,7 @@ export async function getAnalyticsTraffic(
     let bookingsSql = `
       SELECT 
         utm_source, 
+        COALESCE(currency, 'CZK') as currency,
         COUNT(*) as bookings, 
         SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
@@ -188,7 +212,7 @@ export async function getAnalyticsTraffic(
       bookingsSql += ' AND created_at >= ? AND created_at <= ?';
       bookingsParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    bookingsSql += ' GROUP BY utm_source';
+    bookingsSql += " GROUP BY utm_source, COALESCE(currency, 'CZK')";
 
     const bookingsRows = db.prepare(bookingsSql).all(...bookingsParams) as any[];
 
@@ -205,17 +229,19 @@ export async function getAnalyticsTraffic(
     }
 
     for (const r of bookingsRows) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
       const existing = utmStatsMap.get(r.utm_source);
       if (existing) {
-        existing.bookings = r.bookings;
-        existing.revenue = r.revenue;
-        existing.unpaid_revenue = r.unpaid_revenue;
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
       } else {
         utmStatsMap.set(r.utm_source, {
           utm_source: r.utm_source,
           sessions: 0,
           bookings: r.bookings,
-          revenue: r.revenue, unpaid_revenue: r.unpaid_revenue,
+          revenue: r.revenue * rate,
+          unpaid_revenue: r.unpaid_revenue * rate,
         });
       }
     }
@@ -283,13 +309,14 @@ export async function getAnalyticsGeo(
     let langBookingsSql = `
       SELECT 
         booking_lang as lang, 
+        COALESCE(currency, 'CZK') as currency,
         COUNT(*) as bookings, 
         SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
       WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled' AND booking_lang IS NOT NULL
     `;
-    const langParams = [source, 'widget'];
+    const langParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       langBookingsSql += ' AND check_in >= ? AND check_in <= ?';
       langParams.push(dateFrom, dateTo);
@@ -297,7 +324,7 @@ export async function getAnalyticsGeo(
       langBookingsSql += ' AND created_at >= ? AND created_at <= ?';
       langParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    langBookingsSql += ' GROUP BY booking_lang';
+    langBookingsSql += " GROUP BY booking_lang, COALESCE(currency, 'CZK')";
 
     const langBookings = db.prepare(langBookingsSql).all(...langParams) as any[];
 
@@ -307,13 +334,14 @@ export async function getAnalyticsGeo(
       langMap.set(r.lang, { lang: r.lang, sessions: r.sessions, bookings: 0, revenue: 0, unpaid_revenue: 0 });
     }
     for (const r of langBookings) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
       const existing = langMap.get(r.lang);
       if (existing) {
-        existing.bookings = r.bookings;
-        existing.revenue = r.revenue;
-        existing.unpaid_revenue = r.unpaid_revenue;
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
       } else {
-        langMap.set(r.lang, { lang: r.lang, sessions: 0, bookings: r.bookings, revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
+        langMap.set(r.lang, { lang: r.lang, sessions: 0, bookings: r.bookings, revenue: r.revenue * rate, unpaid_revenue: r.unpaid_revenue * rate });
       }
     }
     const languages = Array.from(langMap.values()).map(item => ({
@@ -341,13 +369,14 @@ export async function getAnalyticsGeo(
     let countrySql = `
       SELECT 
         country_code, 
+        COALESCE(currency, 'CZK') as currency,
         COUNT(*) as bookings, 
         SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
       FROM reservations
       WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled' AND country_code IS NOT NULL
     `;
-    const countryParams = [source, 'widget'];
+    const countryParams: any[] = getSourceParams(siteId, propertyId);
     if (dateType === 'check_in') {
       countrySql += ' AND check_in >= ? AND check_in <= ?';
       countryParams.push(dateFrom, dateTo);
@@ -355,7 +384,7 @@ export async function getAnalyticsGeo(
       countrySql += ' AND created_at >= ? AND created_at <= ?';
       countryParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    countrySql += ' GROUP BY country_code';
+    countrySql += " GROUP BY country_code, COALESCE(currency, 'CZK')";
 
     const countryBookings = db.prepare(countrySql).all(...countryParams) as any[];
 
@@ -365,13 +394,14 @@ export async function getAnalyticsGeo(
       countryMap.set(r.country_code, { country_code: r.country_code, sessions: r.sessions, bookings: 0, revenue: 0, unpaid_revenue: 0 });
     }
     for (const r of countryBookings) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
       const existing = countryMap.get(r.country_code);
       if (existing) {
-        existing.bookings = r.bookings;
-        existing.revenue = r.revenue;
-        existing.unpaid_revenue = r.unpaid_revenue;
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
       } else {
-        countryMap.set(r.country_code, { country_code: r.country_code, sessions: 0, bookings: r.bookings, revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
+        countryMap.set(r.country_code, { country_code: r.country_code, sessions: 0, bookings: r.bookings, revenue: r.revenue * rate, unpaid_revenue: r.unpaid_revenue * rate });
       }
     }
     const formattedCountries = Array.from(countryMap.values()).map(c => ({
@@ -409,8 +439,10 @@ export async function getAnalyticsListings(
     // 1. Unit Type breakdowns
     let utSql = `
       SELECT 
+        ut.id as unit_type_id,
         ut.name as unit_type_name,
         ut.code as unit_type_code,
+        COALESCE(r.currency, 'CZK') as currency,
         COUNT(r.id) as bookings,
         SUM(CASE WHEN r.payment_status = 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN r.payment_status != 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as unpaid_revenue
@@ -427,15 +459,37 @@ export async function getAnalyticsListings(
       utSql += ' AND r.created_at >= ? AND r.created_at <= ?';
       utParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    utSql += ' GROUP BY ut.id ORDER BY bookings DESC';
+    utSql += " GROUP BY ut.id, COALESCE(r.currency, 'CZK')";
 
-    const unitTypes = db.prepare(utSql).all(...utParams) as any[];
+    const utRows = db.prepare(utSql).all(...utParams) as any[];
+    const utMap = new Map<string, { unit_type_name: string; unit_type_code: string; bookings: number; revenue: number; unpaid_revenue: number }>();
+    for (const r of utRows) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
+      const key = r.unit_type_name;
+      const existing = utMap.get(key);
+      if (existing) {
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
+      } else {
+        utMap.set(key, {
+          unit_type_name: r.unit_type_name,
+          unit_type_code: r.unit_type_code,
+          bookings: r.bookings,
+          revenue: r.revenue * rate,
+          unpaid_revenue: r.unpaid_revenue * rate,
+        });
+      }
+    }
+    const unitTypes = Array.from(utMap.values()).sort((a, b) => b.bookings - a.bookings);
 
     // 2. Category breakdowns
     let catSql = `
       SELECT 
+        c.id as category_id,
         c.name as category_name,
         c.type as category_type,
+        COALESCE(r.currency, 'CZK') as currency,
         COUNT(r.id) as bookings,
         SUM(CASE WHEN r.payment_status = 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN r.payment_status != 'paid' THEN (r.total_price - COALESCE(r.commission_amount, 0)) ELSE 0 END) as unpaid_revenue
@@ -452,9 +506,29 @@ export async function getAnalyticsListings(
       catSql += ' AND r.created_at >= ? AND r.created_at <= ?';
       catParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    catSql += ' GROUP BY c.id ORDER BY bookings DESC';
+    catSql += " GROUP BY c.id, COALESCE(r.currency, 'CZK')";
 
-    const categories = db.prepare(catSql).all(...catParams) as any[];
+    const catRows = db.prepare(catSql).all(...catParams) as any[];
+    const catMap = new Map<string, { category_name: string; category_type: string; bookings: number; revenue: number; unpaid_revenue: number }>();
+    for (const r of catRows) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
+      const key = r.category_name;
+      const existing = catMap.get(key);
+      if (existing) {
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
+      } else {
+        catMap.set(key, {
+          category_name: r.category_name,
+          category_type: r.category_type,
+          bookings: r.bookings,
+          revenue: r.revenue * rate,
+          unpaid_revenue: r.unpaid_revenue * rate,
+        });
+      }
+    }
+    const categories = Array.from(catMap.values()).sort((a, b) => b.bookings - a.bookings);
 
     return NextResponse.json({
       unitTypes: unitTypes.map(ut => ({ ...ut, revenue: Math.round(ut.revenue), unpaid_revenue: Math.round(ut.unpaid_revenue || 0) })),
@@ -515,6 +589,7 @@ export async function getAnalyticsCampaigns(
         COALESCE(utm_source, '(direct)') as utm_source, 
         COALESCE(utm_medium, '(none)') as utm_medium, 
         COALESCE(utm_campaign, '(organic)') as utm_campaign,
+        COALESCE(currency, 'CZK') as currency,
         COUNT(*) as bookings, 
         SUM(CASE WHEN payment_status = 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as revenue,
         SUM(CASE WHEN payment_status != 'paid' THEN (total_price - COALESCE(commission_amount, 0)) ELSE 0 END) as unpaid_revenue
@@ -529,7 +604,7 @@ export async function getAnalyticsCampaigns(
       bookingsSql += ' AND created_at >= ? AND created_at <= ?';
       bookingsParams.push(`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`);
     }
-    bookingsSql += ' GROUP BY utm_source, utm_medium, utm_campaign';
+    bookingsSql += " GROUP BY utm_source, utm_medium, utm_campaign, COALESCE(currency, 'CZK')";
 
     const campaignsBookings = db.prepare(bookingsSql).all(...bookingsParams) as any[];
 
@@ -548,12 +623,13 @@ export async function getAnalyticsCampaigns(
     }
 
     for (const r of campaignsBookings) {
+      const rate = EXCHANGE_RATES[r.currency] ?? 1;
       const key = `${r.utm_source}|||${r.utm_medium}|||${r.utm_campaign}`;
       const existing = campaignMap.get(key);
       if (existing) {
-        existing.bookings = r.bookings;
-        existing.revenue = r.revenue;
-        existing.unpaid_revenue = r.unpaid_revenue;
+        existing.bookings += r.bookings;
+        existing.revenue += r.revenue * rate;
+        existing.unpaid_revenue += r.unpaid_revenue * rate;
       } else {
         campaignMap.set(key, {
           utm_source: r.utm_source,
@@ -561,7 +637,9 @@ export async function getAnalyticsCampaigns(
           utm_campaign: r.utm_campaign,
           sessions: 0,
           bookings: r.bookings,
-          revenue: r.revenue, unpaid_revenue: r.unpaid_revenue });
+          revenue: r.revenue * rate,
+          unpaid_revenue: r.unpaid_revenue * rate,
+        });
       }
     }
 
@@ -697,12 +775,24 @@ export async function getAnalyticsFunnel(
     });
 
     // Funnel 2: Contact Leads
-    const leadsSql = `
-      SELECT id, email, phone, status 
-      FROM site_incoming_leads 
-      WHERE site_id = ? AND created_at >= ? AND created_at <= ?
-    `;
-    const submittedLeads = db.prepare(leadsSql).all(siteId, `${dateFrom} 00:00:00`, `${dateTo} 23:59:59`) as any[];
+    let leadsSql: string;
+    let leadsParams: any[];
+    if (siteId === 'all') {
+      leadsSql = `
+        SELECT id, email, phone, status 
+        FROM site_incoming_leads 
+        WHERE created_at >= ? AND created_at <= ?
+      `;
+      leadsParams = [`${dateFrom} 00:00:00`, `${dateTo} 23:59:59`];
+    } else {
+      leadsSql = `
+        SELECT id, email, phone, status 
+        FROM site_incoming_leads 
+        WHERE site_id = ? AND created_at >= ? AND created_at <= ?
+      `;
+      leadsParams = [siteId, `${dateFrom} 00:00:00`, `${dateTo} 23:59:59`];
+    }
+    const submittedLeads = db.prepare(leadsSql).all(...leadsParams) as any[];
     const leadsSubmitted = submittedLeads.length;
 
     let leadsProcessed = 0;

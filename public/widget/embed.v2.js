@@ -49,7 +49,27 @@
     document.body.appendChild(container);
   }
 
-  // 5. Create the iframe
+  // 5. UTM Persistence via sessionStorage
+  var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+  var currentUtms = {};
+  if (typeof window !== 'undefined') {
+    var pageParams = new URLSearchParams(window.location.search);
+    UTM_KEYS.forEach(function(key) {
+      var val = pageParams.get(key);
+      if (val) currentUtms[key] = val;
+    });
+
+    if (Object.keys(currentUtms).length > 0) {
+      try { sessionStorage.setItem('alisio_utm', JSON.stringify(currentUtms)); } catch(e) {}
+    } else {
+      try {
+        var storedUtms = sessionStorage.getItem('alisio_utm');
+        if (storedUtms) currentUtms = JSON.parse(storedUtms);
+      } catch(e) {}
+    }
+  }
+
+  // 6. Create the iframe
   const iframe = document.createElement('iframe');
   const queryParams = new URLSearchParams({
     unitId: unitId,
@@ -68,6 +88,13 @@
     });
   }
 
+  // Forward persisted UTM parameters if missing
+  UTM_KEYS.forEach(function(key) {
+    if (currentUtms[key] && !queryParams.has(key)) {
+      queryParams.set(key, currentUtms[key]);
+    }
+  });
+
   const url = `${baseUrl}/w/${siteSlug}?${queryParams.toString()}`;
   
   iframe.src = url;
@@ -82,7 +109,7 @@
   
   container.appendChild(iframe);
 
-  // 5. Robust Resize Listener
+  // 7. Robust Resize Listener
   window.addEventListener('message', function(e) {
     if (!e.data) return;
     
@@ -102,4 +129,32 @@
   }, false);
 
   console.log('ALiSiO Widget V3 Loaded for site:', siteSlug);
+
+  // Track page_view event when embed script loads
+  (function trackPageView() {
+    var sessionKey = 'alisio_sid';
+    var sessionId = sessionStorage.getItem(sessionKey);
+    if (!sessionId) {
+      sessionId = Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+      sessionStorage.setItem(sessionKey, sessionId);
+    }
+
+    var payload = {
+      site_id: siteSlug,
+      session_id: sessionId,
+      event_type: 'page_view',
+      page: window.location.pathname,
+      lang: lang,
+      utm_source: currentUtms.utm_source || null,
+      utm_medium: currentUtms.utm_medium || null,
+      utm_campaign: currentUtms.utm_campaign || null,
+    };
+
+    fetch(baseUrl + '/api/widget/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(function() {});
+  })();
 })();
