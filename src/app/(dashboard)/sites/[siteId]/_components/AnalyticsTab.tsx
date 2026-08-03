@@ -15,7 +15,8 @@ import {
   Target,
   BarChart3,
   Calendar,
-  DollarSign
+  DollarSign,
+  Download
 } from 'lucide-react';
 
 interface AnalyticsTabProps {
@@ -53,11 +54,11 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Exchange rate definitions (referenced 23.5 for EUR)
+  // TODO: замінити на отримання курсів з API або видалити після нормалізації на бекенді (Task 2.1)
   const exchangeRates = {
     CZK: 1,
-    EUR: 23.5,
-    USD: 22.0
+    EUR: 25.0,   // CNB станом на серпень 2026
+    USD: 23.0    // CNB станом на серпень 2026
   };
 
   const formatValue = (czkVal: number) => {
@@ -71,6 +72,22 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
       return `$${converted.toLocaleString('en-US')}`;
     }
     return `${converted.toLocaleString('cs-CZ')} CZK`;
+  };
+
+  const exportToCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}_${dateFrom}_${dateTo}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const fetchData = useCallback(async () => {
@@ -295,6 +312,21 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
           </button>
         </div>
       </div>
+
+      {/* Попередження при режимі check_in */}
+      {dateType === 'check_in' && (
+        <div style={{ 
+          background: 'rgba(251, 191, 36, 0.1)', 
+          border: '1px solid rgba(251, 191, 36, 0.3)',
+          borderRadius: 8, 
+          padding: '10px 14px', 
+          fontSize: 12, 
+          color: '#ca8a04' 
+        }}>
+          ⚠️ Режим «За датою заїзду»: відвідуваність сайту відображається за датою бронювання 
+          (зазвичай на тижні раніше заїзду). Показник «Конверсія %» в цьому режимі є приблизним.
+        </div>
+      )}
 
       {/* Main Content Layout */}
       <div style={{ display: 'flex', gap: 24, minHeight: 'calc(100vh - 220px)' }}>
@@ -644,20 +676,46 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                     <h4 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Джерела переходу на сайт</h4>
                     
-                    {/* Search Bar */}
-                    <div style={{ position: 'relative', width: 240 }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Пошук джерела..."
-                        value={searchQuery}
-                        onChange={e => {
-                          setSearchQuery(e.target.value);
-                          setCurrentPage(1);
-                        }}
-                        style={{ paddingLeft: 32, height: 32 }}
-                      />
-                      <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {/* Search Bar */}
+                      <div style={{ position: 'relative', width: 220 }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Пошук джерела..."
+                          value={searchQuery}
+                          onChange={e => {
+                            setSearchQuery(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          style={{ paddingLeft: 32, height: 32 }}
+                        />
+                        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                      </div>
+
+                      {/* Export CSV */}
+                      {data.data && Array.isArray(data.data) && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ height: 32, padding: '0 12px', gap: 6 }}
+                          onClick={() => {
+                            const headers = ['Source', 'Sessions', 'Bookings', 'Total Revenue', 'Paid Revenue', 'Unpaid Revenue', 'Conversion %'];
+                            const rows = data.data.map((item: any) => [
+                              item.utm_source,
+                              item.sessions,
+                              item.bookings,
+                              item.revenue + (item.unpaid_revenue || 0),
+                              item.revenue,
+                              item.unpaid_revenue || 0,
+                              `${item.conversion}%`
+                            ]);
+                            exportToCSV('traffic_sources', headers, rows);
+                          }}
+                        >
+                          <Download size={14} />
+                          Експорт CSV
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -669,8 +727,9 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           <th>Джерело (UTM Source)</th>
                           <th style={{ textAlign: 'right' }}>Сесії</th>
                           <th style={{ textAlign: 'right' }}>Бронювання</th>
-                          <th style={{ textAlign: 'right' }}>Дохід</th>
-                          <th style={{ textAlign: 'right' }}>До оплати</th>
+                          <th style={{ textAlign: 'right' }}>Загальний дохід</th>
+                          <th style={{ textAlign: 'right' }}>Оплачено</th>
+                          <th style={{ textAlign: 'right' }}>Очікує оплати</th>
                           <th style={{ textAlign: 'right' }}>Конверсія %</th>
                         </tr>
                       </thead>
@@ -683,29 +742,54 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           if (filtered.length === 0) {
                             return (
                               <tr>
-                                <td colSpan={5} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)' }}>
+                                <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)' }}>
                                   Джерела за запитом не знайдені
                                 </td>
                               </tr>
                             );
                           }
 
-                          return filtered.map((item: any, idx: number) => (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.utm_source}</td>
-                              <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
-                              <td style={{ textAlign: 'right' }}>
-                                <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
-                                  {item.conversion}%
-                                </span>
-                              </td>
-                            </tr>
-                          ));
+                          return filtered.map((item: any, idx: number) => {
+                            const totalRev = item.revenue + (item.unpaid_revenue || 0);
+                            return (
+                              <tr key={idx}>
+                                <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.utm_source}</td>
+                                <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary)' }}>{formatValue(totalRev)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className={`badge ${item.conversion > 4 ? 'badge-success' : item.conversion > 1 ? 'badge-primary' : 'badge-primary'}`} style={{ minWidth: 48, justifyContent: 'center' }}>
+                                    {item.conversion}%
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          });
                         })()}
                       </tbody>
+                      {data.data && Array.isArray(data.data) && data.data.length > 0 && (() => {
+                        const totalSess = data.data.reduce((acc: number, i: any) => acc + (i.sessions || 0), 0);
+                        const totalBook = data.data.reduce((acc: number, i: any) => acc + (i.bookings || 0), 0);
+                        const totalPaid = data.data.reduce((acc: number, i: any) => acc + (i.revenue || 0), 0);
+                        const totalUnpaid = data.data.reduce((acc: number, i: any) => acc + (i.unpaid_revenue || 0), 0);
+                        const grandTotal = totalPaid + totalUnpaid;
+                        const overallConv = totalSess > 0 ? Math.round((totalBook / totalSess) * 100 * 100) / 100 : 0;
+                        return (
+                          <tfoot>
+                            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700, borderTop: '2px solid var(--border-primary)' }}>
+                              <td>Всього</td>
+                              <td style={{ textAlign: 'right' }}>{totalSess.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>{totalBook.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--accent-primary)' }}>{formatValue(grandTotal)}</td>
+                              <td style={{ textAlign: 'right' }}>{formatValue(totalPaid)}</td>
+                              <td style={{ textAlign: 'right', color: '#ca8a04' }}>{formatValue(totalUnpaid)}</td>
+                              <td style={{ textAlign: 'right' }}>{overallConv}%</td>
+                            </tr>
+                          </tfoot>
+                        );
+                      })()}
                     </table>
                   </div>
 
@@ -919,20 +1003,48 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                       <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Детальна аналітика по рекламних каналах, медіа та назвах кампаній</p>
                     </div>
 
-                    {/* Search Bar */}
-                    <div style={{ position: 'relative', width: 240 }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Пошук кампанії..."
-                        value={searchQuery}
-                        onChange={e => {
-                          setSearchQuery(e.target.value);
-                          setCurrentPage(1);
-                        }}
-                        style={{ paddingLeft: 32, height: 32 }}
-                      />
-                      <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {/* Search Bar */}
+                      <div style={{ position: 'relative', width: 220 }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Пошук кампанії..."
+                          value={searchQuery}
+                          onChange={e => {
+                            setSearchQuery(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          style={{ paddingLeft: 32, height: 32 }}
+                        />
+                        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                      </div>
+
+                      {/* Export CSV */}
+                      {data.data && Array.isArray(data.data) && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ height: 32, padding: '0 12px', gap: 6 }}
+                          onClick={() => {
+                            const headers = ['Source', 'Medium', 'Campaign', 'Sessions', 'Bookings', 'Total Revenue', 'Paid Revenue', 'Unpaid Revenue', 'Conversion %'];
+                            const rows = data.data.map((item: any) => [
+                              item.utm_source,
+                              item.utm_medium,
+                              item.utm_campaign,
+                              item.sessions,
+                              item.bookings,
+                              item.revenue + (item.unpaid_revenue || 0),
+                              item.revenue,
+                              item.unpaid_revenue || 0,
+                              `${item.conversion}%`
+                            ]);
+                            exportToCSV('utm_campaigns', headers, rows);
+                          }}
+                        >
+                          <Download size={14} />
+                          Експорт CSV
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -946,8 +1058,9 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           <th>Campaign</th>
                           <th style={{ textAlign: 'right' }}>Сесії</th>
                           <th style={{ textAlign: 'right' }}>Бронювання</th>
-                          <th style={{ textAlign: 'right' }}>Дохід</th>
-                          <th style={{ textAlign: 'right' }}>До оплати</th>
+                          <th style={{ textAlign: 'right' }}>Загальний дохід</th>
+                          <th style={{ textAlign: 'right' }}>Оплачено</th>
+                          <th style={{ textAlign: 'right' }}>Очікує оплати</th>
                           <th style={{ textAlign: 'right' }}>Конверсія %</th>
                         </tr>
                       </thead>
@@ -962,31 +1075,56 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                           if (filtered.length === 0) {
                             return (
                               <tr>
-                                <td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)' }}>
+                                <td colSpan={9} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)' }}>
                                   Кампанії за запитом не знайдені
                                 </td>
                               </tr>
                             );
                           }
 
-                          return filtered.map((item: any, idx: number) => (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.utm_source}</td>
-                              <td style={{ color: 'var(--text-secondary)' }}>{item.utm_medium}</td>
-                              <td style={{ color: 'var(--text-secondary)' }}>{item.utm_campaign}</td>
-                              <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
-                              <td style={{ textAlign: 'right' }}>
-                                <span className="badge badge-primary" style={{ minWidth: 48, justifyContent: 'center' }}>
-                                  {item.conversion}%
-                                </span>
-                              </td>
-                            </tr>
-                          ));
+                          return filtered.map((item: any, idx: number) => {
+                            const totalRev = item.revenue + (item.unpaid_revenue || 0);
+                            return (
+                              <tr key={idx}>
+                                <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.utm_source}</td>
+                                <td style={{ color: 'var(--text-secondary)' }}>{item.utm_medium}</td>
+                                <td style={{ color: 'var(--text-secondary)' }}>{item.utm_campaign}</td>
+                                <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary)' }}>{formatValue(totalRev)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className="badge badge-primary" style={{ minWidth: 48, justifyContent: 'center' }}>
+                                    {item.conversion}%
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          });
                         })()}
                       </tbody>
+                      {data.data && Array.isArray(data.data) && data.data.length > 0 && (() => {
+                        const totalSess = data.data.reduce((acc: number, i: any) => acc + (i.sessions || 0), 0);
+                        const totalBook = data.data.reduce((acc: number, i: any) => acc + (i.bookings || 0), 0);
+                        const totalPaid = data.data.reduce((acc: number, i: any) => acc + (i.revenue || 0), 0);
+                        const totalUnpaid = data.data.reduce((acc: number, i: any) => acc + (i.unpaid_revenue || 0), 0);
+                        const grandTotal = totalPaid + totalUnpaid;
+                        const overallConv = totalSess > 0 ? Math.round((totalBook / totalSess) * 100 * 100) / 100 : 0;
+                        return (
+                          <tfoot>
+                            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700, borderTop: '2px solid var(--border-primary)' }}>
+                              <td colSpan={3}>Всього</td>
+                              <td style={{ textAlign: 'right' }}>{totalSess.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>{totalBook.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--accent-primary)' }}>{formatValue(grandTotal)}</td>
+                              <td style={{ textAlign: 'right' }}>{formatValue(totalPaid)}</td>
+                              <td style={{ textAlign: 'right', color: '#ca8a04' }}>{formatValue(totalUnpaid)}</td>
+                              <td style={{ textAlign: 'right' }}>{overallConv}%</td>
+                            </tr>
+                          </tfoot>
+                        );
+                      })()}
                     </table>
                   </div>
 
