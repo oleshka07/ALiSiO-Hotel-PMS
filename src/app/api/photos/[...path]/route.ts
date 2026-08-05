@@ -35,7 +35,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return new NextResponse(fileBuffer, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Guest photos — never cacheable by a shared proxy.
+        'Cache-Control': 'private, max-age=3600',
       },
     });
   } catch {

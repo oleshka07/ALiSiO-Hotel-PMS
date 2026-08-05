@@ -34,7 +34,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Passport scans and registration forms live here. 'public' let any
+        // proxy or CDN keep a copy for a year.
+        'Cache-Control': 'private, max-age=3600',
       },
     });
   } catch (error: any) {
