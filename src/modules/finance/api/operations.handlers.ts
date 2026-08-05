@@ -442,7 +442,16 @@ export function createOperationInTx(
   input: CreateOperationInput,
   actor?: OperationActor | null,
 ): string {
-  const createdBy = actor?.id || null;
+  // fin_operations.created_by has a FK to app_users. Callers that identify the
+  // actor by something other than a user row — the widget PIN flow passes
+  // `pin_1315` — made the whole INSERT fail with FOREIGN KEY constraint
+  // failed, and booking-drafts swallows that as non-fatal: the booking was
+  // marked paid and the cash never reached the ledger. Keep the reference only
+  // when it points at a real user; the actor's name still reaches the audit row.
+  const actorId = actor?.id || null;
+  const createdBy = actorId && db.prepare('SELECT 1 FROM app_users WHERE id = ?').get(actorId)
+    ? actorId
+    : null;
   const { op_type, amount, paid_at } = input;
   if (!(OP_TYPES as readonly string[]).includes(op_type)) {
     throw new Error(`op_type must be one of ${OP_TYPES.join(', ')}`);

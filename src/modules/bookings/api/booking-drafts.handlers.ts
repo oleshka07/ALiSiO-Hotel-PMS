@@ -509,7 +509,14 @@ export async function updateBookingDraft(req: Request) {
               }
             }
           } catch (e: any) {
-            console.error('[AdminConfirm] fin_operation creation error (non-fatal):', e.message);
+            // The booking is already marked paid at this point, so throwing
+            // here would leave the operator with a half-finished screen. It
+            // stays non-fatal — but cash that was physically taken and never
+            // recorded has to be findable afterwards, not one anonymous line.
+            console.error(
+              `[AdminConfirm] CASH NOT RECORDED — reservation=${rid} ` +
+              `amount=${body.amount ?? 'from reservation'} admin=${adminName || 'Admin'}: ${e.message}`
+            );
           }
         } else {
           console.log(`[TerminalConfirm] Skipping fin_operation for ${rid} — terminal payment will arrive via bank statement`);
