@@ -326,8 +326,21 @@ export function saveRegistrations(reservationId: string, organizationId: string,
 
 // ── GDPR Data Retention ───────────────────────────────────────────────────
 
+// ⚠️ This does not work and never has. guest_registrations is a link table —
+// reservation_id, guest_id, consent, purpose_of_stay, doc_photo_url — and holds
+// none of the columns below. The statement fails at prepare, the catch turned
+// that into `return 0`, and because nothing in crontab calls the endpoint the
+// silence was never noticed. Guest personal data lives in reservation_guests
+// (first_name, last_name, date_of_birth, document_number, nationality, address)
+// and guests (email, phone).
+//
+// Deliberately not repaired here: pointing this at the right tables makes it
+// destroy real data, and the retention period is a legal question, not a coding
+// one. Czech law requires the guest book to be kept for six YEARS, so the six
+// MONTHS below is very likely wrong for this business. The error is now raised
+// instead of swallowed, so nobody can believe it ran.
 export function anonymizeOldRegistrations(monthsToKeep = 6): number {
-  try {
+  {
     const db = getDb();
     const stmt = db.prepare(`
       UPDATE guest_registrations
@@ -352,8 +365,5 @@ export function anonymizeOldRegistrations(monthsToKeep = 6): number {
     
     const info = stmt.run(monthsToKeep);
     return info.changes;
-  } catch (error) {
-    console.error('Failed to anonymize old registrations:', error);
-    return 0;
   }
 }
