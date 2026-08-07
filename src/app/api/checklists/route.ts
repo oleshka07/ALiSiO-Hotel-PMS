@@ -9,13 +9,17 @@ export async function GET() {
     const todayISO = new Date().toISOString().split('T')[0];
 
     // 1. Check if sauna service/booking is active today
+    // The table is `reservations`; `bookings` has never existed in this schema,
+    // so this route answered 500 on every call and the mobile checklist screen
+    // was always empty. Guest names live on `guests`, not on the reservation —
+    // and only the row count is used below, so they are not selected.
     const saunaBookings = db.prepare(`
-      SELECT b.id, b.first_name, b.last_name, u.name as unit_name, b.check_in, b.check_out
-      FROM bookings b
-      LEFT JOIN units u ON b.unit_id = u.id
-      WHERE (LOWER(u.name) LIKE '%сауна%' OR LOWER(b.notes) LIKE '%сауна%' OR LOWER(b.notes) LIKE '%sauna%')
-        AND b.status NOT IN ('cancelled', 'checked_out')
-        AND b.check_in <= ? AND b.check_out >= ?
+      SELECT r.id
+      FROM reservations r
+      LEFT JOIN units u ON r.unit_id = u.id
+      WHERE (LOWER(u.name) LIKE '%сауна%' OR LOWER(r.notes) LIKE '%сауна%' OR LOWER(r.notes) LIKE '%sauna%')
+        AND r.status NOT IN ('cancelled', 'checked_out')
+        AND r.check_in <= ? AND r.check_out >= ?
     `).all(todayISO, todayISO) as any[];
 
     const hasSaunaToday = saunaBookings.length > 0;

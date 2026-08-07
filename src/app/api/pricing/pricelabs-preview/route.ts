@@ -93,6 +93,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   } catch (e: any) {
     console.error('[PriceLabs Preview] error:', e?.message, e?.stack);
-    return NextResponse.json({ error: 'PriceLabs request failed', detail: e?.message }, { status: 500 });
+    // PriceLabs rejecting us is not this server crashing. 502 says the upstream
+    // is the problem, so the operator looks at the integration rather than here.
+    return NextResponse.json({ error: 'PriceLabs request failed', detail: e?.message }, { status: 502 });
   }
 }

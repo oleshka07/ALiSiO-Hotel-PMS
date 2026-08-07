@@ -12,6 +12,17 @@ function getFormat(req: NextRequest): 'xlsx' | 'pdf' {
   return f === 'pdf' ? 'pdf' : 'xlsx';
 }
 
+// Carries the upstream handler's status so the export wrapper can pass it on.
+// Without it every failure became a 500, and 'account_id is required' — a 400
+// the operator fixes by picking an account — read as a server crash.
+class UpstreamError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function callJson<T>(handler: (req: NextRequest) => Promise<NextResponse>, originalReq: NextRequest): Promise<T> {
   const fakeUrl = new URL(originalReq.nextUrl.toString());
   // Strip 'format' so downstream handlers don't choke on it
@@ -20,13 +31,19 @@ async function callJson<T>(handler: (req: NextRequest) => Promise<NextResponse>,
   const res = await handler(fakeReq);
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    throw new Error((errBody as any).error || `Upstream handler failed (${res.status})`);
+    throw new UpstreamError(
+      (errBody as any).error || `Upstream handler failed (${res.status})`,
+      res.status,
+    );
   }
   return (await res.json()) as T;
 }
 
 function errorResponse(error: any): Response {
-  return NextResponse.json({ error: error?.message || 'Export failed' }, { status: 500 });
+  const status = typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+    ? error.status
+    : 500;
+  return NextResponse.json({ error: error?.message || 'Export failed' }, { status });
 }
 
 // ────────────────────────────────────────────────────────────
