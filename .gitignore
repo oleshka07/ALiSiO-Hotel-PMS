@@ -43,6 +43,11 @@ eslint-report.txt
 *.db-wal
 *.backup
 
+# bank statements — account numbers, IBANs and counterparty names.
+# Exports are dropped in the project root to be reconciled; they must not
+# travel with the code.
+*.csv
+
 # backups & temp files
 *.bak
 /backups/

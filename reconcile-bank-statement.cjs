@@ -134,13 +134,29 @@ const ops = db.prepare(`
 `).all(acc.id, acc.id, acc.id, from, to)
   .map((o) => ({ ...o, date: String(o.paid_at).slice(0, 10), signed: o.sign * Number(o.amount || 0) }));
 
+// initial_balance is the account's opening from the beginning of its life in the
+// PMS, not the opening of this statement's period. Comparing the two directly
+// reported a 3 732,59 gap on an account that matched the bank to the cent, and a
+// 76 268,09 gap on one that was 1 340,55 out — both times because operations
+// dated before the statement period were left out of the sum. The PMS opening
+// for this period is initial_balance plus everything booked before `from`.
+const preOps = db.prepare(`
+  SELECT COALESCE(SUM(CASE WHEN o.account_to_id = ? THEN o.amount ELSE -o.amount END), 0) s
+  FROM fin_operations o
+  WHERE (o.account_to_id = ? OR o.account_from_id = ?)
+    AND o.status = 'completed' AND COALESCE(o.is_planned, 0) = 0
+    AND substr(COALESCE(o.paid_at,''),1,10) < ?
+`).get(acc.id, acc.id, acc.id, from).s;
+const pmsOpening = acc.init + preOps;
+
 console.log(`\n─── РАХУНОК У PMS: ${acc.name} ─────────────────────────────`);
-console.log(`  початковий залишок у PMS: ${acc.init.toFixed(2)}   у банку: ${opening.toFixed(2)}` +
-  (Math.abs(acc.init - opening) >= 0.01 ? '   ← РОЗХОДЯТЬСЯ' : '   ✅'));
+console.log(`  initial_balance: ${acc.init.toFixed(2)}   операції до ${from}: ${preOps.toFixed(2)}`);
+console.log(`  => на початок періоду: ${pmsOpening.toFixed(2)}   у банку: ${opening.toFixed(2)}` +
+  (Math.abs(pmsOpening - opening) >= 0.01 ? '   ← РОЗХОДЯТЬСЯ' : '   ✅'));
 console.log(`  операцій за період: ${ops.length}   у виписці рядків: ${bank.length}`);
 console.log(`  сума в PMS: ${sum(ops.map((o) => ({ amt: o.signed }))).toFixed(2)}   у банку: ${sum(bank).toFixed(2)}`);
 
-const pmsBalance = acc.init + sum(ops.map((o) => ({ amt: o.signed })));
+const pmsBalance = pmsOpening + sum(ops.map((o) => ({ amt: o.signed })));
 console.log(`\n  БАЛАНС за період — PMS ${pmsBalance.toFixed(2)}   БАНК ${closing.toFixed(2)}`);
 const gap = pmsBalance - closing;
 console.log(`  РІЗНИЦЯ: ${gap.toFixed(2)} ${Math.abs(gap) < 0.01 ? '✅ сходиться' : '←'}`);
@@ -149,7 +165,7 @@ console.log(`  РІЗНИЦЯ: ${gap.toFixed(2)} ${Math.abs(gap) < 0.01 ? '✅ �
 console.log('\n─── ПО МІСЯЦЯХ ───────────────────────────────────────────────');
 console.log('  місяць     банк оп.       банк сума     PMS оп.        PMS сума       різниця');
 const months = [...new Set([...bank, ...ops].map((r) => r.date.slice(0, 7)))].sort();
-let rb = opening, rp = acc.init;
+let rb = opening, rp = pmsOpening;
 for (const m of months) {
   const b = bank.filter((r) => r.date.startsWith(m));
   const p = ops.filter((r) => r.date.startsWith(m));
