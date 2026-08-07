@@ -715,14 +715,17 @@ export async function getAnalyticsFunnel(
     // Removed old step 8 (crmLeads) as it is now in the Contact Funnel
     // 9-11. Reservations counts
     const getReservationsFunnelCount = (statusFilter?: string, paidFilter?: boolean) => {
-      const source = `widget:${siteId}`;
       let sql = `
-        SELECT COUNT(*) as count 
-        FROM reservations 
+        SELECT COUNT(*) as count
+        FROM reservations
         WHERE ${getSourceFilter(siteId, propertyId)} AND status != 'cancelled'
       `;
-      const p = [source, 'widget'];
-      
+      // getSourceFilter emits three placeholders when the site resolves to a
+      // property (property_id = ? plus source IN (?, ?)). This passed two, so
+      // every call died with "Too few parameter values were provided" and the
+      // funnel tab answered 500. getSourceParams already returns the right set.
+      const p = getSourceParams(siteId, propertyId);
+
       if (statusFilter) {
         if (statusFilter === 'checked_in') {
           sql += " AND status IN ('checked_in', 'checked_out')";

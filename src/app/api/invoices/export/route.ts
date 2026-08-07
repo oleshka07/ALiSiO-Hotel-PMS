@@ -65,13 +65,15 @@ async function _GET(req: NextRequest): Promise<NextResponse> {
             THEN i.custom_buyer_address || ', ' || COALESCE(i.custom_buyer_city,'')
           END, ''
         ) AS buyer_address,
-        COALESCE(i.custom_description, r.unit_name, '') AS description,
+        -- reservations has no unit_name; the name lives on units
+        COALESCE(i.custom_description, u.name, '') AS description,
         i.amount,
         i.currency,
         i.status,
         COALESCE(i.reservation_id, '') AS reservation_id
       FROM invoices i
       LEFT JOIN reservations r ON r.id = i.reservation_id
+      LEFT JOIN units u ON u.id = r.unit_id
       LEFT JOIN guests g ON g.id = r.guest_id
       ${where}
       ORDER BY i.issued_at DESC

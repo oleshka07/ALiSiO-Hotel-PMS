@@ -862,7 +862,7 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
 
     // OTA receivables: money the platforms owe us (CZK)
     const otaReceivables = db.prepare(`
-      SELECT COALESCE(SUM(COALESCE(expected_net, expected_gross, 0)), 0) AS total, COUNT(*) AS cnt
+      SELECT COALESCE(SUM(COALESCE(expected_net, gross_amount, 0)), 0) AS total, COUNT(*) AS cnt
       FROM fin_channel_receivables
       WHERE status IN ('expected', 'in_statement')
     `).get() as { total: number; cnt: number };
