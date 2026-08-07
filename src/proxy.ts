@@ -1,5 +1,57 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import path from 'path';
+
+// ─── Session validation ───────────────────────────────────────────────
+// Proxy always runs on the Node.js runtime in Next 16, so the gate can read
+// the session store directly.
+// Until now this file only checked that a `session_id` cookie was PRESENT.
+// It never looked the value up, so `Cookie: session_id=anything` passed the
+// gate and reached every route that has no guard of its own — 334 of 372.
+//
+// Deliberately a separate read-only connection instead of importing
+// @/lib/db: that module runs initSchema + runMigrations on first access, and
+// the request gate is the last place that should be able to write to or
+// migrate the database.
+let sessionDb: { prepare: (sql: string) => { get: (v: string) => unknown } } | null = null;
+let sessionDbFailed = false;
+
+function getSessionDb() {
+  if (sessionDb || sessionDbFailed) return sessionDb;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require('better-sqlite3');
+    sessionDb = new Database(path.join(process.cwd(), 'data', 'alisio.db'), { readonly: true });
+  } catch (e) {
+    sessionDbFailed = true;
+    console.error('[proxy] cannot open the session store — denying authenticated routes:', e);
+  }
+  return sessionDb;
+}
+
+function hasValidSession(sessionId: string | undefined): boolean {
+  if (!sessionId) return false;
+  const db = getSessionDb();
+  if (!db) return false; // fail closed: no store, no access
+  try {
+    const row = db.prepare(`
+      SELECT 1 FROM sessions s
+      JOIN app_users u ON u.id = s.user_id
+      WHERE s.id = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+    `).get(sessionId);
+    return Boolean(row);
+  } catch (e) {
+    console.error('[proxy] session lookup failed — denying:', e);
+    return false;
+  }
+}
+
+function hasBridgeToken(request: NextRequest): boolean {
+  const expected = process.env.TELEGRAM_BRIDGE_TOKEN;
+  if (!expected) return false;
+  const header = request.headers.get('authorization') || '';
+  return header.startsWith('Bearer ') && header.substring(7) === expected;
+}
 
 // ─── Security: Public routes that do NOT require authentication ───────
 const PUBLIC_PREFIXES = [
@@ -37,7 +89,6 @@ const PUBLIC_EXACT = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/me',
-  '/api/admin/export-may',
 ];
 
 function isPublicRoute(pathname: string): boolean {
@@ -52,14 +103,12 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ─── Special case for /api/guest-registry ──────────────────────────
+  // Listed in PUBLIC_PREFIXES so it skips the gate below, yet it serves the
+  // guest registry: names, dates of birth, nationality, document numbers and
+  // addresses, plus a CSV export of all of it.
   if (pathname.startsWith('/api/guest-registry')) {
     const sessionId = request.cookies.get('session_id')?.value;
-    const authHeader = request.headers.get('authorization') || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
-    const expectedToken = process.env.TELEGRAM_BRIDGE_TOKEN;
-    const isBridgeAuthorized = Boolean(expectedToken && token === expectedToken);
-
-    if (!sessionId && !isBridgeAuthorized) {
+    if (!hasValidSession(sessionId) && !hasBridgeToken(request)) {
       return NextResponse.json(
         { error: 'Unauthorized — session or Bearer token required' },
         { status: 401 }
@@ -70,28 +119,20 @@ export function proxy(request: NextRequest) {
   // ─── Auth gate ──────────────────────────────────────────────────────
   if (!isPublicRoute(pathname)) {
     const sessionId = request.cookies.get('session_id')?.value;
+    const authorized = hasValidSession(sessionId) || hasBridgeToken(request);
 
     if (pathname.startsWith('/api/')) {
-      // Allow internal requests authenticated with TELEGRAM_BRIDGE_TOKEN
-      const authHeader = request.headers.get('authorization') || '';
-      const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
-      const expectedToken = process.env.TELEGRAM_BRIDGE_TOKEN;
-      const isBridgeAuthorized = Boolean(expectedToken && token === expectedToken);
-
-      // API routes: return 401 JSON if neither session nor bridge token is present
-      if (!sessionId && !isBridgeAuthorized) {
+      if (!authorized) {
         return NextResponse.json(
           { error: 'Unauthorized — session required' },
           { status: 401 }
         );
       }
-    } else {
+    } else if (!authorized) {
       // Dashboard pages: redirect to login
-      if (!sessionId) {
-        const loginUrl = request.nextUrl.clone();
-        loginUrl.pathname = '/login';
-        return NextResponse.redirect(loginUrl);
-      }
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      return NextResponse.redirect(loginUrl);
     }
   }
 
