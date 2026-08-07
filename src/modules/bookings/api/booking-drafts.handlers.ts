@@ -322,23 +322,65 @@ export async function createBookingDraft(req: Request) {
 }
 
 // ─── PUT — admin confirm payment ─────────────────────────────────────────────
-// Admin PINs — server-side only, never sent to client
-const ADMIN_PINS: Record<string, string> = {
-  '1315': 'Андрей',
-  '2099': 'т. Наташа',
-  '0309': 'Олег',
-  '0912': 'Антон',
-};
+// The four reception PINs used to sit here as a literal map, alongside the staff
+// names and the cash account each PIN routes money to — in a file served by a
+// public endpoint with CORS '*'. They now live hashed on the employee's row, and
+// the account comes from app_users.default_cash_account_id, which is where that
+// relationship already existed.
+//
+// This endpoint has to stay public: the widget calls it from reception's browser
+// with no PMS session. So the PIN is the only credential, and a four-digit
+// credential needs a brake — see PIN_ATTEMPT_* below.
 
-// PIN → finance cash account name mapping.
-// When an admin confirms cash payment via PIN, the fin_operation is routed
-// to their personal cash account (not the first one by sort_order).
-const PIN_TO_ACCOUNT_NAME: Record<string, string> = {
-  '1315': 'Андріїв cash',
-  '2099': 'Каса Кемпінг і проживання',
-  '0309': 'Олег наличные',
-  '0912': 'Антон Готівка',
-};
+interface PinActor { id: string; name: string; accountId: string | null }
+
+function resolvePin(db: any, rawPin: unknown): PinActor | null {
+  const pin = String(rawPin ?? '').trim();
+  if (!/^\d{4,}$/.test(pin)) return null;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const bcrypt = require('bcryptjs');
+  const rows = db.prepare(`
+    SELECT id, full_name, pin_hash, default_cash_account_id
+    FROM app_users
+    WHERE is_active = 1 AND pin_hash IS NOT NULL
+  `).all() as { id: string; full_name: string; pin_hash: string; default_cash_account_id: string | null }[];
+  for (const r of rows) {
+    if (bcrypt.compareSync(pin, r.pin_hash)) {
+      return { id: r.id, name: r.full_name, accountId: r.default_cash_account_id };
+    }
+  }
+  return null;
+}
+
+// Brute-forcing four digits is 10 000 guesses, and four of them are valid. The
+// counter is per-process and in memory: it survives long enough to make an
+// online attack impractical without adding a table or a dependency.
+const PIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const PIN_ATTEMPT_LIMIT = 10;
+const pinAttempts = new Map<string, { count: number; first: number }>();
+
+function pinAttemptBlocked(key: string): boolean {
+  const now = Date.now();
+  const rec = pinAttempts.get(key);
+  if (!rec || now - rec.first > PIN_ATTEMPT_WINDOW_MS) return false;
+  return rec.count >= PIN_ATTEMPT_LIMIT;
+}
+
+function recordPinFailure(key: string): void {
+  const now = Date.now();
+  const rec = pinAttempts.get(key);
+  if (!rec || now - rec.first > PIN_ATTEMPT_WINDOW_MS) {
+    pinAttempts.set(key, { count: 1, first: now });
+  } else {
+    rec.count++;
+  }
+  if (pinAttempts.size > 5000) pinAttempts.clear();
+}
+
+function clientKey(req: Request): string {
+  const h = req.headers;
+  return (h.get('x-forwarded-for') || '').split(',')[0].trim() || h.get('x-real-ip') || 'unknown';
+}
 
 export async function updateBookingDraft(req: Request) {
   try {
@@ -350,15 +392,28 @@ export async function updateBookingDraft(req: Request) {
 
     // ─── PIN validation (required for status = 'paid') ────────────────────
     let adminName: string | null = null;
+    let pinActor: PinActor | null = null;
     if (status === 'paid') {
       if (!admin_pin) {
         return NextResponse.json({ error: 'PIN required', code: 'PIN_REQUIRED' }, { status: 401, headers: CORS_HEADERS });
       }
-      adminName = ADMIN_PINS[String(admin_pin).trim()] || null;
-      if (!adminName) {
-        console.warn(`[AdminConfirm] Invalid PIN attempt: ${String(admin_pin).substring(0, 2)}**`);
+      const attemptKey = clientKey(req);
+      if (pinAttemptBlocked(attemptKey)) {
+        console.warn(`[AdminConfirm] PIN attempts throttled for ${attemptKey}`);
+        return NextResponse.json(
+          { error: 'Забагато спроб. Спробуйте за 15 хвилин.', code: 'PIN_THROTTLED' },
+          { status: 429, headers: CORS_HEADERS },
+        );
+      }
+      pinActor = resolvePin(db, admin_pin);
+      if (!pinActor) {
+        recordPinFailure(attemptKey);
+        // The PIN itself is never logged, not even partially: a two-digit prefix
+        // narrows four digits to a hundred guesses for anyone reading the journal.
+        console.warn(`[AdminConfirm] Invalid PIN attempt from ${attemptKey}`);
         return NextResponse.json({ error: 'Невірний PIN-код. Зверніться до адміністратора.', code: 'WRONG_PIN' }, { status: 401, headers: CORS_HEADERS });
       }
+      adminName = pinActor.name;
     }
 
     // ─── Resolve reservation ID ────────────────────────────────────────────
@@ -441,7 +496,6 @@ export async function updateBookingDraft(req: Request) {
         if (!isTerminal) {
           try {
             const { createPaymentOperation, hasPaymentOperation } = await import('../../finance/api/payment-bridge');
-            const pinStr = String(admin_pin).trim();
             // Prevent double-creation if widget retries
             if (!hasPaymentOperation(rid, 'booking_widget', `pin_${rid}`)) {
               const reservation = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(rid) as any;
@@ -478,14 +532,18 @@ export async function updateBookingDraft(req: Request) {
                   accountId = newEurId;
                   console.log(`[AdminConfirm] Auto-created EUR cash account "Готівка EUR" (${newEurId})`);
                 }
-              } else if (orgId) {
-                const wantedName = PIN_TO_ACCOUNT_NAME[pinStr];
-                if (wantedName) {
-                  const acct = db.prepare(
-                    "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND is_active = 1 LIMIT 1"
-                  ).get(orgId, wantedName) as any;
-                  accountId = acct?.id;
-                  if (!accountId) console.warn(`[AdminConfirm] Account "${wantedName}" not found for PIN ${pinStr.substring(0,2)}**`);
+              } else if (orgId && pinActor?.accountId) {
+                // The operator's own cash box, taken from their user row rather
+                // than from an account name written in the source. The old map
+                // spelled PIN 2099's account 'Каса Кемпінг і проживання' while
+                // the account is named 'Каса Кемпінг', so that lookup never
+                // matched and her cash landed on the fallback account instead.
+                const acct = db.prepare(
+                  'SELECT id FROM finance_accounts WHERE id = ? AND organization_id = ? AND is_active = 1'
+                ).get(pinActor.accountId, orgId) as any;
+                accountId = acct?.id;
+                if (!accountId) {
+                  console.warn(`[AdminConfirm] ${pinActor.name} has no active default cash account — falling back`);
                 }
               }
 
@@ -503,7 +561,12 @@ export async function updateBookingDraft(req: Request) {
                   sourceRef: `pin_${rid}`,
                   accountId,
                   comment: fullComment,
-                  actor: { id: `pin_${pinStr}`, name: adminName || 'Admin' },
+                  // The operator's real user id, so created_by resolves to a
+                  // row in app_users. It used to be `pin_1315` — the raw PIN,
+                  // written into the audit trail, and not a user id at all, so
+                  // the FK on created_by rejected the whole insert and the cash
+                  // was silently lost.
+                  actor: { id: pinActor?.id ?? '', name: adminName || 'Admin' },
                 });
                 console.log(`[CashConfirm] Created fin_operation for ${rid}, account=${accountId || 'fallback'}, amount=${amount} ${currency}`);
               }

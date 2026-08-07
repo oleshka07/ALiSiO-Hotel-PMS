@@ -521,12 +521,16 @@ import {
   deleteFinanceAccess as _deleteFinanceAccess,
   getMyFinanceAccess as _getMyFinanceAccess,
   resetUserFinancePassphrase as _resetUserFinancePassphrase,
+  setUserCashPin as _setUserCashPin,
+  clearUserCashPin as _clearUserCashPin,
 } from './finance-access.handlers';
 export const listFinanceAccess    = withPermission('manage_users', _listFinanceAccess);
 export const upsertFinanceAccess  = withPermission('manage_users', _upsertFinanceAccess);
 export const deleteFinanceAccess  = withPermission('manage_users', _deleteFinanceAccess);
 export const getMyFinanceAccess   = withFinanceRead(_getMyFinanceAccess);
 export const resetUserFinancePassphrase = withPermission('manage_users', _resetUserFinancePassphrase);
+export const setUserCashPin       = withPermission('manage_users', _setUserCashPin);
+export const clearUserCashPin     = withPermission('manage_users', _clearUserCashPin);
 
 // Re-export auth helpers for use in _guard.ts and other modules
 export { isFinanceUserEnabled, getFinanceAccessForUser } from './finance-access.handlers';

@@ -4938,6 +4938,23 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.log('[DB] Guest registration sync migration note:', e.message);
   }
+
+  // --- Migration: cash-confirmation PINs move out of the source code ---
+  // booking-drafts.handlers.ts carried the four reception PINs as a literal map,
+  // together with the staff names and the cash account each one routes money to,
+  // on a public endpoint with CORS '*'. A PIN is a credential: it belongs on the
+  // employee's row, hashed, and the account it books to is already there as
+  // default_cash_account_id.
+  //
+  // Only the column is created here. The four existing PIN values are NOT seeded
+  // from source: writing them into a migration would commit four live
+  // credentials to the repository, which is the thing this change removes. They
+  // are hashed onto their rows once, by hand on the server, and from then on
+  // every PIN is set through Фінанси → Налаштування → Користувачі. A database
+  // built from scratch simply starts with no PINs.
+  try {
+    database.exec('ALTER TABLE app_users ADD COLUMN pin_hash TEXT');
+  } catch { /* already exists */ }
 }
 
 // Generate a cryptographically secure random token for guest pages

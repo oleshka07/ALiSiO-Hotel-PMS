@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Settings, ShieldCheck, ShieldOff, KeyRound } from 'lucide-react';
+import { Settings, ShieldCheck, ShieldOff, KeyRound, Hash } from 'lucide-react';
 import FinanceUserModal from './FinanceUserModal';
 
 export interface FinanceAccess {
@@ -21,6 +21,10 @@ export interface FinanceUser {
   access: FinanceAccess | null;
   /** true when this person set their own finance passphrase (step-up lock). */
   has_passphrase?: boolean;
+  /** true when this person has a cash-confirmation PIN for the widget. */
+  has_pin?: boolean;
+  is_owner?: boolean;
+  default_cash_account_id?: string | null;
 }
 
 interface Account {
@@ -46,6 +50,7 @@ export default function FinanceUsersTab() {
   const [editingUser, setEditingUser] = useState<FinanceUser | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [pinBusyId, setPinBusyId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -99,6 +104,49 @@ export default function FinanceUsersTab() {
       alert('Помилка мережі');
     } finally {
       setResettingId(null);
+    }
+  }
+
+  // Cash-confirmation PIN. The value is stored hashed, so it can be replaced or
+  // removed but never shown — an empty prompt removes it.
+  async function handleSetPin(user: FinanceUser) {
+    const hasPin = user.has_pin;
+    const entered = prompt(
+      `PIN для підтвердження готівки у віджеті — «${user.full_name}»\n\n` +
+      (hasPin
+        ? 'PIN уже встановлено. Показати його неможливо — він зберігається хешем.\n' +
+          'Введіть новий PIN (4–8 цифр), або лишіть порожнім і натисніть OK, щоб видалити.'
+        : 'Введіть PIN (4–8 цифр).') +
+      (user.default_cash_account_id ? '' : '\n\n⚠️ Каса не вибрана — готівка піде на резервний рахунок.'),
+      '',
+    );
+    if (entered === null) return;
+
+    const pin = entered.trim();
+    if (pin === '') {
+      if (!hasPin) return;
+      if (!confirm(`Видалити PIN для «${user.full_name}»?\n\nПідтверджувати готівку у віджеті вона/він більше не зможе.`)) return;
+    } else if (!/^\d{4,8}$/.test(pin)) {
+      alert('PIN має складатися з 4–8 цифр');
+      return;
+    }
+
+    setPinBusyId(user.id);
+    try {
+      const res = pin === ''
+        ? await fetch(`/api/finance/access/${user.id}/pin`, { method: 'DELETE' })
+        : await fetch(`/api/finance/access/${user.id}/pin`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin }),
+          });
+      const data = await res.json();
+      if (!res.ok) alert(data.error || 'Не вдалося зберегти PIN');
+      else { alert(data.message || 'Готово'); fetchData(); }
+    } catch {
+      alert('Помилка мережі');
+    } finally {
+      setPinBusyId(null);
     }
   }
 
@@ -202,6 +250,21 @@ export default function FinanceUsersTab() {
                           : 'Пароль фінансів не встановлено'}
                       >
                         <KeyRound size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleSetPin(user)}
+                        disabled={pinBusyId === user.id}
+                        style={{
+                          ...iconBtn,
+                          marginLeft: 4,
+                          opacity: pinBusyId === user.id ? 0.5 : 1,
+                          color: user.has_pin ? '#16a34a' : undefined,
+                        }}
+                        title={user.has_pin
+                          ? 'PIN для готівки встановлено — змінити або видалити'
+                          : 'Встановити PIN для підтвердження готівки у віджеті'}
+                      >
+                        <Hash size={16} />
                       </button>
                     </td>
                   </tr>

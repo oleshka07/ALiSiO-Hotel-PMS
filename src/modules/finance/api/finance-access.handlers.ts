@@ -84,12 +84,13 @@ export async function listFinanceAccess(): Promise<NextResponse> {
       SELECT u.id, u.full_name, u.email, u.role, u.is_active,
              fa.is_enabled, fa.period_mode, fa.allowed_tabs,
              fa.allowed_accounts, fa.can_export, fa.read_only,
-             (fs.user_id IS NOT NULL) AS has_passphrase
+             (fs.user_id IS NOT NULL) AS has_passphrase,
+             (u.pin_hash IS NOT NULL) AS has_pin,
+             u.default_cash_account_id
       FROM app_users u
       LEFT JOIN finance_user_access fa ON fa.user_id = u.id
       LEFT JOIN finance_security    fs ON fs.user_id = u.id
-      WHERE u.role != 'owner'
-      ORDER BY u.full_name
+      ORDER BY (u.role = 'owner') DESC, u.full_name
     `).all() as any[];
 
     const result = users.map((u) => ({
@@ -99,6 +100,13 @@ export async function listFinanceAccess(): Promise<NextResponse> {
       role: u.role,
       is_active: !!u.is_active,
       has_passphrase: !!u.has_passphrase,
+      // Owners were filtered out of this list because they hold finance access by
+      // role and have nothing to grant. They are included now: two of the four
+      // reception PINs belong to owners, so excluding them left those PINs
+      // unmanageable anywhere in the interface.
+      is_owner: u.role === 'owner',
+      has_pin: !!u.has_pin,
+      default_cash_account_id: u.default_cash_account_id || null,
       access: u.is_enabled !== null ? {
         is_enabled: !!u.is_enabled,
         period_mode: u.period_mode || 'month',
@@ -281,5 +289,95 @@ export async function getMyFinanceAccess(request: NextRequest): Promise<NextResp
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * PUT /api/finance/access/[id]/pin      — set or replace the cash-confirmation PIN
+ * DELETE /api/finance/access/[id]/pin   — remove it
+ *
+ * The PIN the operator types at reception to confirm a cash payment in the
+ * widget. It used to be a literal in booking-drafts.handlers.ts together with
+ * the staff name and the cash account it books to, in a file behind a public
+ * endpoint. Stored hashed here, so it can be replaced but never displayed —
+ * same shape as the finance passphrase above.
+ *
+ * The cash account is not part of the PIN: it comes from the user's
+ * default_cash_account_id, which the Accounts column of this tab already edits.
+ */
+export async function setUserCashPin(request: NextRequest, context: any): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const params = await context.params;
+    const userId = params?.id;
+    if (!userId) return NextResponse.json({ error: 'Missing user id' }, { status: 400 });
+
+    const body = await request.json().catch(() => ({}));
+    const pin = String((body as any).pin ?? '').trim();
+    if (!/^\d{4,8}$/.test(pin)) {
+      return NextResponse.json({ error: 'PIN має бути від 4 до 8 цифр' }, { status: 400 });
+    }
+
+    const user = db.prepare('SELECT id, full_name, is_active, default_cash_account_id FROM app_users WHERE id = ?')
+      .get(userId) as any;
+    if (!user) return NextResponse.json({ error: 'Користувача не знайдено' }, { status: 404 });
+
+    // Two people sharing a PIN would silently route one person's cash to the
+    // other's box, and the audit trail would name the wrong operator.
+    const bcrypt = (await import('bcryptjs')).default;
+    const others = db.prepare(
+      'SELECT id, full_name, pin_hash FROM app_users WHERE pin_hash IS NOT NULL AND id != ?',
+    ).all(userId) as { id: string; full_name: string; pin_hash: string }[];
+    for (const o of others) {
+      if (bcrypt.compareSync(pin, o.pin_hash)) {
+        return NextResponse.json(
+          { error: `Цей PIN уже використовує «${o.full_name}». Оберіть інший.` },
+          { status: 409 },
+        );
+      }
+    }
+
+    db.prepare('UPDATE app_users SET pin_hash = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(bcrypt.hashSync(pin, 10), userId);
+
+    console.log(`[FinanceSecurity] cash PIN set for ${user.full_name} (${userId})`);
+
+    return NextResponse.json({
+      ok: true,
+      message: user.default_cash_account_id
+        ? `PIN для «${user.full_name}» встановлено.`
+        : `PIN для «${user.full_name}» встановлено, але каса не вибрана — готівка піде на резервний рахунок. Вкажіть касу в цій же вкладці.`,
+    });
+  } catch (error: any) {
+    console.error('[FinanceSecurity] setUserCashPin:', error?.message);
+    return NextResponse.json({ error: 'Не вдалося встановити PIN' }, { status: 500 });
+  }
+}
+
+export async function clearUserCashPin(_request: NextRequest, context: any): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const params = await context.params;
+    const userId = params?.id;
+    if (!userId) return NextResponse.json({ error: 'Missing user id' }, { status: 400 });
+
+    const user = db.prepare('SELECT id, full_name, pin_hash FROM app_users WHERE id = ?').get(userId) as any;
+    if (!user) return NextResponse.json({ error: 'Користувача не знайдено' }, { status: 404 });
+
+    const existed = Boolean(user.pin_hash);
+    db.prepare('UPDATE app_users SET pin_hash = NULL, updated_at = datetime(\'now\') WHERE id = ?').run(userId);
+
+    console.log(`[FinanceSecurity] cash PIN cleared for ${user.full_name} (${userId}) — existed=${existed}`);
+
+    return NextResponse.json({
+      ok: true,
+      cleared: existed,
+      message: existed
+        ? `PIN для «${user.full_name}» видалено — підтверджувати готівку в віджеті вона/він більше не зможе.`
+        : `У «${user.full_name}» PIN не був встановлений.`,
+    });
+  } catch (error: any) {
+    console.error('[FinanceSecurity] clearUserCashPin:', error?.message);
+    return NextResponse.json({ error: 'Не вдалося видалити PIN' }, { status: 500 });
   }
 }
