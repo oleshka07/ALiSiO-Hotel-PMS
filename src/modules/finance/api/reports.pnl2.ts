@@ -108,7 +108,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
 
     // Fetch operations
     const ops = db.prepare(`
-      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id, o.comment,
+      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id, o.comment, o.paid_at,
              ec.id as cat_id, ec.name as cat_name, COALESCE(ec.classifier, 'other') as classifier, ec.std_group
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON o.category_id = ec.id
@@ -181,6 +181,49 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       'capex': r_capex
     };
 
+    // Спільні витрати «Загальне» розкидаються за фіксованим правилом власника,
+    // різним для сезону і міжсезоння, а не за часткою виручки: у місяць без
+    // виручки напрямок інакше не брав на себе нічого. Проценти лежать у
+    // cost_allocations під методами SEASON / OFFSEASON — правити можна в базі.
+    const SEASON_FROM = '05-25';
+    const SEASON_TO = '09-30';
+    const inSeason = (paidAt: string): boolean => {
+      const md = (paidAt || '').slice(5, 10);
+      return md >= SEASON_FROM && md <= SEASON_TO;
+    };
+
+    const allocRows = db.prepare(`
+      SELECT alloc_method, business_unit_id, percentage
+      FROM cost_allocations
+      WHERE organization_id = ? AND alloc_method IN ('SEASON', 'OFFSEASON')
+        AND month = COALESCE(
+          (SELECT MAX(month) FROM cost_allocations
+             WHERE organization_id = ? AND alloc_method IN ('SEASON', 'OFFSEASON') AND month <= ?),
+          (SELECT MIN(month) FROM cost_allocations
+             WHERE organization_id = ? AND alloc_method IN ('SEASON', 'OFFSEASON'))
+        )
+    `).all(org, org, month, org) as any[];
+
+    // Правило описане через реальні юніти, а звіт показує віртуальні
+    // (СПА = сауна + купель), тому проценти згортаються в ту саму колонку.
+    const buildRatio = (methodName: string): Record<string, number> | null => {
+      const acc: Record<string, number> = {};
+      let sum = 0;
+      for (const r of allocRows) {
+        if (r.alloc_method !== methodName) continue;
+        const vId = virtualBusMap[r.business_unit_id];
+        if (!vId || vId === 'v_general') continue;
+        acc[vId] = (acc[vId] || 0) + r.percentage;
+        sum += r.percentage;
+      }
+      if (sum <= 0) return null;
+      for (const k of Object.keys(acc)) acc[k] = acc[k] / sum;
+      return acc;
+    };
+
+    const seasonRatio = buildRatio('SEASON');
+    const offSeasonRatio = buildRatio('OFFSEASON');
+
     // Pass 1: Calculate revenue ratios per Virtual BU
     let totalValidRevenue = 0;
     const revenuePerBu: Record<string, number> = {};
@@ -220,11 +263,18 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       }
     });
 
+    // Без правила в базі — повертаємось до частки виручки, щоб звіт не занулився.
+    const ratioFor = (paidAt: string): Record<string, number> => {
+      const rule = inSeason(paidAt) ? seasonRatio : offSeasonRatio;
+      return rule || ratioPerBu;
+    };
+
     // Pass 2: Distribute operations
     for (const op of ops) {
       const vId = (op.project_id && virtualBusMap[op.project_id]) ? virtualBusMap[op.project_id] : 'v_general';
       
       const amt = op.amount_company;
+      const ratio = ratioFor(op.paid_at);
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
       
@@ -241,7 +291,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
         
         if (isGeneral) {
            bus.forEach(b => {
-              const pAmt = amt * ratioPerBu[b.id];
+              const pAmt = amt * (ratio[b.id] || 0);
               targetRow.buValues[b.id] += pAmt;
               targetRow.total += pAmt;
            });
@@ -256,7 +306,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       else if (op.op_type === 'expense' && op.payment_subtype === 'refund') {
         if (isGeneral) {
            bus.forEach(b => {
-              const pAmt = amt * ratioPerBu[b.id];
+              const pAmt = amt * (ratio[b.id] || 0);
               r_rev.buValues[b.id] -= pAmt;
               r_rev.total -= pAmt;
            });
@@ -278,7 +328,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
         
         if (isGeneral) {
            bus.forEach(b => {
-              const pAmt = amt * ratioPerBu[b.id];
+              const pAmt = amt * (ratio[b.id] || 0);
               targetRow.buValues[b.id] += pAmt;
               targetRow.total += pAmt;
               targetRow.details[childName] = targetRow.details[childName] || {};
