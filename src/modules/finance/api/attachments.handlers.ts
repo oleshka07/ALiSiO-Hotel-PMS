@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const ATTACH_ROOT = path.join(DATA_DIR, 'attachments');
@@ -104,7 +105,7 @@ export async function uploadAttachment(
     const row = db.prepare("SELECT * FROM fin_operation_attachments WHERE id = ?").get(attachmentId);
     return NextResponse.json({ ok: true, attachment: row }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -131,7 +132,7 @@ export async function listOperationAttachments(
     `).all(orgId, operationId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -171,7 +172,7 @@ export async function downloadAttachment(
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -201,7 +202,7 @@ export async function deleteAttachment(
     db.prepare("DELETE FROM fin_operation_attachments WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -229,6 +230,6 @@ export async function getAttachmentCounts(request: NextRequest): Promise<NextRes
     for (const r of rows) counts[r.operation_id] = r.cnt;
     return NextResponse.json({ counts });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

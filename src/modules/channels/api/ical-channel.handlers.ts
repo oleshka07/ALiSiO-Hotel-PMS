@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function updateIcalChannel(
   request: Request,
@@ -37,7 +38,7 @@ export async function updateIcalChannel(
     const updated = db.prepare('SELECT * FROM ical_channels WHERE id = ?').get(id);
     return NextResponse.json(updated);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -59,6 +60,6 @@ export async function deleteIcalChannel(
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

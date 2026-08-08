@@ -5,6 +5,7 @@ import {
   applyRulesToOperation, loadActiveRules, parseRule,
   type AutoRuleRow, type Condition, type Actions, type Operation,
 } from '../data/auto-rules-engine';
+import { publicMessage } from '@core/security/public-error';
 
 const OP_TYPES = ['income', 'expense', 'any'] as const;
 
@@ -54,7 +55,7 @@ export async function listAutoRules(_request: NextRequest): Promise<NextResponse
     `).all(orgId) as AutoRuleRow[];
     return NextResponse.json(rows.map((r) => enrichRule(db, r)));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -77,7 +78,7 @@ export async function createAutoRule(request: NextRequest): Promise<NextResponse
       parsedConditions = validateConditions(conditions);
       parsedActions = validateActions(actions);
     } catch (e: any) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
+      return NextResponse.json({ error: publicMessage(e) }, { status: 400 });
     }
 
     const orgId = getOrgId(db);
@@ -98,7 +99,7 @@ export async function createAutoRule(request: NextRequest): Promise<NextResponse
     const row = db.prepare("SELECT * FROM fin_auto_rules WHERE id = ?").get(id) as AutoRuleRow;
     return NextResponse.json(enrichRule(db, row), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -123,7 +124,7 @@ export async function updateAutoRule(
       try {
         fields.push('conditions_json = ?');
         params.push(JSON.stringify(validateConditions(body.conditions)));
-      } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+      } catch (e: any) { return NextResponse.json({ error: publicMessage(e) }, { status: 400 }); }
     }
     if (body.actions !== undefined) {
       fields.push('actions_json = ?');
@@ -140,7 +141,7 @@ export async function updateAutoRule(
     const row = db.prepare("SELECT * FROM fin_auto_rules WHERE id = ?").get(id) as AutoRuleRow;
     return NextResponse.json(enrichRule(db, row));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -156,7 +157,7 @@ export async function deleteAutoRule(
     db.prepare('DELETE FROM fin_auto_rules WHERE id = ?').run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -175,7 +176,7 @@ export async function toggleAutoRule(
     const updated = db.prepare("SELECT * FROM fin_auto_rules WHERE id = ?").get(id) as AutoRuleRow;
     return NextResponse.json(enrichRule(db, updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -194,7 +195,7 @@ export async function moveAutoRule(
     const updated = db.prepare("SELECT * FROM fin_auto_rules WHERE id = ?").get(id) as AutoRuleRow;
     return NextResponse.json(enrichRule(db, updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -234,7 +235,7 @@ export async function applyAutoRulesToOperations(request: NextRequest): Promise<
     }
     return NextResponse.json({ processed: ops.length, changed: changedCount, rulesCount: rules.length, results });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -270,6 +271,6 @@ export async function autoMatchCounterpartiesAllOps(request: NextRequest): Promi
     }
     return NextResponse.json({ processed: ops.length, matched });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

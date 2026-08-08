@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 interface ProjectRow {
   id: string;
@@ -62,7 +63,7 @@ export async function listProjects(request: NextRequest): Promise<NextResponse> 
     `).all(orgId);
     return NextResponse.json(rows);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -89,7 +90,7 @@ export async function getProjectTree(request: NextRequest): Promise<NextResponse
     const tree = roots.map((root) => ({ ...root, children: childrenByParent.get(root.id) || [] }));
     return NextResponse.json({ tree });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -139,7 +140,7 @@ export async function createProject(request: NextRequest): Promise<NextResponse>
     const created = db.prepare("SELECT * FROM business_units WHERE id = ?").get(id);
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -185,7 +186,7 @@ export async function updateProject(
     const updated = db.prepare("SELECT * FROM business_units WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -210,7 +211,7 @@ export async function archiveProject(
     const updated = db.prepare("SELECT * FROM business_units WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -245,7 +246,7 @@ export async function deleteProject(
     db.prepare("DELETE FROM business_units WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -288,6 +289,6 @@ export async function moveProject(
     const updated = db.prepare("SELECT * FROM business_units WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

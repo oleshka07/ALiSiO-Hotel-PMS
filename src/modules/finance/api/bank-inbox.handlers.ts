@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { encryptPassword, decryptPassword, checkInbox, type BankInboxConfig } from '../data/bank-inbox-engine';
 import { ImapFlow } from 'imapflow';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -26,7 +27,7 @@ export async function listBankInboxes(_req: NextRequest): Promise<NextResponse> 
     `).all(orgId);
     return NextResponse.json(rows.map(maskedRow));
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -65,7 +66,7 @@ export async function createBankInbox(req: NextRequest): Promise<NextResponse> {
     const row = db.prepare("SELECT * FROM fin_bank_inboxes WHERE id = ?").get(id);
     return NextResponse.json(maskedRow(row), { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -103,7 +104,7 @@ export async function updateBankInbox(
     const row = db.prepare("SELECT * FROM fin_bank_inboxes WHERE id = ?").get(id);
     return NextResponse.json(maskedRow(row));
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -117,7 +118,7 @@ export async function deleteBankInbox(
     db.prepare("DELETE FROM fin_bank_inboxes WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -134,7 +135,7 @@ export async function toggleBankInbox(
     const updated = db.prepare("SELECT * FROM fin_bank_inboxes WHERE id = ?").get(id);
     return NextResponse.json(maskedRow(updated));
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -168,10 +169,10 @@ export async function testBankInbox(
       });
     } catch (e: any) {
       await client.logout().catch(() => {});
-      return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
+      return NextResponse.json({ ok: false, error: publicMessage(e) }, { status: 400 });
     }
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -187,7 +188,7 @@ export async function runBankInboxNow(
     const result = await checkInbox(db, inbox);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -201,11 +202,11 @@ export async function runAllInboxes(_req: NextRequest): Promise<NextResponse> {
         const r = await checkInbox(db, inbox);
         results.push({ inbox: inbox.name, ...r });
       } catch (e: any) {
-        results.push({ inbox: inbox.name, error: e.message });
+        results.push({ inbox: inbox.name, error: publicMessage(e) });
       }
     }
     return NextResponse.json({ ok: true, count: inboxes.length, results });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

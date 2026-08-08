@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as actionsRepo from '../data/guest-actions.repo';
 import { createPaymentSession, resolveCredentialsForReservation } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface CartItemInput {
@@ -324,6 +325,6 @@ export async function payForService(
     return handleSinglePay(token, serviceId, quantity, serviceDates);
   } catch (error: any) {
     console.error('POST /api/guest/[token]/pay error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to create payment' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to create payment') }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import ExcelJS from 'exceljs';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * GET /api/bookings/export-csv?from=YYYY-MM-DD&to=YYYY-MM-DD&category=&format=xlsx|csv
@@ -247,6 +248,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (err: any) {
     console.error('[export-csv] Error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }

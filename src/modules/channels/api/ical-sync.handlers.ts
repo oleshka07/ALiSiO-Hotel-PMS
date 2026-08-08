@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
 import { parseICal, extractGuestName } from '@/lib/ical'; // TODO: move to @core/ical
 import { notifyReservationCreated } from '@bookings';
+import { publicMessage } from '@core/security/public-error';
 
 export async function syncIcal(request: NextRequest) {
   try {
@@ -28,7 +29,7 @@ export async function syncIcal(request: NextRequest) {
     return NextResponse.json({ synced: results.length, results });
   } catch (e: any) {
     console.error('[iCal Sync] Error:', e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -129,7 +130,7 @@ async function syncChannel(db: any, channel: any) {
   } catch (e: any) {
     db.prepare(`INSERT INTO ical_sync_log (id, channel_id, status, error_message) VALUES (?, ?, 'error', ?)`)
       .run(logId, channel.id, e.message);
-    return { channel_id: channel.id, status: 'error', error: e.message };
+    return { channel_id: channel.id, status: 'error', error: publicMessage(e) };
   }
 }
 

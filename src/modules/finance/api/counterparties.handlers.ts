@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 const KINDS = ['client', 'supplier', 'employee', 'other'] as const;
 type Kind = typeof KINDS[number];
@@ -93,7 +94,7 @@ export async function listCounterparties(request: NextRequest): Promise<NextResp
     `).all(...params) as CounterpartyRow[];
     return NextResponse.json(rows.map(enrich));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -130,7 +131,7 @@ export async function getCounterpartyTree(request: NextRequest): Promise<NextRes
 
     return NextResponse.json({ tree, byKind });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -162,7 +163,7 @@ export async function createCounterparty(request: NextRequest): Promise<NextResp
     let aliasArr: string[] = [];
     if (aliases !== undefined) {
       try { aliasArr = normalizeAliases(aliases); }
-      catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+      catch (e: any) { return NextResponse.json({ error: publicMessage(e) }, { status: 400 }); }
     }
 
     const orgId = getOrgId(db);
@@ -187,7 +188,7 @@ export async function createCounterparty(request: NextRequest): Promise<NextResp
     const created = db.prepare("SELECT * FROM finance_counterparties WHERE id = ?").get(id) as CounterpartyRow;
     return NextResponse.json(enrich(created), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -229,7 +230,7 @@ export async function updateCounterparty(
         const arr = normalizeAliases(aliases);
         fields.push('aliases_json = ?'); params.push(JSON.stringify(arr));
       } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
+        return NextResponse.json({ error: publicMessage(e) }, { status: 400 });
       }
     }
     if (icon !== undefined) { fields.push('icon = ?'); params.push(icon); }
@@ -245,7 +246,7 @@ export async function updateCounterparty(
     const updated = db.prepare("SELECT * FROM finance_counterparties WHERE id = ?").get(id) as CounterpartyRow;
     return NextResponse.json(enrich(updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -270,7 +271,7 @@ export async function archiveCounterparty(
     const updated = db.prepare("SELECT * FROM finance_counterparties WHERE id = ?").get(id) as CounterpartyRow;
     return NextResponse.json(enrich(updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -296,7 +297,7 @@ export async function deleteCounterparty(
     db.prepare("DELETE FROM finance_counterparties WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -342,7 +343,7 @@ export async function moveCounterparty(
     const updated = db.prepare("SELECT * FROM finance_counterparties WHERE id = ?").get(id) as CounterpartyRow;
     return NextResponse.json(enrich(updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -383,7 +384,7 @@ export async function matchCounterpartyByText(request: NextRequest): Promise<Nex
       matched_alias: best.alias,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -425,6 +426,6 @@ export async function getAliasSuggestions(_request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ suggestions });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { ocrDocument } from '@/lib/ai/ocr-document';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { publicMessage } from '@core/security/public-error';
 
 export async function POST(
   request: Request,
@@ -33,7 +34,7 @@ export async function POST(
   } catch (err: any) {
     console.error('[OCR] Error:', err?.message);
     return NextResponse.json(
-      { success: false, error: err?.message || 'OCR processing failed' },
+      { success: false, error: publicMessage(err, 'OCR processing failed') },
       { status: 500 }
     );
   }

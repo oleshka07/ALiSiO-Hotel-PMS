@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listActivity(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,7 +12,7 @@ export async function listActivity(_request: NextRequest, { params }: { params: 
     ).all(id);
     return NextResponse.json(rows);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -26,6 +27,6 @@ export async function createActivity(request: NextRequest, { params }: { params:
     ).run(logId, id, body.action || 'note', body.details || '');
     return NextResponse.json({ id: logId }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

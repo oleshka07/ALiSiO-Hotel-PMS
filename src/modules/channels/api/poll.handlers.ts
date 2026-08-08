@@ -8,6 +8,7 @@ import {
   acknowledgeModifications,
   processReservation,
 } from '@/lib/channels/booking-com/reservations';
+import { publicMessage } from '@core/security/public-error';
 
 export async function pollReservations(): Promise<NextResponse> {
   const results: {
@@ -84,6 +85,6 @@ export async function pollReservations(): Promise<NextResponse> {
       results,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

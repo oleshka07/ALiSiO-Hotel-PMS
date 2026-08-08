@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function runIcalCron(request: Request) {
   try {
@@ -40,7 +41,7 @@ export async function runIcalCron(request: Request) {
         const data = await res.json();
         results.push(data);
       } catch (e: any) {
-        results.push({ channel_id: channel.id, error: e.message });
+        results.push({ channel_id: channel.id, error: publicMessage(e) });
       }
     }
 
@@ -51,6 +52,6 @@ export async function runIcalCron(request: Request) {
     });
   } catch (e: any) {
     console.error('[iCal Cron] Error:', e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

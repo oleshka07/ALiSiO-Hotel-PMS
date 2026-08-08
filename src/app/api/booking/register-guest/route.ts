@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { ocrDocument } from '@/lib/ai/ocr-document';
 import { saveRegistrations } from '@/modules/guests/data/registration.repo';
+import { publicMessage } from '@core/security/public-error';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -117,6 +118,6 @@ export async function POST(req: Request) {
 
   } catch (err: any) {
     console.error('[register-guest]', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }

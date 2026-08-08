@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as connectionsRepo from '../data/connections.repo';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listMappings(request: NextRequest): Promise<NextResponse> {
   try {
@@ -8,7 +9,7 @@ export async function listMappings(request: NextRequest): Promise<NextResponse> 
     const connectionId = searchParams.get('connection_id') || undefined;
     return NextResponse.json(connectionsRepo.listMappings(connectionId));
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -27,7 +28,7 @@ export async function upsertMapping(request: NextRequest): Promise<NextResponse>
     const result = connectionsRepo.upsertMapping({ connection_id, unit_type_id, external_room_type_id, external_rate_plan_id });
     return NextResponse.json({ id: result.id, status: result.created ? 'created' : 'updated' }, result.created ? { status: 201 } : undefined);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -39,6 +40,6 @@ export async function deleteMapping(request: NextRequest): Promise<NextResponse>
     connectionsRepo.deleteMapping(id);
     return NextResponse.json({ status: 'deleted' });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { buildPortalData } from '../data/investor-portal-engine';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * GET /api/invest/[token]/portfolio
@@ -33,6 +34,6 @@ export async function getInvestorPortalData(
       headers: { 'Cache-Control': 'private, max-age=60' },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

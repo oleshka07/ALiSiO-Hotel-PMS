@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendDailyTaskDigestAll } from '@/modules/tasks/data/task-notifications';
+import { publicMessage } from '@core/security/public-error';
 
 export async function GET(request: NextRequest) {
   // Auth: require CRON_SECRET in production
@@ -17,6 +18,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[Task Digest Cron] Error:', error?.message);
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

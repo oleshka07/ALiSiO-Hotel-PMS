@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function getConversation(
   request: NextRequest,
@@ -51,6 +52,6 @@ export async function getConversation(
     return NextResponse.json({ ...conversation as any, messages });
   } catch (error: any) {
     console.error('[CRM Conversation GET]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

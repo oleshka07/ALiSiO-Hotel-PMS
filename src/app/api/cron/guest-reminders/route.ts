@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { sendGuestReminderEmail } from '@/modules/bookings/data/send-guest-reminder-email';
+import { publicMessage } from '@core/security/public-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, processed, totalFound: pendingReservations.length });
   } catch (error: any) {
     console.error('[CronGuestReminders] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { publicMessage } from '@core/security/public-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,6 @@ export async function GET() {
       deleted_count: result.changes,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

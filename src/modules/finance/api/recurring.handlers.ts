@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { materializeTemplate, runRecurringTick, type Template } from '../data/recurring-engine';
+import { publicMessage } from '@core/security/public-error';
 
 const SCHEDULES = ['daily', 'weekly', 'monthly', 'yearly'] as const;
 const OP_TYPES = ['income', 'expense', 'transfer'] as const;
@@ -36,7 +37,7 @@ export async function listRecurringTemplates(request: NextRequest): Promise<Next
     `).all(orgId);
     return NextResponse.json(rows);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -88,7 +89,7 @@ export async function createRecurringTemplate(request: NextRequest): Promise<Nex
     const row = db.prepare("SELECT * FROM fin_recurring_templates WHERE id = ?").get(id);
     return NextResponse.json(row, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -121,7 +122,7 @@ export async function updateRecurringTemplate(
     db.prepare(`UPDATE fin_recurring_templates SET ${fields.join(', ')} WHERE id = ?`).run(...params);
     return NextResponse.json(db.prepare("SELECT * FROM fin_recurring_templates WHERE id = ?").get(id));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -137,7 +138,7 @@ export async function deleteRecurringTemplate(
     db.prepare("DELETE FROM fin_recurring_templates WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -153,7 +154,7 @@ export async function toggleRecurringTemplate(
     db.prepare("UPDATE fin_recurring_templates SET is_active = ?, updated_at = datetime('now') WHERE id = ?").run(row.is_active ? 0 : 1, id);
     return NextResponse.json(db.prepare("SELECT * FROM fin_recurring_templates WHERE id = ?").get(id));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -171,7 +172,7 @@ export async function runRecurringNow(
     const operationId = materializeTemplate(db, t, new Date().toISOString().substring(0, 10));
     return NextResponse.json({ ok: true, operation_id: operationId });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -181,6 +182,6 @@ export async function runAllDue(_request: NextRequest): Promise<NextResponse> {
     const result = runRecurringTick(db);
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

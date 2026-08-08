@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listKnowledge(request: NextRequest) {
   const sessionId = getSessionIdFromCookies(request.headers.get('cookie'));
@@ -25,7 +26,7 @@ export async function listKnowledge(request: NextRequest) {
     const articles = db.prepare(query).all(...params);
     return NextResponse.json({ articles });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -64,7 +65,7 @@ export async function saveKnowledge(request: NextRequest) {
       return NextResponse.json({ success: true, id: inserted.id }, { status: 201 });
     }
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -82,6 +83,6 @@ export async function deleteKnowledge(request: NextRequest) {
     db.prepare('DELETE FROM crm_knowledge_base WHERE id = ?').run(id);
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

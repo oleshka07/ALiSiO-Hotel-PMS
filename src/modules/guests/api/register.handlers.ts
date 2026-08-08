@@ -5,6 +5,7 @@ import * as registrationRepo from '../data/registration.repo';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import { maskFullName, maskDob, maskDocNumber, maskDobForSheets, maskDocNumberForSheets } from '@core/security/pii-mask';
+import { publicMessage } from '@core/security/public-error';
 
 /** POST to Google Apps Script (same endpoint as the Telegram bot uses) */
 async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void> {
@@ -188,6 +189,6 @@ export async function registerGuests(
     return NextResponse.json({ success: true, registeredGuests });
   } catch (error: any) {
     console.error('POST /api/guest/[token]/register error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to register guests' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to register guests') }, { status: 500 });
   }
 }

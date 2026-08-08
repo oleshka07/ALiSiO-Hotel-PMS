@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { recalcReservationPaymentStatus } from '@/modules/finance/api/operations.handlers';
+import { publicMessage } from '@core/security/public-error';
 
 // Legacy DELETE /api/payments/:id — deletes the fin_operations row.
 export async function DELETE(
@@ -17,6 +18,6 @@ export async function DELETE(
     if (op.reservation_id) recalcReservationPaymentStatus(db, op.reservation_id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

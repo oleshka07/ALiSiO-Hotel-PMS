@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -153,7 +154,7 @@ export async function getInvestorAudit(_request: NextRequest): Promise<NextRespo
       polluted_fin_operations_sample: pollutedFinOps,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -268,7 +269,7 @@ export async function previewCascadeDelete(
     if (!preview) return NextResponse.json({ error: 'Business unit not found' }, { status: 404 });
     return NextResponse.json(preview);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -337,7 +338,7 @@ export async function executeCascadeDelete(
       preview, // echo for the caller to display
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -390,6 +391,6 @@ export async function relinkProjectToUnit(request: NextRequest): Promise<NextRes
 
     return NextResponse.json({ ok: true, updated_rows: updated, unit: { id: unit.id, name: unit.name } });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

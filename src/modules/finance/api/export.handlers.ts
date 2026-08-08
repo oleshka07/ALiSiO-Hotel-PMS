@@ -6,6 +6,7 @@ import {
 } from '../data/export-utils';
 import { getCashflowMatrix, getPnlMatrix, getAccountStatement } from './reports.handlers';
 import { listOperations } from './operations.handlers';
+import { publicMessage } from '@core/security/public-error';
 
 function getFormat(req: NextRequest): 'xlsx' | 'pdf' {
   const f = req.nextUrl.searchParams.get('format');
@@ -43,7 +44,7 @@ function errorResponse(error: any): Response {
   const status = typeof error?.status === 'number' && error.status >= 400 && error.status < 600
     ? error.status
     : 500;
-  return NextResponse.json({ error: error?.message || 'Export failed' }, { status });
+  return NextResponse.json({ error: publicMessage(error, 'Export failed') }, { status });
 }
 
 // ────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { getClearingBalance, backfillReceivables } from '../data/clearing-engine';
+import { publicMessage } from '@core/security/public-error';
 
 function orgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -68,7 +69,7 @@ export async function listClearingAccounts(_request: NextRequest): Promise<NextR
 
     return NextResponse.json({ accounts: enriched, totals });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -162,7 +163,7 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
 
     return NextResponse.json({ items, count: items.length });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -178,6 +179,6 @@ export async function backfillReceivablesHandler(_request: NextRequest): Promise
     const count = backfillReceivables(db, org);
     return NextResponse.json({ ok: true, count });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

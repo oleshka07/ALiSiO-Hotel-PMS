@@ -20,6 +20,7 @@ import { requireOwner } from '@core/security/route-guard';
 import { generateInvoicePdf } from '@/lib/invoice-pdf';
 import { convertToCzkAuto, foreignNote } from '@/lib/fx';
 import { showBuyerName, dueDateFor } from '@/lib/invoice-rules';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── Pure-JS ZIP builder (STORE method — no compression, no deps) ─────────────
 // Implements PKZIP 2.0 local file headers + central directory + EOCD.
@@ -355,6 +356,6 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
     });
   } catch (e: any) {
     console.error('[BatchZip] error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

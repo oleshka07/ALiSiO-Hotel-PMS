@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { sendWhatsAppTemplate } from '@/lib/channels/whatsapp';
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * POST /api/crm/whatsapp-template
@@ -110,6 +111,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[WhatsApp Template API]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

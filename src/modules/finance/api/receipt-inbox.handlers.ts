@@ -17,6 +17,7 @@ import { encryptPassword } from '../data/bank-inbox-engine';
 import { checkReceiptInbox } from '../data/receipt-inbox-engine';
 import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 
@@ -49,7 +50,7 @@ export async function listReceiptInboxes(_request: NextRequest): Promise<NextRes
     ).all(orgId) as any[];
     return NextResponse.json({ items: rows.map(maskedRow) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -88,7 +89,7 @@ export async function createReceiptInbox(request: NextRequest): Promise<NextResp
     const row = db.prepare("SELECT * FROM fin_receipt_inboxes WHERE id = ?").get(id);
     return NextResponse.json(maskedRow(row), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -124,7 +125,7 @@ export async function updateReceiptInbox(
     const row = db.prepare("SELECT * FROM fin_receipt_inboxes WHERE id = ?").get(id);
     return NextResponse.json(maskedRow(row));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -138,7 +139,7 @@ export async function deleteReceiptInbox(
     db.prepare("DELETE FROM fin_receipt_inboxes WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -154,7 +155,7 @@ export async function runReceiptInboxNow(
     const result = await checkReceiptInbox(db, inbox);
     return NextResponse.json({ ok: true, ...result });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -190,7 +191,7 @@ export async function listPendingReceipts(request: NextRequest): Promise<NextRes
     `).all(...params) as any[];
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -248,7 +249,7 @@ export async function attachPendingReceipt(
 
     return NextResponse.json({ ok: true, attachment_id: attachmentId });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -269,7 +270,7 @@ export async function archivePendingReceipt(
     ).run(id, orgId);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -305,6 +306,6 @@ export async function downloadPendingReceipt(
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

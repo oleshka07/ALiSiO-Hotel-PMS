@@ -20,6 +20,7 @@ import { getDb } from '@core/db';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { publicMessage } from '@core/security/public-error';
 
 const UPLOAD_ROOT = path.join(process.cwd(), 'data', 'uploads', 'investor-documents');
 
@@ -61,7 +62,7 @@ export async function listDocuments(request: NextRequest): Promise<NextResponse>
 
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -120,7 +121,7 @@ export async function uploadDocument(request: NextRequest): Promise<NextResponse
 
     return NextResponse.json({ id, ok: true }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -144,7 +145,7 @@ export async function deleteDocument(
     db.prepare("DELETE FROM investor_documents WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -175,6 +176,6 @@ export async function downloadDocument(
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

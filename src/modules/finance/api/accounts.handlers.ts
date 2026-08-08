@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 const ALLOWED_TYPES = ['cash', 'bank', 'card', 'investment', 'clearing', 'other'];
 
@@ -53,7 +54,7 @@ export async function listAccounts(request: NextRequest): Promise<NextResponse> 
     const accounts = selectAccountsWithBalance(db, orgId, { includeArchived });
     return NextResponse.json(accounts);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -96,7 +97,7 @@ export async function createAccount(request: NextRequest): Promise<NextResponse>
     const account = db.prepare("SELECT * FROM finance_accounts WHERE id = ?").get(id);
     return NextResponse.json(account, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -130,7 +131,7 @@ export async function updateAccount(request: NextRequest): Promise<NextResponse>
     const account = db.prepare("SELECT * FROM finance_accounts WHERE id = ?").get(id);
     return NextResponse.json(account);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -145,7 +146,7 @@ export async function archiveAccount(request: NextRequest): Promise<NextResponse
     if (!account) return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     return NextResponse.json(account);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -172,7 +173,7 @@ export async function deleteAccount(
     db.prepare("DELETE FROM finance_accounts WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -243,6 +244,6 @@ export async function reconcileAccount(
       adjustment_type: adjustmentType,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

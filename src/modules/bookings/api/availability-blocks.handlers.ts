@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listAvailabilityBlocks() {
   try {
@@ -42,7 +43,7 @@ export async function createAvailabilityBlock(request: Request) {
     `).run(id, unit_id, date_from, date_to, reason || 'maintenance', notes || null);
     return NextResponse.json({ ok: true, id });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -55,6 +56,6 @@ export async function deleteAvailabilityBlock(request: Request) {
     db.prepare('DELETE FROM availability_blocks WHERE id = ?').run(id);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

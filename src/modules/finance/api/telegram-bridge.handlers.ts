@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createOperationInTx } from './operations.handlers';
+import { publicMessage } from '@core/security/public-error';
 
 type BridgeEventType = 'sauna_income' | 'cash_expense' | 'income' | 'expense' | 'transfer';
 
@@ -219,7 +220,7 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
 
     return NextResponse.json({ operation_id: operationId, was_new: true }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -259,7 +260,7 @@ export async function listTelegramOperations(request: NextRequest): Promise<Next
 
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -308,7 +309,7 @@ export async function listTelegramCategories(request: NextRequest): Promise<Next
 
     return NextResponse.json({ categories, projects, accounts });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -335,7 +336,7 @@ export async function listTelegramAccounts(request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ accounts });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -361,7 +362,7 @@ export async function listTelegramServices(request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ services });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -393,7 +394,7 @@ export async function listTelegramReservations(request: NextRequest): Promise<Ne
 
     return NextResponse.json({ reservations });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -494,6 +495,6 @@ export async function createTelegramServiceOrder(request: NextRequest): Promise<
       fin_operation_id: finOperationId,
     }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

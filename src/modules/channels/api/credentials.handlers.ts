@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as credentialsRepo from '../data/credentials.repo';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listCredentials(): Promise<NextResponse> {
   try {
     return NextResponse.json(credentialsRepo.listCredentials());
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -25,6 +26,6 @@ export async function upsertCredentials(request: NextRequest): Promise<NextRespo
     const result = credentialsRepo.upsertCredentials({ channel, environment, client_id, client_secret });
     return NextResponse.json({ id: result.id, status: result.created ? 'created' : 'updated' });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

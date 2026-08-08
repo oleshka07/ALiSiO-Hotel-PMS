@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as guestsRepo from '../data/guests.repo';
 // TODO: replace with eventBus.emit('crm.guest_updated') when crm module is migrated
 import { syncGuestToLead } from '@/lib/sync/guest-lead-sync';
+import { publicMessage } from '@core/security/public-error';
 
 export async function getGuest(
   _request: NextRequest,
@@ -15,7 +16,7 @@ export async function getGuest(
     return NextResponse.json(guest);
   } catch (error: any) {
     console.error('GET /api/guests/[id] error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to fetch guest' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to fetch guest') }, { status: 500 });
   }
 }
 
@@ -32,7 +33,7 @@ export async function updateGuest(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('PATCH /api/guests/[id] error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to update guest' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to update guest') }, { status: 500 });
   }
 }
 
@@ -47,6 +48,6 @@ export async function deleteGuest(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('DELETE /api/guests/[id] error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to delete guest' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to delete guest') }, { status: 500 });
   }
 }

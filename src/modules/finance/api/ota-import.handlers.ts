@@ -14,6 +14,7 @@ import { cookies } from 'next/headers';
 import { getDb } from '@core/db';
 import { getSessionUser } from '@/lib/auth';
 import { createOperationInTx } from './operations.handlers';
+import { publicMessage } from '@core/security/public-error';
 
 // ─────────────────────────────────────────────────────────────────
 // CSV helpers
@@ -340,7 +341,7 @@ export async function previewOtaImport(request: NextRequest): Promise<NextRespon
         ? parseAirbnbCsv(content, db)
         : parseBookingPayoutCsv(content, db);
     } catch (parseErr: any) {
-      return NextResponse.json({ error: parseErr.message }, { status: 422 });
+      return NextResponse.json({ error: publicMessage(parseErr) }, { status: 422 });
     }
 
     const toCreate = rows.filter(r => r.action === 'create');
@@ -363,7 +364,7 @@ export async function previewOtaImport(request: NextRequest): Promise<NextRespon
     return NextResponse.json(preview);
   } catch (e: any) {
     console.error('[OTA Import Preview]', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -445,6 +446,6 @@ export async function confirmOtaImport(request: NextRequest): Promise<NextRespon
     return NextResponse.json(result);
   } catch (e: any) {
     console.error('[OTA Import Confirm]', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

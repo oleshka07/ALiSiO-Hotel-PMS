@@ -4,6 +4,7 @@ import { getDb } from '@core/db';
 import { checkRateLimit } from '@/lib/rate-limit';
 import path from 'path';
 import fs from 'fs';
+import { publicMessage } from '@core/security/public-error';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -140,7 +141,7 @@ export async function uploadGuestDoc(
   } catch (error: any) {
     console.error('[DocUpload] POST error:', error?.message);
     return NextResponse.json(
-      { error: error?.message || 'Upload failed' },
+      { error: publicMessage(error, 'Upload failed') },
       { status: 500, headers: CORS_HEADERS },
     );
   }

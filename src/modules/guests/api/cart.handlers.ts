@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as repo from '../data/guest-actions.repo';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import { sendEmail } from '@/lib/email';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── POST /api/guest/[token]/cart ────────────────────────────────────────────
 export async function handleCartEvent(
@@ -38,7 +39,7 @@ export async function handleCartEvent(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[Cart Event] error:', error?.message);
-    return NextResponse.json({ error: error?.message || 'Failed' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed') }, { status: 500 });
   }
 }
 

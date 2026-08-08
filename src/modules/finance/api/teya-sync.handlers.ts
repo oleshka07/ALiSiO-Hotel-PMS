@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { reconcileTeyaTransactions, reconcileTeyaCsvRows } from '../data/teya-reconcile-engine';
 import { parseTeyaCsv } from '../data/teya-csv-parser';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -54,7 +55,7 @@ export async function syncTeyaTransactions(request: NextRequest): Promise<NextRe
     });
   } catch (error: any) {
     return NextResponse.json({
-      error: error.message,
+      error: publicMessage(error),
       hint: error.message?.includes('transactions/list')
         ? 'Add OAuth scope `transactions/list` to your Teya app and retry.'
         : undefined,
@@ -128,7 +129,7 @@ export async function getTeyaSyncStatus(_request: NextRequest): Promise<NextResp
     try { parsed = JSON.parse(row.value); } catch { /* ignore */ }
     return NextResponse.json({ ...parsed, updated_at: row.updated_at });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -164,6 +165,6 @@ export async function getTeyaCoverage(request: NextRequest): Promise<NextRespons
 
     return NextResponse.json({ from, to, by_currency: row });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

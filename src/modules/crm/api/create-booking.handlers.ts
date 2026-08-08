@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
 import { createPaymentSession } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { publicMessage } from '@core/security/public-error';
 
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
 const DEPOSIT_PERCENT = 30;
@@ -249,6 +250,6 @@ export async function convertLeadToBooking(
 
   } catch (err: any) {
     console.error('[CRM create-booking] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }

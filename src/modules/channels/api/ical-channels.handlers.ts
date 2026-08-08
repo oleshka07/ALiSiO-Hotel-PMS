@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listIcalChannels() {
   try {
@@ -35,7 +36,7 @@ export async function listIcalChannels() {
 
     return NextResponse.json(channels);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -85,6 +86,6 @@ export async function createIcalChannel(request: NextRequest) {
     const created = db.prepare('SELECT * FROM ical_channels WHERE id = ?').get(id);
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * GET /api/bookings/[id]/sub-bookings
@@ -44,7 +45,7 @@ export async function listSubBookings(_request: NextRequest, { params }: { param
 
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -149,7 +150,7 @@ export async function createSubBooking(request: NextRequest, { params }: { param
     return NextResponse.json({ id: subId, childReservationId }, { status: 201 });
   } catch (e: any) {
     console.error('POST sub-booking error:', e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -221,7 +222,7 @@ export async function updateSubBooking(request: NextRequest, { params }: { param
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -251,6 +252,6 @@ export async function deleteSubBooking(_request: NextRequest, { params }: { para
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

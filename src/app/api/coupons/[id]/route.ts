@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -68,6 +69,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (e?.message?.includes('UNIQUE')) {
       return NextResponse.json({ error: 'Промокод з таким кодом вже існує' }, { status: 409 });
     }
-    return NextResponse.json({ error: e.message || 'Error' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e, 'Error') }, { status: 500 });
   }
 }

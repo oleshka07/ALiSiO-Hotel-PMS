@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 // GET — list all price items (optionally filtered by category)
 export async function getWidgetPriceList(req: Request) {
@@ -17,7 +18,7 @@ export async function getWidgetPriceList(req: Request) {
     }
     return NextResponse.json(rows);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }
 
@@ -55,6 +56,6 @@ export async function updateWidgetPriceItem(req: Request) {
     console.log(`[Widget Prices] Updated ${id}`);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }

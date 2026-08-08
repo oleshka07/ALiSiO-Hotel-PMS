@@ -19,3 +19,4 @@ export {
   maskPhone,
 } from './pii-mask';
 export { requireOwner, requirePermission } from './route-guard';
+export { publicMessage, isInternalError } from './public-error';

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 // PATCH /api/incoming-leads/[id] — update status
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const lead = db.prepare('SELECT * FROM site_incoming_leads WHERE id = ?').get(id) as any;
     return NextResponse.json({ lead });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -34,6 +35,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     db.prepare('DELETE FROM site_incoming_leads WHERE id = ?').run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

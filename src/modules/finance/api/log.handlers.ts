@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 // Transaction log — single SELECT from fin_operations (post-PR #6).
 // Reports all operations with shape compatible with the previous union-based log.
@@ -103,6 +104,6 @@ export async function getFinanceLog(request: NextRequest): Promise<NextResponse>
 
     return NextResponse.json({ transactions: rows, total: countRow.total, page, limit });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

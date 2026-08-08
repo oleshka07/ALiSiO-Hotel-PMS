@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { sendBookingConfirmationEmail } from '../data/send-confirmation-email';
+import { publicMessage } from '@core/security/public-error';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -317,7 +318,7 @@ export async function createBookingDraft(req: Request) {
 
   } catch (err: any) {
     console.error('[BookingDraft] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }
 
@@ -630,7 +631,7 @@ export async function updateBookingDraft(req: Request) {
 
     return NextResponse.json({ ok: true, reservation_id: rid, admin_name: adminName }, { headers: CORS_HEADERS });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }
 
@@ -680,7 +681,7 @@ export async function getBookingDraft(req: Request) {
 
     return NextResponse.json(draft, { headers: CORS_HEADERS });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }
 
@@ -695,6 +696,6 @@ export async function deleteBookingDraft(req: Request) {
     db.prepare('DELETE FROM booking_drafts WHERE id = ?').run(id);
     return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { publicMessage } from '@core/security/public-error';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -211,7 +212,7 @@ export async function saveDraftRegistration(
   } catch (error: any) {
     console.error('[RegistrationStatus] PATCH error:', error?.message);
     return NextResponse.json(
-      { error: error?.message || 'Failed to save draft' },
+      { error: publicMessage(error, 'Failed to save draft') },
       { status: 500, headers: CORS_HEADERS },
     );
   }

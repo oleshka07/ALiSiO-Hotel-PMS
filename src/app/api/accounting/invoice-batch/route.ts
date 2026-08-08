@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { requireOwner } from '@core/security/route-guard';
 import { allocateInvoiceNumber, seriesForChannel, isPeriodLocked } from '@/lib/invoice-numbering';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── CSV utilities ──────────────────────────────────────────────────────────
 
@@ -461,7 +462,7 @@ async function _DELETE(request: NextRequest): Promise<NextResponse> {
     });
   } catch (e: any) {
     console.error('[BatchInvoices] delete error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -574,6 +575,6 @@ async function _POST(request: NextRequest): Promise<NextResponse> {
     });
   } catch (e: any) {
     console.error('[BatchInvoices] error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

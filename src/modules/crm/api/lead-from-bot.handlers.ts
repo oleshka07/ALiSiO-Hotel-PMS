@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { generateAutoResponse } from '@/lib/ai/auto-response'; // TODO: replace with eventBus
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 export async function createLeadFromBot(request: NextRequest) {
   try {
@@ -131,6 +132,6 @@ export async function createLeadFromBot(request: NextRequest) {
     }, { status: existingLeadId ? 200 : 201 });
   } catch (error: any) {
     console.error('[Lead from Bot] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

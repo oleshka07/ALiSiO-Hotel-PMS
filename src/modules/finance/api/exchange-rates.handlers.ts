@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -40,7 +41,7 @@ export async function listExchangeRates(_request: NextRequest): Promise<NextResp
 
     return NextResponse.json({ rates, latest });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -106,7 +107,7 @@ export async function upsertExchangeRate(request: NextRequest): Promise<NextResp
     const created = db.prepare("SELECT * FROM finance_exchange_rates WHERE id = ?").get(newId);
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -124,7 +125,7 @@ export async function deleteExchangeRate(
     db.prepare("DELETE FROM finance_exchange_rates WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -170,6 +171,6 @@ export async function getCurrentRate(request: NextRequest): Promise<NextResponse
 
     return NextResponse.json({ rate: null, effective_from: null, is_fallback: false, error: `No ${fromCur}→${toCur} rate configured` });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import * as crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -45,7 +46,7 @@ export async function listForecastScenarios(request: NextRequest): Promise<NextR
 
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -87,7 +88,7 @@ export async function upsertForecastScenario(request: NextRequest): Promise<Next
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -101,7 +102,7 @@ export async function deleteForecastScenario(
     db.prepare("DELETE FROM forecast_scenarios WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -204,6 +205,6 @@ export async function copyScenariosToAll(request: NextRequest): Promise<NextResp
       skipped,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

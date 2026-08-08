@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export const CRM_STAGES = [
   { id: 'new', label: 'Новий', icon: '🆕', color: '#6b7280' },
@@ -89,6 +90,6 @@ export async function getPipeline() {
     });
   } catch (error: any) {
     console.error('[CRM Pipeline]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

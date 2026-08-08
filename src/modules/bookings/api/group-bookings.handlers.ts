@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { findOrCreateGuest } from '@guests';
 import { notifyGroupBookingCreated } from '../domain/reservation-tg-notify';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listGroupBookings() {
   try {
@@ -19,7 +20,7 @@ export async function listGroupBookings() {
     `).all();
     return NextResponse.json(groups);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -132,6 +133,6 @@ export async function createGroupBooking(request: NextRequest) {
     return NextResponse.json({ id: groupId, guestId, roomCount: finalUnitIds.length }, { status: 201 });
   } catch (e: any) {
     console.error('POST /api/group-bookings error:', e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

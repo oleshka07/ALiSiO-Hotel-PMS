@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -47,6 +48,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ status: paymentStatus }, { headers: CORS_HEADERS });
   } catch (err: any) {
     console.error('[BookingStatus] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500, headers: CORS_HEADERS });
   }
 }

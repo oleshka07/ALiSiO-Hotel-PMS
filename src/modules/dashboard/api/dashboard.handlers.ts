@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function getDashboard() {
   try {
@@ -66,7 +67,7 @@ export async function getDashboard() {
     return NextResponse.json({
       arrivalsToday: 0, departuresToday: 0, occupancyRate: 0,
       freeUnits: 0, totalUnits: 0, upcomingArrivals: [], todayDepartures: [],
-      error: error?.message || 'Failed to fetch dashboard stats',
+      error: publicMessage(error, 'Failed to fetch dashboard stats'),
     });
   }
 }

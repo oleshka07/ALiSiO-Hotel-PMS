@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { getQueueStats, getFailedJobs, getAllSyncLogs, dequeueJob, markCompleted, markFailed } from '@/lib/channels';
 import { pushInventory, pushRates, pushRestrictions, buildARIFromPriceCalendar } from '@/lib/channels/booking-com/ari';
+import { publicMessage } from '@core/security/public-error';
 
 const MAX_JOBS_PER_RUN = 10;
 
@@ -13,7 +14,7 @@ export async function getSyncStatus(): Promise<NextResponse> {
     const recentLogs = getAllSyncLogs({ limit: 20 });
     return NextResponse.json({ queue: stats, failedJobs, recentLogs });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -55,13 +56,13 @@ export async function processSyncQueue(): Promise<NextResponse> {
         }
       } catch (error: any) {
         markFailed(job.id, error.message);
-        results.push({ jobId: job.id, syncType: job.sync_type, success: false, error: error.message });
+        results.push({ jobId: job.id, syncType: job.sync_type, success: false, error: publicMessage(error) });
       }
     }
 
     return NextResponse.json({ processed: results.length, results, queueStats: getQueueStats() });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -98,6 +99,6 @@ async function processARIJob(
         return { success: false, error: `Unknown sync type: ${syncType}` };
     }
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: publicMessage(error) };
   }
 }

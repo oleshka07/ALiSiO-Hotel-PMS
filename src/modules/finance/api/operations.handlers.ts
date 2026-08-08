@@ -5,6 +5,7 @@ import { getDb } from '@core/db';
 import { getSessionUser } from '@/lib/auth';
 
 import { loadActiveRules, isRuleApplicable } from '../data/auto-rules-engine';
+import { publicMessage } from '@core/security/public-error';
 
 const OP_TYPES = ['income', 'expense', 'transfer'] as const;
 type OpType = typeof OP_TYPES[number];
@@ -330,7 +331,7 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
   } catch (error: any) {
     try { require('fs').appendFileSync('pms-error.log', new Date().toISOString() + ' GET /operations ERROR: ' + error.message + '\n' + error.stack + '\n'); } catch (e) {}
     console.error('GET /api/finance/operations error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -350,7 +351,7 @@ export async function getOperation(
     if (!row) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
     return NextResponse.json(enrichOperation(db, row));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -541,7 +542,7 @@ export async function createOperation(request: NextRequest): Promise<NextRespons
 
     return NextResponse.json(enrichOperation(db, created), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 400 });
   }
 }
 
@@ -625,7 +626,7 @@ export async function updateOperation(
 
     return NextResponse.json(enrichOperation(db, updated));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -650,7 +651,7 @@ export async function deleteOperation(
     if (existing.reservation_id) recalcReservationPaymentStatus(db, existing.reservation_id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -717,7 +718,7 @@ export async function mergeOperations(request: NextRequest): Promise<NextRespons
     return NextResponse.json({ ok: true, merged_into: expOp.id });
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -742,7 +743,7 @@ export async function getOperationAudit(
     `).all(id);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -778,7 +779,7 @@ export async function duplicateOperation(
     const created = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(newId);
     return NextResponse.json(enrichOperation(db, created), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 400 });
   }
 }
 
@@ -837,7 +838,7 @@ export async function applyRecurringSuggestion(
     const updated = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
     return NextResponse.json({ ok: true, action: 'applied', operation: enrichOperation(db, updated) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -986,7 +987,7 @@ export async function bulkUpdateOperations(request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ ok: true, updated_count: ops.length });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1031,6 +1032,6 @@ export async function bulkDeleteOperations(request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ ok: true, deleted_count: ops.length });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { syncReservations, syncSingleReservation, getSyncStatus, seedPropertyMap } from '@/lib/hostex-sync';
 import { getReservations, getProperties } from '@/lib/hostex';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── /api/hostex/sync ─────────────────────────────────────────────────────────
 
@@ -12,7 +13,7 @@ export async function hostexSync(): Promise<NextResponse> {
     const result = await syncReservations();
     return NextResponse.json({ success: true, ...result, unmappedProperties: seedResult?.unmapped || [] });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -20,7 +21,7 @@ export async function hostexSyncStatus(): Promise<NextResponse> {
   try {
     return NextResponse.json(getSyncStatus());
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -36,7 +37,7 @@ export async function hostexReservations(request: Request): Promise<NextResponse
     const result = await getReservations({ page, per_page, status, property_id });
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -52,7 +53,7 @@ export async function hostexProperties(): Promise<NextResponse> {
     const result = properties.map(p => ({ ...p, mapping: mappingMap.get(p.id) || null, is_mapped: mappingMap.has(p.id) }));
     return NextResponse.json({ properties: result });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -73,7 +74,7 @@ export async function hostexBulkSync(request: NextRequest): Promise<NextResponse
           const r = await syncSingleReservation(code);
           results.push({ code, status: r.errors.length ? 'error' : 'ok', created: r.created, updated: r.updated, error: r.errors[0] });
         } catch (e: any) {
-          results.push({ code, status: 'error', created: 0, updated: 0, error: e.message });
+          results.push({ code, status: 'error', created: 0, updated: 0, error: publicMessage(e) });
         }
         await new Promise(r => setTimeout(r, 200));
       }
@@ -92,6 +93,6 @@ export async function hostexBulkSync(request: NextRequest): Promise<NextResponse
     const result = await syncReservations();
     return NextResponse.json({ mode: 'full', synced: result.synced, created: result.created, updated: result.updated, skipped: result.skipped, errors: result.errors.length, errorDetails: result.errors, eurCzkRate: result.eurCzkRate });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/[\s\-\(\)\.]/g, '').replace(/^00/, '+');
@@ -155,6 +156,6 @@ export async function checkDedup(request: NextRequest) {
     return NextResponse.json({ found: matches.length > 0, count: matches.length, matches });
   } catch (error: any) {
     console.error('[CRM Dedup POST]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

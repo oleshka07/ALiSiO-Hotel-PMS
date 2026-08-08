@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/[\s\-\(\)\.]/g, '').replace(/^00/, '+');
@@ -120,7 +121,7 @@ export async function listLeads(request: NextRequest) {
     return NextResponse.json({ leads, total: total.count, limit, offset });
   } catch (error: any) {
     console.error('[CRM Leads GET]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -227,9 +228,9 @@ export async function createLead(request: NextRequest) {
       }, { status: 409 });
     }
     if (error.message === "Ім'я обов'язкове") {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: publicMessage(error) }, { status: 400 });
     }
     console.error('[CRM Leads POST]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

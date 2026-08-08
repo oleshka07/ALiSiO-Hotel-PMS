@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as registryRepo from '../data/registry.repo';
+import { publicMessage } from '@core/security/public-error';
 
 // ─── GET /api/guest-registry ─────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ export async function getRegistry(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ entries, summary });
   } catch (error: any) {
     console.error('GET /api/guest-registry error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to fetch registry' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to fetch registry') }, { status: 500 });
   }
 }
 
@@ -65,7 +66,7 @@ export async function updateRegistryEntry(
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('PATCH /api/guest-registry/[id] error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to update registry entry' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to update registry entry') }, { status: 500 });
   }
 }
 
@@ -119,6 +120,6 @@ export async function exportRegistry(request: NextRequest): Promise<NextResponse
     });
   } catch (error: any) {
     console.error('GET /api/guest-registry?format=csv error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to export registry' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to export registry') }, { status: 500 });
   }
 }

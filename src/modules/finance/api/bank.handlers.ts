@@ -3,13 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
 import { loadActiveRules, applyRulesToOperation } from '../data/auto-rules-engine';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listBankStatements(): Promise<NextResponse> {
   try {
     const db = getDb();
     return NextResponse.json(db.prepare(`SELECT * FROM bank_statements ORDER BY uploaded_at DESC`).all());
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -38,7 +39,7 @@ export async function listBankTransactions(request: NextRequest): Promise<NextRe
 
     return NextResponse.json(transactions);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -135,7 +136,7 @@ export async function updateBankTransaction(request: Request): Promise<NextRespo
     `).get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -234,6 +235,6 @@ export async function importBankStatement(request: Request): Promise<NextRespons
       totalRows: rows.length, autoMatched: matched, unmatched: rows.length - matched,
     }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

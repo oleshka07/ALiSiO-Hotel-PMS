@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 // GET /api/incoming-leads?site_id=xxx&status=new
 export async function GET(req: NextRequest) {
@@ -26,6 +27,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ leads });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

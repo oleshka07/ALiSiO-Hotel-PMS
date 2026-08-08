@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createPaymentSession, resolveCredentialsForReservation } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { publicMessage } from '@core/security/public-error';
 
 export async function payForBooking(
   request: NextRequest,
@@ -119,6 +120,6 @@ export async function payForBooking(
 
   } catch (error: any) {
     console.error('[Guest Pay Booking] error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Payment failed' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Payment failed') }, { status: 500 });
   }
 }

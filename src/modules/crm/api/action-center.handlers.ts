@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function getActionCenter(_request: NextRequest) {
   try {
@@ -102,6 +103,6 @@ export async function getActionCenter(_request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[CRM ActionCenter GET]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

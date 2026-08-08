@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createPaymentOperation, hasPaymentOperation } from './payment-bridge';
+import { publicMessage } from '@core/security/public-error';
 
 // ════════════════════════════════════════════════════════════
 // Orphan payment recovery (PR #G)
@@ -113,7 +114,7 @@ export async function listOrphanPayments(): Promise<NextResponse> {
       count: bsoRows.length + soRows.length,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -222,7 +223,7 @@ export async function listPaidServices(req: NextRequest): Promise<NextResponse> 
       orphan_count: orphanCount,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -298,6 +299,6 @@ export async function restoreOrphanPayment(req: Request): Promise<NextResponse> 
 
     return NextResponse.json({ ok: true, operation_id: operationId });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

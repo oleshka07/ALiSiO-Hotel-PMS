@@ -10,6 +10,7 @@ import { findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
 import { onInboundMessage } from '@/lib/crm/stage-transitions';
 import { notifyReservationCreated } from '@bookings';
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 export async function pollEmails(req: NextRequest) {
   const results = {
@@ -52,7 +53,7 @@ export async function pollEmails(req: NextRequest) {
     return NextResponse.json({ success: true, ...results });
   } catch (err: any) {
     console.error('[Email Poll] Fatal error:', err);
-    return NextResponse.json({ error: err.message, results }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err), results }, { status: 500 });
   }
 }
 

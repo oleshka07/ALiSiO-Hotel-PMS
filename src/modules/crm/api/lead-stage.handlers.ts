@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 export async function changeLeadStage(
   request: NextRequest,
@@ -73,6 +74,6 @@ export async function changeLeadStage(
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('[CRM Stage PATCH]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

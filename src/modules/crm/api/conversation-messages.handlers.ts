@@ -5,6 +5,7 @@ import { dispatchMessage } from '@/lib/channels/dispatcher'; // TODO: replace wi
 import { editTelegramMessage } from '@/lib/channels/telegram-bot';
 import { onOutboundReply } from '@/lib/crm/stage-transitions';
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 export async function executeCreateMessage(db: any, conversationId: string, body: any) {
   const {
@@ -117,13 +118,13 @@ export async function sendMessage(
     return NextResponse.json(message, { status: 201 });
   } catch (error: any) {
     if (error.message === 'Content is required') {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: publicMessage(error) }, { status: 400 });
     }
     if (error.message === 'Conversation not found') {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+      return NextResponse.json({ error: publicMessage(error) }, { status: 404 });
     }
     console.error('[CRM Message POST]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 

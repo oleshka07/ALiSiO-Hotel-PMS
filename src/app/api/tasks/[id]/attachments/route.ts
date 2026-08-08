@@ -4,6 +4,7 @@ import { getDb } from '@core/db';
 import path from 'path';
 import fs from 'fs';
 import { getSessionUser, getSessionIdFromCookies } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'tasks');
 
@@ -24,7 +25,7 @@ export async function GET(
     `).all(id);
     return NextResponse.json(attachments);
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -98,7 +99,7 @@ export async function POST(
     return NextResponse.json(attachment, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/tasks/[id]/attachments error:', error?.message);
-    return NextResponse.json({ error: error?.message || 'Upload failed' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Upload failed') }, { status: 500 });
   }
 }
 
@@ -136,6 +137,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

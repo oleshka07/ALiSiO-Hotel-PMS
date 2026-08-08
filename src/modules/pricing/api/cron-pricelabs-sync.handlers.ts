@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncPriceLabsToCalendar } from '../data/pricelabs-sync';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { publicMessage } from '@core/security/public-error';
 
 export async function syncPriceLabsFromCron(request: NextRequest): Promise<NextResponse> {
   const expected = process.env.CRON_SECRET;
@@ -64,6 +65,6 @@ export async function syncPriceLabsFromCron(request: NextRequest): Promise<NextR
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (e: any) {
     console.error('[PL cron] sync failed:', e?.message, e?.stack);
-    return NextResponse.json({ ok: false, error: e?.message || 'sync failed' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: publicMessage(e, 'sync failed') }, { status: 500 });
   }
 }

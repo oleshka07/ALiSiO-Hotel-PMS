@@ -21,6 +21,7 @@ import { createOperationInTx, getOptionalActor } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
 import { getAutoRevenueAllProjects, getAutoRevenue, autoFillMonthlyMetrics } from '../data/auto-revenue-engine';
+import { publicMessage } from '@core/security/public-error';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -73,7 +74,7 @@ export async function listInvestors(_request: NextRequest): Promise<NextResponse
     `).all(orgId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -95,7 +96,7 @@ export async function createInvestor(request: NextRequest): Promise<NextResponse
     const row = db.prepare("SELECT * FROM investors WHERE id = ?").get(id);
     return NextResponse.json(row, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -122,7 +123,7 @@ export async function updateInvestor(
     const row = db.prepare("SELECT * FROM investors WHERE id = ?").get(id);
     return NextResponse.json(row);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -136,7 +137,7 @@ export async function deleteInvestor(
     db.prepare("DELETE FROM investors WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -165,7 +166,7 @@ export async function listInvestments(request: NextRequest): Promise<NextRespons
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -191,7 +192,7 @@ export async function createInvestment(request: NextRequest): Promise<NextRespon
     );
     return NextResponse.json({ id, ok: true }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -213,7 +214,7 @@ export async function updateInvestment(
     db.prepare(`UPDATE investor_investments SET ${fields.join(', ')} WHERE id = ?`).run(...params);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -227,7 +228,7 @@ export async function deleteInvestment(
     db.prepare("DELETE FROM investor_investments WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -253,7 +254,7 @@ export async function listMonthlyMetrics(request: NextRequest): Promise<NextResp
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -279,7 +280,7 @@ export async function upsertMonthlyMetric(request: NextRequest): Promise<NextRes
            body.occupancy_pct ?? null, body.revenue ?? null, body.notes || null);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -293,7 +294,7 @@ export async function deleteMonthlyMetric(
     db.prepare("DELETE FROM property_monthly_metrics WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -320,7 +321,7 @@ export async function listPayouts(request: NextRequest): Promise<NextResponse> {
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -400,7 +401,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
 
     return NextResponse.json({ id: payoutId, fin_operation_id: operationId, ok: true }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -419,7 +420,7 @@ export async function deletePayout(
     db.prepare("DELETE FROM investor_payouts WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -492,7 +493,7 @@ export async function previewMonthlyPayout(request: NextRequest): Promise<NextRe
 
     return NextResponse.json({ year_month: yearMonth, items });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -592,7 +593,7 @@ export async function bulkMonthlyPayout(request: NextRequest): Promise<NextRespo
       payouts: created,
     }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -626,7 +627,7 @@ export async function getMonthlyDigest(request: NextRequest): Promise<NextRespon
 
     return NextResponse.json(digest);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -666,7 +667,7 @@ export async function sendDigestTelegram(request: NextRequest): Promise<NextResp
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -690,7 +691,7 @@ export async function getAutoRevenueForMonth(request: NextRequest): Promise<Next
     }
     return NextResponse.json({ items: getAutoRevenueAllProjects(db, orgId, yearMonth) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -710,7 +711,7 @@ export async function autoFillMetricsHandler(request: NextRequest): Promise<Next
     const result = autoFillMonthlyMetrics(db, orgId, yearMonth, overwrite);
     return NextResponse.json({ year_month: yearMonth, overwrite, ...result });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -739,7 +740,7 @@ export async function listInvestorProjects(_request: NextRequest): Promise<NextR
     `).all(orgId, orgId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -794,7 +795,7 @@ export async function listInvestorProperties(request: NextRequest): Promise<Next
     }));
     return NextResponse.json({ items });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -829,7 +830,7 @@ export async function createInvestorProperty(request: NextRequest): Promise<Next
     tx();
     return NextResponse.json({ project_id: buId, ok: true }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -886,7 +887,7 @@ export async function updateInvestorProperty(
     tx();
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -933,7 +934,7 @@ export async function unlinkInvestorProperty(
 
     return NextResponse.json({ ok: true, deleted, bu: { id: bu.id, name: bu.name } });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -961,7 +962,7 @@ export async function listMonthlyReports(request: NextRequest): Promise<NextResp
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -993,7 +994,7 @@ export async function upsertMonthlyReport(request: NextRequest): Promise<NextRes
            body.photo_url || null);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1007,6 +1008,6 @@ export async function deleteMonthlyReport(
     db.prepare("DELETE FROM property_monthly_reports WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

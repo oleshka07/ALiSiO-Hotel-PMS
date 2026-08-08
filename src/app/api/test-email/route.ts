@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/email';
+import { publicMessage } from '@core/security/public-error';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     console.error('[Test Email] Error sending email:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message || String(error),
+      error: publicMessage(error) || String(error),
       config: {
         host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
         port: process.env.EMAIL_CZ_SMTP_PORT || '465',

@@ -1,5 +1,6 @@
 import { getDb } from '@core/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { publicMessage } from '@core/security/public-error';
 
 export async function GET(request: NextRequest) {
   // Simple cron endpoint to anonymize data older than 6 years
@@ -78,6 +79,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Data retention policy applied successfully' });
   } catch (error: any) {
     console.error('GDPR Retention Cron Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -23,6 +23,7 @@ import {
   cancelReservation,
   findPoolUnit,
 } from '../data/import.repo';
+import { publicMessage } from '@core/security/public-error';
 
 export interface PlannedUnit {
   unitId: string;
@@ -578,7 +579,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
         }
       } catch (e: any) {
         failed++;
-        details.push({ bookNumber: row.bookNumber, action: 'failed', error: e?.message || String(e) });
+        details.push({ bookNumber: row.bookNumber, action: 'failed', error: publicMessage(e) || String(e) });
         console.error(`[Import Booking.com] row ${row.bookNumber} failed:`, e?.message);
       }
     }

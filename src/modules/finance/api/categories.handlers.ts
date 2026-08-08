@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 const OP_TYPES = ['income', 'expense', 'transfer', 'other'] as const;
 type OpType = typeof OP_TYPES[number];
@@ -67,7 +68,7 @@ export async function listCategories(request: NextRequest): Promise<NextResponse
     `).all(...params);
     return NextResponse.json(rows);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -108,7 +109,7 @@ export async function getCategoryTree(request: NextRequest): Promise<NextRespons
 
     return NextResponse.json({ tree, byOpType });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -175,7 +176,7 @@ export async function createCategory(request: NextRequest): Promise<NextResponse
     const created = db.prepare("SELECT * FROM expense_categories WHERE id = ?").get(id);
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -236,7 +237,7 @@ export async function updateCategory(
     const updated = db.prepare("SELECT * FROM expense_categories WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -262,7 +263,7 @@ export async function archiveCategory(
     const updated = db.prepare("SELECT * FROM expense_categories WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -296,7 +297,7 @@ export async function deleteCategory(
     db.prepare("DELETE FROM expense_categories WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -344,6 +345,6 @@ export async function moveCategory(
     const updated = db.prepare("SELECT * FROM expense_categories WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

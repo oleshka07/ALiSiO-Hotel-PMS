@@ -16,6 +16,7 @@ import { saveRegistrations } from '@/modules/guests/data/registration.repo';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import fs from 'fs';
 import path from 'path';
+import { publicMessage } from '@core/security/public-error';
 
 // ── Auth ──────────────────────────────────────────────────────────
 
@@ -243,7 +244,7 @@ export async function registerFromPhotos(request: NextRequest) {
 
   } catch (err: any) {
     console.error('[TG Registration] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }
 

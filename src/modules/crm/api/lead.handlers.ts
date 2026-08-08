@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { syncLeadToGuest, findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync'; // TODO: replace with eventBus
+import { publicMessage } from '@core/security/public-error';
 
 export async function getLead(
   request: NextRequest,
@@ -66,7 +67,7 @@ export async function getLead(
     return NextResponse.json({ ...lead as any, conversations, stageHistory });
   } catch (error: any) {
     console.error('[CRM Lead GET]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -131,7 +132,7 @@ export async function updateLead(
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('[CRM Lead PATCH]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -174,6 +175,6 @@ export async function deleteLead(
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     console.error('[CRM Lead DELETE]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

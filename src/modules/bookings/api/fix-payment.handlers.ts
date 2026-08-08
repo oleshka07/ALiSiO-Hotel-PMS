@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * Admin endpoint to manually fix service order payment status.
@@ -60,7 +61,7 @@ export async function fixServiceOrderPayment(req: NextRequest): Promise<NextResp
 
     return NextResponse.json({ ok: true, fixed: totalFixed, details: results });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }
 
@@ -122,6 +123,6 @@ export async function getPendingOrders(req: NextRequest): Promise<NextResponse> 
 
     return NextResponse.json({ orders: rows, total: rows.length });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }

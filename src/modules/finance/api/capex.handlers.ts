@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listCapex(request: NextRequest): Promise<NextResponse> {
   try {
@@ -30,7 +31,7 @@ export async function listCapex(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ items, summary });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -55,6 +56,6 @@ export async function createCapex(request: Request): Promise<NextResponse> {
     const item = db.prepare(`SELECT c.*, bu.name as bu_name FROM capex_items c LEFT JOIN business_units bu ON c.business_unit_id = bu.id WHERE c.id = ?`).get(id);
     return NextResponse.json(item, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

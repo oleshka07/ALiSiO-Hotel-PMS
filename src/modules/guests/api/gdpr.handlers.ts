@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@core/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { publicMessage } from '@core/security/public-error';
 
 export async function exportGuestData(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,7 +33,7 @@ export async function exportGuestData(request: NextRequest, { params }: { params
     return NextResponse.json(exportData);
   } catch (error: any) {
     console.error('GDPR Export Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -97,6 +98,6 @@ export async function eraseGuestData(request: NextRequest, { params }: { params:
     return NextResponse.json({ success: true, message: 'Erasure request processed (data retained if required by law)' });
   } catch (error: any) {
     console.error('GDPR Erasure Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

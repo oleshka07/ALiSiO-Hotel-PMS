@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 const MAX_NAME_LEN = 50;
 
@@ -23,7 +24,7 @@ export async function listTags(request: NextRequest): Promise<NextResponse> {
     `).all(orgId);
     return NextResponse.json(rows);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -61,7 +62,7 @@ export async function createTag(request: NextRequest): Promise<NextResponse> {
     const created = db.prepare("SELECT * FROM finance_tags WHERE id = ?").get(id);
     return NextResponse.json(created, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -107,7 +108,7 @@ export async function updateTag(
     const updated = db.prepare("SELECT * FROM finance_tags WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -128,7 +129,7 @@ export async function archiveTag(
     const updated = db.prepare("SELECT * FROM finance_tags WHERE id = ?").get(id);
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -146,6 +147,6 @@ export async function deleteTag(
     db.prepare("DELETE FROM finance_tags WHERE id = ?").run(id);
     return NextResponse.json({ ok: true, deleted_id: id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

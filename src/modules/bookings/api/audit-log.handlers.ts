@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getDb } from '@core/db';
 import { getSessionUser } from '@/lib/auth';
+import { publicMessage } from '@core/security/public-error';
 
 /** Actor helper — same pattern as finance module's getOptionalActor */
 export async function getBookingActor(): Promise<{ id: string; name: string } | null> {
@@ -97,6 +98,6 @@ export async function listBookingAudit(request: NextRequest): Promise<NextRespon
     return NextResponse.json({ items: rows });
   } catch (error: any) {
     console.error('GET /api/audit/bookings error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed') }, { status: 500 });
   }
 }

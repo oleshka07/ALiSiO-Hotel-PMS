@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createPaymentOperation } from '@/modules/finance/api/payment-bridge';
 import { getOptionalActor } from '@/modules/finance/api/operations.handlers';
+import { publicMessage } from '@core/security/public-error';
 
 // Legacy /api/payments endpoint — reads/writes via fin_operations.
 //
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     `).all(...params);
     return NextResponse.json(rows);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -171,6 +172,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         'Позначка збережена. Реальна транзакція з\'явиться в Операціях коли надійде з Teya / банку / платформи.',
     }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

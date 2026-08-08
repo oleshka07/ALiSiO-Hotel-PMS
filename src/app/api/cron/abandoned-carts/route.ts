@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { sendAbandonedCartEmail } from '@/modules/bookings/data/send-abandoned-cart-email';
+import { publicMessage } from '@core/security/public-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, processed, totalFound: abandonedReservations.length });
   } catch (error: any) {
     console.error('[CronAbandonedCarts] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

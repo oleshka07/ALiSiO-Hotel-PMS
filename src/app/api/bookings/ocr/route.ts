@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { ocrDocument } from '@/lib/ai/ocr-document';
+import { publicMessage } from '@core/security/public-error';
 
 /**
  * POST /api/bookings/ocr
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     console.error('[OCR Admin] Error:', err?.message);
     return NextResponse.json(
-      { success: false, error: err?.message || 'OCR processing failed' },
+      { success: false, error: publicMessage(err, 'OCR processing failed') },
       { status: 500 }
     );
   }

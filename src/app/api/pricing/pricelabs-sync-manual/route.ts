@@ -10,6 +10,7 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { syncPriceLabsToCalendar } from '@/modules/pricing/data/pricelabs-sync';
+import { publicMessage } from '@core/security/public-error';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const store = await cookies();
@@ -26,6 +27,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const result = await syncPriceLabsToCalendar(days);
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'sync failed' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: publicMessage(e, 'sync failed') }, { status: 500 });
   }
 }

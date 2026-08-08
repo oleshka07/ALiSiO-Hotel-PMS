@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import { publicMessage } from '@core/security/public-error';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
 
@@ -61,6 +62,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url, filename, size: file.size });
   } catch (error: any) {
     console.error('POST /api/upload error:', error?.message);
-    return NextResponse.json({ error: error?.message || 'Upload failed' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Upload failed') }, { status: 500 });
   }
 }

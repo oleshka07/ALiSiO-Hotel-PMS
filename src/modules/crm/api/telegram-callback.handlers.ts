@@ -6,6 +6,7 @@ import { editTelegramMessage, answerCallbackQuery } from '@/lib/channels/telegra
 import { sendEmail } from '@/lib/channels/email'; // TODO: replace with eventBus
 import { onOutboundReply } from '@/lib/crm/stage-transitions'; // TODO: replace with eventBus
 import crypto from 'crypto';
+import { publicMessage } from '@core/security/public-error';
 
 export async function handleTelegramCallback(request: NextRequest) {
   try {
@@ -69,7 +70,7 @@ export async function handleTelegramCallback(request: NextRequest) {
     }
   } catch (err: any) {
     console.error('[TG Callback]', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(err) }, { status: 500 });
   }
 }
 

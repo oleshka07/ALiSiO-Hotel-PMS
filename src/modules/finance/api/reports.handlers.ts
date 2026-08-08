@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { getMonthMoney } from '../data/money-metrics';
+import { publicMessage } from '@core/security/public-error';
 
 // Helpers: SQL fragments that filter fin_operations by semantic slice.
 // A "payment" operation = income or refund tied to a reservation (source IN ('booking_widget','teia','hostex','manual') with reservation_id).
@@ -151,7 +152,7 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
       monthlyData, buBreakdown, alerts, recentTransactions: recent,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -358,7 +359,7 @@ export async function getPnl(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ month, businessUnits: bus, rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -445,7 +446,7 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
       inflowsBySource, outflowsByCategory, outflowsByBU,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -626,7 +627,7 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
       summary: { totalIncome, totalExpense, netFlow: totalIncome - totalExpense },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -785,7 +786,7 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
       ],
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -815,7 +816,7 @@ export async function getFinancialIndicators(request: NextRequest): Promise<Next
       margin_pct: marginPct, gross_margin_pct: grossMarginPct,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -909,7 +910,7 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
       fixed_assets: { total: fixedAssets.total, count: fixedAssets.cnt, currency: 'CZK' },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -991,7 +992,7 @@ export async function getProjectProfitability(request: NextRequest): Promise<Nex
 
     return NextResponse.json({ months, projects, totals, basis });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1053,7 +1054,7 @@ export async function getAccountStatement(request: NextRequest): Promise<NextRes
 
     return NextResponse.json({ account, from, to, opening, closing, totalIn, totalOut, items });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1125,7 +1126,7 @@ export async function getPlanFactReport(request: NextRequest): Promise<NextRespo
 
     return NextResponse.json({ year, month, by, rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1172,7 +1173,7 @@ export async function getOperationsForDrillDown(request: NextRequest): Promise<N
     `).all(...params);
     return NextResponse.json({ operations: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -1256,6 +1257,6 @@ export async function getExpectedPayments(request: NextRequest): Promise<NextRes
 
     return NextResponse.json({ items, summary, timeline, byCategory: Object.values(byCategory) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

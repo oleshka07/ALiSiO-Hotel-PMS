@@ -8,6 +8,7 @@ import {
 } from '../data/import-wizard-engine';
 import { buildEntityCandidates, saveResolutions, type EntityType } from '../data/entity-matcher';
 import { processRowsForReview, commitApprovedRows } from '../data/import-commit-engine';
+import { publicMessage } from '@core/security/public-error';
 
 const ENTITY_FIELD_MAP: Record<EntityType, string[]> = {
   account:      ['account_from', 'account_to'],
@@ -80,7 +81,7 @@ export async function parseImportFile(request: NextRequest): Promise<NextRespons
       all_rows: parsed.rows,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -98,7 +99,7 @@ export async function listImportFormats(_request: NextRequest): Promise<NextResp
     }));
     return NextResponse.json({ items });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -124,7 +125,7 @@ export async function saveImportFormat(request: NextRequest): Promise<NextRespon
     const row = db.prepare("SELECT * FROM import_formats WHERE id = ?").get(id) as any;
     return NextResponse.json({ ok: true, id, format: { ...row, field_mappings: safeJsonParse(row.field_mappings_json, {}) } });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -141,7 +142,7 @@ export async function deleteImportFormat(
     db.prepare("DELETE FROM import_formats WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -162,7 +163,7 @@ export async function listImportRuns(_request: NextRequest): Promise<NextRespons
     `).all(orgId);
     return NextResponse.json({ items });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -224,7 +225,7 @@ export async function resolveEntities(request: NextRequest): Promise<NextRespons
 
     return NextResponse.json({ ok: true, resolutions: result });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -248,7 +249,7 @@ export async function reviewRows(request: NextRequest): Promise<NextResponse> {
     const result = processRowsForReview(db, orgId, body.format_id, body.field_mappings, body.all_rows);
     return NextResponse.json({ ok: true, ...result });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -276,7 +277,7 @@ export async function commitImport(request: NextRequest): Promise<NextResponse> 
     });
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -303,6 +304,6 @@ export async function saveEntityResolutions(request: NextRequest): Promise<NextR
     }
     return NextResponse.json({ ok: true, total_saved: total });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

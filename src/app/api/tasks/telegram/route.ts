@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatUserTasksForTelegram } from '@/modules/tasks/data/task-notifications';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 // GET /api/tasks/telegram?chat_id=123 — returns task list for Telegram user
 export async function GET(request: NextRequest) {
@@ -24,6 +25,6 @@ export async function GET(request: NextRequest) {
     const text = formatUserTasksForTelegram(user.id);
     return NextResponse.json({ text });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function previewIcalCleanup() {
   try {
@@ -49,7 +50,7 @@ export async function previewIcalCleanup() {
       message: 'Send DELETE request to this endpoint to confirm cleanup',
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -110,6 +111,6 @@ export async function deleteIcalCleanup(request: NextRequest) {
     });
   } catch (e: any) {
     console.error('[Cleanup] Error:', e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

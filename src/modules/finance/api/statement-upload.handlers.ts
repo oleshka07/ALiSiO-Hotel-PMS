@@ -5,6 +5,7 @@ import {
   parseBookingCsv, parseVrboCsv, parseAirbnbCsv, applyStatementToReceivables,
   detectChannelFromCsv, type StatementChannel,
 } from '../data/statement-parsers';
+import { publicMessage } from '@core/security/public-error';
 
 function orgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -86,7 +87,7 @@ export async function uploadStatement(request: NextRequest): Promise<NextRespons
       outcomes: result.outcomes,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -108,6 +109,6 @@ export async function listStatementUploads(_request: NextRequest): Promise<NextR
     `).all(org);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

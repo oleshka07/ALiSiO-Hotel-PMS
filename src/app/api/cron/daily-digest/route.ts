@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { sendDailyOperationalDigest } from '@/modules/notifications/data/daily-digest';
+import { publicMessage } from '@core/security/public-error';
 
 export async function GET(request: NextRequest) {
   // Auth: require CRON_SECRET in production
@@ -36,6 +37,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[Daily Digest Cron] Error:', error?.message);
-    return NextResponse.json({ error: error?.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

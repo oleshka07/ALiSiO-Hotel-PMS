@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listExpenseCategories(): Promise<NextResponse> {
   try {
@@ -8,7 +9,7 @@ export async function listExpenseCategories(): Promise<NextResponse> {
     const categories = db.prepare(`SELECT * FROM expense_categories WHERE is_active = 1 ORDER BY sort_order ASC`).all();
     return NextResponse.json(categories);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }
 
@@ -44,6 +45,6 @@ export async function createExpenseCategory(request: Request): Promise<NextRespo
 
     return NextResponse.json(db.prepare("SELECT * FROM expense_categories WHERE id = ?").get(id), { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
 }

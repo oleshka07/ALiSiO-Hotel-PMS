@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { publicMessage } from '@core/security/public-error';
 
 export async function updateBookingSource(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -40,7 +41,7 @@ export async function updateBookingSource(request: Request, { params }: { params
     const updated = db.prepare('SELECT * FROM booking_sources WHERE id = ?').get(id);
     return NextResponse.json(updated);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -68,6 +69,6 @@ export async function deleteBookingSource(_request: Request, { params }: { param
     db.prepare('DELETE FROM booking_sources WHERE id = ?').run(id);
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }

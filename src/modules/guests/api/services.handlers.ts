@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as actionsRepo from '../data/guest-actions.repo';
 // TODO: replace with @channels eventBus event when channels module is migrated
 import { checkRateLimit } from '@/lib/rate-limit';
+import { publicMessage } from '@core/security/public-error';
 
 export async function orderServices(
   request: NextRequest,
@@ -29,6 +30,6 @@ export async function orderServices(
     return NextResponse.json({ success: true, orderedServices });
   } catch (error: any) {
     console.error('POST /api/guest/[token]/services error:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Failed to order services' }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(error, 'Failed to order services') }, { status: 500 });
   }
 }

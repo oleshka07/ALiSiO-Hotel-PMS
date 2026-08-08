@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { syncReservationGuestData } from '../../guests/data/registration.repo';
+import { publicMessage } from '@core/security/public-error';
 
 export async function listRegistrations(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,7 +21,7 @@ export async function listRegistrations(_request: NextRequest, { params }: { par
     `).all(id);
     return NextResponse.json(rows);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -80,7 +81,7 @@ export async function registerGuest(request: NextRequest, { params }: { params: 
 
     return NextResponse.json({ id: regId, guestId }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
 
@@ -99,6 +100,6 @@ export async function removeRegistration(request: NextRequest, { params }: { par
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
 }
