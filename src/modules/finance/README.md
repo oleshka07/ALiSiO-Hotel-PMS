@@ -15,11 +15,11 @@ API згруповано за бізнес-доменами. Мутації за
 | Функція | Опис | Дозвіл |
 |---|---|---|
 | `getFinanceOverview(req)` | Загальний огляд фінансів | view_finance |
-| `getPnl(req)` | P&L звіт | view_finance |
 | `getCashflow(req)` | Cashflow звіт | view_finance |
 | `getExpectedPayments(req)` | Очікувані надходження | view_finance |
 | `getCashflowMatrix(req)` | Cashflow матриця по місяцях | view_finance |
-| `getPnlMatrix(req)` | P&L матриця по місяцях | view_finance |
+| `getPnlMatrix(req)` | P&L матриця по місяцях, категорія × місяць (`?basis=paid\|accrued`, типово accrued) | view_finance |
+| `getPnl2(req)` | P&L по напрямках, з розподілом спільних витрат (`?basis=paid\|accrued`, типово accrued) | view_finance |
 | `getFinancialIndicators(req)` | Фінансові індикатори | view_finance |
 | `getOperationsForDrillDown(req)` | Операції для drill-down | view_finance |
 | `getBalanceSheet(req)` | Баланс | view_finance |

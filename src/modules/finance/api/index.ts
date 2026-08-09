@@ -34,7 +34,7 @@ export {
 
 // ─── Reports & matrices (read) ────────────────────────────────
 import {
-  getFinanceOverview as _getFinanceOverview, getPnl as _getPnl, getCashflow as _getCashflow,
+  getFinanceOverview as _getFinanceOverview, getCashflow as _getCashflow,
   getExpectedPayments as _getExpectedPayments, getCashflowMatrix as _getCashflowMatrix,
   getPnlMatrix as _getPnlMatrix, getFinancialIndicators as _getFinancialIndicators,
   getOperationsForDrillDown as _getOperationsForDrillDown, getBalanceSheet as _getBalanceSheet,
@@ -42,7 +42,6 @@ import {
   getPlanFactReport as _getPlanFactReport,
 } from './reports.handlers';
 export const getFinanceOverview      = withFinanceRead(_getFinanceOverview);
-export const getPnl                  = withFinanceRead(_getPnl);
 export const getCashflow             = withFinanceRead(_getCashflow);
 export const getExpectedPayments     = withFinanceRead(_getExpectedPayments);
 export const getCashflowMatrix       = withFinanceRead(_getCashflowMatrix);

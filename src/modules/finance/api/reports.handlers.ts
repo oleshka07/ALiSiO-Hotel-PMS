@@ -156,213 +156,6 @@ export async function getFinanceOverview(request: NextRequest): Promise<NextResp
   }
 }
 
-const PNL_LINES = [
-  { section: 'Revenue', line: 'Проживання', type: 'direct', key: 'Проживання' },
-  { section: 'Revenue', line: 'Сауна', type: 'direct', key: 'Сауна' },
-  { section: 'Revenue', line: 'Ресторан', type: 'direct', key: 'Ресторан' },
-  { section: 'Revenue', line: 'Сніданки', type: 'direct', key: 'Сніданки' },
-  { section: 'Revenue', line: 'Інші доходи', type: 'direct', key: 'Інші доходи' },
-  { section: 'Revenue', line: 'Всього виручка', type: 'total_revenue', key: '' },
-  { section: 'Variable', line: 'Продукти', type: 'direct', key: 'Продукти' },
-  { section: 'Variable', line: 'Харчування', type: 'direct', key: 'Харчування' },
-  { section: 'Variable', line: 'Змінні витрати', type: 'direct', key: 'Змінні витрати' },
-  { section: 'Variable', line: 'Всього змінні витрати', type: 'total_variable', key: '' },
-  { section: 'Margin', line: 'Валовий прибуток', type: 'gross_profit', key: '' },
-  { section: 'OPEX direct', line: 'Зарплати (direct)', type: 'direct', key: 'Зарплати' },
-  { section: 'OPEX direct', line: 'Маркетинг (direct)', type: 'direct', key: 'Маркетинг' },
-  { section: 'OPEX direct', line: 'Оренда (direct)', type: 'direct', key: 'Оренда' },
-  { section: 'OPEX direct', line: 'Комунальні (direct)', type: 'direct', key: 'Комунальні' },
-  { section: 'OPEX direct', line: 'Профпослуги (direct)', type: 'direct', key: 'Профпослуги' },
-  { section: 'OPEX direct', line: 'Інші витрати (direct)', type: 'direct', key: 'Інші витрати' },
-  { section: 'OPEX direct', line: 'Розхідники (direct)', type: 'direct', key: 'Розхідники' },
-  { section: 'OPEX alloc', line: 'Алокація оренди', type: 'alloc', key: 'RENT' },
-  { section: 'OPEX alloc', line: 'Алокація комунальних', type: 'alloc', key: 'UTILITIES' },
-  { section: 'OPEX alloc', line: 'Алокація shared payroll', type: 'alloc', key: 'SHARED_PAYROLL' },
-  { section: 'OPEX alloc', line: 'Алокація HQ/загальних', type: 'alloc', key: 'HQ' },
-  { section: 'Result', line: 'EBITDA', type: 'ebitda', key: '' },
-  { section: 'Taxes', line: 'Податки', type: 'direct', key: 'Податки' },
-  { section: 'Result', line: 'Net result', type: 'net', key: '' },
-  { section: 'CAPEX', line: 'CAPEX spend', type: 'capex', key: '' },
-  { section: 'CAPEX', line: 'Амортизація', type: 'depreciation', key: '' },
-];
-
-export async function getPnl(request: NextRequest): Promise<NextResponse> {
-  try {
-    const db = getDb();
-    const { searchParams } = new URL(request.url);
-    const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
-
-    const bus = db.prepare(`
-      SELECT id, name FROM business_units
-      WHERE is_active = 1 AND is_shared = 0 AND name != 'На перегляд'
-      ORDER BY sort_order
-    `).all() as any[];
-
-    // All operations grouped by pnl_line × project_id (using fin_operations)
-    const opsByLineAndBU = db.prepare(`
-      SELECT ec.pnl_line, o.project_id AS business_unit_id, o.op_type, COALESCE(o.payment_subtype, '') as payment_subtype, SUM(o.amount_company) as total
-      FROM fin_operations o LEFT JOIN expense_categories ec ON o.category_id = ec.id
-      WHERE o.status = 'completed'
-        AND strftime('%Y-%m', o.paid_at) = ?
-      GROUP BY ec.pnl_line, o.project_id, o.op_type, COALESCE(o.payment_subtype, '')
-    `).all(month) as any[];
-
-    // Only PENDING accruals overlay the cash figures: a paid accrual is (or
-    // will be) a real fin_operation — counting both doubled the expense.
-    const accrualsByLineAndBU = db.prepare(`
-      SELECT ec.pnl_line, a.business_unit_id, SUM(a.amount) as total
-      FROM accruals a LEFT JOIN expense_categories ec ON a.category_id = ec.id
-      WHERE a.month = ? AND a.status = 'pending' GROUP BY ec.pnl_line, a.business_unit_id
-    `).all(month) as any[];
-
-    for (const acc of accrualsByLineAndBU) {
-      const existing = opsByLineAndBU.find((e: any) => e.pnl_line === acc.pnl_line && e.business_unit_id === acc.business_unit_id && e.op_type === 'expense' && e.payment_subtype === '');
-      if (existing) existing.total += acc.total;
-      else opsByLineAndBU.push({ pnl_line: acc.pnl_line, business_unit_id: acc.business_unit_id, op_type: 'expense', payment_subtype: '', total: acc.total });
-    }
-
-    const sharedByAllocMethod = db.prepare(`
-      SELECT ec.alloc_method, SUM(o.amount_company) as total
-      FROM fin_operations o JOIN expense_categories ec ON o.category_id = ec.id
-      WHERE o.op_type = 'expense' AND COALESCE(o.payment_subtype, '') != 'refund'
-        AND strftime('%Y-%m', o.paid_at) = ? AND o.project_id = 'bu_shared'
-        AND ec.alloc_method NOT IN ('DIRECT', 'NONE')
-      GROUP BY ec.alloc_method
-    `).all(month) as any[];
-
-    const sharedAccrualsByMethod = db.prepare(`
-      SELECT ec.alloc_method, SUM(a.amount) as total
-      FROM accruals a LEFT JOIN expense_categories ec ON a.category_id = ec.id
-      WHERE a.month = ? AND a.business_unit_id = 'bu_shared' AND a.status = 'pending'
-            AND ec.alloc_method NOT IN ('DIRECT', 'NONE')
-      GROUP BY ec.alloc_method
-    `).all(month) as any[];
-
-    for (const acc of sharedAccrualsByMethod) {
-      const existing = sharedByAllocMethod.find((s: any) => s.alloc_method === acc.alloc_method);
-      if (existing) existing.total += acc.total;
-      else sharedByAllocMethod.push(acc);
-    }
-
-    const allocRules = db.prepare(`
-      SELECT alloc_method, business_unit_id, percentage FROM cost_allocations
-      WHERE month = COALESCE(
-        (SELECT MAX(month) FROM cost_allocations WHERE month <= ?),
-        (SELECT MIN(month) FROM cost_allocations)
-      )
-    `).all(month) as any[];
-
-    const allocMap: Record<string, Record<string, number>> = {};
-    for (const rule of allocRules) {
-      if (!allocMap[rule.alloc_method]) allocMap[rule.alloc_method] = {};
-      allocMap[rule.alloc_method][rule.business_unit_id] = rule.percentage / 100;
-    }
-
-    const rows = PNL_LINES.map(line => {
-      const buValues: Record<string, number> = {};
-      let total = 0;
-
-      if (line.type === 'direct' && line.section === 'Revenue') {
-        for (const bu of bus) {
-          let val = 0;
-          for (const op of opsByLineAndBU) {
-            const mappedLine = op.pnl_line || 'Інші доходи';
-            if (mappedLine === line.key && op.business_unit_id === bu.id) {
-              if (op.op_type === 'income') val += op.total;
-              else if (op.op_type === 'expense' && op.payment_subtype === 'refund') val -= op.total;
-            }
-          }
-          buValues[bu.id] = val;
-          total += val;
-        }
-      } else if (line.type === 'direct' && (line.section === 'Variable' || line.section === 'OPEX direct' || line.section === 'Taxes')) {
-        for (const bu of bus) {
-          let val = 0;
-          for (const op of opsByLineAndBU) {
-            if (op.pnl_line === line.key && op.business_unit_id === bu.id) {
-              if (op.op_type === 'expense' && op.payment_subtype !== 'refund') val += op.total;
-            }
-          }
-          buValues[bu.id] = -val;
-          total += buValues[bu.id];
-        }
-      } else if (line.type === 'alloc') {
-        const sharedTotal = sharedByAllocMethod.find((s: any) => s.alloc_method === line.key)?.total || 0;
-        for (const bu of bus) {
-          const pct = allocMap[line.key]?.[bu.id] || 0;
-          buValues[bu.id] = -Math.round(sharedTotal * pct);
-          total += buValues[bu.id];
-        }
-      } else if (line.type === 'capex') {
-        for (const bu of bus) {
-          const capex = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM capex_items WHERE month = ? AND business_unit_id = ?`).get(month, bu.id) as any;
-          buValues[bu.id] = -(capex.total);
-          total += buValues[bu.id];
-        }
-      } else if (line.type === 'depreciation') {
-        for (const bu of bus) {
-          const dep = db.prepare(`SELECT COALESCE(SUM(depreciation_monthly), 0) as total FROM capex_items WHERE status = 'active' AND depreciation_monthly > 0 AND business_unit_id = ?`).get(bu.id) as any;
-          buValues[bu.id] = -(dep.total);
-          total += buValues[bu.id];
-        }
-      } else {
-        for (const bu of bus) buValues[bu.id] = 0;
-      }
-
-      return { ...line, buValues, total };
-    });
-
-    const getRowTotal = (key: string, buId: string): number => rows.find(r => r.key === key && r.type === 'direct')?.buValues[buId] || 0;
-
-    const trRow = rows.find(r => r.type === 'total_revenue');
-    if (trRow) {
-      for (const bu of bus) {
-        trRow.buValues[bu.id] = ['Проживання', 'Сауна', 'Ресторан', 'Сніданки', 'Інші доходи'].reduce((sum, key) => sum + getRowTotal(key, bu.id), 0);
-        trRow.total += trRow.buValues[bu.id];
-      }
-    }
-
-    const tvRow = rows.find(r => r.type === 'total_variable');
-    if (tvRow) {
-      for (const bu of bus) {
-        tvRow.buValues[bu.id] = ['Продукти', 'Харчування', 'Змінні витрати'].reduce((sum, key) => sum + getRowTotal(key, bu.id), 0);
-        tvRow.total += tvRow.buValues[bu.id];
-      }
-    }
-
-    const gpRow = rows.find(r => r.type === 'gross_profit');
-    if (gpRow && trRow && tvRow) {
-      for (const bu of bus) {
-        gpRow.buValues[bu.id] = (trRow.buValues[bu.id] || 0) + (tvRow.buValues[bu.id] || 0);
-        gpRow.total += gpRow.buValues[bu.id];
-      }
-    }
-
-    const ebitdaRow = rows.find(r => r.type === 'ebitda');
-    if (ebitdaRow && gpRow) {
-      const opexRows = rows.filter(r => r.section === 'OPEX direct' || r.section === 'OPEX alloc');
-      for (const bu of bus) {
-        const totalOpex = opexRows.reduce((sum, r) => sum + (r.buValues[bu.id] || 0), 0);
-        ebitdaRow.buValues[bu.id] = (gpRow.buValues[bu.id] || 0) + totalOpex;
-        ebitdaRow.total += ebitdaRow.buValues[bu.id];
-      }
-    }
-
-    const netRow = rows.find(r => r.type === 'net');
-    if (netRow && ebitdaRow) {
-      const taxRow = rows.find(r => r.key === 'Податки');
-      for (const bu of bus) {
-        netRow.buValues[bu.id] = (ebitdaRow.buValues[bu.id] || 0) + (taxRow?.buValues[bu.id] || 0);
-        netRow.total += netRow.buValues[bu.id];
-      }
-    }
-
-    return NextResponse.json({ month, businessUnits: bus, rows });
-  } catch (error: any) {
-    return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
-  }
-}
-
 export async function getCashflow(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
@@ -535,7 +328,7 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
     // Build category tree + month data
     const categoryMap = new Map<string, MatrixRow>();
     for (const r of rows) {
-      const key = r.cat_id || `_uncategorized_${r.op_type}`;
+      const key = `${r.cat_id || '_uncategorized'}|${r.op_type}`;
       if (!categoryMap.has(key)) {
         categoryMap.set(key, {
           category_id: r.cat_id,
@@ -553,17 +346,13 @@ export async function getCashflowMatrix(request: NextRequest): Promise<NextRespo
       row.total += r.total;
     }
 
-    // Group into tree (root + children)
+    // Кожна категорія окремим рядком, без вкладеності: підсумки раніше рахувались
+    // лише по коренях, тому дочірні категорії (49% витрат) у них не входили.
     const categories = [...categoryMap.values()];
-    const roots = categories.filter((c) => !c.parent_id);
-    const children = categories.filter((c) => c.parent_id);
-    for (const root of roots) {
-      root.children = children.filter((c) => c.parent_id === root.category_id).sort((a, b) => b.total - a.total);
-    }
 
     // Split by op_type
-    const incomeRoots = roots.filter((c) => c.op_type === 'income').sort((a, b) => b.total - a.total);
-    const expenseRoots = roots.filter((c) => c.op_type === 'expense').sort((a, b) => b.total - a.total);
+    const incomeRoots = categories.filter((c) => c.op_type === 'income').sort((a, b) => b.total - a.total);
+    const expenseRoots = categories.filter((c) => c.op_type === 'expense').sort((a, b) => b.total - a.total);
 
     // Compute monthly totals
     const incomeByMonth: Record<string, number> = {};
@@ -665,6 +454,7 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
         AND strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?
         AND o.organization_id = ?
         AND o.op_type != 'transfer'
+        AND COALESCE(ec.classifier, 'other') != 'technical'
         ${tagFilter}
       GROUP BY COALESCE(ec.id, ''), o.op_type, month
     `).all(from, to, org, ...tagIds) as any[];
@@ -675,9 +465,13 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
       tax: [], capex: [], financing: [], other: [],
     };
 
+    // Ключ включає op_type. Без нього дохід і витрата однієї категорії злипались
+    // в один рядок, який успадковував тип першої зустрічної операції: у
+    // «Списання» 49 525 доходу лежало в тому ж рядку, що 35 576 витрат, і
+    // рахувалось як витрата.
     const catMap = new Map<string, MatrixRow>();
     for (const r of rows) {
-      const key = r.cat_id || `_uncat_${r.op_type}`;
+      const key = `${r.cat_id || '_uncat'}|${r.op_type}`;
       if (!catMap.has(key)) {
         catMap.set(key, {
           category_id: r.cat_id,
@@ -695,17 +489,25 @@ export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> 
       row.total += r.total;
     }
 
+    // Кожна категорія — окремий рядок своєї секції, без вкладеності.
+    //
+    // Раніше дочірні категорії підвішувались під батьківські для показу, а в
+    // суму секції потрапляли ТІЛЬКИ корені — і 396 503,49 витрат за червень-
+    // липень (49% усіх витрат) не входили ні в «Операційні», ні в EBITDA, ні в
+    // чистий результат, хоч і були видні вкладеними. Сюди ж падали Адміністратор
+    // 75 560, Прибиральниця 67 800, Електрика 80 812, Водаква 41 914, вся
+    // «Маркетинг …» і вся «Будівництво – …».
+    //
+    // Вкладеність до того ж не витримувала розбіжності: «Списання» (other) і
+    // «Компенсація» (variable) лежать під «Інші витрати» (operational), тобто
+    // показувались в одній секції, а класифікатор у них інший. Тому групуємо
+    // кожну категорію за її власним classifier — так вона рахується рівно раз.
     const categories = [...catMap.values()];
-    const roots = categories.filter((c) => !c.parent_id);
-    const children = categories.filter((c) => c.parent_id);
-    for (const root of roots) {
-      root.children = children.filter((c) => c.parent_id === root.category_id).sort((a, b) => b.total - a.total);
-    }
 
     // Bucket into classifier sections. Financing inflows (investor
     // contributions, loans) are NOT revenue — they get their own section.
     const financingIncome: MatrixRow[] = [];
-    for (const r of roots) {
+    for (const r of categories) {
       if (r.op_type === 'income') {
         if ((r.classifier || '') === 'financing') financingIncome.push(r);
         else byClassifier.revenue.push(r);

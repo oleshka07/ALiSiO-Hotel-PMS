@@ -8,9 +8,14 @@ function orgId(db: any): string {
   return row.id;
 }
 
-function mapExpense(cnameLower: string, commentLower: string, classifier: string, stdGroup: string): { rowId: string, childName: string } {
-    const is = (searchStr: string) => cnameLower.includes(searchStr) || commentLower.includes(searchStr);
-    
+function mapExpense(cnameLower: string, classifier: string, stdGroup: string): { rowId: string, childName: string } {
+    // Тільки назва категорії. Раніше сюди підмішувався ще й коментар операції, і
+    // текст із банку вирішував статтю: «аренда экскаватора» з категорії
+    // Будівництво падала в «Аренда» до постійних витрат, а зарплати з приміткою
+    // «Т.Наташа» — в управляючу компанію. Категорія — єдине, що людина обирає
+    // свідомо, тому вона й вирішує.
+    const is = (searchStr: string) => cnameLower.includes(searchStr);
+
     // Переменные
     if (is('алкоголь') || is('продукти')) return { rowId: 'variable', childName: 'Алкоголь (Собівартість), Продукти (Собівартість)' };
     if (is('прання')) return { rowId: 'variable', childName: 'Оплата прачки' };
@@ -19,6 +24,9 @@ function mapExpense(cnameLower: string, commentLower: string, classifier: string
     if (is('завхоз')) return { rowId: 'variable', childName: 'ЗП Завхоз' };
     if (is('трафік')) return { rowId: 'variable', childName: 'Трафик' };
     if (is('маркетолог') || (is('маркетинг') && is('зарплата'))) return { rowId: 'variable', childName: 'Маркетолог' };
+    // Загальна «Зарплати» не мала жодного рядка і провалювалась у «Прочие»:
+    // у липні це було 53 939 з 77 715 усього кошика.
+    if (is('зарплат')) return { rowId: 'variable', childName: 'ЗП (Інша)' };
     if (is('airbnb') || is('booking')) return { rowId: 'variable', childName: 'Платформы бронирования' };
     if (is('реклам') || is('фото') || is('бренд') || is('просування') || is('послуги сторонні')) return { rowId: 'variable', childName: 'Прочие расходы на рекламу/фото/бренд' };
     
@@ -48,12 +56,6 @@ function mapExpense(cnameLower: string, commentLower: string, classifier: string
     // Loans
     if (classifier === 'financing' || is('кредит')) return { rowId: 'loans', childName: 'Кредиты' };
 
-    // Fallbacks based on previous logic
-    if (is('зарплат')) {
-       if (is('будівництво') || is('покращення') || is('стройка')) return { rowId: 'capex', childName: 'ЗП (капітальні зарплати)' };
-       if (is('адміністратор') || is('прибиральниця') || is('завхоз') || is('ремонт') || is('админ')) return { rowId: 'variable', childName: 'ЗП (Інша)' };
-    }
-    
     if (is('управл')) return { rowId: 'mgmt', childName: cnameLower };
     if (is('professional') || is('консалтинг') || is('аудит') || is('юрист')) return { rowId: 'prof', childName: cnameLower };
     if (classifier === 'capex') return { rowId: 'capex', childName: 'Інше капітальне' };
@@ -69,6 +71,12 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     const org = orgId(db);
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
+    // Той самий базис і той самий типовий вибір, що в pnl-matrix. Раніше цей
+    // звіт завжди читав paid_at, а matrix — accrued_at, тому за той самий місяць
+    // вони не могли збігтися: передоплата PLAYCE на 218 790 приходила 29.06, а
+    // стосується липня, і кожен звіт клав її у свій місяць, ніде про це не
+    // повідомляючи.
+    const basis = searchParams.get('basis') === 'paid' ? 'paid_at' : 'accrued_at';
 
     const originalBus = db.prepare(`
       SELECT id, name FROM business_units
@@ -107,23 +115,24 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     const bus = Object.values(virtualBus);
 
     // Fetch operations
+    // 'technical' — заглушки вирівнювання залишків і перекази. Це не дохід і не
+    // витрата: дві прибуткові операції «Звірки залишків» на 9 566,80 інакше
+    // надувають виручку.
     const ops = db.prepare(`
-      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id, o.comment, o.paid_at,
+      SELECT o.amount_company, o.op_type, o.payment_subtype, o.project_id, o.${basis} AS period_date,
              ec.id as cat_id, ec.name as cat_name, COALESCE(ec.classifier, 'other') as classifier, ec.std_group
       FROM fin_operations o
       LEFT JOIN expense_categories ec ON o.category_id = ec.id
       WHERE o.status = 'completed' AND o.organization_id = ?
-        AND strftime('%Y-%m', o.paid_at) = ?
+        AND strftime('%Y-%m', o.${basis}) = ?
+        AND COALESCE(ec.classifier, 'other') != 'technical'
     `).all(org, month) as any[];
 
-    // Fetch capex depreciation
-    const depRows = db.prepare(`
-      SELECT business_unit_id, SUM(depreciation_monthly) as total
-      FROM capex_items
-      WHERE status = 'active' AND depreciation_monthly > 0 AND organization_id = ?
-      GROUP BY business_unit_id
-    `).all(org) as any[];
-    
+    // Амортизація тут не рахується: капітальні витрати показані повною сумою
+    // витраченого, і додати ще й амортизацію означало б порахувати їх двічі.
+    // Раніше на цьому місці був запит до capex_items, результат якого ніде не
+    // використовувався.
+
     // We'll return an array of rows
     const createRow = (key: string, name: string, type: 'data' | 'calc' | 'calc_pct', childrenOrder: string[] = []) => {
       const buValues: Record<string, number> = {};
@@ -172,13 +181,18 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       'Інше капітальне'
     ]);
 
+    const r_loans = createRow('loans', 'Кредиты', 'data');
+
+    // 'loans' не було в цій таблиці, а mapExpense його повертав — і кожна
+    // витрата з classifier='financing' тихо зникала зі звіту на `!targetRow`.
     const rowMap: Record<string, any> = {
       'variable': r_var,
       'fixed': r_fixed,
       'mgmt': r_mgmt,
       'prof': r_prof,
       'taxes': r_taxes,
-      'capex': r_capex
+      'capex': r_capex,
+      'loans': r_loans
     };
 
     // Спільні витрати «Загальне» розкидаються за фіксованим правилом власника,
@@ -274,14 +288,13 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       const vId = (op.project_id && virtualBusMap[op.project_id]) ? virtualBusMap[op.project_id] : 'v_general';
       
       const amt = op.amount_company;
-      const ratio = ratioFor(op.paid_at);
+      const ratio = ratioFor(op.period_date);
       const cname = (op.cat_name || 'Інше').trim();
       const cnameLower = cname.toLowerCase();
       
       const isDividend = cnameLower.includes('дивіденд') || cnameLower.includes('дивиденд') || cnameLower.includes('dividend');
       if (isDividend) continue;
       
-      const commentLower = (op.comment || '').toLowerCase();
       const isGeneral = vId === 'v_general';
 
       // Income
@@ -319,7 +332,7 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       }
       // Expenses
       else if (op.op_type === 'expense') {
-        const mapped = mapExpense(cnameLower, commentLower, op.classifier, op.std_group);
+        const mapped = mapExpense(cnameLower, op.classifier, op.std_group);
         const targetRow = rowMap[mapped.rowId];
         
         if (!targetRow) continue; // safety check
@@ -382,8 +395,31 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
     rows.push(r_mgmt);
     rows.push(r_prof);
     rows.push(r_taxes);
+
+    // Звіт закінчувався на Store-level EBITDA, після якого йшли ще управляюча,
+    // профпослуги, податки і капітальні — і підсумку не було ніде. За липень це
+    // різниця між +96 153 «на вигляд» і реальним результатом.
+    const r_net = createRow('net', 'Чистий результат', 'calc');
+    for (const bu of bus) {
+      r_net.buValues[bu.id] = r_store_ebitda.buValues[bu.id]
+        - r_mgmt.buValues[bu.id] - r_prof.buValues[bu.id] - r_taxes.buValues[bu.id];
+      r_net.total += r_net.buValues[bu.id];
+    }
+    rows.push(r_net);
+
     rows.push(r_invest);
     rows.push(r_capex);
+    if (r_loans.total !== 0) rows.push(r_loans);
+
+    // Капітальні витрати і кредити — не рядки P&L, вони формують грошовий
+    // результат: скільки насправді залишилось у касі.
+    const r_cash = createRow('cash', 'Результат по грошах (після CAPEX)', 'calc');
+    for (const bu of bus) {
+      r_cash.buValues[bu.id] = r_net.buValues[bu.id]
+        - r_capex.buValues[bu.id] - r_loans.buValues[bu.id] + r_invest.buValues[bu.id];
+      r_cash.total += r_cash.buValues[bu.id];
+    }
+    rows.push(r_cash);
 
     const finalRows = rows.map(r => {
       const childrenArr: any[] = [];
@@ -428,7 +464,12 @@ export async function getPnl2(request: NextRequest): Promise<NextResponse> {
       };
     });
 
-    return NextResponse.json({ month, businessUnits: bus, rows: finalRows });
+    return NextResponse.json({
+      month,
+      basis: basis === 'paid_at' ? 'paid' : 'accrued',
+      businessUnits: bus,
+      rows: finalRows,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
