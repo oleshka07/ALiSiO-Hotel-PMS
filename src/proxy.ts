@@ -80,6 +80,7 @@ const PUBLIC_PREFIXES = [
   '/book/',              // public booking wizard
   '/invest/',            // investor portal page (token-based)
   '/w/',                 // booking widget
+  '/report/',            // partner monthly report (token-based, no account)
 ];
 
 const PUBLIC_EXACT = [

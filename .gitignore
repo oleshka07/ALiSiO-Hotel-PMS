@@ -87,3 +87,6 @@ qa-glamping-booking-v2.html
 qa-glamping-booking-v3.html
 src/modules/bookings/api/check_schema.js
 src/assets/fonts/*.ttf
+
+# Згенеровані звіти з фінансовими даними — не в репозиторій
+/reports/

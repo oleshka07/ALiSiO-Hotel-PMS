@@ -4955,6 +4955,39 @@ function runMigrations(database: any) {
   try {
     database.exec('ALTER TABLE app_users ADD COLUMN pin_hash TEXT');
   } catch { /* already exists */ }
+
+  // --- Migration: partner reports published by token ---
+  // The monthly partner report is assembled by hand — figures out of the PMS plus
+  // photographs and commentary — and then has to reach people who have no account
+  // here. Same shape as the investor portal: a long random token in the URL and
+  // no session, so a link can simply be sent.
+  //
+  // The document is kept in the row rather than on disk: it survives a deploy,
+  // needs no upload directory, and a report is text.
+  const prExists = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='partner_reports'"
+  ).get();
+  if (!prExists) {
+    database.exec(`
+      CREATE TABLE partner_reports (
+        id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        token TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        period TEXT,
+        html TEXT NOT NULL,
+        is_published INTEGER NOT NULL DEFAULT 1,
+        view_count INTEGER NOT NULL DEFAULT 0,
+        last_viewed_at TEXT,
+        created_by TEXT REFERENCES app_users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_partner_reports_token ON partner_reports(token);
+      CREATE INDEX idx_partner_reports_period ON partner_reports(organization_id, period DESC);
+    `);
+    console.log('[DB] Created partner_reports table');
+  }
 }
 
 // Generate a cryptographically secure random token for guest pages
