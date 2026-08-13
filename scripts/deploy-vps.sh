@@ -53,19 +53,32 @@ bash /root/projects/alisio-pms/scripts/backup-all.sh --tag predeploy || {
 }
 
 echo "=== [1/7] Перевірка памʼяті ==="
-# The build is the peak. Count RAM the kernel can actually hand out plus free
-# swap; the service is stopped below, so its resident memory returns to the pool.
-AVAIL_MB=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
-SWAP_FREE_MB=$(awk '/SwapFree/{print int($2/1024)}' /proc/meminfo)
-SVC_MB=$(ps -o rss= -C next-server 2>/dev/null | awk '{s+=$1} END{print int(s/1024)}')
-SVC_MB=${SVC_MB:-0}
-USABLE=$((AVAIL_MB + SWAP_FREE_MB + SVC_MB))
+# Every probe below must be incapable of failing. `ps -C <name>` exits 1 when
+# nothing matches, and under `pipefail` that failed the assignment and fired the
+# ERR trap — the deploy aborted before printing a single number, which looked
+# like the memory check itself was broken. A diagnostic must never be the thing
+# that stops the run.
+meminfo_mb() { awk -v k="$1" '$1==k":"{print int($2/1024); f=1} END{if(!f) print 0}' /proc/meminfo 2>/dev/null || echo 0; }
+AVAIL_MB=$(meminfo_mb MemAvailable)
+SWAP_FREE_MB=$(meminfo_mb SwapFree)
+
+# Identify the service by its systemd MainPID, not by process name: matching on
+# a name risks counting an unrelated node process (a Claude Code session) as
+# memory the deploy is about to get back.
+SVC_MB=0
+SVC_PID=$(systemctl show -p MainPID --value alisio-pms 2>/dev/null || echo 0)
+if [ "${SVC_PID:-0}" -gt 0 ] 2>/dev/null; then
+  SVC_MB=$(ps -o rss= -p "$SVC_PID" 2>/dev/null | awk '{print int($1/1024)}' || echo 0)
+fi
+[ -n "${SVC_MB:-}" ] || SVC_MB=0
+
+USABLE=$(( AVAIL_MB + SWAP_FREE_MB + SVC_MB ))
 echo "  вільно ${AVAIL_MB}MB + swap ${SWAP_FREE_MB}MB + сервіс поверне ${SVC_MB}MB = ${USABLE}MB (треба ${NEED_MB}MB)"
 
 # Anything else large running — a Claude Code session, another build — competes
 # for the same pool and is the usual reason the build gets killed.
-OTHER=$(ps -eo rss=,comm= --sort=-rss | awk '$1>300000 && $2!="next-server"{printf "    %6dMB  %s\n", $1/1024, $2}')
-if [ -n "$OTHER" ]; then
+OTHER=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | awk -v pid_mb="$SVC_MB" '$1>300000 && $2!="next-server"{printf "    %6dMB  %s\n", $1/1024, $2}' || true)
+if [ -n "${OTHER:-}" ]; then
   echo "  ⚠️  інші великі процеси (конкурують за памʼять):"
   echo "$OTHER"
 fi
