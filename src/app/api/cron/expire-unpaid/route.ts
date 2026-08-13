@@ -5,26 +5,6 @@ import { publicMessage } from '@core/security/public-error';
 export const dynamic = 'force-dynamic';
 
 /**
- * Cancel website bookings that were never paid and whose arrival date has
- * already passed.
- *
- * A booking from the widget is created `tentative` + `unpaid` and stays that
- * way forever if nobody pays. Nothing expired them, so unpaid holds sat on real
- * units indefinitely — fifteen of them, on 31 515 CZK of inventory.
- *
- * The rule is the operator's: gone the day after the arrival date, if the guest
- * never checked in. Waiting until the day after — rather than a fixed number of
- * hours after booking — means a guest who pays cash at the door is never
- * cancelled out from under the receptionist.
- *
- * Deliberately conservative:
- *   - only `tentative`, only `unpaid` — anything paid, prepaid, confirmed or
- *     checked in is left alone
- *   - the reason is written into `notes` so a cancellation can always be told
- *     apart from one a human made
- *   - `dry=1` reports what would be cancelled and changes nothing
- */
-/**
  * Everything under /api/cron/ is public at the proxy — the prefix is exempt
  * from the session gate on the understanding that each route carries its own
  * secret-header check. This one shipped without it, which left an endpoint
@@ -46,6 +26,29 @@ function authorizeCron(request: Request): NextResponse | null {
   return null;
 }
 
+/**
+ * Cancel website bookings that were never paid and whose arrival date has
+ * already passed.
+ *
+ * A booking from the widget is created `tentative` + `unpaid` and stays that
+ * way forever if nobody pays. Nothing expired them, so unpaid holds sat on real
+ * units indefinitely — fifteen of them, on 31 515 CZK of inventory.
+ *
+ * The rule is the operator's: gone the day after the arrival date, if the guest
+ * never checked in. Waiting until the day after — rather than a fixed number of
+ * hours after booking — means a guest who pays cash at the door is never
+ * cancelled out from under the receptionist.
+ *
+ * Deliberately conservative:
+ *   - only `tentative`, only `unpaid` — anything paid, prepaid, confirmed or
+ *     checked in is left alone
+ *   - only bookings whose source starts with `widget`. Anything created by
+ *     hand — `direct`, an OTA import, a reception entry with its own source —
+ *     carries a human's intent that automation has no business overriding
+ *   - the reason is written into `notes` so a cancellation can always be told
+ *     apart from one a human made
+ *   - `dry=1` reports what would be cancelled and changes nothing
+ */
 // Both verbs, so a POST — the form every other cron line in this project
 // uses — does not silently return an empty 405 body.
 export async function POST(request: Request) { return GET(request); }
@@ -69,6 +72,10 @@ export async function GET(request: Request) {
       WHERE r.status = 'tentative'
         AND r.payment_status = 'unpaid'
         AND date(r.check_in) < date('now')
+        -- Widget bookings only. A booking someone created by hand carries an
+        -- intent automation cannot see — the first dry run would have
+        -- cancelled a 5 400 CZK direct hold made by the owner.
+        AND COALESCE(r.source, '') LIKE 'widget%'
       ORDER BY r.check_in
     `).all() as any[];
 
@@ -86,6 +93,7 @@ export async function GET(request: Request) {
           notes = TRIM(COALESCE(notes,'') || ' | auto-cancelled: неоплачене, заїзд ' || check_in || ' минув'),
           updated_at = datetime('now')
       WHERE id = ? AND status = 'tentative' AND payment_status = 'unpaid'
+        AND COALESCE(source, '') LIKE 'widget%'
     `);
 
     let cancelled = 0;
