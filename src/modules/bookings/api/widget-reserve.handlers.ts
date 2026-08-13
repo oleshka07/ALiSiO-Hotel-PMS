@@ -455,6 +455,9 @@ export async function createWidgetReservation(request: NextRequest) {
       const resId = `r_${Date.now()}_${slot}`;
       const guestPageToken = generateToken();
 
+      // payment_method now has its own column. It is still mirrored into
+      // notes so a booking made today reads the same as one made last month
+      // in any view that has not been migrated off the free-text form yet.
       const notesArr = [];
       if (paymentMethod) notesArr.push(`payment_method:${paymentMethod}`);
       if (documentStrategy) notesArr.push(`document_strategy:${documentStrategy}`);
@@ -466,9 +469,10 @@ export async function createWidgetReservation(request: NextRequest) {
           nights, adults, children, status, payment_status, source,
           total_price, currency, payment_id, promotions_applied, guest_page_token,
           utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
-          booking_lang, country_code, widget_session_id, group_id, notes
+          booking_lang, country_code, widget_session_id, group_id, notes,
+          payment_method
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         resId, unit.property_id, unitId, guestId,
         checkIn, checkOut, nights, adults, children,
@@ -477,7 +481,8 @@ export async function createWidgetReservation(request: NextRequest) {
         guestPageToken,
         utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
         lang, countryCode, session_id_to_store, groupId,
-        finalNotes
+        finalNotes,
+        paymentMethod || null
       );
 
       // Save passport data as a pending guest_registration for the primary guest
