@@ -668,6 +668,10 @@ export async function getBalanceSheet(request: NextRequest): Promise<NextRespons
       SELECT COALESCE(SUM(COALESCE(expected_net, gross_amount, 0)), 0) AS total, COUNT(*) AS cnt
       FROM fin_channel_receivables
       WHERE status IN ('expected', 'in_statement')
+        -- Booking platforms only. Teya shares this table but is a card
+        -- acquirer, not an OTA, and including it would silently change a
+        -- figure whose label promises platform commission money.
+        AND channel_source IN ('booking', 'airbnb', 'vrbo', 'expedia')
     `).get() as { total: number; cnt: number };
 
     // Guest prepayments for FUTURE stays: money received, service not yet

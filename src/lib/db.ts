@@ -3567,6 +3567,12 @@ function runMigrations(database: any) {
         { name: 'Booking.com (EUR)', currency: 'EUR', color: '#003580', sort_order: 902 },
         { name: 'Airbnb (EUR)', currency: 'EUR', color: '#FF5A5F', sort_order: 903 },
         { name: 'VRBO (EUR)', currency: 'EUR', color: '#206A92', sort_order: 904 },
+        // Teya is the card acquirer, not a booking channel: a guest pays by
+        // card, the money sits on the Teya merchant account, and Banking Circle
+        // settles it to the bank days later. Until that settlement lands there
+        // is money owed to us that no account reflects.
+        { name: 'Teya (CZK)', currency: 'CZK', color: '#00B67A', sort_order: 905 },
+        { name: 'Teya (EUR)', currency: 'EUR', color: '#00B67A', sort_order: 906 },
       ];
       const insertClearing = database.prepare(`
         INSERT INTO finance_accounts (id, organization_id, name, type, currency, color, sort_order, is_active)
