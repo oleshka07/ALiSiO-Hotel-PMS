@@ -4722,6 +4722,26 @@ function runMigrations(database: any) {
     if (!colNames.includes('widget_session_id')) {
       database.exec("ALTER TABLE reservations ADD COLUMN widget_session_id TEXT");
     }
+    // How the guest intends to pay. It used to live as free text inside
+    // `notes` ("payment_method:cash"), which meant it could not be filtered,
+    // grouped or reported on — and it was present on 3 of 419 bookings.
+    if (!colNames.includes('payment_method')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN payment_method TEXT");
+      // Carry across what the old free-text form did record, so the column
+      // starts out at least as complete as the notes it replaces.
+      database.exec(`
+        UPDATE reservations
+        SET payment_method = TRIM(
+          substr(notes,
+                 instr(notes, 'payment_method:') + 15,
+                 CASE
+                   WHEN instr(substr(notes, instr(notes, 'payment_method:') + 15), ' |') > 0
+                     THEN instr(substr(notes, instr(notes, 'payment_method:') + 15), ' |') - 1
+                   ELSE length(notes)
+                 END))
+        WHERE payment_method IS NULL AND notes LIKE '%payment_method:%'
+      `);
+    }
     console.log('[DB] Added Analytics columns to reservations table');
   } catch (e: any) {
     console.log('[DB] reservations analytics columns migration note:', e.message);

@@ -38,17 +38,20 @@ export async function handlePaymentReturn(req: Request) {
 
       let resResult = { changes: 0 };
       if (reservationId) {
-        // Update tentative → confirmed+paid, OR confirmed → paid (for direct booking payments)
+        // One statement, not two. Marking paid and confirming used to be
+        // separate round trips with nothing tying them together, so anything
+        // that interrupted the handler between them left the booking paid but
+        // still tentative — five reservations sat in that state. The CASE also
+        // repairs such a row the next time its return URL is hit, which is why
+        // the WHERE accepts an already-paid booking that is still tentative.
         resResult = db.prepare(`
           UPDATE reservations
-          SET payment_status = 'paid', updated_at = datetime('now')
-          WHERE id = ? AND payment_status IN ('unpaid', 'payment_requested', 'prepaid')
-        `).run(reservationId);
-
-        // Also update tentative status to confirmed
-        db.prepare(`
-          UPDATE reservations SET status = 'confirmed', updated_at = datetime('now')
-          WHERE id = ? AND status = 'tentative'
+          SET payment_status = 'paid',
+              status = CASE WHEN status = 'tentative' THEN 'confirmed' ELSE status END,
+              updated_at = datetime('now')
+          WHERE id = ?
+            AND (payment_status IN ('unpaid', 'payment_requested', 'prepaid')
+                 OR status = 'tentative')
         `).run(reservationId);
 
         // PMS state already updated above (reservations.payment_status='paid').

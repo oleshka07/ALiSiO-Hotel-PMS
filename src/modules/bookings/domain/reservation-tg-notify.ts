@@ -21,7 +21,7 @@ export async function notifyReservationCreated(reservationId: string, options: N
       SELECT r.id, r.check_in, r.check_out, r.nights,
              r.adults, r.children,
              r.total_price, r.currency, r.status, r.payment_status, r.source,
-             r.is_multi_room, r.multi_room_marker, r.internal_notes,
+             r.is_multi_room, r.multi_room_marker, r.internal_notes, r.payment_method,
              g.first_name, g.last_name, g.email, g.phone,
              u.name AS unit_name, u.code AS unit_code,
              c.type AS category_type
@@ -55,11 +55,12 @@ export async function notifyReservationCreated(reservationId: string, options: N
         const payLabel = r.payment_status === 'paid' ? '✅ оплачено'
           : r.payment_status === 'prepaid' ? '💳 передплата'
           : '⏳ не оплачено';
-        // Parse payment method from internal_notes (e.g. payment_method:cash)
-        const pmMatch = r.internal_notes?.match?.(/payment_method:(\w+)/);
-        const pmLabel = pmMatch?.[1] === 'cash' ? ' · 💵 готівка'
-          : pmMatch?.[1] === 'terminal' ? ' · 💳 термінал'
-          : pmMatch?.[1] === 'reception' ? ' · 🏨 рецепція'
+        // The column is authoritative; the free-text form in internal_notes is
+        // the fallback for bookings made before the column existed.
+        const pm = r.payment_method || r.internal_notes?.match?.(/payment_method:(\w+)/)?.[1];
+        const pmLabel = pm === 'cash' ? ' · 💵 готівка'
+          : pm === 'terminal' ? ' · 💳 термінал'
+          : pm === 'reception' ? ' · 🏨 рецепція'
           : '';
         return `💰 ${r.total_price} ${r.currency || 'CZK'} · ${payLabel}${pmLabel}`;
       })() : '',

@@ -44,14 +44,15 @@ export async function getTodayCheckIns(request: NextRequest) {
 
   const rows = db.prepare(`
     SELECT r.id, r.check_in, r.check_out, r.adults, r.children,
-           r.registration_status, r.status,
+           r.registration_status, r.status, r.payment_status,
+           r.total_price, r.currency, r.payment_method, r.source,
            g.first_name, g.last_name,
            u.code as unit_code, u.name as unit_name
     FROM reservations r
     JOIN guests g ON r.guest_id = g.id
     JOIN units u ON r.unit_id = u.id
     WHERE r.check_in = ?
-      AND r.status IN ('confirmed', 'checked_in')
+      AND r.status NOT IN ('cancelled', 'no_show')
     ORDER BY u.code ASC
   `).all(today) as any[];
 
@@ -66,8 +67,17 @@ export async function getTodayCheckIns(request: NextRequest) {
       adults: r.adults,
       children: r.children,
       registrationStatus: r.registration_status,
-      // Short label for inline button: "ST4 · John Doe (2 guests)"
-      label: `${r.unit_code} · ${r.first_name} ${r.last_name} (${r.adults}${r.children ? '+' + r.children : ''})`,
+      status: r.status,
+      paymentStatus: r.payment_status,
+      paymentMethod: r.payment_method,
+      totalPrice: r.total_price,
+      currency: r.currency || 'CZK',
+      source: r.source,
+      // Short label for the inline button. Payment state is on the button
+      // itself because the whole point of this list is deciding who still
+      // owes money at the door.
+      label: `${r.unit_code} · ${r.first_name} ${r.last_name} (${r.adults}${r.children ? '+' + r.children : ''})`
+        + (r.payment_status === 'paid' ? ' ✅' : ' ⏳'),
     })),
   });
 }
