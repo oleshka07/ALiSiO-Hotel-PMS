@@ -5,7 +5,30 @@ import { publicMessage } from '@core/security/public-error';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Everything under /api/cron/ is exempt from the session gate in proxy.ts on
+ * the understanding that each route carries its own secret-header check.
+ * These routes never had one.
+ */
+function authorizeCron(request: Request): NextResponse | null {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) {
+    return NextResponse.json(
+      { error: 'CRON_SECRET env variable is not configured on the server' },
+      { status: 500 },
+    );
+  }
+  const provided = request.headers.get('x-cron-secret') || '';
+  if (provided !== expected) {
+    return NextResponse.json({ error: 'invalid or missing X-Cron-Secret header' }, { status: 401 });
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
+  const denied = authorizeCron(request);
+  if (denied) return denied;
+
   try {
     const db = getDb();
     
