@@ -30,7 +30,14 @@ const CLEARING_ACCOUNT_MAP: Record<string, string> = {
   'booking|EUR': 'Booking.com (EUR)',
   'airbnb|EUR':  'Airbnb (EUR)',
   'vrbo|EUR':    'VRBO (EUR)',
+  'teya|CZK':    'Teya (CZK)',
+  'teya|EUR':    'Teya (EUR)',
 };
+
+// Channels that are booking platforms taking a commission. Teya is not one —
+// it is the card acquirer — and the "OTA receivables" figure in the reports
+// must keep meaning what its label says.
+export const OTA_CLEARING_SOURCES = ['booking', 'airbnb', 'vrbo', 'expedia'] as const;
 
 // Default commission percentages (used until statement gives actual numbers)
 const DEFAULT_COMMISSION_PCT: Record<string, number> = {
@@ -44,6 +51,11 @@ export interface UpsertReceivableInput {
   reservationId: string;
   organizationId: string;
   hostexChannelType: string;       // 'booking.com', 'airbnb', etc
+  /**
+   * Bypass the Hostex channel lookup. Teya payments do not come through
+   * Hostex, so they name their clearing source directly.
+   */
+  channelSourceOverride?: string;
   externalReservationId: string;   // hostex_channel_id (Booking's res #)
   grossAmount: number;
   currency: string;                // per-reservation currency
@@ -78,7 +90,8 @@ function findClearingAccount(db: any, orgId: string, name: string): string | nul
  * dates/amounts but never re-open the status.
  */
 export function upsertReceivableForReservation(db: any, input: UpsertReceivableInput): string | null {
-  const channelSource = HOSTEX_CHANNEL_TO_SOURCE[input.hostexChannelType?.toLowerCase()];
+  const channelSource = input.channelSourceOverride
+    ?? HOSTEX_CHANNEL_TO_SOURCE[input.hostexChannelType?.toLowerCase()];
   if (!channelSource) return null;
 
   const clearingName = resolveClearingAccountName(channelSource, input.currency);
@@ -309,4 +322,52 @@ export function getClearingBalance(db: any, accountId: string): {
     outstanding: +(expected + inStatement).toFixed(2),
     receivable_count: Number(row?.receivable_count) || 0,
   };
+}
+
+/**
+ * Record a card payment as money Teya owes us.
+ *
+ * Card money is deliberately kept out of fin_operations: it enters the ledger
+ * only when the bank statement arrives, so that the same koruna is not counted
+ * twice. The cost of that rule was a blind spot — between the guest paying and
+ * Banking Circle settling, the money existed nowhere in the system, and three
+ * quarters of "paid" bookings had no money behind them anywhere.
+ *
+ * This fills the blind spot without touching the ledger: fin_channel_receivables
+ * is a separate table that no balance, operation list or P&L reads.
+ *
+ * Idempotent — UNIQUE (reservation_id, clearing_account_id) means paying twice,
+ * or a webhook arriving after the return URL, updates rather than duplicates.
+ */
+export function recordTeyaReceivable(db: any, reservationId: string): string | null {
+  try {
+    const r = db.prepare(`
+      SELECT r.id, r.total_price, r.currency, r.check_in, r.check_out, r.status,
+             p.organization_id
+      FROM reservations r
+      JOIN properties p ON p.id = r.property_id
+      WHERE r.id = ?
+    `).get(reservationId) as any;
+    if (!r || !r.total_price || r.total_price <= 0) return null;
+
+    return upsertReceivableForReservation(db, {
+      reservationId: r.id,
+      organizationId: r.organization_id,
+      hostexChannelType: '',
+      channelSourceOverride: 'teya',
+      externalReservationId: r.id,
+      grossAmount: Number(r.total_price),
+      currency: (r.currency || 'CZK').toUpperCase(),
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      status: r.status,
+      // Teya's fee is not knowable here — it is whatever the settlement says.
+      // Guessing a percentage would put an invented number in front of the
+      // operator; the statement fills actual_commission when it arrives.
+      commissionAmount: 0,
+    });
+  } catch (e: any) {
+    console.error('[clearing] Teya receivable failed (non-fatal):', e.message);
+    return null;
+  }
 }

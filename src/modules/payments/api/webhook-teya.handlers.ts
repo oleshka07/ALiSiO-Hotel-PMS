@@ -228,6 +228,20 @@ async function handlePaymentSuccess(db: any, event: any, eventType: string): Pro
   const result5 = db.prepare("UPDATE reservations SET payment_status = 'paid', updated_at = datetime('now') WHERE payment_id = ? AND payment_status IN ('unpaid', 'payment_requested')").run(paymentRef);
   db.prepare("UPDATE service_time_slots SET booking_session_id = NULL, notes = 'paid' WHERE booking_session_id = ?").run(paymentRef);
 
+  // Same reasoning as the widget return path: the ledger stays untouched, the
+  // clearing table records what Teya owes us until the settlement arrives.
+  try {
+    const { recordTeyaReceivable } = require('@/modules/finance/data/clearing-engine');
+    const paidRes = db.prepare(`
+      SELECT id FROM reservations
+      WHERE payment_status = 'paid'
+        AND (payment_id = ? OR id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ?))
+    `).all(paymentRef, paymentRef) as { id: string }[];
+    for (const r of paidRes) recordTeyaReceivable(db, r.id);
+  } catch (e: any) {
+    console.error('[Teya Webhook] clearing receivable failed (non-fatal):', e?.message);
+  }
+
   const totalResChanges = result3.changes + result4.changes + result5.changes;
   console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: totalResChanges });
 

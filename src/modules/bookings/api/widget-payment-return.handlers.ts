@@ -58,6 +58,17 @@ export async function handlePaymentReturn(req: Request) {
         // No fin_operation is created here — Teya widget money sits on the
         // Teya merchant account and lands in the ledger only when the bank
         // statement arrives. TG notify the operator for visibility.
+        //
+        // What the ledger cannot show, the clearing table can: record what Teya
+        // owes us, so the money is visible somewhere between the guest paying
+        // and Banking Circle settling. Separate table — balances, the operation
+        // list and P&L are untouched.
+        try {
+          const { recordTeyaReceivable } = await import('@/modules/finance/data/clearing-engine');
+          recordTeyaReceivable(db, reservationId);
+        } catch (e: any) {
+          console.error('[Payment Return] clearing receivable failed (non-fatal):', e?.message);
+        }
         // Always update service orders — idempotent on already-paid rows
         try {
           db.prepare(`
