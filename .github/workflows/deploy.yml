@@ -76,18 +76,54 @@ jobs:
               fi
             fi
 
-            # Clean .next directory to prevent Turbopack cache/ENOENT build errors
-            rm -rf .next
+            # The VPS has 4 GB and the build asks for a 3 GB heap. When a
+            # Claude Code session or another build is also resident there is no
+            # room, the kernel kills the build, and — because the old version
+            # deleted .next FIRST — the box was left with nothing to serve.
+            # Next writes BUILD_ID last, so a killed build leaves a directory
+            # that serves HTML while every JS chunk 500s.
+            meminfo_mb() { awk -v k="$1" '$1==k":"{print int($2/1024); f=1} END{if(!f) print 0}' /proc/meminfo 2>/dev/null || echo 0; }
+            AVAIL_MB=$(meminfo_mb MemAvailable)
+            SWAP_FREE_MB=$(meminfo_mb SwapFree)
+            NEED_MB="${DEPLOY_NEED_MB:-3200}"
+            echo "Memory: ${AVAIL_MB}MB available + ${SWAP_FREE_MB}MB swap (build needs ~${NEED_MB}MB)"
+            ps -eo rss=,comm= --sort=-rss 2>/dev/null | awk '$1>300000{printf "  resident: %6dMB  %s\n", $1/1024, $2}' || true
+            if [ $((AVAIL_MB + SWAP_FREE_MB)) -lt "$NEED_MB" ]; then
+              echo "Not enough memory to build — refusing. The running site is untouched."
+              echo "Free memory on the box (close other sessions / add swap) and re-run this deploy."
+              exit 1
+            fi
 
-            # Build Next.js
-            if ! npm run build; then
-              echo "Build failed — aborting deploy. Live service untouched."
+            # Keep the working build until the new one is proven good.
+            rm -rf .next.prev
+            [ -d .next ] && mv .next .next.prev
+
+            restore_previous() {
+              if [ -d .next.prev ]; then
+                echo "Restoring the previous working build"
+                rm -rf .next
+                mv .next.prev .next
+              fi
               if [ -n "$PREVIOUS_COMMIT" ]; then
                 echo "Rolling working tree back to $PREVIOUS_COMMIT"
                 git reset --hard "$PREVIOUS_COMMIT"
               fi
+              systemctl restart alisio-pms || true
+            }
+
+            if ! npm run build; then
+              echo "Build failed — restoring the previous build."
+              restore_previous
               exit 1
             fi
+
+            if [ ! -f .next/BUILD_ID ]; then
+              echo "Build produced no BUILD_ID — it was killed part-way (almost certainly OOM)."
+              restore_previous
+              exit 1
+            fi
+
+            rm -rf .next.prev
 
             # ─────────────────────────────────────────────────────────
             # Idempotent VPS setup for the bank-inbox cron endpoint
