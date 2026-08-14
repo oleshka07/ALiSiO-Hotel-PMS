@@ -196,21 +196,54 @@ export const CAMPING_ITEMS: { code: CampingItemCode; label: string; emoji: strin
   { code: 'svc_test_stone', label: 'Test Stone (1 Kč)', emoji: '🪨' },
 ];
 
-export function calcCampingPrice(
+/**
+ * One line of the price, as a guest would read it off a receipt: what it is,
+ * how many of it, at what rate, for how much.
+ *
+ * `code` is stable and untranslated — whoever shows this decides what to call a
+ * caravan in Czech. The reception hands a phone across the counter, so the
+ * wording has to be the guest's, and that is not a decision the price engine
+ * can make.
+ */
+export interface CampingPriceLine {
+  code: string;
+  qty: number;          // e.g. 2 adults × 3 nights → qty 6
+  unit: 'night' | 'person-night' | 'once';
+  rate: number;         // per unit, averaged when the season changes mid-stay
+  total: number;
+}
+
+export function calcCampingBreakdown(
   selectedItems: CampingItemCode[],
   adults: number, childrenU15: number,
   electricity: boolean, pets: number,
   motorhomeService: boolean,
   checkIn: string, checkOut: string,
   prices: PriceItem[],
-) {
+): { total: number; deposit: number; remaining: number; nights: number; lines: CampingPriceLine[] } {
   const nightDates = getNightDates(checkIn, checkOut);
+  const n = nightDates.length;
+  const acc = new Map<string, { qty: number; unit: CampingPriceLine['unit']; total: number }>();
+  const add = (code: string, qty: number, unit: CampingPriceLine['unit'], amount: number) => {
+    if (!qty || !amount) return;
+    const cur = acc.get(code) || { qty: 0, unit, total: 0 };
+    cur.qty += qty; cur.total += amount;
+    acc.set(code, cur);
+  };
+  const lines = () => [...acc.entries()].map(([code, v]) => ({
+    code, qty: v.qty, unit: v.unit,
+    // Averaged, not per-night: a stay that crosses into side season has two
+    // rates, and one number on a receipt has to be the one that multiplies out.
+    rate: Math.round((v.total / v.qty) * 100) / 100,
+    total: v.total,
+  }));
 
   // If Test Product is selected, override total to 1 CZK (or 1 CZK per test item) to allow quick 1 CZK testing
   if (selectedItems.includes('svc_test_stone')) {
     const testCount = selectedItems.filter(c => c === 'svc_test_stone').length;
     const total = testCount * 1;
-    return { total, deposit: total, remaining: 0, nights: nightDates.length || 1 };
+    add('svc_test_stone', testCount, 'once', total);
+    return { total, deposit: total, remaining: 0, nights: n || 1, lines: lines() };
   }
 
   // Get rates from price list
@@ -233,6 +266,7 @@ export function calcCampingPrice(
       if (item) {
         const rate = season === 'side' && item.rate_side_season != null ? item.rate_side_season : item.rate_standard;
         perNight += rate;
+        add(code, 1, 'night', rate);
       }
     }
 
@@ -241,11 +275,16 @@ export function calcCampingPrice(
     const childRate = season === 'side' && childItem?.rate_side_season != null ? childItem.rate_side_season : (childItem?.rate_standard ?? 100);
     perNight += adults * adultRate;
     perNight += childrenU15 * childRate;
+    add('adult_person', adults, 'person-night', adults * adultRate);
+    add('child_person', childrenU15, 'person-night', childrenU15 * childRate);
 
     // Extras
     if (electricity) perNight += elecItem?.rate_standard ?? 120;
     perNight += pets * (petItem?.rate_standard ?? 50);
     perNight += adults * (taxItem?.rate_standard ?? 25);
+    if (electricity) add('electricity', 1, 'night', elecItem?.rate_standard ?? 120);
+    add('pet', pets, 'person-night', pets * (petItem?.rate_standard ?? 50));
+    add('tourist_tax', adults, 'person-night', adults * (taxItem?.rate_standard ?? 25));
 
     total += perNight;
   }
@@ -253,11 +292,29 @@ export function calcCampingPrice(
   // One-time motorhome service
   if (motorhomeService && selectedItems.includes('motorhome')) {
     total += mhSvcItem?.rate_standard ?? 100;
+    add('motorhome_service', 1, 'once', mhSvcItem?.rate_standard ?? 100);
   }
 
   const isGroup = (adults + childrenU15) >= 15;
   const depositPct = isGroup ? 0.5 : 0.3;
   const deposit = Math.round(total * depositPct);
 
-  return { total, deposit, remaining: total - deposit, nights: nightDates.length };
+  return { total, deposit, remaining: total - deposit, nights: n, lines: lines() };
+}
+
+// Kept as the widget's entry point — same numbers, without the itemisation.
+// One implementation, so a receipt can never disagree with the price beside it.
+export function calcCampingPrice(
+  selectedItems: CampingItemCode[],
+  adults: number, childrenU15: number,
+  electricity: boolean, pets: number,
+  motorhomeService: boolean,
+  checkIn: string, checkOut: string,
+  prices: PriceItem[],
+) {
+  const { total, deposit, remaining, nights } = calcCampingBreakdown(
+    selectedItems, adults, childrenU15, electricity, pets, motorhomeService,
+    checkIn, checkOut, prices,
+  );
+  return { total, deposit, remaining, nights };
 }
