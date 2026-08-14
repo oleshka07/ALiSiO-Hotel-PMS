@@ -206,23 +206,62 @@ export async function registerFromPhotos(request: NextRequest) {
       }, { status: 422 });
     }
 
-    // Save registrations
-    const saved = saveRegistrations(
-      reservationId,
-      reservation.organization_id,
-      ocrResults.map(r => ({
-        firstName: r.firstName,
-        lastName: r.lastName,
-        dateOfBirth: r.dateOfBirth ?? undefined,
-        documentNumber: r.documentNumber ?? undefined,
-        documentType: r.documentType,
-        nationality: r.nationality ?? undefined,
-        address: r.address ?? undefined,
-      }))
-    );
+    // saveRegistrations REPLACES the reservation's guest list — it exists for
+    // the PMS form, which submits everyone at once. From a phone the documents
+    // arrive one photo at a time, so calling it per photo registered the second
+    // guest by deleting the first: two confirmations, each saying 1/1, and one
+    // guest left on the booking.
+    //
+    // Merge here rather than changing saveRegistrations: the form's
+    // replace-everything behaviour is correct for the form, and its carry-across
+    // of police flags and row ids already works when the list contains the
+    // people who were there before.
+    const incoming = ocrResults.map(r => ({
+      firstName: r.firstName,
+      lastName: r.lastName,
+      dateOfBirth: r.dateOfBirth ?? undefined,
+      documentNumber: r.documentNumber ?? undefined,
+      documentType: r.documentType,
+      nationality: r.nationality ?? undefined,
+      address: r.address ?? undefined,
+    }));
+
+    const already = db.prepare(`
+      SELECT first_name, last_name, date_of_birth, address, nationality,
+             document_type, document_number, purpose_of_stay, visa_number
+      FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at
+    `).all(reservationId) as any[];
+
+    const merged: any[] = already.map(g => ({
+      firstName: g.first_name, lastName: g.last_name,
+      dateOfBirth: g.date_of_birth ?? undefined, address: g.address ?? undefined,
+      nationality: g.nationality ?? undefined,
+      documentType: g.document_type ?? undefined,
+      documentNumber: g.document_number ?? undefined,
+      purposeOfStay: g.purpose_of_stay ?? undefined,
+      visaNumber: g.visa_number ?? undefined,
+    }));
+
+    // Same person twice — a re-photographed document, a corrected shot — updates
+    // the row instead of adding a second one. Document number first, then names,
+    // the way saveRegistrations already matches.
+    const same = (a: any, b: any) =>
+      (a.documentNumber && b.documentNumber
+        && String(a.documentNumber).toLowerCase() === String(b.documentNumber).toLowerCase())
+      || (String(a.firstName || '').toLowerCase() === String(b.firstName || '').toLowerCase()
+        && String(a.lastName || '').toLowerCase() === String(b.lastName || '').toLowerCase());
+
+    let added = 0;
+    for (const g of incoming) {
+      const at = merged.findIndex(m => same(m, g));
+      if (at >= 0) merged[at] = { ...merged[at], ...g };
+      else { merged.push(g); added++; }
+    }
+
+    const saved = saveRegistrations(reservationId, reservation.organization_id, merged);
 
     // Send TG notification
-    const guestList = ocrResults.map((r, i) => 
+    const guestList = merged.map((r, i) =>
       `  ${i + 1}. ${r.firstName} ${r.lastName}${r.nationality ? ` (${r.nationality})` : ''}${r.documentNumber ? ` · ${r.documentNumber}` : ''}`
     ).join('\n');
 
@@ -232,7 +271,11 @@ export async function registerFromPhotos(request: NextRequest) {
       `🏠 ${reservation.unit_code} · ${reservation.booking_first_name} ${reservation.booking_last_name}`,
       `📅 ${reservation.check_in} → ${reservation.check_out}`,
       ``,
-      `✅ <b>Зареєстровано ${ocrResults.length}/${photos.length} гостей:</b>`,
+      // The running total, not this batch's count. Two photos sent one after
+      // the other used to produce two messages both reading "1/1", which is
+      // exactly what a list being overwritten looks like.
+      `✅ <b>На броні зареєстровано: ${merged.length}</b>`
+      + (added ? ` (додано ${added})` : ' (оновлено)'),
       guestList,
     ];
 
@@ -247,7 +290,8 @@ export async function registerFromPhotos(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      guests_registered: ocrResults.length,
+      guests_registered: merged.length,
+      guests_added: added,
       photos_received: photos.length,
       errors: errors.length > 0 ? errors : undefined,
       guests: ocrResults.map(r => ({
