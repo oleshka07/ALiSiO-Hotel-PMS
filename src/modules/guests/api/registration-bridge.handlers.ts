@@ -150,11 +150,19 @@ export async function registerFromPhotos(request: NextRequest) {
       fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     }
 
-    // Save photos to disk and OCR each one
-    const proto = request.headers.get('x-forwarded-proto') || 'https';
-    const host = request.headers.get('host') || 'localhost:3000';
-    const baseUrl = `${proto}://${host}`;
-
+    // Save photos to disk and OCR each one.
+    //
+    // The bytes go to the model directly, as a data: URL. This used to hand it
+    // a link to /api/uploads/… instead, which could never work: that path is
+    // not in the request gate's public list, so an unauthenticated fetch gets
+    // 401 — and when the bot posts to localhost:3001 the link points at
+    // localhost anyway, which nothing outside this machine can reach. Every
+    // photo came back "could not extract data".
+    //
+    // Every other caller of ocrDocument in this codebase already passes a data
+    // URL; this handler and /api/booking/register-guest were the two that did
+    // not. Sending the bytes is also the safer half of the fix — passport
+    // scans never have to become publicly fetchable for OCR to work.
     const ocrResults: any[] = [];
     const errors: string[] = [];
     const savedPaths: string[] = [];
@@ -170,11 +178,12 @@ export async function registerFromPhotos(request: NextRequest) {
         fs.writeFileSync(filePath, buffer);
         savedPaths.push(filePath);
 
-        // OCR via URL (the file is served by /api/uploads/...)
-        const photoUrl = `${baseUrl}/api/uploads/registrations/${filename}`;
+        const mime = photo.type && photo.type.startsWith('image/') ? photo.type : 'image/jpeg';
+        const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
         console.log(`[TG Registration] OCR photo ${i + 1}/${photos.length}: ${filename}`);
-        const result = await ocrDocument(photoUrl);
-        
+        const result = await ocrDocument(dataUrl);
+
+
         if (result.confidence > 15) {
           ocrResults.push(result);
           console.log(`[TG Registration] ✅ ${result.firstName} ${result.lastName} (confidence: ${result.confidence})`);

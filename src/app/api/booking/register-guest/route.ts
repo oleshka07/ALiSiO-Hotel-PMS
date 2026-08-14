@@ -4,6 +4,8 @@ import { getDb } from '@core/db';
 import { ocrDocument } from '@/lib/ai/ocr-document';
 import { saveRegistrations } from '@/modules/guests/data/registration.repo';
 import { publicMessage } from '@core/security/public-error';
+import fs from 'fs';
+import path from 'path';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +15,27 @@ const CORS_HEADERS = {
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
+const MIME: Record<string, string> = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic',
+};
+
+/** A local upload path becomes the bytes themselves; anything else is passed through. */
+function toOcrSource(docUrl: string): string {
+  if (docUrl.startsWith('data:') || docUrl.startsWith('http')) return docUrl;
+
+  const rel = docUrl.replace(/^\/api\/uploads\//, '');
+  const resolved = path.resolve(path.join(UPLOAD_DIR, rel));
+  if (!resolved.startsWith(path.resolve(UPLOAD_DIR))) {
+    throw new Error('Document path outside the upload directory');
+  }
+  if (!fs.existsSync(resolved)) throw new Error(`Document not found: ${docUrl}`);
+
+  const mime = MIME[path.extname(resolved).toLowerCase()] || 'image/jpeg';
+  return `data:${mime};base64,${fs.readFileSync(resolved).toString('base64')}`;
 }
 
 /**
@@ -48,16 +71,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
     }
 
-    // Build base URL from request headers for absolute image URLs
-    const proto = req.headers.get('x-forwarded-proto') || 'https';
-    const host = req.headers.get('host') || 'localhost:3000';
-
-    // OCR each document
+    // OCR each document.
+    //
+    // A relative /api/uploads/... path is read off disk and handed to the model
+    // as bytes. Turning it into an absolute link, as this did, produced a URL
+    // the model could not fetch: /api/uploads is not public in the request
+    // gate, so it answers 401 to anyone without a session — and OCR never has
+    // one. Nothing here needs the file to be reachable from the internet.
     const ocrResults = [];
     for (const docUrl of document_urls) {
       try {
-        const fullUrl = docUrl.startsWith('http') ? docUrl : `${proto}://${host}${docUrl}`;
-        const result = await ocrDocument(fullUrl);
+        const result = await ocrDocument(toOcrSource(docUrl));
         if (result.confidence > 15) {
           ocrResults.push(result);
         }
