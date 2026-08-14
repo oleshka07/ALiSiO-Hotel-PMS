@@ -9,6 +9,11 @@ export { getQuote } from './quote.handlers';
 // against process.env.CRON_SECRET. Called from a daily VPS crontab.
 export { syncPriceLabsFromCron } from './cron-pricelabs-sync.handlers';
 
+// The rate card the public booking widget quotes from: seasons, holidays,
+// per-item camping rates, tourist tax, deposit split. Server-side so the bot
+// and the widget cannot drift apart on price.
+export * from '../domain/rate-card';
+
 export type {
   PriceCalendar,
   DayPrice,

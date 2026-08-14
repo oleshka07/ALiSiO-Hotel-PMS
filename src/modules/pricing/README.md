@@ -2,11 +2,15 @@
 
 Управління цінами: щоденний прайс-календар, bulk-оновлення, розрахунок вартості проживання.
 
+Тут же живе **rate card** — правила, за якими віджет рахує ціну кемпінгу, глемпінгу
+та будівель: сезони, свята, ставки за одиницю обладнання, курортний збір, депозит.
+
 ## Публічне API
 
 ```ts
 import { getPricing, updatePricing, getBulkPricing, updateBulkPricing, getQuote } from '@pricing'
-import type { DayPrice, QuoteResult, PriceUpsertInput } from '@pricing'
+import { calcCampingPrice, calcGlampingPrice, calcBuildingPrice, CAMPING_ITEMS } from '@pricing'
+import type { DayPrice, QuoteResult, PriceUpsertInput, PriceItem } from '@pricing'
 ```
 
 | Функція | Опис |
@@ -16,6 +20,18 @@ import type { DayPrice, QuoteResult, PriceUpsertInput } from '@pricing'
 | `getBulkPricing(req)` | Ціни за діапазон дат для всіх unit types (GET /api/pricing/bulk) |
 | `updateBulkPricing(req)` | Bulk-оновлення з фільтром weekdays/weekends (PUT /api/pricing/bulk) |
 | `getQuote(req)` | Розрахунок вартості проживання з fees (POST /api/pricing/quote) |
+| `calcCampingPrice(...)` | Ціна кемпінгу: обладнання + особи + електрика + тварини + збір |
+| `calcGlampingPrice(...)` | Ціна glamping-одиниці (tiny / barn) |
+| `calcBuildingPrice(...)` | Ціна будівлі (shared / non-shared / викуп) |
+| `CAMPING_ITEMS` | Перелік одиниць кемпінгу (намет, авто, караван…) для чекбоксів |
+| `getSeason`, `getNightDates`, `getRate`, `isHoliday` | Допоміжні функції rate card |
+
+Функції rate card **чисті** — база не читається всередині. Прайс-лист передає
+викликач: у браузері з `/api/widget/prices`, на сервері прямо з `widget_price_list`.
+
+> Віджет (`src/app/book/lib/pricing.ts`) імпортує `domain/rate-card` напряму, а не
+> через `@pricing`: барель тягне за собою route-handlers, а з ними better-sqlite3,
+> якому в браузерному бандлі не місце.
 
 ## Залежності
 
@@ -47,6 +63,7 @@ pricing/
     quote.repo.ts          ← розрахунок quote + fees/taxes
   domain/
     types.ts              ← DayPrice, QuoteResult, PriceUpsertInput та re-exports
+    rate-card.ts          ← сезони, свята, calcCamping/Glamping/BuildingPrice (чисті функції)
   events/
     published.ts          ← PricingUpdatedEvent type
   README.md

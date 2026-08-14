@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { publicMessage } from '@core/security/public-error';
 import { calculateQuote } from '@/modules/pricing/data/quote.repo';
+import { calcCampingPrice, CAMPING_ITEMS } from '@pricing';
 
 function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; response: NextResponse } {
   const expected = process.env.TELEGRAM_BRIDGE_TOKEN;
@@ -463,6 +464,57 @@ export async function createBooking(request: NextRequest): Promise<NextResponse>
 
     const created = db.prepare(`${CARD_SQL} WHERE r.id = ?`).get(id) as any;
     return NextResponse.json({ ok: true, booking: card(created) }, { status: 201 });
+  } catch (e: any) {
+    return fail(publicMessage(e), 500);
+  }
+}
+
+// ── POST /camping-quote ─────────────────────────────────────────────────────
+// The camping price is not a room rate. It is the sum of what the guest brought
+// (tent, car, caravan…), who is staying, electricity, animals, the tourist tax
+// per adult per night, and the season each night falls in — plus a one-off
+// motorhome service. Quoting it with calculateQuote, as this bridge did at
+// first, returns a room-type figure with none of that in it.
+//
+// Same function the widget uses, now that it lives in the pricing module rather
+// than the browser bundle, so the two cannot drift apart.
+export async function campingQuote(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+  try {
+    const body = await request.json();
+    const {
+      items = [], adults = 2, children = 0,
+      electricity = false, pets = 0, motorhome_service = false,
+      check_in, check_out, nights,
+    } = body;
+    if (!check_in) return fail('check_in is required');
+
+    let checkOut = check_out;
+    if (!checkOut) {
+      const n = Math.max(1, Math.floor(Number(nights) || 1));
+      const d = new Date(check_in);
+      d.setDate(d.getDate() + n);
+      checkOut = d.toISOString().slice(0, 10);
+    }
+
+    const prices = getDb()
+      .prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order')
+      .all() as any[];
+
+    const quote = calcCampingPrice(
+      items, Number(adults) || 0, Number(children) || 0,
+      !!electricity, Number(pets) || 0, !!motorhome_service,
+      check_in, checkOut, prices as any,
+    );
+
+    return NextResponse.json({
+      ok: true, checkIn: check_in, checkOut, ...quote,
+      items: CAMPING_ITEMS.map((i) => {
+        const r = prices.find((p) => p.item_code === i.code && p.is_active);
+        return { ...i, rate: r?.rate_standard ?? null, selected: items.includes(i.code) };
+      }).filter((i) => i.rate !== null && i.code !== 'svc_test_stone'),
+    });
   } catch (e: any) {
     return fail(publicMessage(e), 500);
   }
