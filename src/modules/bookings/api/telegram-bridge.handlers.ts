@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { publicMessage } from '@core/security/public-error';
 import { calculateQuote } from '@/modules/pricing/data/quote.repo';
-import { calcCampingPrice, CAMPING_ITEMS } from '@pricing';
+import { calcCampingBreakdown, CAMPING_ITEMS } from '@pricing';
 
 function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; response: NextResponse } {
   const expected = process.env.TELEGRAM_BRIDGE_TOKEN;
@@ -539,7 +539,7 @@ export async function campingQuote(request: NextRequest): Promise<NextResponse> 
       .prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order')
       .all() as any[];
 
-    const quote = calcCampingPrice(
+    const quote = calcCampingBreakdown(
       items, Number(adults) || 0, Number(children) || 0,
       !!electricity, Number(pets) || 0, !!motorhome_service,
       check_in, checkOut, prices as any,
