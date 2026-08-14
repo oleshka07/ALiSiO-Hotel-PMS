@@ -380,3 +380,90 @@ export async function listBookableUnitTypes(request: NextRequest): Promise<NextR
     return fail(publicMessage(e), 500);
   }
 }
+
+// ── POST /create ────────────────────────────────────────────────────────────
+// A booking made at the desk. Created tentative + unpaid on purpose: money is a
+// separate step (POST /payment), so a receptionist interrupted mid-flow leaves a
+// held unit rather than a booking claiming to be paid.
+//
+// source is 'telegram', not a widget value — this is a human making a booking,
+// and the unpaid-expiry job in /api/cron/expire-unpaid must not sweep it away.
+export async function createBooking(request: NextRequest): Promise<NextResponse> {
+  const auth = authorizeBridge(request);
+  if (!auth.ok) return auth.response;
+  try {
+    const body = await request.json();
+    const {
+      unit_type_id, check_in, nights = 1, adults = 2, children = 0,
+      electricity = false, guest_name, phone, email, total_price, recorded_by,
+    } = body;
+
+    if (!unit_type_id || !check_in) return fail('unit_type_id and check_in are required');
+    if (!guest_name || !String(guest_name).trim()) return fail('guest_name is required');
+
+    const n = Math.max(1, Math.floor(Number(nights) || 1));
+    const out = new Date(check_in);
+    out.setDate(out.getDate() + n);
+    const checkOut = out.toISOString().slice(0, 10);
+
+    const db = getDb();
+
+    // First unit of that type with nothing overlapping. Booking a specific unit
+    // rather than a type keeps this consistent with the rest of the PMS, which
+    // has no concept of an unassigned reservation.
+    const unit = db.prepare(`
+      SELECT u.id, u.code, u.name, u.property_id
+      FROM units u
+      WHERE u.unit_type_id = ? AND COALESCE(u.is_active, 1) = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM reservations r
+          WHERE r.unit_id = u.id
+            AND r.status NOT IN ('cancelled', 'no_show')
+            AND date(r.check_in) < date(?) AND date(?) < date(r.check_out)
+        )
+      ORDER BY u.sort_order, u.code LIMIT 1
+    `).get(unit_type_id, checkOut, check_in) as any;
+    if (!unit) return fail('Немає вільних юнітів цього типу на ці дати', 409);
+
+    const org = db.prepare('SELECT organization_id FROM properties WHERE id = ?').get(unit.property_id) as any;
+    const orgId = org?.organization_id;
+    if (!orgId) return fail('Не знайдено організацію для юніта', 500);
+
+    const raw = String(guest_name).trim().split(/\s+/);
+    const firstName = raw[0];
+    const lastName = raw.slice(1).join(' ') || '—';
+
+    const { findOrCreateGuest } = await import('@/modules/guests/data/guest-dedup.repo');
+    const guest = findOrCreateGuest({
+      organizationId: orgId, firstName, lastName,
+      email: email || null, phone: phone || null,
+    });
+
+    let price = Number(total_price);
+    if (!Number.isFinite(price) || price < 0) {
+      try {
+        const q = calculateQuote(unit_type_id, check_in, checkOut, Number(adults) || 1, Number(children) || 0);
+        price = Number((q as any)?.total) || 0;
+      } catch { price = 0; }
+    }
+
+    const id = `r_tg_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO reservations (
+        id, property_id, unit_id, guest_id, check_in, check_out, nights,
+        adults, children, status, payment_status, source, total_price, currency,
+        camping_electricity, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'tentative', 'unpaid', 'telegram', ?, 'CZK', ?, ?)
+    `).run(
+      id, unit.property_id, unit.id, guest.id, check_in, checkOut, n,
+      Math.max(1, Math.floor(Number(adults) || 1)), Math.max(0, Math.floor(Number(children) || 0)),
+      price, electricity ? 1 : 0,
+      `створено в Telegram${recorded_by ? ` (${recorded_by})` : ''}`,
+    );
+
+    const created = db.prepare(`${CARD_SQL} WHERE r.id = ?`).get(id) as any;
+    return NextResponse.json({ ok: true, booking: card(created) }, { status: 201 });
+  } catch (e: any) {
+    return fail(publicMessage(e), 500);
+  }
+}
