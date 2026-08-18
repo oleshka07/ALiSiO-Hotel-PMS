@@ -20,11 +20,7 @@ import { publicMessage } from '@core/security/public-error';
 import { calculateQuote } from '@/modules/pricing/data/quote.repo';
 import { calcCampingBreakdown, CAMPING_ITEMS } from '@pricing';
 import { resolveCashAccount } from '@/modules/finance/data/cash-account.repo';
-
-// The rate the guest is quoted on the receipt the bot shows them. Deliberately
-// not CZK_TO_EUR (23.5): that one is for reporting, this one is the number the
-// person at the counter was told, and the ledger must match what they paid.
-const BOT_EUR_RATE = 24;
+import { getCzkPerEur, czkToEurCash } from '@/modules/finance/data/fx.repo';
 
 function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; response: NextResponse } {
   const expected = process.env.TELEGRAM_BRIDGE_TOKEN;
@@ -213,21 +209,23 @@ export async function recordBookingPayment(request: NextRequest): Promise<NextRe
     // this did — records twenty-four times the money that changed hands.
     // The guest is quoted euros at BOT_EUR_RATE on the receipt, so that is the
     // figure they hand over and the figure the ledger has to hold.
+    const org = db.prepare(
+      'SELECT prop.organization_id AS id FROM reservations r JOIN properties prop ON prop.id = r.property_id WHERE r.id = ?',
+    ).get(reservation_id) as { id: string } | undefined;
+
     let sum: number;
     if (Number.isFinite(amount) && amount > 0) {
       sum = Number(amount);
     } else {
       const czk = Number(res.total_price || 0);
-      sum = cur === 'EUR' ? Math.round((czk / BOT_EUR_RATE) * 2) / 2 : czk;
+      // The rate comes from finance settings, the same one the receipt quoted.
+      sum = cur === 'EUR' && org ? czkToEurCash(czk, getCzkPerEur(db, org.id)) : czk;
     }
     if (sum <= 0) return fail('Сума не визначена — вкажи amount');
 
     // Whose till. Telegram already knows who pressed the button; without this
     // the resolver falls to "first account in this currency by sort order",
     // which is one fixed person no matter who took the money.
-    const org = db.prepare(
-      'SELECT prop.organization_id AS id FROM reservations r JOIN properties prop ON prop.id = r.property_id WHERE r.id = ?',
-    ).get(reservation_id) as { id: string } | undefined;
     const till = org
       ? resolveCashAccount(db, org.id, cur, { telegramUserId: telegram_user_id, recordedBy: recorded_by })
       : null;
@@ -581,8 +579,13 @@ export async function campingQuote(request: NextRequest): Promise<NextResponse> 
       check_in, checkOut, prices as any,
     );
 
+    const orgFx = getDb().prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
     return NextResponse.json({
       ok: true, checkIn: check_in, checkOut, ...quote,
+      // The bot prints euros on the guest receipt; it must use this number and
+      // not one of its own, or the counter quotes one rate and the till records
+      // another.
+      eurRate: orgFx ? getCzkPerEur(getDb(), orgFx.id) : null,
       items: CAMPING_ITEMS.map((i) => {
         const r = prices.find((p) => p.item_code === i.code && p.is_active);
         return { ...i, rate: r?.rate_standard ?? null, selected: items.includes(i.code) };

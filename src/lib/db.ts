@@ -1920,6 +1920,31 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_fx_org ON finance_exchange_rates(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_fx_pair ON finance_exchange_rates(from_currency, to_currency, effective_from)');
 
+  // Seed the EUR/CZK rate once, so the setting exists to be edited rather than
+  // living as a literal in whichever file needed it. Only when the pair is
+  // absent entirely — never overwrite a rate somebody set in the UI.
+  try {
+    const orgFx = database.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string } | undefined;
+    if (orgFx) {
+      const anyFx = database.prepare(`
+        SELECT 1 FROM finance_exchange_rates
+        WHERE organization_id = ?
+          AND ((from_currency = 'EUR' AND to_currency = 'CZK')
+            OR (from_currency = 'CZK' AND to_currency = 'EUR'))
+        LIMIT 1
+      `).get(orgFx.id);
+      if (!anyFx) {
+        database.prepare(`
+          INSERT INTO finance_exchange_rates (organization_id, from_currency, to_currency, rate, effective_from)
+          VALUES (?, 'EUR', 'CZK', 24.2, date('now'))
+        `).run(orgFx.id);
+        console.log('[DB] Seeded EUR/CZK exchange rate 24.2');
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] EUR/CZK rate seed:', e.message);
+  }
+
   // --- Finance PR #4: counterparties with hierarchy and aliases for auto-matching ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS finance_counterparties (
