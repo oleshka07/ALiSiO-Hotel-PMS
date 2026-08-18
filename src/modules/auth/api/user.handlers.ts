@@ -20,7 +20,7 @@ export async function getUser(
 
     const db = getDb();
     const user = db.prepare(
-      'SELECT id, organization_id, email, full_name, phone, telegram_chat_id, role, is_active, default_cash_account_id, last_login, created_at, updated_at FROM app_users WHERE id = ?'
+      'SELECT id, organization_id, email, full_name, phone, telegram_chat_id, role, is_active, default_cash_account_id, default_cash_account_eur_id, last_login, created_at, updated_at FROM app_users WHERE id = ?'
     ).get(id);
 
     if (!user) {
@@ -65,7 +65,7 @@ export async function updateUser(
       db.prepare("UPDATE app_users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(passwordHash, id);
     }
 
-    if (body.full_name || body.email || body.phone !== undefined || body.telegram_chat_id !== undefined || body.role || body.is_active !== undefined || body.default_cash_account_id !== undefined) {
+    if (body.full_name || body.email || body.phone !== undefined || body.telegram_chat_id !== undefined || body.role || body.is_active !== undefined || body.default_cash_account_id !== undefined || body.default_cash_account_eur_id !== undefined) {
       const fullName = body.full_name || existing.full_name;
       const email = body.email || existing.email;
       const phone = body.phone !== undefined ? body.phone : existing.phone;
@@ -73,6 +73,9 @@ export async function updateUser(
       const role = body.role || existing.role;
       const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : existing.is_active;
       const cashAcct = body.default_cash_account_id !== undefined ? (body.default_cash_account_id || null) : existing.default_cash_account_id;
+      // One account per person is one currency per person. Cash taken in euros
+      // needs a till of its own or it lands in whichever euro account sorts first.
+      const cashAcctEur = body.default_cash_account_eur_id !== undefined ? (body.default_cash_account_eur_id || null) : existing.default_cash_account_eur_id;
 
       if (existing.role === 'owner' && role !== 'owner' && currentUser.role !== 'owner') {
         return NextResponse.json({ error: 'Не можна змінити роль Власника' }, { status: 403 });
@@ -80,9 +83,10 @@ export async function updateUser(
 
       db.prepare(`
         UPDATE app_users
-        SET full_name = ?, email = ?, phone = ?, telegram_chat_id = ?, role = ?, is_active = ?, default_cash_account_id = ?, updated_at = datetime('now')
+        SET full_name = ?, email = ?, phone = ?, telegram_chat_id = ?, role = ?, is_active = ?,
+            default_cash_account_id = ?, default_cash_account_eur_id = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(fullName, email, phone, telegramChatId, role, isActive, cashAcct, id);
+      `).run(fullName, email, phone, telegramChatId, role, isActive, cashAcct, cashAcctEur, id);
     }
 
     if (body.permissions_overrides && Array.isArray(body.permissions_overrides)) {

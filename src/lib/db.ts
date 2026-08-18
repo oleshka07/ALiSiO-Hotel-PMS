@@ -509,6 +509,20 @@ function runMigrations(database: any) {
     console.log('[DB] default_cash_account_id migration:', e.message);
   }
 
+  // --- Migration: per-currency cash account for a user ---
+  // default_cash_account_id is a single account, and a single account has a
+  // single currency. Taking EUR at the counter therefore had nowhere of the
+  // person's own to land and fell through to whichever EUR till sorted first.
+  try {
+    const userColsEur = database.prepare("PRAGMA table_info(app_users)").all() as { name: string }[];
+    if (!userColsEur.some((c: any) => c.name === 'default_cash_account_eur_id')) {
+      database.exec("ALTER TABLE app_users ADD COLUMN default_cash_account_eur_id TEXT REFERENCES finance_accounts(id)");
+      console.log('[DB] Added default_cash_account_eur_id to app_users');
+    }
+  } catch (e: any) {
+    console.log('[DB] default_cash_account_eur_id migration:', e.message);
+  }
+
   // --- Migration: add telegram_chat_id to app_users ---
   try {
     const userColsTg = database.prepare("PRAGMA table_info(app_users)").all() as { name: string }[];

@@ -19,6 +19,12 @@ import { getDb } from '@core/db';
 import { publicMessage } from '@core/security/public-error';
 import { calculateQuote } from '@/modules/pricing/data/quote.repo';
 import { calcCampingBreakdown, CAMPING_ITEMS } from '@pricing';
+import { resolveCashAccount } from '@/modules/finance/data/cash-account.repo';
+
+// The rate the guest is quoted on the receipt the bot shows them. Deliberately
+// not CZK_TO_EUR (23.5): that one is for reporting, this one is the number the
+// person at the counter was told, and the ledger must match what they paid.
+const BOT_EUR_RATE = 24;
 
 function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; response: NextResponse } {
   const expected = process.env.TELEGRAM_BRIDGE_TOKEN;
@@ -189,7 +195,7 @@ export async function recordBookingPayment(request: NextRequest): Promise<NextRe
   if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
-    const { reservation_id, method, currency = 'CZK', amount, recorded_by } = body;
+    const { reservation_id, method, currency = 'CZK', amount, recorded_by, telegram_user_id } = body;
     if (!reservation_id) return fail('reservation_id is required');
     if (!['cash', 'terminal'].includes(method)) return fail('method must be cash or terminal');
 
@@ -202,8 +208,29 @@ export async function recordBookingPayment(request: NextRequest): Promise<NextRe
     }
 
     const cur = String(currency).toUpperCase();
-    const sum = Number.isFinite(amount) && amount > 0 ? Number(amount) : Number(res.total_price || 0);
+
+    // total_price is in CZK. Taking the number as-is and labelling it EUR — as
+    // this did — records twenty-four times the money that changed hands.
+    // The guest is quoted euros at BOT_EUR_RATE on the receipt, so that is the
+    // figure they hand over and the figure the ledger has to hold.
+    let sum: number;
+    if (Number.isFinite(amount) && amount > 0) {
+      sum = Number(amount);
+    } else {
+      const czk = Number(res.total_price || 0);
+      sum = cur === 'EUR' ? Math.round((czk / BOT_EUR_RATE) * 2) / 2 : czk;
+    }
     if (sum <= 0) return fail('Сума не визначена — вкажи amount');
+
+    // Whose till. Telegram already knows who pressed the button; without this
+    // the resolver falls to "first account in this currency by sort order",
+    // which is one fixed person no matter who took the money.
+    const org = db.prepare(
+      'SELECT prop.organization_id AS id FROM reservations r JOIN properties prop ON prop.id = r.property_id WHERE r.id = ?',
+    ).get(reservation_id) as { id: string } | undefined;
+    const till = org
+      ? resolveCashAccount(db, org.id, cur, { telegramUserId: telegram_user_id, recordedBy: recorded_by })
+      : null;
 
     const { createPaymentOperation } = await import('@/modules/finance/api/payment-bridge');
     const who = recorded_by ? ` · Внесено: ${recorded_by}` : '';
@@ -215,6 +242,7 @@ export async function recordBookingPayment(request: NextRequest): Promise<NextRe
       paymentSubtype: 'full',
       source: 'manual',
       sourceRef: `tg_checkin:${reservation_id}`,
+      ...(method === 'cash' && till?.accountId ? { accountId: till.accountId } : {}),
       comment: `${method === 'cash' ? `Готівка ${cur}` : 'Термінал'} (Telegram)${who}`,
       ...(recorded_by ? { actor: { id: `tg:${recorded_by}`, name: String(recorded_by) } } : {}),
     });
@@ -244,6 +272,14 @@ export async function recordBookingPayment(request: NextRequest): Promise<NextRe
       ok: true,
       operationId: operationId || null,
       ledgerEntry: method === 'cash',
+      amount: sum,
+      currency: cur,
+      // The bot repeats these back to the receptionist. A payment filed in
+      // somebody else's till should say so at the counter, not weeks later in
+      // a reconciliation.
+      account: method === 'cash' ? till?.accountName || null : null,
+      accountOwner: till?.userName || null,
+      accountGuessed: method === 'cash' ? !!till?.fellBack : false,
       booking: card(after),
     });
   } catch (e: any) {

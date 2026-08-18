@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createOperationInTx } from './operations.handlers';
 import { publicMessage } from '@core/security/public-error';
+import { resolveCashAccount } from '../data/cash-account.repo';
 
 type BridgeEventType = 'sauna_income' | 'cash_expense' | 'income' | 'expense' | 'transfer';
 
@@ -40,6 +41,10 @@ interface BridgeEvent {
   chat_id: number | string;
   message_id: number | string;
   recorded_by?: string | null; // username/full_name from Telegram
+  // The Telegram account that sent this. Names cannot identify a person here —
+  // Telegram says "Oleg Stepeniev", app_users says "Admin ALiSiO" — so the id is
+  // what routes cash to the right till.
+  telegram_user_id?: string | number | null;
 }
 
 function getOrgId(db: any): string {
@@ -61,40 +66,16 @@ function authorizeBridge(request: NextRequest): { ok: true } | { ok: false; resp
   return { ok: true };
 }
 
-function defaultCashAccountId(db: any, orgId: string, currency: string, recordedBy?: string | null): { accountId: string | null; actorUser: { id: string; name: string } | null } {
-  let actorUser: { id: string; name: string } | null = null;
-  if (recordedBy && recordedBy.trim().length > 0) {
-    const cleanName = recordedBy.trim();
-    // app_users holds full_name — there is no name / first_name / username
-    // column. Naming any of them makes SQLite reject the statement at prepare
-    // time, which took down every bot-recorded operation that carried a
-    // recorded_by (i.e. all of them).
-    const userRow = db.prepare(`
-      SELECT id, full_name, default_cash_account_id FROM app_users
-      WHERE organization_id = ? AND is_active = 1 AND full_name LIKE ?
-      LIMIT 1
-    `).get(orgId, `%${cleanName}%`) as
-      { id: string; full_name: string; default_cash_account_id: string | null } | undefined;
-
-    if (userRow) {
-      actorUser = { id: userRow.id, name: userRow.full_name };
-      if (userRow.default_cash_account_id) {
-        const acct = db.prepare(`
-          SELECT id FROM finance_accounts WHERE id = ? AND is_active = 1
-        `).get(userRow.default_cash_account_id) as { id: string } | undefined;
-        if (acct) return { accountId: acct.id, actorUser };
-      }
-    }
-  }
-
-  const row = db.prepare(`
-    SELECT id FROM finance_accounts
-    WHERE organization_id = ? AND currency = ? AND is_active = 1
-      AND type IN ('cash', 'bank')
-    ORDER BY (type = 'cash') DESC, sort_order ASC, created_at ASC
-    LIMIT 1
-  `).get(orgId, currency) as { id: string } | undefined;
-  return { accountId: row?.id || null, actorUser };
+function defaultCashAccountId(
+  db: any, orgId: string, currency: string,
+  recordedBy?: string | null, telegramUserId?: string | number | null,
+): { accountId: string | null; actorUser: { id: string; name: string } | null; fellBack: boolean } {
+  const r = resolveCashAccount(db, orgId, currency, { telegramUserId, recordedBy });
+  return {
+    accountId: r.accountId,
+    actorUser: r.userId ? { id: r.userId, name: r.userName || '' } : null,
+    fellBack: r.fellBack,
+  };
 }
 
 /**
@@ -160,7 +141,8 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
     }
 
     // Resolve account & actor
-    const { accountId, actorUser } = defaultCashAccountId(db, orgId, currency, body.recorded_by);
+    const { accountId, actorUser, fellBack } = defaultCashAccountId(
+      db, orgId, currency, body.recorded_by, body.telegram_user_id);
 
     let accountFromId: string | null = null;
     let accountToId: string | null = null;
@@ -216,9 +198,16 @@ export async function recordTelegramOperation(request: NextRequest): Promise<Nex
       source: sourceTag,
       source_ref: sourceRef,
       status: 'completed',
+      // Nobody's own till — either the sender is not a known user, or they have
+      // no account in this currency. Recorded, but marked so it can be triaged
+      // rather than quietly counted as somebody else's cash.
+      ...(fellBack && !body.account_id ? { needs_review: 1 } : {}),
     }, actorUser || null);
 
-    return NextResponse.json({ operation_id: operationId, was_new: true }, { status: 201 });
+    return NextResponse.json({
+      operation_id: operationId, was_new: true,
+      account_guessed: fellBack && !body.account_id,
+    }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: publicMessage(error) }, { status: 500 });
   }
