@@ -10,12 +10,14 @@
 export type NotificationKey =
   | 'guest_registration'   // ✅ Реєстрація гостя — fires on every guest registered
   | 'pricelabs_sync'       // 📈 / ⚠️ PriceLabs sync — integration is not in use
-  | 'daily_digest';        // 📊 Вечірнє зведення
+  | 'daily_digest'          // 📊 Вечірнє зведення
+  | 'incomplete_registration'; // ⚠️ Неповна реєстрація гостя — one per missing field set
 
 const MUTED: ReadonlySet<NotificationKey> = new Set<NotificationKey>([
   'guest_registration',
   'pricelabs_sync',
   'daily_digest',
+  'incomplete_registration',
 ]);
 
 export function isMuted(key: NotificationKey): boolean {

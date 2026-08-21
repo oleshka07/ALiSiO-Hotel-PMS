@@ -62,6 +62,7 @@ async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void
 
 /** Send TG alert when critical fields are missing — manager can follow up */
 async function alertMissingFields(guests: any[], reservation: any): Promise<void> {
+  if (isMuted('incomplete_registration')) return;
   const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
   const REQUIRED = ['firstName', 'lastName', 'dateOfBirth', 'documentType', 'documentNumber'];
   const LABELS: Record<string, string> = {
