@@ -10,6 +10,7 @@
  */
 
 import { getDb } from '@core/db';
+import { isMuted } from './muted';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
@@ -725,6 +726,12 @@ export async function sendDailyOperationalDigest(): Promise<{
   const detailedText = formatDetailedDigest(breakdown);
 
   let sent = false;
+
+  // Muted: the numbers are still computed and still returned by the cron
+  // endpoint, so nothing that reads them breaks — only the chat stays quiet.
+  if (isMuted('daily_digest')) {
+    return { sent, sections: { crm, finance, bookings, tasks } };
+  }
 
   // Send to primary chat — message 1 (general) + message 2 (detailed)
   if (CHAT_ID) {

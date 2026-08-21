@@ -4,6 +4,7 @@ import * as registrationRepo from '../data/registration.repo';
 // TODO: replace with @channels eventBus event when channels module is migrated
 import { checkRateLimit } from '@/lib/rate-limit';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { isMuted } from '@/modules/notifications/data/muted';
 import { maskFullName, maskDob, maskDocNumber, maskDobForSheets, maskDocNumberForSheets } from '@core/security/pii-mask';
 import { publicMessage } from '@core/security/public-error';
 
@@ -179,9 +180,11 @@ export async function registerGuests(
         guestLines,
       ].filter(Boolean).join('\n');
 
-      sendTelegramMessage(text).catch(err =>
-        console.error('[Registration Telegram] Error:', err.message),
-      );
+      if (!isMuted('guest_registration')) {
+        sendTelegramMessage(text).catch(err =>
+          console.error('[Registration Telegram] Error:', err.message),
+        );
+      }
     } catch (tgErr: any) {
       console.error('[Registration Telegram] Error:', tgErr.message);
     }
