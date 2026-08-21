@@ -4,6 +4,7 @@ import * as registrationRepo from '../data/registration.repo';
 // TODO: replace with @channels eventBus event when channels module is migrated
 import { checkRateLimit } from '@/lib/rate-limit';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { isMuted } from '@/modules/notifications/data/muted';
 import { maskFullName, maskDob, maskDocNumber, maskDobForSheets, maskDocNumberForSheets } from '@core/security/pii-mask';
 import { publicMessage } from '@core/security/public-error';
 
@@ -61,6 +62,7 @@ async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void
 
 /** Send TG alert when critical fields are missing — manager can follow up */
 async function alertMissingFields(guests: any[], reservation: any): Promise<void> {
+  if (isMuted('incomplete_registration')) return;
   const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
   const REQUIRED = ['firstName', 'lastName', 'dateOfBirth', 'documentType', 'documentNumber'];
   const LABELS: Record<string, string> = {
@@ -179,9 +181,11 @@ export async function registerGuests(
         guestLines,
       ].filter(Boolean).join('\n');
 
-      sendTelegramMessage(text).catch(err =>
-        console.error('[Registration Telegram] Error:', err.message),
-      );
+      if (!isMuted('guest_registration')) {
+        sendTelegramMessage(text).catch(err =>
+          console.error('[Registration Telegram] Error:', err.message),
+        );
+      }
     } catch (tgErr: any) {
       console.error('[Registration Telegram] Error:', tgErr.message);
     }

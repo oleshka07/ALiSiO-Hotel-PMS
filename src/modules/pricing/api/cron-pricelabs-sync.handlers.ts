@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncPriceLabsToCalendar } from '../data/pricelabs-sync';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { isMuted } from '@/modules/notifications/data/muted';
 import { publicMessage } from '@core/security/public-error';
 
 export async function syncPriceLabsFromCron(request: NextRequest): Promise<NextResponse> {
@@ -57,7 +58,9 @@ export async function syncPriceLabsFromCron(request: NextRequest): Promise<NextR
         conflictNote,
         errorNote,
       ].filter(Boolean).join('\n');
-      await sendTelegramMessage(lines, undefined, { ownerOnly: true });
+      if (!isMuted('pricelabs_sync')) {
+        await sendTelegramMessage(lines, undefined, { ownerOnly: true });
+      }
     } catch (tgErr: any) {
       console.error('[PL cron] TG notify failed (non-fatal):', tgErr.message);
     }
