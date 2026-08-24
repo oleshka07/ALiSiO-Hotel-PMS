@@ -155,11 +155,38 @@ export async function adjustBooking(request: NextRequest): Promise<NextResponse>
     checkOut.setDate(checkOut.getDate() + newNights);
     const newCheckOut = checkOut.toISOString().slice(0, 10);
 
+    // A camping pitch is not a room. calculateQuote reads price_calendar — one
+    // price per night per unit type — so adding a night to a camping booking
+    // moved the total by that one number (~100 Kč) and left the tent, the car,
+    // the people and the tourist tax exactly where they were. Same engine the
+    // widget and the bot's new-booking flow already use.
     let total = res.total_price;
-    if (res.unit_type_id) {
+    if (res.category_type === 'camping') {
       try {
-        const q = calculateQuote(res.unit_type_id, res.check_in, newCheckOut, newAdults, newChildren);
-        if (q && Number.isFinite((q as any).total)) total = (q as any).total;
+        const prices = db.prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order').all() as any[];
+        const items = [res.camping_tent_type, res.camping_vehicle_type]
+          .filter(Boolean).join(',').split(',').filter(Boolean);
+        const q = calcCampingBreakdown(
+          items as any, newAdults, newChildren, !!newElectricity,
+          Number(res.camping_pets) || 0, false,
+          res.check_in, newCheckOut, prices,
+        );
+        if (Number.isFinite(q.total)) total = q.total;
+      } catch (e: any) {
+        console.error('[bookings-bridge] camping re-quote failed, keeping old price:', e.message);
+      }
+    } else if (res.unit_type_id) {
+      try {
+        const q = calculateQuote(res.unit_type_id, res.check_in, newCheckOut, newAdults, newChildren) as any;
+        // hasPricing is false when price_calendar has no row for some night of
+        // the stay. The accommodation part of those nights is simply zero, so
+        // the "total" is whatever the fees happen to add up to — a number that
+        // looks like a price and is not one. Keep the old figure and say so
+        // rather than writing it in.
+        if (!q?.hasPricing) {
+          return fail(`Немає цін у календарі на ${res.check_in} → ${newCheckOut} — постав їх у PMS`, 409);
+        }
+        if (Number.isFinite(q.total)) total = q.total;
       } catch (e: any) {
         console.error('[bookings-bridge] quote failed, keeping old price:', e.message);
       }
