@@ -17,8 +17,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { publicMessage } from '@core/security/public-error';
-import { calculateQuote } from '@/modules/pricing/data/quote.repo';
 import { calcCampingBreakdown, CAMPING_ITEMS } from '@pricing';
+import {
+  listBotGroups, findFreeUnit, priceBotBooking,
+  type BotRateCode, type BuildingMode,
+} from '../data/bot-catalog.repo';
 import { resolveCashAccount } from '@/modules/finance/data/cash-account.repo';
 import { getCzkPerEur, czkToEurCash } from '@/modules/finance/data/fx.repo';
 
@@ -45,7 +48,7 @@ const CARD_SQL = `
          r.camping_tent_type, r.camping_vehicle_type, r.camping_pets,
          r.unit_id, r.notes,
          u.code AS unit_code, u.name AS unit_name, u.unit_type_id,
-         ut.name AS unit_type_name, c.type AS category_type,
+         ut.name AS unit_type_name, ut.bot_rate_code, c.type AS category_type,
          TRIM(COALESCE(g.first_name,'') || ' ' || COALESCE(g.last_name,'')) AS guest,
          g.phone AS guest_phone, g.email AS guest_email,
          (SELECT COUNT(*) FROM reservation_guests rg WHERE rg.reservation_id = r.id) AS guests_registered
@@ -155,32 +158,29 @@ export async function adjustBooking(request: NextRequest): Promise<NextResponse>
     checkOut.setDate(checkOut.getDate() + newNights);
     const newCheckOut = checkOut.toISOString().slice(0, 10);
 
-    // A camping pitch is not a room. calculateQuote reads price_calendar — one
-    // price per night per unit type — so adding a night to a camping booking
-    // moved the total by that one number (~100 Kč) and left the tent, the car,
-    // the people and the tourist tax exactly where they were. Same engine the
-    // widget and the bot's new-booking flow already use.
+    // Priced from widget_price_list — the page the owner edits, and the same
+    // numbers the website quotes. It used to re-price through calculateQuote,
+    // which reads price_calendar: one price per night per unit type, present
+    // for the two PriceLabs houses and for nothing else the camp sells. Adding
+    // a night moved a camping total by that one number and left the tent, the
+    // car, the people and the tourist tax where they were.
     let total = res.total_price;
-    if (res.category_type === 'camping') {
+    if (res.bot_rate_code) {
       try {
         const prices = db.prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order').all() as any[];
         const items = [res.camping_tent_type, res.camping_vehicle_type]
           .filter(Boolean).join(',').split(',').filter(Boolean);
-        const q = calcCampingBreakdown(
-          items as any, newAdults, newChildren, !!newElectricity,
-          Number(res.camping_pets) || 0, false,
-          res.check_in, newCheckOut, prices,
-        );
+        const q = priceBotBooking(prices, {
+          code: res.bot_rate_code as BotRateCode,
+          checkIn: res.check_in, checkOut: newCheckOut,
+          adults: newAdults, children: newChildren,
+          campingItems: items as any,
+          electricity: !!newElectricity,
+          pets: Number(res.camping_pets) || 0,
+        });
         if (Number.isFinite(q.total)) total = q.total;
       } catch (e: any) {
-        console.error('[bookings-bridge] camping re-quote failed, keeping old price:', e.message);
-      }
-    } else if (res.unit_type_id) {
-      try {
-        const q = calculateQuote(res.unit_type_id, res.check_in, newCheckOut, newAdults, newChildren) as any;
-        if (Number.isFinite(q?.total)) total = q.total;
-      } catch (e: any) {
-        console.error('[bookings-bridge] quote failed, keeping old price:', e.message);
+        console.error('[bookings-bridge] re-quote failed, keeping old price:', e.message);
       }
     }
 
@@ -398,14 +398,30 @@ export async function quoteBooking(request: NextRequest): Promise<NextResponse> 
   if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
-    const { unit_type_id, check_in, nights = 1, adults = 2, children = 0 } = body;
-    if (!unit_type_id || !check_in) return fail('unit_type_id and check_in are required');
-    const n = Math.max(1, Math.floor(Number(nights) || 1));
-    const out = new Date(check_in);
-    out.setDate(out.getDate() + n);
-    const checkOut = out.toISOString().slice(0, 10);
-    const quote = calculateQuote(unit_type_id, check_in, checkOut, Number(adults) || 1, Number(children) || 0);
-    return NextResponse.json({ ok: true, checkIn: check_in, checkOut, nights: n, quote });
+    const {
+      code, check_in, check_out, nights = 1, adults = 2, children = 0, mode,
+    } = body;
+    if (!code || !check_in) return fail('code and check_in are required');
+
+    let checkOut = check_out;
+    if (!checkOut) {
+      const n = Math.max(1, Math.floor(Number(nights) || 1));
+      const d = new Date(check_in);
+      d.setDate(d.getDate() + n);
+      checkOut = d.toISOString().slice(0, 10);
+    }
+
+    // widget_price_list, the page the owner edits — the same numbers the website
+    // quotes. price_calendar is not read: it holds rows only for the two houses
+    // PriceLabs writes, and those are not on sale.
+    const prices = getDb().prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order').all() as any[];
+    const quote = priceBotBooking(prices, {
+      code: code as BotRateCode, checkIn: check_in, checkOut,
+      adults: Number(adults) || 1, children: Number(children) || 0,
+      mode: mode as BuildingMode | undefined,
+    });
+
+    return NextResponse.json({ ok: true, checkIn: check_in, checkOut, ...quote });
   } catch (e: any) {
     return fail(publicMessage(e), 500);
   }
@@ -420,31 +436,26 @@ export async function listBookableUnitTypes(request: NextRequest): Promise<NextR
   try {
     const q = request.nextUrl.searchParams;
     const date = q.get('check_in') || q.get('date') || new Date().toISOString().slice(0, 10);
-    // A unit is only bookable if it is free for every night of the stay, not
-    // just the arrival day — the bot now picks both dates on a calendar.
     let until = q.get('check_out');
     if (!until) {
       const d = new Date(date);
       d.setDate(d.getDate() + 1);
       until = d.toISOString().slice(0, 10);
     }
-    const rows = getDb().prepare(`
-      SELECT ut.id, ut.name, c.type AS category_type,
-             COUNT(u.id) AS units_total,
-             SUM(CASE WHEN NOT EXISTS (
-                   SELECT 1 FROM reservations r
-                   WHERE r.unit_id = u.id
-                     AND r.status NOT IN ('cancelled','no_show')
-                     AND date(r.check_in) < date(?) AND date(?) < date(r.check_out)
-                 ) THEN 1 ELSE 0 END) AS units_free
-      FROM unit_types ut
-      JOIN units u ON u.unit_type_id = ut.id AND COALESCE(u.is_active, 1) = 1
-      LEFT JOIN categories c ON c.id = ut.category_id
-      GROUP BY ut.id
-      HAVING units_free > 0
-      ORDER BY ut.name
-    `).all(until, date) as any[];
-    return NextResponse.json({ date, checkIn: date, checkOut: until, unitTypes: rows });
+    // Not unit types — what the camp sells. Four near-identical pitch types are
+    // one "camping" line, and a type nobody mapped to the price list is not
+    // offered at all.
+    const groups = listBotGroups(getDb(), date, until);
+    return NextResponse.json({
+      date, checkIn: date, checkOut: until,
+      groups,
+      // Kept so a bot that has not been updated yet still gets a list it
+      // understands.
+      unitTypes: groups.map((g) => ({
+        id: g.code, name: g.name, category_type: g.isCamping ? 'camping' : 'resort',
+        units_free: g.unitsFree,
+      })),
+    });
   } catch (e: any) {
     return fail(publicMessage(e), 500);
   }
@@ -463,12 +474,12 @@ export async function createBooking(request: NextRequest): Promise<NextResponse>
   try {
     const body = await request.json();
     const {
-      unit_type_id, check_in, check_out, nights = 1, adults = 2, children = 0,
+      code, check_in, check_out, nights = 1, adults = 2, children = 0,
       electricity = false, guest_name, phone, email, total_price, recorded_by,
-      camping_items = [], pets = 0,
+      camping_items = [], pets = 0, mode,
     } = body;
 
-    if (!unit_type_id || !check_in) return fail('unit_type_id and check_in are required');
+    if (!code || !check_in) return fail('code and check_in are required');
     if (!guest_name || !String(guest_name).trim()) return fail('guest_name is required');
 
     // Either end of the stay can be given: the bot's calendar picks two dates,
@@ -489,22 +500,11 @@ export async function createBooking(request: NextRequest): Promise<NextResponse>
 
     const db = getDb();
 
-    // First unit of that type with nothing overlapping. Booking a specific unit
-    // rather than a type keeps this consistent with the rest of the PMS, which
-    // has no concept of an unassigned reservation.
-    const unit = db.prepare(`
-      SELECT u.id, u.code, u.name, u.property_id
-      FROM units u
-      WHERE u.unit_type_id = ? AND COALESCE(u.is_active, 1) = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM reservations r
-          WHERE r.unit_id = u.id
-            AND r.status NOT IN ('cancelled', 'no_show')
-            AND date(r.check_in) < date(?) AND date(?) < date(r.check_out)
-        )
-      ORDER BY u.sort_order, u.code LIMIT 1
-    `).get(unit_type_id, checkOut, check_in) as any;
-    if (!unit) return fail('Немає вільних юнітів цього типу на ці дати', 409);
+    // Any free unit in the group. Reception picks "camping", not "BB — Between
+    // Pitch"; which of the four pitch types the guest ends up on is the system's
+    // problem, not theirs.
+    const unit = findFreeUnit(db, code as BotRateCode, check_in, checkOut);
+    if (!unit) return fail('Немає вільних місць на ці дати', 409);
 
     const org = db.prepare('SELECT organization_id FROM properties WHERE id = ?').get(unit.property_id) as any;
     const orgId = org?.organization_id;
@@ -523,8 +523,13 @@ export async function createBooking(request: NextRequest): Promise<NextResponse>
     let price = Number(total_price);
     if (!Number.isFinite(price) || price < 0) {
       try {
-        const q = calculateQuote(unit_type_id, check_in, checkOut, Number(adults) || 1, Number(children) || 0);
-        price = Number((q as any)?.total) || 0;
+        const prices = db.prepare('SELECT * FROM widget_price_list ORDER BY category, sort_order').all() as any[];
+        price = Number(priceBotBooking(prices, {
+          code: code as BotRateCode, checkIn: check_in, checkOut,
+          adults: Number(adults) || 1, children: Number(children) || 0,
+          mode: mode as BuildingMode | undefined,
+          campingItems: camping_items, electricity: !!electricity, pets: Number(pets) || 0,
+        }).total) || 0;
       } catch { price = 0; }
     }
 
