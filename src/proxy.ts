@@ -78,6 +78,7 @@ const PUBLIC_PREFIXES = [
   '/login',              // login page
   '/guest/',             // guest portal page
   '/book/',              // public booking wizard
+  '/checkin',            // QR self check-in at the gate (no session, by design)
   '/invest/',            // investor portal page (token-based)
   '/w/',                 // booking widget
   '/report/',            // partner monthly report (token-based, no account)

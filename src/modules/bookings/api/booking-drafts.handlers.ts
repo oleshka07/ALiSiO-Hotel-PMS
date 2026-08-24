@@ -225,7 +225,22 @@ export async function createBookingDraft(req: Request) {
     const utmTerm = utmParams['utm_term'] || null;
     const gaClientId = utmParams['ga_client_id'] || null;
 
-    const draftSource = body.site_id ? `widget:${body.site_id}` : 'widget_kemp';
+    // A caller may name its own source. The gate check-in does: a walk-in who is
+    // standing on the pitch must not be filed as a website booking, because
+    // /api/cron/expire-unpaid cancels unpaid `widget%` bookings the day after
+    // arrival — which would cancel a guest who is asleep in their tent.
+    const campingSel: string[] = Array.isArray(body.accommodation_data?.selectedItems)
+      ? body.accommodation_data.selectedItems.map(String) : [];
+    const TENT_CODES = new Set(['small_tent', 'large_tent']);
+    const campingTents = campingSel.filter((c) => TENT_CODES.has(c)).join(',') || null;
+    const campingVehicles = campingSel.filter((c) => !TENT_CODES.has(c)).join(',') || null;
+    const campingElectricity = body.accommodation_data?.electricity ? 1 : 0;
+    const campingPetsCount = Math.max(0, Math.floor(Number(body.accommodation_data?.pets) || 0));
+    const campingPets = campingPetsCount ? String(campingPetsCount) : null;
+
+    const draftSource = typeof body.source === 'string' && body.source.trim()
+      ? body.source.trim()
+      : (body.site_id ? `widget:${body.site_id}` : 'widget_kemp');
 
     const refUrl = body.source_url || 'Прямий захід';
     const ua = body.user_agent || '';
@@ -250,6 +265,7 @@ export async function createBookingDraft(req: Request) {
         status, payment_status,
         guest_page_token,
         utm_source, utm_medium, utm_campaign, utm_content, utm_term, ga_client_id,
+        camping_tent_type, camping_vehicle_type, camping_electricity, camping_pets,
         notes, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?,
@@ -259,6 +275,7 @@ export async function createBookingDraft(req: Request) {
         'tentative', 'unpaid',
         ?,
         ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
         ?, datetime('now'), datetime('now')
       )
     `).run(
@@ -275,6 +292,11 @@ export async function createBookingDraft(req: Request) {
       body.total_price || 0,
       guestPageToken,
       utmSource, utmMedium, utmCampaign, utmContent, utmTerm, gaClientId,
+      // What the guest brought, split the way the rest of the PMS reads it:
+      // what they sleep in, what they drove in on, animals. It used to live only
+      // in the draft's options JSON, so the booking card showed a camping stay
+      // with no equipment on it and re-pricing had nothing to re-price.
+      campingTents, campingVehicles, campingElectricity, campingPets,
       marketingNotes,
     );
 
