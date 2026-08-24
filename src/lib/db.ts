@@ -509,6 +509,32 @@ function runMigrations(database: any) {
     console.log('[DB] default_cash_account_id migration:', e.message);
   }
 
+  // --- Migration: which price-list entry a unit type is sold under ---
+  // The bot priced through price_calendar, which holds rows only for the two
+  // houses PriceLabs writes. Everything the camp actually sells — camping, D, F
+  // — is priced from widget_price_list, so a unit type needs to say which entry
+  // there it belongs to. No code, no sale: a type nobody has mapped is one the
+  // bot will not offer, which is how Mirror House, Stealth House and the Barn
+  // houses drop out without a list of exceptions to maintain.
+  try {
+    const utCols = database.prepare("PRAGMA table_info(unit_types)").all() as { name: string }[];
+    if (!utCols.some((c: any) => c.name === 'bot_rate_code')) {
+      database.exec("ALTER TABLE unit_types ADD COLUMN bot_rate_code TEXT");
+      database.exec(`
+        UPDATE unit_types SET bot_rate_code = 'camping'
+        WHERE category_id IN (SELECT id FROM categories WHERE type = 'camping')
+      `);
+      database.exec("UPDATE unit_types SET bot_rate_code = 'budova_f' WHERE name LIKE 'F %' OR name LIKE 'F—%'");
+      database.exec("UPDATE unit_types SET bot_rate_code = 'budova_d' WHERE name LIKE 'D %' OR name LIKE 'D—%'");
+      const mapped = database.prepare('SELECT bot_rate_code AS c, COUNT(*) AS n FROM unit_types WHERE bot_rate_code IS NOT NULL GROUP BY bot_rate_code').all() as any[];
+      const unmapped = database.prepare('SELECT name FROM unit_types WHERE bot_rate_code IS NULL').all() as any[];
+      console.log('[DB] bot_rate_code:', mapped.map((m: any) => `${m.c}=${m.n}`).join(' ') || 'none',
+        '| не продається ботом:', unmapped.map((u: any) => u.name).join(', ') || '—');
+    }
+  } catch (e: any) {
+    console.log('[DB] bot_rate_code migration:', e.message);
+  }
+
   // --- Migration: per-currency cash account for a user ---
   // default_cash_account_id is a single account, and a single account has a
   // single currency. Taking EUR at the counter therefore had nowhere of the
