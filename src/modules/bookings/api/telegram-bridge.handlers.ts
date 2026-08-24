@@ -178,15 +178,7 @@ export async function adjustBooking(request: NextRequest): Promise<NextResponse>
     } else if (res.unit_type_id) {
       try {
         const q = calculateQuote(res.unit_type_id, res.check_in, newCheckOut, newAdults, newChildren) as any;
-        // hasPricing is false when price_calendar has no row for some night of
-        // the stay. The accommodation part of those nights is simply zero, so
-        // the "total" is whatever the fees happen to add up to — a number that
-        // looks like a price and is not one. Keep the old figure and say so
-        // rather than writing it in.
-        if (!q?.hasPricing) {
-          return fail(`Немає цін у календарі на ${res.check_in} → ${newCheckOut} — постав їх у PMS`, 409);
-        }
-        if (Number.isFinite(q.total)) total = q.total;
+        if (Number.isFinite(q?.total)) total = q.total;
       } catch (e: any) {
         console.error('[bookings-bridge] quote failed, keeping old price:', e.message);
       }
