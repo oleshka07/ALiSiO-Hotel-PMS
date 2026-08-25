@@ -13,7 +13,13 @@
   --kc-border: #e5e5ea;
   --kc-text: #1c1c1e;
   --kc-text-secondary: #636366;
-  --kc-text-muted: #aeaeb2;
+  /* 4.5:1 on the card and on the page background. The old #aeaeb2 measured
+     2.2:1 — every hint under a row ("Do 3 let — zdarma", "+120 Kč / noc",
+     "Odjezd: …") was there but not readable on a phone outdoors. */
+  --kc-text-muted: #6e6e73;
+  /* Decorative only — chevrons, struck-through calendar days. Never text a
+     guest has to read. */
+  --kc-text-faint: #aeaeb2;
   --kc-accent: #2E6B4F;
   --kc-error: #ff3b30;
   --kc-error-light: #fff2f0;
@@ -29,7 +35,7 @@
 }
 
 /* ─── Reset ─────────────────────────────────────────── */
-.kc-root { font-family: var(--kc-font); background: var(--kc-bg); color: var(--kc-text); min-height: 100vh; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+.kc-root { color-scheme: light; font-family: var(--kc-font); background: var(--kc-bg); color: var(--kc-text); min-height: 100vh; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
 .kc-root *, .kc-root *::before, .kc-root *::after { box-sizing: border-box; }
 
 /* ─── Container ─────────────────────────────────────── */
@@ -69,7 +75,7 @@
 .kc-card-desc { font-size: 14px; color: var(--kc-text-secondary); margin-bottom: 8px; line-height: 1.4; }
 .kc-card-price { font-size: 14px; color: var(--kc-green); font-weight: 600; }
 .kc-card-price span { font-size: 12px; color: var(--kc-text-muted); font-weight: 400; }
-.kc-card-arrow { float: right; font-size: 20px; color: var(--kc-text-muted); margin-top: -24px; }
+.kc-card-arrow { float: right; font-size: 20px; color: var(--kc-text-faint); margin-top: -24px; }
 
 /* ─── Quiz Options (pill chips) ─────────────────────── */
 .kc-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
@@ -106,8 +112,8 @@
 .kc-cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; border: none; background: transparent; cursor: pointer; border-radius: 50%; transition: var(--kc-transition); font-family: var(--kc-font); color: var(--kc-text); }
 .kc-cal-day:hover:not(.past):not(.empty):not(.booked) { background: var(--kc-green-light); }
 .kc-cal-day.empty { cursor: default; }
-.kc-cal-day.past { color: var(--kc-text-muted); opacity: 0.35; cursor: default; }
-.kc-cal-day.booked { color: var(--kc-text-muted); text-decoration: line-through; cursor: default; opacity: 0.4; }
+.kc-cal-day.past { color: var(--kc-text-faint); opacity: 0.35; cursor: default; }
+.kc-cal-day.booked { color: var(--kc-text-faint); text-decoration: line-through; cursor: default; opacity: 0.4; }
 .kc-cal-day.today { font-weight: 800; color: var(--kc-green); }
 .kc-cal-day.range-start { background: var(--kc-green); color: #fff; border-radius: 50%; }
 .kc-cal-day.range-end { background: var(--kc-green); color: #fff; border-radius: 50%; }
@@ -154,7 +160,7 @@
 .kc-btn-primary { background: var(--kc-green); color: #fff; }
 .kc-btn-primary:hover { background: var(--kc-green-dark); }
 .kc-btn-primary:active { transform: scale(0.98); }
-.kc-btn-primary:disabled { background: var(--kc-border); color: var(--kc-text-muted); cursor: default; transform: none; }
+.kc-btn-primary:disabled { background: var(--kc-border); color: #5a5a5f; cursor: default; transform: none; }
 .kc-btn-secondary { background: var(--kc-card); color: var(--kc-text); border: 1.5px solid var(--kc-border); }
 .kc-btn-secondary:hover { background: var(--kc-bg); }
 .kc-btn-ghost { background: transparent; color: var(--kc-text-muted); text-decoration: underline; font-weight: 500; font-size: 14px; min-height: 44px; }
