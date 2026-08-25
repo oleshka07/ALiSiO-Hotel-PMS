@@ -27,6 +27,10 @@ export { listServiceOrders, updateServiceOrder } from './service-orders.handlers
 export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-public.handlers';
 export { getWidgetSiteConfig, getWidgetSiteConfigOptions } from './widget-site.handlers';
 export { createBookingDraft, getBookingDraft, deleteBookingDraft, createBookingDraftOptions } from './booking-drafts.handlers';
+
+// Public, unauthenticated: the QR self check-in looks a booking up by phone
+// and name. Its own throttle and a one-day arrival window live in the handler.
+export { findMyBooking, findMyBookingOptions } from './checkin-lookup.handlers';
 export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers';
 export { previewBookingComImport, confirmBookingComImport } from './import-bookingcom.handlers';
 export type { PreviewRow, PreviewResponse, ConfirmRequest, ConfirmResponse, PlannedUnit } from './import-bookingcom.handlers';
