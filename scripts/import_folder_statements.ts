@@ -64,12 +64,13 @@ async function main() {
       }
 
       // Import statement using bank-inbox-engine pipeline
-      const count = importStatement(db, inbox, stmt, 310700 + i, new Date());
-      if (count === -1) {
+      const { imported, skipped } = importStatement(db, inbox, stmt, 310700 + i, new Date());
+      if (imported === -1) {
         console.error(`⚠️ ${file}: Account not matched for IBAN ${stmt.iban}`);
       } else {
-        console.log(`✅ ${file}: Imported ${count} transaction(s) [Date: ${stmt.period_from}, ${stmt.opening_balance} -> ${stmt.closing_balance} CZK]`);
-        totalImportedOps += count;
+        const dup = skipped ? `, ${skipped} already posted` : '';
+        console.log(`✅ ${file}: Imported ${imported} transaction(s)${dup} [Date: ${stmt.period_from}, ${stmt.opening_balance} -> ${stmt.closing_balance} CZK]`);
+        totalImportedOps += imported;
         importedFiles++;
       }
     } catch (err: any) {

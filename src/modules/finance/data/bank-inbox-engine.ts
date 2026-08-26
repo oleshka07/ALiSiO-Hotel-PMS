@@ -236,14 +236,29 @@ export interface BankInboxConfig {
 }
 
 export interface CheckResult {
+  /** Transactions already present from an earlier run — counted, not re-posted. */
+  skippedDuplicates: number;
   newEmails: number;
   imported: number;
   errors: string[];
   unmatched: number;  // statements where IBAN didn't match any account
 }
 
-export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<CheckResult> {
-  const result: CheckResult = { newEmails: 0, imported: 0, errors: [], unmatched: 0 };
+export interface CheckInboxOptions {
+  /**
+   * Re-read from this UID instead of continuing after last_uid.
+   *
+   * An email that failed to parse, failed validation, or arrived for an account
+   * we could not match was skipped — and last_uid moved past it anyway, so the
+   * next poll started after it and nobody ever looked at it again. The message
+   * itself is untouched in IMAP: nothing here deletes or flags anything. This
+   * is how it gets picked up again.
+   */
+  fromUid?: number;
+}
+
+export async function checkInbox(db: any, inbox: BankInboxConfig, opts: CheckInboxOptions = {}): Promise<CheckResult> {
+  const result: CheckResult = { newEmails: 0, imported: 0, errors: [], unmatched: 0, skippedDuplicates: 0 };
   const password = decryptPassword(inbox.imap_password_encrypted);
 
   const client = new ImapFlow({
@@ -258,11 +273,14 @@ export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<Check
     await client.connect();
     const lock = await client.getMailboxLock(inbox.imap_folder);
     try {
-      const since = inbox.last_uid ? `${inbox.last_uid + 1}:*` : '1:*';
+      // On a re-read the floor comes from the caller; maxUid still starts at the
+      // stored value so a re-read can never wind last_uid backwards.
+      const floor = opts.fromUid != null ? Math.max(0, opts.fromUid - 1) : (inbox.last_uid || 0);
+      const since = floor ? `${floor + 1}:*` : '1:*';
       let maxUid = inbox.last_uid || 0;
 
       for await (const msg of client.fetch(since, { uid: true, source: true, envelope: true }, { uid: true })) {
-        if (!msg.uid || msg.uid <= (inbox.last_uid || 0)) continue;
+        if (!msg.uid || msg.uid <= floor) continue;
         maxUid = Math.max(maxUid, msg.uid);
 
         const fromAddr = msg.envelope?.from?.[0]?.address || '';
@@ -308,6 +326,7 @@ export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<Check
             } catch (e: any) {
               const reason = `parse failed — ${e.message}`;
               result.errors.push(`Email UID ${msg.uid}, attach ${filename}: ${reason}`);
+              recordSkipped(db, inbox, msg.uid, filename, reason);
               await notifyParseFailure(inbox.name, filename, reason).catch(() => {});
               continue;
             }
@@ -320,13 +339,23 @@ export async function checkInbox(db: any, inbox: BankInboxConfig): Promise<Check
             if (validationIssue) {
               const reason = `validation failed — ${validationIssue}`;
               result.errors.push(`Email UID ${msg.uid}, attach ${filename}: ${reason}`);
+              recordSkipped(db, inbox, msg.uid, filename, reason);
               await notifyParseFailure(inbox.name, filename, reason).catch(() => {});
               continue;
             }
 
-            const importedCount = importStatement(db, inbox, stmt, msg.uid, msg.envelope?.date || new Date());
-            if (importedCount === -1) result.unmatched++;
-            else result.imported += importedCount;
+            const outcome = importStatement(db, inbox, stmt, msg.uid, msg.envelope?.date || new Date());
+            if (outcome.imported === -1) {
+              result.unmatched++;
+              // Parsed cleanly, but no account here has that IBAN. Nothing is
+              // stored, so without this row the statement simply vanishes.
+              recordSkipped(db, inbox, msg.uid, filename,
+                `no account matches IBAN ${stmt.iban || stmt.account_number || '(none in statement)'}`);
+            } else {
+              result.imported += outcome.imported;
+              result.skippedDuplicates += outcome.skipped;
+              clearSkipped(db, inbox.id, msg.uid);
+            }
           }
         } catch (e: any) {
           result.errors.push(`Email UID ${msg.uid}: ${e.message}`);
@@ -414,9 +443,16 @@ function findAccountByIban(db: any, orgId: string, statement: ParsedStatement): 
   return null;
 }
 
-export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement, uid: number, emailDate: Date): number {
+export interface ImportOutcome {
+  /** Operations created, or -1 when no account matched the statement's IBAN. */
+  imported: number;
+  /** Transactions that were already posted by an earlier run. */
+  skipped: number;
+}
+
+export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement, uid: number, emailDate: Date): ImportOutcome {
   const accountId = findAccountByIban(db, inbox.organization_id, stmt);
-  if (!accountId) return -1; // unmatched — don't import
+  if (!accountId) return { imported: -1, skipped: 0 }; // unmatched — don't import
 
   // Create bank_statement record
   const stmtId = `stmt_inbox_${Date.now()}_${uid}_${Math.random().toString(36).slice(2, 5)}`;
@@ -434,10 +470,23 @@ export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedSta
 
   const activeRules = loadActiveRules(db, inbox.organization_id);
   let imported = 0;
+  let skipped = 0;
+
+  // source_ref is stable per (inbox, email, line), so it is the natural key for
+  // "have we already posted this one". Without this check a re-read of the
+  // mailbox would post every transaction a second time — the index on
+  // (source, source_ref) is not unique, and nothing else would stop it. The OTA
+  // importers already guard the same way.
+  const alreadyPosted = db.prepare(
+    "SELECT id FROM fin_operations WHERE source = 'bank_import' AND source_ref = ? LIMIT 1"
+  );
 
   const tx = db.transaction(() => {
     for (let i = 0; i < stmt.transactions.length; i++) {
       const t = stmt.transactions[i];
+      const sourceRef = `inbox:${inbox.id}:${uid}:${i}`;
+      if (alreadyPosted.get(sourceRef)) { skipped++; continue; }
+
       const txId = `btx_inbox_${Date.now()}_${uid}_${i}_${Math.random().toString(36).slice(2, 4)}`;
 
       // Create fin_operation: positive = income (account_to), negative = expense (account_from)
@@ -452,7 +501,7 @@ export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedSta
         comment: [t.counterparty, t.description, t.reference ? `Ref: ${t.reference}` : null].filter(Boolean).join(' · '),
         method: 'bank_transfer',
         source: 'bank_import',
-        source_ref: `inbox:${inbox.id}:${uid}:${i}`,
+        source_ref: sourceRef,
         status: 'completed',
       });
 
@@ -490,7 +539,76 @@ export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedSta
   tx();
 
   db.prepare("UPDATE bank_statements SET matched_transactions = ? WHERE id = ?").run(imported, stmtId);
-  return imported;
+  return { imported, skipped };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Emails the poller could not turn into operations
+//
+// last_uid advances past every message it reads, including the ones it failed
+// on — so a statement that would not parse, would not validate, or arrived for
+// an unknown IBAN was skipped and never looked at again. These rows are what
+// makes those recoverable: the email is still in the mailbox, and the UID
+// recorded here is where a re-read has to start.
+// ─────────────────────────────────────────────────────────────────
+
+function ensureSkippedTable(db: any): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fin_bank_inbox_skipped (
+      inbox_id    TEXT NOT NULL,
+      uid         INTEGER NOT NULL,
+      file_name   TEXT,
+      reason      TEXT NOT NULL,
+      first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+      attempts    INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (inbox_id, uid, file_name)
+    )
+  `);
+}
+
+export function recordSkipped(db: any, inbox: BankInboxConfig, uid: number, fileName: string, reason: string): void {
+  try {
+    ensureSkippedTable(db);
+    db.prepare(`
+      INSERT INTO fin_bank_inbox_skipped (inbox_id, uid, file_name, reason)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(inbox_id, uid, file_name) DO UPDATE SET
+        reason = excluded.reason,
+        last_seen = datetime('now'),
+        attempts = attempts + 1
+    `).run(inbox.id, uid, fileName || '', String(reason).slice(0, 500));
+  } catch (e: any) {
+    console.error('[BankInbox] could not record skipped email:', e?.message || e);
+  }
+}
+
+export function clearSkipped(db: any, inboxId: string, uid: number): void {
+  try {
+    ensureSkippedTable(db);
+    db.prepare("DELETE FROM fin_bank_inbox_skipped WHERE inbox_id = ? AND uid = ?").run(inboxId, uid);
+  } catch { /* the row not existing is the normal case */ }
+}
+
+export interface SkippedEmail {
+  inbox_id: string;
+  uid: number;
+  file_name: string | null;
+  reason: string;
+  first_seen: string;
+  last_seen: string;
+  attempts: number;
+}
+
+export function listSkipped(db: any, inboxId?: string): SkippedEmail[] {
+  try {
+    ensureSkippedTable(db);
+    return inboxId
+      ? db.prepare("SELECT * FROM fin_bank_inbox_skipped WHERE inbox_id = ? ORDER BY uid").all(inboxId)
+      : db.prepare("SELECT * FROM fin_bank_inbox_skipped ORDER BY inbox_id, uid").all();
+  } catch {
+    return [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────

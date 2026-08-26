@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Play, Wifi, WifiOff, Mail, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Play, Wifi, WifiOff, Mail, AlertCircle, CheckCircle, RotateCcw } from 'lucide-react';
 import BankInboxModal, { InboxFormValues } from './BankInboxModal';
 
 export interface BankInbox {
@@ -85,6 +85,53 @@ export default function BankInboxesTab() {
     }
   }
 
+  // Emails the poller read but could not import. last_uid moved past them, so
+  // an ordinary "read now" will not go back for them — only a re-read will.
+  const [skipped, setSkipped] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const counts: Record<string, number> = {};
+      for (const it of items) {
+        try {
+          const r = await fetch(`/api/finance/bank-inboxes/${it.id}/skipped`);
+          const d = await r.json();
+          if (d.ok) counts[it.id] = (d.skipped || []).length;
+        } catch { /* a missing count must not break the page */ }
+      }
+      if (!cancelled) setSkipped(counts);
+    })();
+    return () => { cancelled = true; };
+  }, [items]);
+
+  async function handleRescan(item: BankInbox) {
+    const n = skipped[item.id] || 0;
+    const msg = n > 0
+      ? `Перечитати «${item.name}»?\n\n${n} лист(ів) прийшли, але не потрапили у фінанси — розбір не вдався або не знайшовся рахунок за IBAN. Листи досі в скриньці.\n\nПовторні операції не створюються.`
+      : `Перечитати «${item.name}» за останні 14 днів?\n\nПовторні операції не створюються.`;
+    if (!confirm(msg)) return;
+    setBusyId(item.id);
+    const res = await fetch(`/api/finance/bank-inboxes/${item.id}/rescan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(n > 0 ? {} : { days: 14 }),
+    });
+    const data = await res.json();
+    setBusyId(null);
+    if (!data.ok) { alert(`Помилка: ${data.error || 'unknown'}`); return; }
+    if (!data.rescanned) { alert(data.message || 'Нічого перечитувати.'); return; }
+    alert(
+      `Перечитано з UID ${data.from_uid}\n\n`
+      + `Листів прочитано: ${data.emails_read}\n`
+      + `Імпортовано операцій: ${data.imported}\n`
+      + `Вже були раніше: ${data.already_posted}\n`
+      + `Досі без рахунку за IBAN: ${data.still_unmatched}\n`
+      + `Залишилось нерозібраних: ${data.skipped_after} (було ${data.skipped_before})`
+    );
+    fetchItems();
+  }
+
   async function handleRunNow(item: BankInbox) {
     if (!confirm(`Зчитати email зараз для «${item.name}»?`)) return;
     setBusyId(item.id);
@@ -153,6 +200,12 @@ export default function BankInboxesTab() {
                 <button onClick={() => handleToggle(item)} style={iconBtn} title={item.is_active ? 'Вимкнути' : 'Увімкнути'}>
                   {item.is_active ? <WifiOff size={14} /> : <Wifi size={14} />}
                 </button>
+                <button
+                  onClick={() => handleRescan(item)}
+                  disabled={busyId === item.id}
+                  style={iconBtn}
+                  title="Перечитати скриньку — забирає листи, які прийшли, але не потрапили у фінанси"
+                ><RotateCcw size={14} /></button>
                 <button onClick={() => handleDelete(item)} style={{ ...iconBtn, color: '#dc2626' }} title="Видалити"><Trash2 size={14} /></button>
               </div>
 
@@ -164,7 +217,15 @@ export default function BankInboxesTab() {
                 <Field label="Операцій імпортовано" value={`${item.operations_imported}`} />
                 <Field label="Останній sync" value={formatDateTime(item.last_synced_at)} />
                 <Field label="Останній email" value={formatDateTime(item.last_email_at)} />
+                <Field label="Не потрапило у фінанси" value={`${skipped[item.id] ?? 0}`} />
               </div>
+
+              {(skipped[item.id] || 0) > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: 'rgba(251,191,36,0.10)', borderRadius: 6, color: 'var(--accent-warning)', fontSize: 12 }}>
+                  <strong>{skipped[item.id]} лист(ів) прийшли, але не імпортовані.</strong>{' '}
+                  Звичайне «Зчитати зараз» їх не забере — воно читає лише нові. Натисніть «Перечитати».
+                </div>
+              )}
 
               {item.last_error && (
                 <div style={{ marginTop: 10, padding: 10, background: 'rgba(220,38,38,0.08)', borderRadius: 6, color: '#dc2626', fontSize: 12 }}>
