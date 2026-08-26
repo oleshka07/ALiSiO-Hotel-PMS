@@ -27,20 +27,32 @@
   /* Borders */
   --border-primary: #2a2d3e;
   --border-secondary: #353849;
-  --border-active: #4f6ef7;
+  --border-active: #4a66e8;
   --border-hover: #404560;
 
-  /* Text */
+  /* Text
+     Measured against every --bg-* surface in this file; the worst case is
+     --bg-tooltip, the lightest of them. --text-tertiary used to be #6c7086,
+     which came out at 2.8–3.9 against the surfaces it actually sits on — under
+     the 4.5 WCAG AA needs for body text. It carries the labels a person reads
+     to find their way: sidebar section headings, every table column header,
+     the caption under each dashboard number. --text-secondary moved up with it
+     so the two stay a visible step apart. */
   --text-primary: #e8eaf0;
-  --text-secondary: #9397a9;
-  --text-tertiary: #6c7086;
+  --text-secondary: #a8adc0;
+  --text-tertiary: #9095aa;
   --text-inverse: #0f1117;
-  --text-link: #6c8cff;
+  --text-link: #7d97ff;
 
   /* Accent Colors */
-  --accent-primary: #4f6ef7;
+  /* Two jobs, two colours. As a fill under white button text #4f6ef7 gave 4.3,
+     just under; darkened here it clears. As text on a dark card the same blue
+     gave 3.2–3.9, and darkening makes that worse — so text-on-dark uses
+     --accent-primary-text, which is lighter, not darker. */
+  --accent-primary: #4a66e8;
   --accent-primary-hover: #6382ff;
-  --accent-primary-light: rgba(79, 110, 247, 0.15);
+  --accent-primary-text: #7d97ff;
+  --accent-primary-light: rgba(74, 102, 232, 0.15);
   --accent-success: #34d399;
   --accent-success-light: rgba(52, 211, 153, 0.15);
   --accent-warning: #fbbf24;
@@ -51,7 +63,7 @@
   --accent-info-light: rgba(96, 165, 250, 0.15);
 
   /* Booking Status Colors */
-  --status-draft: #6c7086;
+  --status-draft: #9095aa;
   --status-tentative: #fbbf24;
   --status-confirmed: #34d399;
   --status-checked-in: #60a5fa;
@@ -277,7 +289,7 @@ a:hover {
 
 .sidebar-nav-item.active {
   background: var(--accent-primary-light);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .sidebar-nav-item.active::before {
@@ -664,7 +676,7 @@ a:hover {
 
 .badge-primary {
   background: var(--accent-primary-light);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .badge-success {
@@ -771,8 +783,8 @@ a:hover {
 }
 
 .tab.active {
-  color: var(--accent-primary);
-  border-bottom-color: var(--accent-primary);
+  color: var(--accent-primary-text);
+  border-bottom-color: var(--accent-primary-text);
 }
 
 /* ─── Modal ───────────────────────────────────── */
@@ -932,7 +944,7 @@ a:hover {
 .filter-pill.active {
   background: var(--accent-primary-light);
   border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .filter-pill-remove {
@@ -1382,7 +1394,7 @@ a:hover {
   padding: 1px 4px;
   border-radius: 3px;
   background: var(--accent-primary-light);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   font-weight: 600;
 }
 
@@ -2299,7 +2311,7 @@ a:hover {
 }
 
 .bottom-nav-item.active {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .bottom-nav-item.active::after {
@@ -2564,7 +2576,7 @@ a:hover {
 }
 
 .mobile-tab.active {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   font-weight: 600;
 }
 
@@ -2602,7 +2614,7 @@ a:hover {
 
 .mobile-action-btn.primary {
   border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .mobile-action-btn.primary:hover {
@@ -2716,7 +2728,7 @@ a:hover {
 .report-category-card-value {
   font-weight: 700;
   font-size: 16px;
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .report-category-card-stats {

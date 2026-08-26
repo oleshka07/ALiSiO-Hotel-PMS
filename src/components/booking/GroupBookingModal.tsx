@@ -203,7 +203,7 @@ export default function GroupBookingModal({ open, onClose, onCreated, bookingSou
                           border: sel ? '2px solid var(--accent-primary)' : '2px solid transparent',
                           display: 'flex', alignItems: 'center', gap: 6, fontSize: 13,
                         }}>
-                        {sel && <Check size={14} style={{ color: 'var(--accent-primary)' }} />}
+                        {sel && <Check size={14} style={{ color: 'var(--accent-primary-text)' }} />}
                         <span style={{ fontWeight: 600 }}>{u.code}</span>
                         <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{u.category_name}</span>
                       </div>
@@ -228,7 +228,7 @@ export default function GroupBookingModal({ open, onClose, onCreated, bookingSou
             </div>
           </div>
           {nights > 0 && (
-            <div style={{ fontSize: 13, color: 'var(--accent-primary)', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--accent-primary-text)', marginBottom: 12 }}>
               📅 {nights} ночей × {roomCount} кімнат = {nights * roomCount} кімнато-ночей
             </div>
           )}

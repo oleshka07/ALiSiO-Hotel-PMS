@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { onDark } from '@/lib/colors';
 import {
   Edit3, X, Save, Plus, Check, ArrowRight, Copy, ExternalLink,
   Loader2, Trash2, Phone, Receipt, RefreshCw, Clock, Lock, Mail, MessageCircle,
@@ -275,7 +276,7 @@ export default function BookingViewModal({
               <button className="btn btn-secondary" title="Скопіювати" onClick={() => {
                 navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`).then(() => showToast('Скопійовано!'));
               }}><Copy size={14} /> Копіювати</button>
-              <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }}
+              <button className="btn btn-secondary" style={{ color: 'var(--accent-primary-text)' }}
                 onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}>
                 <ExternalLink size={14} /> Гостьова
               </button>
@@ -336,12 +337,12 @@ export default function BookingViewModal({
                           style={{ padding: '8px 10px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, cursor: isCurrent ? 'default' : 'pointer', transition: 'background .15s', opacity: savingInline ? 0.5 : 1 }}
                           onMouseEnter={(e) => !isCurrent && (e.currentTarget.style.background = 'var(--bg-tertiary)')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: isCurrent ? 'var(--accent-primary)' : 'var(--text-primary)', fontFamily: 'ui-monospace, monospace', minWidth: 32 }}>{u.code}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isCurrent ? 'var(--accent-primary-text)' : 'var(--text-primary)', fontFamily: 'ui-monospace, monospace', minWidth: 32 }}>{u.code}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
                               <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{u.category_name}</div>
                             </div>
-                            {isCurrent && <span style={{ fontSize: 9, color: 'var(--accent-primary)', fontWeight: 600, padding: '2px 6px', background: 'rgba(79,142,255,.12)', borderRadius: 4 }}>Поточний</span>}
+                            {isCurrent && <span style={{ fontSize: 9, color: 'var(--accent-primary-text)', fontWeight: 600, padding: '2px 6px', background: 'rgba(79,142,255,.12)', borderRadius: 4 }}>Поточний</span>}
                           </div>
                         );
                       })}
@@ -349,7 +350,7 @@ export default function BookingViewModal({
                   </>
                 )}
               </div>
-              <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086')) + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086'), fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || (b.source === 'widget' || b.source?.startsWith('widget:') ? '🌐 Віджет' : b.source)}</span>
+              <span style={{ padding: '2px 7px', background: ((sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086')) + '26'), borderRadius: 4, fontSize: 10.5, fontWeight: 600, color: onDark(sourceMap[b.source]?.color || (b.source === 'widget' || b.source?.startsWith('widget:') ? '#6366f1' : '#6c7086')), fontFamily: 'ui-monospace, monospace' }}>{sourceMap[b.source]?.label || (b.source === 'widget' || b.source?.startsWith('widget:') ? '🌐 Віджет' : b.source)}</span>
               <span style={{ width: 3, height: 3, background: 'var(--text-tertiary)', borderRadius: '50%' }} />
               {/* Dates — inline edit */}
               {!datesEditOpen ? (
@@ -462,7 +463,7 @@ export default function BookingViewModal({
                                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                                       <div style={{ width: 28, height: 28, borderRadius: 7, background: i === 0 ? 'var(--bg-tertiary)' : 'rgba(34,197,94,.12)', color: i === 0 ? 'var(--text-secondary)' : '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{t.icon}</div>
                                       <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, marginBottom: 2 }}>{t.name}{t.hasLink && <span style={{ display: 'inline-block', fontSize: 9, background: 'rgba(79,142,255,.12)', color: 'var(--accent-primary)', padding: '1px 5px', borderRadius: 3, fontWeight: 600, letterSpacing: '.04em', marginLeft: 5, verticalAlign: 'middle' }}>+ посилання</span>}</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, marginBottom: 2 }}>{t.name}{t.hasLink && <span style={{ display: 'inline-block', fontSize: 9, background: 'rgba(79,142,255,.12)', color: 'var(--accent-primary-text)', padding: '1px 5px', borderRadius: 3, fontWeight: 600, letterSpacing: '.04em', marginLeft: 5, verticalAlign: 'middle' }}>+ посилання</span>}</div>
                                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.preview}</div>
                                       </div>
                                     </div>
@@ -500,7 +501,7 @@ export default function BookingViewModal({
           </div>
           <div style={{ textAlign: 'right', position: 'relative' }}>
             <button onClick={onClose} style={{ position: 'absolute', top: -2, right: -2, background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }} aria-label="Закрити"><X size={14} /></button>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 16 }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary-text)', marginTop: 16 }}>{total.toLocaleString()} {b.currency || 'CZK'}</div>
             {(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}
             {b.currency !== 'EUR' && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>}
             {b.created_at && (
@@ -663,7 +664,7 @@ export default function BookingViewModal({
               style={{
                 padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
                 fontSize: 13, fontWeight: viewTab === tab.key ? 700 : 400,
-                color: viewTab === tab.key ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                color: viewTab === tab.key ? 'var(--accent-primary-text)' : 'var(--text-secondary)',
                 borderBottom: viewTab === tab.key ? '2px solid var(--accent-primary)' : '2px solid transparent',
                 whiteSpace: 'nowrap', display: 'flex', gap: 6, alignItems: 'center',
               }}>
@@ -680,7 +681,7 @@ export default function BookingViewModal({
           {viewTab === 'payment' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary-text)' }}>{total.toLocaleString()} {b.currency || 'CZK'}</div></div>
                 <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} {b.currency || 'CZK'}</div></div>
                 <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div><div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} {b.currency || 'CZK'}</div></div>
               </div>
@@ -701,7 +702,7 @@ export default function BookingViewModal({
               </div>
               {payLink && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '8px 10px', background: 'var(--bg-tertiary)', borderRadius: 7 }}>
-                  <a href={payLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', wordBreak: 'break-all', flex: 1 }}>{payLink}</a>
+                  <a href={payLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary-text)', wordBreak: 'break-all', flex: 1 }}>{payLink}</a>
                   <button onClick={() => { navigator.clipboard.writeText(payLink).then(() => showToast('Скопійовано')); }}
                     style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>Копіювати</button>
                 </div>
@@ -1159,7 +1160,7 @@ export default function BookingViewModal({
                           )}
                         </div>
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary-text)' }}>
                         {Number(sb.subtotal).toLocaleString()} {b.currency || 'CZK'}
                       </div>
                       {/* Payment status badge for child */}
@@ -1176,7 +1177,7 @@ export default function BookingViewModal({
                       {sb.child_guest_page_token && (
                         <button
                           onClick={(e) => { e.stopPropagation(); window.open(`/guest/${sb.child_guest_page_token}`, '_blank'); }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', padding: 4 }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary-text)', padding: 4 }}
                           title="Гостьова сторінка цієї групи"
                         >
                           <ExternalLink size={14} />
@@ -1277,7 +1278,7 @@ export default function BookingViewModal({
                             background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
                             display: 'flex', alignItems: 'center', gap: 8,
                           }}>
-                            <ExternalLink size={13} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                            <ExternalLink size={13} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Гостьова сторінка цієї групи</div>
                               <div style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1296,7 +1297,7 @@ export default function BookingViewModal({
                             </button>
                             <button
                               onClick={() => window.open(`/guest/${sb.child_guest_page_token}`, '_blank')}
-                              style={{ padding: '3px 8px', fontSize: 10, background: 'none', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              style={{ padding: '3px 8px', fontSize: 10, background: 'none', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary-text)', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}
                             >
                               Відкрити
                             </button>
@@ -1344,7 +1345,7 @@ export default function BookingViewModal({
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>➕ Нова група гостей</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div style={{ gridColumn: '1 / -1' }}>
-                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>🏠 Юніт (кімната / місце) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>🏠 Юніт (кімната / місце) <span style={{ color: 'var(--accent-primary-text)' }}>*</span></label>
                       <select value={groupForm.unitId} onChange={e => setGroupForm(p => ({ ...p, unitId: e.target.value }))}
                         style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, color: 'var(--text-primary)' }}>
                         <option value="">— Той самий юніт що й master ({(b as any).unit_name}) —</option>
@@ -1422,7 +1423,7 @@ export default function BookingViewModal({
                   style={{
                     padding: '10px 16px', fontSize: 13, fontWeight: 600,
                     background: 'none', border: '1px dashed var(--accent-primary)',
-                    borderRadius: 10, cursor: 'pointer', color: 'var(--accent-primary)',
+                    borderRadius: 10, cursor: 'pointer', color: 'var(--accent-primary-text)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   }}
                 >

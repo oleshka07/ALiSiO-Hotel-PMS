@@ -190,7 +190,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh,
 
       <div style={{ marginTop: 32, borderTop: '1px solid var(--border-primary)', paddingTop: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Code2 size={18} style={{ color: 'var(--accent-primary)' }} />
+          <Code2 size={18} style={{ color: 'var(--accent-primary-text)' }} />
           <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Код для вставки (Embed)</h4>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
@@ -352,7 +352,7 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
                   style={{
                     padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: activeUt === ut.id ? 600 : 400,
                     background: activeUt === ut.id ? 'var(--accent-primary-dim)' : 'transparent',
-                    color: activeUt === ut.id ? 'var(--accent-primary)' : 'var(--text-primary)', fontSize: 13,
+                    color: activeUt === ut.id ? 'var(--accent-primary-text)' : 'var(--text-primary)', fontSize: 13,
                   }}>
                   {ut.name}
                 </div>
@@ -369,7 +369,7 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
                     <input type="checkbox" checked={chk} disabled={alreadyAdded}
                       onChange={() => { const s = new Set(selected); chk ? s.delete(u.id) : s.add(u.id); setSelected(s); }} />
                     <span style={{ fontSize: 13 }}>{u.name} <span style={{ color: 'var(--text-tertiary)' }}>({u.code})</span></span>
-                    {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary)' }}>вже додано</span>}
+                    {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary-text)' }}>вже додано</span>}
                   </label>
                 );
               })}
@@ -388,7 +388,7 @@ export function ListingsTab({ siteId, siteSlug, siteCurrency = 'CZK' }: { siteId
                   <input type="checkbox" checked={chk} disabled={alreadyAdded}
                     onChange={() => { const s = new Set(selected); chk ? s.delete(ut.id) : s.add(ut.id); setSelected(s); }} />
                   <span style={{ fontSize: 13, fontWeight: 500 }}>{ut.name}</span>
-                  {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary)' }}>вже додано</span>}
+                  {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary-text)' }}>вже додано</span>}
                 </label>
               );
             })}

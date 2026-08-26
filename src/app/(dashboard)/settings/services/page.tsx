@@ -175,7 +175,7 @@ export default function ServicesSettingsPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)' }}>{svc.price} {svc.currency}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary-text)' }}>{svc.price} {svc.currency}</div>
                   {svc.unit_label && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>/{svc.unit_label}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

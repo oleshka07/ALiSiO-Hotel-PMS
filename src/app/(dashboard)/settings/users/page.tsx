@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { onDark } from '@/lib/colors';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
@@ -352,7 +353,7 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td>
-                      <span className="badge" style={{ background: ROLE_COLORS[user.role] + '20', color: ROLE_COLORS[user.role], border: `1px solid ${ROLE_COLORS[user.role]}30`, fontWeight: 600 }}>
+                      <span className="badge" style={{ background: ROLE_COLORS[user.role] + '20', color: onDark(ROLE_COLORS[user.role]), border: `1px solid ${ROLE_COLORS[user.role]}30`, fontWeight: 600 }}>
                         {ROLE_LABELS[user.role]}
                       </span>
                     </td>
@@ -414,7 +415,7 @@ export default function UsersPage() {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>Ролі</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {ALL_ROLES.map(r => (
-              <span key={r} className="badge" style={{ background: ROLE_COLORS[r] + '20', color: ROLE_COLORS[r], border: `1px solid ${ROLE_COLORS[r]}30`, fontWeight: 500 }}>
+              <span key={r} className="badge" style={{ background: ROLE_COLORS[r] + '20', color: onDark(ROLE_COLORS[r]), border: `1px solid ${ROLE_COLORS[r]}30`, fontWeight: 500 }}>
                 {ROLE_LABELS[r]}
               </span>
             ))}
@@ -565,7 +566,7 @@ export default function UsersPage() {
             </div>
             <div className="modal-body">
               <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
-                Роль: <span className="badge" style={{ background: ROLE_COLORS[form.role] + '20', color: ROLE_COLORS[form.role], fontWeight: 600 }}>{ROLE_LABELS[form.role]}</span>
+                Роль: <span className="badge" style={{ background: ROLE_COLORS[form.role] + '20', color: onDark(ROLE_COLORS[form.role]), fontWeight: 600 }}>{ROLE_LABELS[form.role]}</span>
                 <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
                   Прапорець «змінено» = відхилення від базових дозволів ролі
                 </span>

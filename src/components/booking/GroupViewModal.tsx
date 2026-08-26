@@ -257,11 +257,11 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                 <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Дати</div>
                   <div style={{ fontWeight: 600, fontSize: 14, marginTop: 2 }}>{group.check_in} — {group.check_out}</div>
-                  <div style={{ fontSize: 12, color: 'var(--accent-primary)' }}>{group.nights} ночей</div>
+                  <div style={{ fontSize: 12, color: 'var(--accent-primary-text)' }}>{group.nights} ночей</div>
                 </div>
                 <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплата</div>
-                  <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)', marginTop: 2 }}>
+                  <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary-text)', marginTop: 2 }}>
                     {(group.total_price || 0).toLocaleString()} {group.currency || 'CZK'}
                   </div>
                   <div style={{ fontSize: 12, display: 'flex', gap: 8 }}>
@@ -474,7 +474,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', fontWeight: 700, fontSize: 13, borderTop: '1px solid var(--border-primary)', marginTop: 4 }}>
                       <span>Разом оплачено</span>
-                      <span style={{ color: 'var(--accent-primary)' }}>{totalPaid.toLocaleString()} / {(group.total_price || 0).toLocaleString()} {group.currency || 'CZK'}</span>
+                      <span style={{ color: 'var(--accent-primary-text)' }}>{totalPaid.toLocaleString()} / {(group.total_price || 0).toLocaleString()} {group.currency || 'CZK'}</span>
                     </div>
                   </div>
                 )}
@@ -495,7 +495,7 @@ export default function GroupViewModal({ groupId, onClose, onUpdated }: GroupVie
                     }}>
                       <div style={{
                         width: 38, height: 38, borderRadius: 8,
-                        background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary)',
+                        background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary-text)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontWeight: 700, fontSize: 13, flexShrink: 0,
                       }}>

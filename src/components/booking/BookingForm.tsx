@@ -445,7 +445,7 @@ export default function BookingForm({
       </div>
 
       {nights > 0 && (
-        <div style={{ fontSize: 13, color: 'var(--accent-primary)', fontWeight: 600, marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--accent-primary-text)', fontWeight: 600, marginBottom: 12 }}>
           📅 {nights} {nightsLabel(nights)}
         </div>
       )}

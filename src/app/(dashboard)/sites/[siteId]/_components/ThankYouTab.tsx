@@ -36,7 +36,7 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12,
-          background: 'rgba(79,110,247,0.12)', color: 'var(--accent-primary)',
+          background: 'rgba(79,110,247,0.12)', color: 'var(--accent-primary-text)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <BarChart2 size={22} />
@@ -56,8 +56,8 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
         display: 'flex', flexDirection: 'column', gap: 6,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Info size={15} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>Як це працює</span>
+          <Info size={15} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, color: 'var(--accent-primary-text)' }}>Як це працює</span>
         </div>
         <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9, color: 'var(--text-secondary)' }}>
           <li>Гість відкриває <code>/book?site_id={site.slug}</code> і Pixel ініціалізується</li>
@@ -155,7 +155,7 @@ export function ThankYouTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Wi
         }}>
           ✅ <strong>URL кнопки для вашого сайту:</strong>
           <br />
-          <code style={{ wordBreak: 'break-all', color: 'var(--accent-primary)', fontSize: 12 }}>
+          <code style={{ wordBreak: 'break-all', color: 'var(--accent-primary-text)', fontSize: 12 }}>
             {bookingUrl}
           </code>
           <br />

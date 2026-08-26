@@ -456,7 +456,7 @@ export default function SettingsUnitsPage() {
       <>
         <Header title="Номери / Юніти" onMenuClick={onMenuClick} />
         <div className="app-content" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-          <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
+          <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary-text)' }} />
         </div>
       </>
     );

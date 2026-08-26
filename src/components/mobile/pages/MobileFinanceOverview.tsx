@@ -191,7 +191,7 @@ export default function MobileFinanceOverview() {
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
           Останні транзакції
         </div>
-        <Link href="/finance/operations" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
+        <Link href="/finance/operations" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--accent-primary-text)', textDecoration: 'none', fontWeight: 600 }}>
           Всі <ArrowRight size={12} />
         </Link>
       </div>

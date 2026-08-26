@@ -90,7 +90,7 @@ export function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: Desi
                     background: cfg.button_style === bs.value ? 'var(--accent-primary-dim)' : 'var(--surface-secondary)',
                     cursor: 'pointer', color: 'var(--text-primary)', transition: 'all .15s',
                   }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: cfg.button_style === bs.value ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>{bs.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: cfg.button_style === bs.value ? 'var(--accent-primary-text)' : 'var(--text-secondary)' }}>{bs.label}</div>
                   <div style={{
                     height: 32, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: isPill ? 16 : isSharp ? 0 : 6,

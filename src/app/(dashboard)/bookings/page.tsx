@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import { onDark } from '@/lib/colors';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
@@ -710,7 +711,7 @@ function BookingsDesktop() {
                             onClick={(e) => { e.stopPropagation(); toggleGroup(g.id); }}>
                             {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                           </button>
-                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>
                             {g.group_type === 'building' ? <Building2 size={16} /> : childCount}
                           </div>
                           <div style={{ flex: 1, minWidth: 120, cursor: 'pointer' }} onClick={() => setViewGroupId(g.id)}>
@@ -723,7 +724,7 @@ function BookingsDesktop() {
                           <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: STATUS_MAP[g.status]?.badge ? undefined : '#6c7086' }} className={`badge ${STATUS_MAP[g.status]?.badge || 'badge-info'}`}>
                             {STATUS_MAP[g.status]?.label || g.status}
                           </span>
-                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary)' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-primary-text)' }}>
                             {(g.total_price || 0).toLocaleString()} {g.currency || 'CZK'}
                           </span>
                           <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути групу"
@@ -746,9 +747,9 @@ function BookingsDesktop() {
                       <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
                       <td><span className="flex items-center gap-2" style={{ fontSize: 12 }}><Users size={12} /> {b.adults}{b.children > 0 && <span style={{ color: 'var(--text-tertiary)' }}>+{b.children}</span>}</span></td>
                       <td><span className={`badge ${STATUS_MAP[b.status]?.badge || 'badge-info'}`}>{STATUS_MAP[b.status]?.label || b.status}</span></td>
-                      <td><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888', background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>{PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}</span></td>
+                      <td><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: onDark(PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888'), background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>{PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}</span></td>
                       <td>
-                        <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086' }}>{sourceMap[b.source]?.label || b.source}</span>
+                        <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: onDark(sourceMap[b.source]?.color || '#6c7086') }}>{sourceMap[b.source]?.label || b.source}</span>
                         {b.hostex_channel_type && <span style={{ marginLeft: 4 }} title={`Hostex: ${b.hostex_channel_type}`}>🌐</span>}
                       </td>
                       <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
@@ -767,9 +768,9 @@ function BookingsDesktop() {
                     <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
                     <td><span className="flex items-center gap-2" style={{ fontSize: 12 }}><Users size={12} /> {b.adults}{b.children > 0 && <span style={{ color: 'var(--text-tertiary)' }}>+{b.children}</span>}</span></td>
                     <td><span className={`badge ${STATUS_MAP[b.status]?.badge || 'badge-info'}`}>{STATUS_MAP[b.status]?.label || b.status}</span></td>
-                    <td><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888', background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>{PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}</span></td>
+                    <td><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, color: onDark(PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888'), background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>{PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}</span></td>
                     <td>
-                      <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086' }}>{sourceMap[b.source]?.label || b.source}</span>
+                      <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: onDark(sourceMap[b.source]?.color || '#6c7086') }}>{sourceMap[b.source]?.label || b.source}</span>
                       {b.hostex_channel_type && <span style={{ marginLeft: 4 }} title={`Hostex: ${b.hostex_channel_type}`}>🌐</span>}
                     </td>
                     <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
@@ -777,7 +778,7 @@ function BookingsDesktop() {
                       <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => openViewBooking(b)}><Eye size={14} /></button>
                       <button className="btn btn-sm btn-ghost btn-icon" title="Редагувати" onClick={() => openEditBooking(b)}><Edit3 size={14} /></button>
                       {b.guest_page_token && (
-                        <button className="btn btn-sm btn-ghost btn-icon" title="Гостьова сторінка" style={{ color: 'var(--accent-primary)' }} onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}><ExternalLink size={14} /></button>
+                        <button className="btn btn-sm btn-ghost btn-icon" title="Гостьова сторінка" style={{ color: 'var(--accent-primary-text)' }} onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}><ExternalLink size={14} /></button>
                       )}
                       <button className="btn btn-sm btn-ghost btn-icon" title="Видалити" style={{ color: 'var(--accent-danger)' }} onClick={() => handleDelete(b.id)}><Trash2 size={14} /></button>
                     </div></td>
@@ -817,7 +818,7 @@ function BookingsDesktop() {
                         onClick={() => toggleGroup(g.id)}>
                         {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                       </button>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
                         {g.group_type === 'building' ? <Building2 size={16} /> : childCount}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }} onClick={() => setViewGroupId(g.id)}>
@@ -889,7 +890,7 @@ function BookingsDesktop() {
                       <div className="booking-card-unit-sub">{b.category_name || b.category_type || ''}</div>
                       <div className="booking-card-price">
                         {(b.total_price || 0).toLocaleString()} {b.currency || 'CZK'}
-                        <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888', background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>
+                        <span style={{ marginLeft: 6, display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: onDark(PAYMENT_STATUS_MAP[b.payment_status]?.color || '#888'), background: PAYMENT_STATUS_MAP[b.payment_status]?.bg || 'rgba(128,128,128,0.1)' }}>
                           {PAYMENT_STATUS_MAP[b.payment_status]?.label || b.payment_status}
                         </span>
                       </div>
@@ -910,7 +911,7 @@ function BookingsDesktop() {
                         <span className={`badge ${STATUS_MAP[b.status]?.badge || 'badge-info'}`}>{STATUS_MAP[b.status]?.label || b.status}</span>
                       )}
                       {b.guest_page_token && (
-                        <button className="btn btn-sm btn-ghost btn-icon" style={{ color: 'var(--accent-primary)' }} title="Гостьова сторінка" onClick={(e) => { e.stopPropagation(); window.open(`/guest/${b.guest_page_token}`, '_blank'); }}>
+                        <button className="btn btn-sm btn-ghost btn-icon" style={{ color: 'var(--accent-primary-text)' }} title="Гостьова сторінка" onClick={(e) => { e.stopPropagation(); window.open(`/guest/${b.guest_page_token}`, '_blank'); }}>
                           <ExternalLink size={14} />
                         </button>
                       )}

@@ -213,7 +213,7 @@ export default function CrmTodayPage() {
               </div>
               <div className="crm-kpi">
                 <div className="crm-kpi-label">Загальна вартість</div>
-                <div className="crm-kpi-value" style={{ color: 'var(--accent-primary)', fontSize: 20 }}>
+                <div className="crm-kpi-value" style={{ color: 'var(--accent-primary-text)', fontSize: 20 }}>
                   {(data.kpi.totalValue || 0).toLocaleString()} CZK
                 </div>
               </div>

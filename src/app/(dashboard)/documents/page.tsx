@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { onDark } from '@/lib/colors';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
@@ -597,7 +598,7 @@ export default function DocumentsPage() {
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 padding: '10px 16px', fontSize: 14, fontWeight: 600,
-                color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                color: activeTab === tab.key ? 'var(--accent-primary-text)' : 'var(--text-secondary)',
                 borderBottom: activeTab === tab.key ? '2px solid var(--accent-primary)' : '2px solid transparent',
                 marginBottom: -1, display: 'flex', alignItems: 'center', gap: 8,
                 transition: 'color 0.15s',
@@ -607,7 +608,7 @@ export default function DocumentsPage() {
               {tab.count !== undefined && tab.count > 0 && (
                 <span style={{
                   background: 'rgba(79,110,247,0.15)',
-                  color: 'var(--accent-primary)',
+                  color: 'var(--accent-primary-text)',
                   borderRadius: 20, padding: '1px 7px', fontSize: 11,
                 }}>
                   {tab.count}
@@ -651,7 +652,7 @@ export default function DocumentsPage() {
                   <option value="TEYA">Teya (TEYA-)</option>
                 </select>
                 <button disabled={lockBusy} onClick={() => { if (confirm(`Заблокувати ${lockSeries} ${lockMonth}? Після цього нумерацію не можна змінювати — лише storno.`)) lockPeriodAction('lock'); }}
-                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: lockBusy ? 'wait' : 'pointer' }}>Заблокувати</button>
+                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: lockBusy ? 'wait' : 'pointer' }}>Заблокувати</button>
                 <button disabled={lockBusy} onClick={() => lockPeriodAction('unlock')}
                   style={{ background: 'none', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>Відкрити</button>
                 {lockMsg && <span style={{ fontSize: 12 }}>{lockMsg}</span>}
@@ -754,7 +755,7 @@ export default function DocumentsPage() {
                 <button
                   onClick={() => downloadZip(visibleInvoices.map(i => i.id), 'isdoc', [...selectedSources].join('+') || 'batch')}
                   disabled={zipLoading === 'isdoc' || visibleInvoices.length === 0}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'rgba(79,110,247,0.1)', color: 'var(--accent-primary)', fontSize: 12, fontWeight: 700, cursor: visibleInvoices.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: visibleInvoices.length === 0 ? 0.5 : 1 }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1.5px solid var(--accent-primary)', background: 'rgba(79,110,247,0.1)', color: 'var(--accent-primary-text)', fontSize: 12, fontWeight: 700, cursor: visibleInvoices.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: visibleInvoices.length === 0 ? 0.5 : 1 }}
                 >
                   {zipLoading === 'isdoc'
                     ? <><RefreshCw size={13} className="spin" /> Генеруємо ZIP…</>
@@ -769,9 +770,11 @@ export default function DocumentsPage() {
                 {sourceCheckboxes.map(src => {
                   const checked = selectedSources.has(src.id);
                   const cfg = sourceConfig[src.id as keyof typeof sourceConfig];
+                  // Brand hex is the chip's border and wash; its text needs the readable variant.
                   const color = cfg?.color || 'var(--accent-primary)';
+                  const textColor = cfg?.color ? onDark(cfg.color) : 'var(--accent-primary-text)';
                   return (
-                    <button key={src.id} onClick={() => toggleSource(src.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, border: checked ? `2px solid ${color}` : '2px solid var(--border-primary)', background: checked ? (cfg?.bg || 'rgba(79,110,247,0.1)') : 'transparent', color: checked ? color : 'var(--text-secondary)', fontWeight: checked ? 700 : 400, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
+                    <button key={src.id} onClick={() => toggleSource(src.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, border: checked ? `2px solid ${color}` : '2px solid var(--border-primary)', background: checked ? (cfg?.bg || 'rgba(79,110,247,0.1)') : 'transparent', color: checked ? textColor : 'var(--text-secondary)', fontWeight: checked ? 700 : 400, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
                       <span style={{ fontSize: 13 }}>{checked ? '☑' : '☐'}</span>{src.label}
                     </button>
                   );
@@ -815,17 +818,17 @@ export default function DocumentsPage() {
                         return (
                           <tr key={inv.id} style={isCreditNote ? { background: 'rgba(220,38,38,0.04)' } : undefined}>
                             <td>
-                              <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: isCreditNote ? '#dc2626' : 'var(--accent-primary)' }}>
+                              <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: isCreditNote ? onDark('#dc2626') : 'var(--accent-primary-text)' }}>
                                 {inv.invoice_number}
                               </code>
-                              {isCreditNote && <span style={{ marginLeft: 5, fontSize: 10, color: '#dc2626', fontWeight: 700 }}>STORNO</span>}
+                              {isCreditNote && <span style={{ marginLeft: 5, fontSize: 10, color: onDark('#dc2626'), fontWeight: 700 }}>STORNO</span>}
                             </td>
                              <td
                               style={{ cursor: 'pointer' }}
                               onClick={() => setDeleteConfirm({ id: inv.id, number: inv.invoice_number })}
                               title="Видалити фактуру (прихована опція)"
                             >
-                              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: srcCfg.bg, color: srcCfg.color }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: srcCfg.bg, color: onDark(srcCfg.color) }}>
                                 {srcCfg.label}
                               </span>
                             </td>
@@ -923,7 +926,7 @@ export default function DocumentsPage() {
 
             {/* Error */}
             {stmtError && (
-              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '12px 16px', color: '#ef4444', fontSize: 13, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '12px 16px', color: onDark('#ef4444'), fontSize: 13, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <AlertCircle size={14} style={{ flexShrink: 0 }} />
                 {stmtError}
               </div>
@@ -950,7 +953,7 @@ export default function DocumentsPage() {
                     gap: 8, alignItems: 'center', marginBottom: 6,
                     background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: '7px 10px',
                   }}>
-                    <code style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                    <code style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary-text)' }}>
                       {inv.invoice_number}
                     </code>
                     <div>
@@ -1085,7 +1088,7 @@ export default function DocumentsPage() {
                               : undefined
                         }>
                           <td>
-                            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: inv.is_credit_note ? '#dc2626' : 'var(--accent-primary)' }}>
+                            <code style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 600, color: inv.is_credit_note ? '#dc2626' : 'var(--accent-primary-text)' }}>
                               {inv.invoice_number}
                             </code>
                           </td>
@@ -1164,7 +1167,7 @@ export default function DocumentsPage() {
               </div>
 
               {batchDeleteError && (
-                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '12px 16px', color: '#ef4444', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '12px 16px', color: onDark('#ef4444'), fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <AlertCircle size={14} style={{ flexShrink: 0 }} />
                   {batchDeleteError}
                 </div>

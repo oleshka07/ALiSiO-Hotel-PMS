@@ -157,7 +157,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
       </div>
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" style={{ color: 'var(--accent-primary)' }} /></div>
+        <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" style={{ color: 'var(--accent-primary-text)' }} /></div>
       ) : giftCards.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
           <Gift size={40} style={{ margin: '0 auto 12px', opacity: 0.2 }} />
@@ -173,7 +173,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{v.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <code style={{ fontSize: 13, color: 'var(--accent-primary)', fontWeight: 700, letterSpacing: 1 }}>{v.code}</code>
+                      <code style={{ fontSize: 13, color: 'var(--accent-primary-text)', fontWeight: 700, letterSpacing: 1 }}>{v.code}</code>
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(v.code as string);
@@ -266,7 +266,7 @@ export function SiteGiftCardsTab({ siteId, onCountChange }: { siteId: string; on
                 style={{ border: '2px solid var(--border-primary)', borderRadius: 10, padding: '12px 14px', cursor: 'pointer', background: 'var(--surface-secondary)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                   <span style={{ fontWeight: 700, fontSize: 13 }}>{t.emoji} {t.name}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)' }}>{t.badge}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary-text)' }}>{t.badge}</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{t.description}</div>
               </div>

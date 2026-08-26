@@ -104,7 +104,7 @@ export default function SiteDetailPage() {
     <>
       <Header title="Завантаження..." onMenuClick={onMenuClick} />
       <div className="app-content" style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-        <Loader2 size={36} className="spin" style={{ color: 'var(--accent-primary)' }} />
+        <Loader2 size={36} className="spin" style={{ color: 'var(--accent-primary-text)' }} />
       </div>
     </>
   );
@@ -130,7 +130,7 @@ export default function SiteDetailPage() {
             <ArrowLeft size={16} /> Сайти
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Globe size={18} style={{ color: 'var(--accent-primary)' }} />
+            <Globe size={18} style={{ color: 'var(--accent-primary-text)' }} />
             <span style={{ fontWeight: 700, fontSize: 18 }}>{site.name}</span>
             <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, background: `${STATUS_COLOR[site.status]}22`, color: STATUS_COLOR[site.status], fontWeight: 600 }}>
               {STATUS_LABEL[site.status] ?? site.status}
@@ -148,7 +148,7 @@ export default function SiteDetailPage() {
                 fontWeight: activeTab === tab.id ? 600 : 400,
                 border: 'none', background: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
                 borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent-primary)' : 'transparent'}`,
-                color: activeTab === tab.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                color: activeTab === tab.id ? 'var(--accent-primary-text)' : 'var(--text-secondary)',
                 marginBottom: -1, transition: 'all .15s',
               }}>
               {tab.icon} {tab.label}

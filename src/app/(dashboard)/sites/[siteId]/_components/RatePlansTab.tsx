@@ -79,7 +79,7 @@ export function RatePlansTab({ siteId, onCountChange }: { siteId: string; onCoun
           ))}
           <button 
             className="btn btn-ghost" 
-            style={{ marginTop: 8, justifyContent: 'flex-start', color: 'var(--accent-primary)' }}
+            style={{ marginTop: 8, justifyContent: 'flex-start', color: 'var(--accent-primary-text)' }}
             onClick={() => setSelectedPlanId('new')}
           >
             <Plus size={16} /> Новий тарифний план

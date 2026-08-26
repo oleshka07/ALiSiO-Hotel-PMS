@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { onDark } from '@/lib/colors';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
@@ -379,7 +380,7 @@ export default function CrmPipelinePage() {
             </div>
             <div className="crm-stat-card">
               <div className="crm-stat-label">Загальна вартість</div>
-              <div className="crm-stat-value" style={{ color: 'var(--accent-primary)', fontSize: 20 }}>
+              <div className="crm-stat-value" style={{ color: 'var(--accent-primary-text)', fontSize: 20 }}>
                 {(data.stats.totalValue || 0).toLocaleString()} CZK
               </div>
             </div>
@@ -434,7 +435,7 @@ export default function CrmPipelinePage() {
                       <span>{stage.label}</span>
                     </div>
                     <span className="kanban-column-count"
-                      style={{ background: `${stage.color}20`, color: stage.color }}>
+                      style={{ background: `${stage.color}20`, color: onDark(stage.color) }}>
                       {stageLeads.length}
                     </span>
                   </div>
@@ -567,7 +568,7 @@ export default function CrmPipelinePage() {
                           display: 'inline-flex', alignItems: 'center', gap: 4,
                           padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
                           background: `${stageConfig?.color || '#6b7280'}15`,
-                          color: stageConfig?.color || '#6b7280',
+                          color: onDark(stageConfig?.color || '#6b7280'),
                         }}>
                           {stageConfig?.icon} {stageConfig?.label || lead.stage}
                         </span>
