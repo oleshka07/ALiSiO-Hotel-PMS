@@ -25,7 +25,15 @@ const ICONS: Record<string, string> = {
 
 type Screen = 'lang' | 'fork' | 'find' | 'camping' | 'contact' | 'done';
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+// Local date parts, not toISOString(). The two disagree everywhere east of
+// Greenwich, and addDays mixed them: `new Date('2026-08-26T00:00:00')` parses as
+// LOCAL midnight, which in Prague is 22:00 UTC the day before, so +1 day landed
+// back on 2026-08-26 and toISOString() handed the same date straight back.
+// The guest saw «0 ночей — 0 Kč» and the + button could not get them off it,
+// because every press returned the date it started from. A test browser running
+// in UTC never sees it.
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (s: string, n: number) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return iso(d); };
 
 export default function CheckinPage() {
@@ -282,7 +290,7 @@ export default function CheckinPage() {
       </div>
     )}
 
-    <button className="kc-btn kc-btn-primary" disabled={!selectedItems.length || !pricesReady}
+    <button className="kc-btn kc-btn-primary" disabled={!selectedItems.length || !pricesReady || nights < 1}
       onClick={() => setScreen('contact')} type="button">
       {selectedItems.length ? t.finish : t.pickSomething}
     </button>

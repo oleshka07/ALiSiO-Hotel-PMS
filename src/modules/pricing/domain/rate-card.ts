@@ -41,7 +41,15 @@ export function getSeason(dateStr: string): Season {
   return m >= 5 && m <= 9 ? 'main' : 'side';
 }
 
-export function fmtDate(d: Date): string { return d.toISOString().split('T')[0]; }
+// Local date parts, not toISOString(). getNightDates builds its cursor at LOCAL
+// midnight, so formatting it in UTC shifts every night a day back anywhere east
+// of Greenwich: in Prague a stay on 1 May came out dated 30 April — side season
+// instead of main — and every weekend and holiday surcharge landed on the wrong
+// night. Same rule as elsewhere: a date the guest picked off a calendar is a
+// local date from end to end.
+export function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 export function getNightDates(checkIn: string, checkOut: string): string[] {
   const dates: string[] = [];
