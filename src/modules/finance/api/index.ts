@@ -312,6 +312,7 @@ export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes
 // ─── Cron-driven bank inbox poll ──────────────────────────────
 // X-Cron-Secret auth — NOT a user session.
 export { pollBankInboxesFromCron } from './cron-bank-inbox.handlers';
+export { pollReceiptInboxesFromCron } from './cron-receipt-inbox.handlers';
 
 // ─── Exports (PR #12) — read ──────────────────────────────────
 import {

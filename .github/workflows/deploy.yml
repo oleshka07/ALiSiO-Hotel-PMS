@@ -382,13 +382,20 @@ jobs:
             echo "Releases kept: $(ls -1d "$BASE"/releases/*/ 2>/dev/null | wc -l)"
 
             # ── Cron endpoints ────────────────────────────────────────────
-            touch /var/log/pms-cron-bank.log /var/log/pms-cron-pricelabs.log
-            chmod 644 /var/log/pms-cron-bank.log /var/log/pms-cron-pricelabs.log
+            touch /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
+            chmod 644 /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
 
-            POLL_CRON="*/15 * * * * curl -fsS -X POST -H \"X-Cron-Secret: \$(grep ^CRON_SECRET $BASE/.env | cut -d= -f2)\" http://localhost:$LIVE_PORT/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1"
-            PRICELABS_CRON="0 4 * * * curl -fsS -X POST -H \"X-Cron-Secret: \$(grep ^CRON_SECRET $BASE/.env | cut -d= -f2)\" http://localhost:$LIVE_PORT/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1"
-            ( crontab -l 2>/dev/null | grep -v 'poll-bank-inboxes' | grep -v 'sync-pricelabs' || true
-              echo "$POLL_CRON"
+            CRON_HDR="X-Cron-Secret: \$(grep ^CRON_SECRET $BASE/.env | cut -d= -f2)"
+            BANK_CRON="*/15 * * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1"
+            # Forwarded invoices had no cron at all — their only automatic path
+            # was a tick inside getDb() that needed someone to load a page, and
+            # that tick had been throwing since it was written. Offset to :07 so
+            # the two mailbox polls do not open IMAP connections in lockstep.
+            RECEIPT_CRON="7-59/15 * * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/poll-receipt-inboxes >> /var/log/pms-cron-receipt.log 2>&1"
+            PRICELABS_CRON="0 4 * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1"
+            ( crontab -l 2>/dev/null | grep -v 'poll-bank-inboxes' | grep -v 'poll-receipt-inboxes' | grep -v 'sync-pricelabs' || true
+              echo "$BANK_CRON"
+              echo "$RECEIPT_CRON"
               echo "$PRICELABS_CRON"
             ) | crontab -
             echo "[setup] crontabs refreshed"

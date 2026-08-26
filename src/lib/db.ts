@@ -54,13 +54,19 @@ export function getDb(): any {
   }
 
   // PR #11: poll bank inboxes if 15min elapsed (async, fire-and-forget)
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { runBankInboxTickIfDue } = require('@/modules/finance/data/bank-inbox-engine');
-    runBankInboxTickIfDue(db);
-  } catch (e: any) {
-    console.log('[BankInbox] tick-if-due error:', e.message);
-  }
+  //
+  // import(), not require(). These two engines are the only ones here that
+  // reach imapflow, which is ESM-only and listed in serverExternalPackages.
+  // A require() of a module with an ESM-only external in its graph comes back
+  // without its bindings, so the destructured function was undefined and the
+  // call threw "t is not a function" on every single startup — the name is
+  // just the minifier's version of runBankInboxTickIfDue.
+  //
+  // The three ticks below still use require() and still work: none of them
+  // touches an ESM-only package.
+  import('@/modules/finance/data/bank-inbox-engine')
+    .then(m => m.runBankInboxTickIfDue(db))
+    .catch((e: any) => console.error('[BankInbox] tick-if-due failed:', e?.message || e));
 
   // PR #25: Teya transaction sync if 4h elapsed (async, fire-and-forget,
   // skipped silently when TEYA_CLIENT_ID env missing)
@@ -83,13 +89,10 @@ export function getDb(): any {
   }
 
   // PR #27: receipt inboxes — IMAP poll for forwarded invoices (15 min)
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { runReceiptInboxTickIfDue } = require('@/modules/finance/data/receipt-inbox-engine');
-    runReceiptInboxTickIfDue(db);
-  } catch (e: any) {
-    console.log('[ReceiptInbox] tick-if-due error:', e.message);
-  }
+  // Same ESM-only problem as the bank tick above; see the note there.
+  import('@/modules/finance/data/receipt-inbox-engine')
+    .then(m => m.runReceiptInboxTickIfDue(db))
+    .catch((e: any) => console.error('[ReceiptInbox] tick-if-due failed:', e?.message || e));
 
   return db;
 }
