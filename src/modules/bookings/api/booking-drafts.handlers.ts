@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { findFreeUnit } from '../data/bot-catalog.repo';
 import { sendBookingConfirmationEmail } from '../data/send-confirmation-email';
 import { publicMessage } from '@core/security/public-error';
 
@@ -89,56 +90,29 @@ export async function createBookingDraft(req: Request) {
     let unitId: string | null = null;
 
     if (accommodationType === 'camping') {
-      const checkIn  = body.check_in  || null;
+      const checkIn = body.check_in || null;
       const checkOut = body.check_out || null;
 
-      // Pick the first camping unit that has NO overlapping active reservation.
-      // Overlap condition: existing.check_in < new.check_out AND existing.check_out > new.check_in
-      const campingUnit = (checkIn && checkOut)
-        ? db.prepare(`
-            SELECT u.id FROM units u
-            JOIN unit_types ut ON u.unit_type_id = ut.id
-            WHERE u.property_id = ? AND u.is_active = 1
-              AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
-                   OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
-                   OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
-              AND NOT EXISTS (
-                SELECT 1 FROM reservations r
-                WHERE r.unit_id = u.id
-                  AND r.status NOT IN ('cancelled', 'no_show')
-                  AND r.check_in  < ?
-                  AND r.check_out > ?
-              )
-            ORDER BY u.sort_order, u.name
-            LIMIT 1
-          `).get(property.id, checkOut, checkIn) as any
-        : db.prepare(`
-            SELECT u.id FROM units u
-            JOIN unit_types ut ON u.unit_type_id = ut.id
-            WHERE u.property_id = ? AND u.is_active = 1
-              AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
-                   OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
-                   OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
-            ORDER BY u.sort_order, u.name
-            LIMIT 1
-          `).get(property.id) as any;
+      // Was a hand-written list of type codes — 'bb', 'fr', 'br' — which quietly
+      // left out FB (Front Pitch, fifteen units). Those pitches could not be
+      // booked from the website at all, and once the listed ones filled up the
+      // fallback below handed out an occupied pitch instead of a free FB one.
+      // bot_rate_code says which types are camping; nothing has to be guessed.
+      const free = (checkIn && checkOut) ? findFreeUnit(db, 'camping', checkIn, checkOut) : null;
+      unitId = free?.id || null;
 
-      // Fallback: if all camping units are occupied (or only 1 exists), just grab the first one
-      // so the booking still goes through and staff can sort it out in PMS.
-      if (!campingUnit && (checkIn && checkOut)) {
-        const fallbackCamping = db.prepare(`
+      if (!unitId) {
+        // Everything taken. Deliberately still books — the operator's rule is
+        // that a booking must not be lost, and reception sorts the pitch out on
+        // the ground. Same behaviour as before, now only when it is really full.
+        const anyCamping = db.prepare(`
           SELECT u.id FROM units u
-          JOIN unit_types ut ON u.unit_type_id = ut.id
-          WHERE u.property_id = ? AND u.is_active = 1
-            AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
-                 OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
-                 OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
-          ORDER BY u.sort_order, u.name LIMIT 1
+          JOIN unit_types ut ON ut.id = u.unit_type_id
+          WHERE u.property_id = ? AND COALESCE(u.is_active, 1) = 1 AND ut.bot_rate_code = 'camping'
+          ORDER BY u.sort_order, u.code LIMIT 1
         `).get(property.id) as any;
-        unitId = fallbackCamping?.id || null;
-        console.warn('[BookingDraft] All camping units occupied — using first unit as fallback');
-      } else {
-        unitId = campingUnit?.id || null;
+        unitId = anyCamping?.id || null;
+        if (unitId) console.warn('[BookingDraft] All camping pitches occupied — assigning', unitId, 'for staff to sort out');
       }
     } else if (accommodationType === 'glamping') {
       const unitCode = (body.accommodation_data?.unit === 'barn') ? 'barn' : 'tiny';
@@ -331,11 +305,18 @@ export async function createBookingDraft(req: Request) {
 
     console.log(`[BookingDraft] Created draft=${draftId} reservation=${reservationId} guest=${guestId}`);
 
+    // The unit code is the one thing a guest standing at the barrier actually
+    // needs: which pitch is theirs. It was computed here and thrown away.
+    const assigned = unitId
+      ? db.prepare('SELECT code, name FROM units WHERE id = ?').get(unitId) as any
+      : null;
+
     return NextResponse.json({
       id: draftId,
       session_id: sessionId,
       reservation_id: reservationId,
       guest_page_token: guestPageToken,
+      unit_code: assigned?.code || assigned?.name || null,
     }, { headers: CORS_HEADERS });
 
   } catch (err: any) {

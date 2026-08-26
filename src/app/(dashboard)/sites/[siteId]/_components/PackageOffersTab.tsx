@@ -195,7 +195,7 @@ export function PackageOffersTab({ siteId, siteCurrency = 'CZK', onCountChange }
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{b.name}</span>
-                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-primary)' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-primary-text)' }}>
                           {b.price.toLocaleString('cs-CZ')} {b.currency}
                         </span>
                         {!b.is_active && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#ef444422', color: '#ef4444', fontWeight: 600 }}>Архів</span>}

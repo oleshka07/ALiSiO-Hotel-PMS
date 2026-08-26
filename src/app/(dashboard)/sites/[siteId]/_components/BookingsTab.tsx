@@ -174,7 +174,7 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
       <div className="card">
         {loading ? (
           <div style={{ padding: 60, display: 'flex', justifyContent: 'center' }}>
-            <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
+            <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary-text)' }} />
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -210,7 +210,7 @@ export function BookingsTab({ siteId }: BookingsTabProps) {
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{b.guest_email || b.guest_phone || '—'}</div>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{b.unit_name || b.unit_code}</div>
+                      <div style={{ fontWeight: 600, color: 'var(--accent-primary-text)' }}>{b.unit_name || b.unit_code}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                         {b.check_in} <span style={{color:'var(--text-tertiary)'}}>→</span> {b.check_out} ({b.nights} н.)
                       </div>

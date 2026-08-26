@@ -139,7 +139,7 @@
 }
 
 .m-tab-active {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .m-tab-pill {
@@ -269,7 +269,7 @@
 }
 
 .m-sheet-item-active {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   background: rgba(20, 184, 166, 0.08);
 }
 
@@ -447,7 +447,7 @@
 
 .m-day-item-today {
   border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .m-day-item-active {

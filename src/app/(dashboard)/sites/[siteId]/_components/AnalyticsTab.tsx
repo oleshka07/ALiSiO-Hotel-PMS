@@ -390,7 +390,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
         <div style={{ flex: 1, minWidth: 0 }}>
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12 }}>
-              <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
+              <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary-text)' }} />
               <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Завантаження аналітики...</span>
             </div>
           ) : error ? (
@@ -756,7 +756,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.utm_source}</td>
                                 <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary)' }}>{formatValue(totalRev)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary-text)' }}>{formatValue(totalRev)}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                                 <td style={{ textAlign: 'right' }}>
@@ -782,7 +782,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                               <td>Всього</td>
                               <td style={{ textAlign: 'right' }}>{totalSess.toLocaleString()}</td>
                               <td style={{ textAlign: 'right' }}>{totalBook.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right', color: 'var(--accent-primary)' }}>{formatValue(grandTotal)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--accent-primary-text)' }}>{formatValue(grandTotal)}</td>
                               <td style={{ textAlign: 'right' }}>{formatValue(totalPaid)}</td>
                               <td style={{ textAlign: 'right', color: '#ca8a04' }}>{formatValue(totalUnpaid)}</td>
                               <td style={{ textAlign: 'right' }}>{overallConv}%</td>
@@ -1091,7 +1091,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                                 <td style={{ color: 'var(--text-secondary)' }}>{item.utm_campaign}</td>
                                 <td style={{ textAlign: 'right' }}>{item.sessions.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right' }}>{item.bookings.toLocaleString()}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary)' }}>{formatValue(totalRev)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary-text)' }}>{formatValue(totalRev)}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatValue(item.revenue)}</td>
                                 <td style={{ textAlign: 'right', fontWeight: 600, color: '#ca8a04' }}>{formatValue(item.unpaid_revenue || 0)}</td>
                                 <td style={{ textAlign: 'right' }}>
@@ -1117,7 +1117,7 @@ export function AnalyticsTab({ siteId, siteCurrency = 'CZK' }: AnalyticsTabProps
                               <td colSpan={3}>Всього</td>
                               <td style={{ textAlign: 'right' }}>{totalSess.toLocaleString()}</td>
                               <td style={{ textAlign: 'right' }}>{totalBook.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right', color: 'var(--accent-primary)' }}>{formatValue(grandTotal)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--accent-primary-text)' }}>{formatValue(grandTotal)}</td>
                               <td style={{ textAlign: 'right' }}>{formatValue(totalPaid)}</td>
                               <td style={{ textAlign: 'right', color: '#ca8a04' }}>{formatValue(totalUnpaid)}</td>
                               <td style={{ textAlign: 'right' }}>{overallConv}%</td>

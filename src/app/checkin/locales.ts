@@ -23,6 +23,13 @@ export const ITEM_NAMES: Record<string, Record<Lang, string>> = {
   caravan: { cs: 'Karavan', en: 'Caravan', de: 'Wohnwagen', uk: 'Караван' },
   motorhome: { cs: 'Obytné auto', en: 'Motorhome', de: 'Wohnmobil', uk: 'Автодім' },
   motorcycle: { cs: 'Motocykl', en: 'Motorcycle', de: 'Motorrad', uk: 'Мотоцикл' },
+  // The receipt itemises people and extras too, not just equipment.
+  adult_person: { cs: 'Dospělý', en: 'Adult', de: 'Erwachsener', uk: 'Дорослий' },
+  child_person: { cs: 'Dítě (3-15)', en: 'Child (3-15)', de: 'Kind (3-15)', uk: 'Дитина (3-15)' },
+  electricity: { cs: 'Přípojka elektřiny', en: 'Electricity', de: 'Stromanschluss', uk: 'Електрика' },
+  pet: { cs: 'Zvíře', en: 'Pet', de: 'Haustier', uk: 'Тварина' },
+  tourist_tax: { cs: 'Turistický poplatek', en: 'Tourist tax', de: 'Kurtaxe', uk: 'Курортний збір' },
+  motorhome_service: { cs: 'Servis kazety', en: 'Cassette service', de: 'Kassettenservice', uk: 'Сервіс касети' },
 };
 
 interface Dict {
@@ -46,6 +53,7 @@ interface Dict {
   doneTitle: string; doneSub: string; yourSpot: string; openGuestPage: string;
   pickSomething: string; nameRequired: string;
   back: string;
+  toPay: string;
 }
 
 export const T: Record<Lang, Dict> = {
@@ -75,6 +83,7 @@ export const T: Record<Lang, Dict> = {
     yourSpot: 'Vaše místo', openGuestPage: 'Otevřít pokyny k příjezdu →',
     pickSomething: 'Vyberte alespoň jednu položku.', nameRequired: 'Zadejte jméno a telefon.',
     back: '‹ Zpět',
+    toPay: 'K úhradě na recepci',
   },
   en: {
     pickLang: 'Choose your language',
@@ -102,6 +111,7 @@ export const T: Record<Lang, Dict> = {
     yourSpot: 'Your spot', openGuestPage: 'Open arrival instructions →',
     pickSomething: 'Select at least one item.', nameRequired: 'Enter your name and phone.',
     back: '‹ Back',
+    toPay: 'To pay at reception',
   },
   de: {
     pickLang: 'Sprache wählen',
@@ -129,6 +139,7 @@ export const T: Record<Lang, Dict> = {
     yourSpot: 'Ihr Platz', openGuestPage: 'Anfahrt öffnen →',
     pickSomething: 'Wählen Sie mindestens eine Position.', nameRequired: 'Name und Telefon eingeben.',
     back: '‹ Zurück',
+    toPay: 'An der Rezeption zu zahlen',
   },
   uk: {
     pickLang: 'Оберіть мову',
@@ -156,5 +167,6 @@ export const T: Record<Lang, Dict> = {
     yourSpot: 'Ваше місце', openGuestPage: 'Відкрити інструкцію заїзду →',
     pickSomething: 'Оберіть хоча б одну позицію.', nameRequired: 'Введіть імʼя і телефон.',
     back: '‹ Назад',
+    toPay: 'До сплати на ресепшн',
   },
 };

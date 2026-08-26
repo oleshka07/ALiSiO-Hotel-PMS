@@ -555,7 +555,7 @@ function DesktopGuests() {
                       minWidth: 24, height: 22, borderRadius: 11,
                       fontSize: 12, fontWeight: 700,
                       background: g.total_stays > 0 ? 'rgba(99,102,241,0.15)' : 'var(--bg-tertiary)',
-                      color: g.total_stays > 0 ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                      color: g.total_stays > 0 ? 'var(--accent-primary-text)' : 'var(--text-tertiary)',
                       padding: '0 6px',
                     }}>
                       {g.total_stays}
@@ -626,7 +626,7 @@ function DesktopGuests() {
                     minWidth: 24, height: 22, borderRadius: 11,
                     fontSize: 12, fontWeight: 700,
                     background: g.total_stays > 0 ? 'rgba(99,102,241,0.15)' : 'var(--bg-tertiary)',
-                    color: g.total_stays > 0 ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                    color: g.total_stays > 0 ? 'var(--accent-primary-text)' : 'var(--text-tertiary)',
                     padding: '0 6px',
                   }}>
                     {g.total_stays}
@@ -703,7 +703,7 @@ function DesktopGuests() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                 <div style={{ padding: 14, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Візити</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4, color: 'var(--accent-primary)' }}>{viewGuest.total_stays}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4, color: 'var(--accent-primary-text)' }}>{viewGuest.total_stays}</div>
                 </div>
                 <div style={{ padding: 14, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Загальний дохід</div>
@@ -766,7 +766,7 @@ function DesktopGuests() {
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Calendar size={16} /> Історія бронювань
                   <span style={{
-                    fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary)',
+                    fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary-text)',
                     padding: '2px 8px', borderRadius: 10,
                   }}>
                     {viewGuest.reservations?.length || 0}
@@ -816,7 +816,7 @@ function DesktopGuests() {
                             </td>
                             <td style={{ fontWeight: 700 }}>{(r.total_price || 0).toLocaleString()} {r.currency}</td>
                             <td>
-                              <a href="/bookings" style={{ color: 'var(--accent-primary)' }} title="Перейти до бронювань">
+                              <a href="/bookings" style={{ color: 'var(--accent-primary-text)' }} title="Перейти до бронювань">
                                 <ExternalLink size={14} />
                               </a>
                             </td>

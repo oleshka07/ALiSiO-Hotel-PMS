@@ -329,7 +329,7 @@ function TestQuoteSection({ unitTypes }: { unitTypes: UnitType[] }) {
             <div style={{ borderTop: '2px solid var(--accent-primary)', paddingTop: 8, marginTop: 4 }} className="flex justify-between">
               <span style={{ fontWeight: 700, fontSize: 15 }}>Всього</span>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary)' }}>{quote.total.toLocaleString()} CZK</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-primary-text)' }}>{quote.total.toLocaleString()} CZK</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>≈ {(quote.total / CZK_TO_EUR).toFixed(0)} EUR</div>
               </div>
             </div>
@@ -525,7 +525,7 @@ export default function PricingPage() {
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
           <div className="card" style={{ padding: '12px 16px', textAlign: 'center' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary)' }}>{stats.avgPrice.toLocaleString()}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-primary-text)' }}>{stats.avgPrice.toLocaleString()}</div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Серед. ціна CZK</div>
           </div>
           <div className="card" style={{ padding: '12px 16px', textAlign: 'center' }}>
@@ -632,7 +632,7 @@ export default function PricingPage() {
                     </td>
                     <td style={{ fontWeight: 600 }}>{day.hasData ? day.base_price.toLocaleString() : '—'}</td>
                     <td>{day.weekend_price != null ? day.weekend_price.toLocaleString() : '—'}</td>
-                    <td style={{ fontWeight: 700, color: day.isWeekend ? '#f59e0b' : 'var(--accent-primary)' }}>
+                    <td style={{ fontWeight: 700, color: day.isWeekend ? '#f59e0b' : 'var(--accent-primary-text)' }}>
                       {day.hasData ? day.effective_price.toLocaleString() : '—'}
                     </td>
                     <td>{day.min_stay}</td>
@@ -759,7 +759,7 @@ function WidgetPriceListSection() {
                           <input className="form-input" type="number" style={{ width: 90, padding: '4px 8px', fontSize: 13 }}
                             value={editValues.rate_standard ?? ''} onChange={e => setEditValues(v => ({ ...v, rate_standard: Number(e.target.value) }))} />
                         ) : (
-                          <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>{item.rate_standard?.toLocaleString()}</span>
+                          <span style={{ fontWeight: 700, color: 'var(--accent-primary-text)' }}>{item.rate_standard?.toLocaleString()}</span>
                         )}
                       </td>
                       <td>

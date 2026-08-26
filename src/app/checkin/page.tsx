@@ -13,7 +13,7 @@
  * pitch is chosen by the system. Every screen is one decision.
  */
 import { useState, useEffect, useMemo } from 'react';
-import { loadPriceList, calcCampingPrice, getRate, formatPrice, getNightDates, type PriceItem, type CampingItemCode } from '../book/lib/pricing';
+import { loadPriceList, calcCampingBreakdown, getRate, formatPrice, getNightDates, type PriceItem, type CampingItemCode } from '../book/lib/pricing';
 import { LANGS, ITEM_NAMES, T, type Lang } from './locales';
 
 const WHATSAPP = 'https://wa.me/420723565616';
@@ -25,7 +25,15 @@ const ICONS: Record<string, string> = {
 
 type Screen = 'lang' | 'fork' | 'find' | 'camping' | 'contact' | 'done';
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+// Local date parts, not toISOString(). The two disagree everywhere east of
+// Greenwich, and addDays mixed them: `new Date('2026-08-26T00:00:00')` parses as
+// LOCAL midnight, which in Prague is 22:00 UTC the day before, so +1 day landed
+// back on 2026-08-26 and toISOString() handed the same date straight back.
+// The guest saw «0 ночей — 0 Kč» and the + button could not get them off it,
+// because every press returned the date it started from. A test browser running
+// in UTC never sees it.
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (s: string, n: number) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return iso(d); };
 
 export default function CheckinPage() {
@@ -33,8 +41,10 @@ export default function CheckinPage() {
   const [screen, setScreen] = useState<Screen>('lang');
   const t = T[lang];
 
-  const [prices, setPrices] = useState<PriceItem[]>([]);
-  useEffect(() => { loadPriceList().then(setPrices).catch(() => setPrices([])); }, []);
+  const [prices, setPrices] = useState<PriceItem[] | null>(null);
+  useEffect(() => { loadPriceList().then((p) => setPrices(p || [])).catch(() => setPrices([])); }, []);
+  const rates = prices || [];
+  const pricesReady = prices !== null && prices.length > 0;
 
   // ── Find an existing booking ──────────────────────────────────────────────
   const [findPhone, setFindPhone] = useState('');
@@ -78,8 +88,8 @@ export default function CheckinPage() {
 
   const nights = getNightDates(today, checkOut).length;
   const pricing = useMemo(
-    () => (selectedItems.length ? calcCampingPrice(selectedItems, adults, children, electricity, pets, mhService, today, checkOut, prices) : null),
-    [selectedItems, adults, children, electricity, pets, mhService, today, checkOut, prices],
+    () => (selectedItems.length ? calcCampingBreakdown(selectedItems, adults, children, electricity, pets, mhService, today, checkOut, rates) : null),
+    [selectedItems, adults, children, electricity, pets, mhService, today, checkOut, rates],
   );
 
   const bump = (code: CampingItemCode, d: number) => setQty((p) => {
@@ -93,7 +103,7 @@ export default function CheckinPage() {
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ token: string | null; unit: string | null } | null>(null);
+  const [result, setResult] = useState<{ token: string | null; unit: string | null; total: number } | null>(null);
 
   async function createBooking() {
     if (!name.trim() || !phone.trim()) { setSaveError(t.nameRequired); return; }
@@ -122,7 +132,7 @@ export default function CheckinPage() {
       });
       const data = await res.json();
       if (!res.ok) { setSaveError(data.error || 'Error'); return; }
-      setResult({ token: data.guest_page_token || null, unit: data.unit_code || data.unit || null });
+      setResult({ token: data.guest_page_token || null, unit: data.unit_code || data.unit || null, total: pricing?.total ?? 0 });
       setScreen('done');
     } catch (e: any) {
       setSaveError(e?.message || 'Error');
@@ -193,13 +203,15 @@ export default function CheckinPage() {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
       {ORDER.map((code) => {
         const n = qty[code] ?? 0;
-        const rate = getRate(prices, code)?.rate_standard ?? 0;
+        const rate = getRate(rates, code)?.rate_standard ?? 0;
         return (
           <div key={code} className={`kc-svc-card ${n > 0 ? 'added' : ''}`}
             style={{ flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '12px 8px', gap: 4 }}>
             <div style={{ fontSize: 28 }}>{ICONS[code]}</div>
             <div className="kc-svc-name" style={{ fontSize: 13 }}>{ITEM_NAMES[code][lang]}</div>
-            <div className="kc-svc-price" style={{ fontSize: 11 }}>{formatPrice(rate)} {t.perNight}</div>
+            <div className="kc-svc-price" style={{ fontSize: 11 }}>
+              {pricesReady ? `${formatPrice(rate)} ${t.perNight}` : '…'}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
               <button className="kc-stepper-btn" onClick={() => bump(code, -1)} disabled={n === 0} type="button">−</button>
               <span className="kc-stepper-val" style={{ minWidth: 20 }}>{n}</span>
@@ -231,12 +243,12 @@ export default function CheckinPage() {
     <div style={{ fontSize: 14, fontWeight: 700, margin: '16px 0 8px' }}>{t.extras}</div>
     <div className="kc-form-row">
       <div><div className="kc-form-row-label">{t.electricity}</div>
-        <div className="kc-form-row-sub">+{formatPrice(getRate(prices, 'electricity')?.rate_standard ?? 120)} {t.perNight}</div></div>
+        <div className="kc-form-row-sub">+{formatPrice(getRate(rates, 'electricity')?.rate_standard ?? 120)} {t.perNight}</div></div>
       <button className={`kc-toggle ${electricity ? 'on' : ''}`} onClick={() => setElectricity(!electricity)} type="button" />
     </div>
     <div className="kc-form-row">
       <div><div className="kc-form-row-label">{t.pets}</div>
-        <div className="kc-form-row-sub">+{formatPrice(getRate(prices, 'pet')?.rate_standard ?? 50)} {t.perAnimalNight}</div></div>
+        <div className="kc-form-row-sub">+{formatPrice(getRate(rates, 'pet')?.rate_standard ?? 50)} {t.perAnimalNight}</div></div>
       <div className="kc-stepper">
         <button className="kc-stepper-btn" onClick={() => setPets(Math.max(0, pets - 1))} disabled={pets <= 0} type="button">−</button>
         <span className="kc-stepper-val">{pets}</span>
@@ -246,7 +258,7 @@ export default function CheckinPage() {
     {selectedItems.includes('motorhome') && (
       <div className="kc-form-row">
         <div><div className="kc-form-row-label">{t.motorhomeService}</div>
-          <div className="kc-form-row-sub">+{formatPrice(getRate(prices, 'motorhome_service')?.rate_standard ?? 100)} Kč ({t.once})</div></div>
+          <div className="kc-form-row-sub">+{formatPrice(getRate(rates, 'motorhome_service')?.rate_standard ?? 100)} Kč ({t.once})</div></div>
         <button className={`kc-toggle ${mhService ? 'on' : ''}`} onClick={() => setMhService(!mhService)} type="button" />
       </div>
     )}
@@ -264,12 +276,21 @@ export default function CheckinPage() {
 
     {pricing && (
       <div className="kc-breakdown">
+        {/* Itemised, because the guest pays this in cash at a desk in a minute
+            and "375" on its own invites an argument. Every line is one entry of
+            the same rate card the total is summed from. */}
+        {pricing.lines.map((l) => (
+          <div className="kc-breakdown-row" key={l.code}>
+            <span>{ITEM_NAMES[l.code]?.[lang] ?? l.code}{l.qty > 1 ? ` × ${l.qty}` : ''}</span>
+            <span>{formatPrice(l.total)} Kč</span>
+          </div>
+        ))}
         <div className="kc-breakdown-total"><span>{t.total}</span><span>{formatPrice(pricing.total)} Kč</span></div>
         <div className="kc-breakdown-remaining"><span>{t.priceIncl}</span></div>
       </div>
     )}
 
-    <button className="kc-btn kc-btn-primary" disabled={!selectedItems.length}
+    <button className="kc-btn kc-btn-primary" disabled={!selectedItems.length || !pricesReady || nights < 1}
       onClick={() => setScreen('contact')} type="button">
       {selectedItems.length ? t.finish : t.pickSomething}
     </button>
@@ -305,6 +326,11 @@ export default function CheckinPage() {
       <div className="kc-card" style={{ padding: 20, textAlign: 'center' }}>
         <div className="kc-form-row-sub">{t.yourSpot}</div>
         <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--kc-green)' }}>{result.unit}</div>
+      </div>
+    )}
+    {!!result?.total && (
+      <div className="kc-breakdown">
+        <div className="kc-breakdown-total"><span>{t.toPay}</span><span>{formatPrice(result.total)} Kč</span></div>
       </div>
     )}
     {result?.token

@@ -103,7 +103,7 @@ export default function CityTaxReportPage() {
               </div>
               <div style={{ padding: 20, background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-primary)' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Збір до сплати</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 8 }}>{(data.totalTaxAmount || 0).toLocaleString()} CZK</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent-primary-text)', marginTop: 8 }}>{(data.totalTaxAmount || 0).toLocaleString()} CZK</div>
               </div>
               <div style={{ padding: 20, background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-primary)' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Оплачено</div>

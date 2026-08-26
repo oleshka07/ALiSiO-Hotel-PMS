@@ -199,7 +199,7 @@ export default function SitesPage() {
             gap: 12,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Globe size={20} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+              <Globe size={20} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
               <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 Сайти прямого бронювання
                 <button onClick={() => setShowSplash(true)} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} title="Показати довідку">
@@ -230,10 +230,10 @@ export default function SitesPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ maxWidth: 500 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <Globe size={22} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                  <Globe size={22} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
                   <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                     Сайти прямого бронювання
-                    <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }} title="Приховати довідку">
+                    <button onClick={() => setShowSplash(false)} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--accent-primary-text)', display: 'flex', alignItems: 'center' }} title="Приховати довідку">
                       <Info size={16} />
                     </button>
                   </h2>
@@ -286,7 +286,7 @@ export default function SitesPage() {
             {/* Таблиця / Empty state */}
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-                <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
+                <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary-text)' }} />
               </div>
             ) : filtered.length === 0 && search ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
@@ -324,7 +324,7 @@ export default function SitesPage() {
                         >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <Globe size={16} style={{ color: 'var(--accent-primary)' }} />
+                              <Globe size={16} style={{ color: 'var(--accent-primary-text)' }} />
                               <span style={{ fontWeight: 600 }}>{site.name}</span>
                             </div>
                           </td>
@@ -449,12 +449,12 @@ export default function SitesPage() {
                 {newType === 'self-hosted' ? (
                   <>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>🌐 Повноцінний сайт</div>
-                    Вибирайте цей варіант, <span style={{color:'var(--accent-primary)',fontWeight:600}}>якщо у вас немає свого сайту</span>. Ми створимо окрему сторінку з усіма вашими будиночками на нашому домені.
+                    Вибирайте цей варіант, <span style={{color:'var(--accent-primary-text)',fontWeight:600}}>якщо у вас немає свого сайту</span>. Ми створимо окрему сторінку з усіма вашими будиночками на нашому домені.
                   </>
                 ) : (
                   <>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>📌 Тільки віджет</div>
-                    Вибирайте цей варіант, <span style={{color:'var(--accent-primary)',fontWeight:600}}>якщо у вас вже є свій сайт</span> (Wix, WordPress тощо). Ви отримаєте код, який просто вставите на свою сторінку.
+                    Вибирайте цей варіант, <span style={{color:'var(--accent-primary-text)',fontWeight:600}}>якщо у вас вже є свій сайт</span> (Wix, WordPress тощо). Ви отримаєте код, який просто вставите на свою сторінку.
                   </>
                 )}
               </div>

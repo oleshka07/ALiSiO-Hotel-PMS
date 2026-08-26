@@ -125,14 +125,18 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 // ─── Role colors for badges ───────────────────────────────
+// These are avatar fills with white initials on them. The bright originals
+// measured 1.9–4.2 against white — the accountant's yellow was the worst thing
+// in the app at 1.9 — so each one is the same hue taken down to where white
+// reads on it.
 export const ROLE_COLORS: Record<UserRole, string> = {
-  owner: '#ef4444',
-  director: '#f97316',
-  manager: '#8b5cf6',
-  receptionist: '#3b82f6',
-  housekeeper: '#10b981',
-  maintenance: '#6b7280',
-  accountant: '#eab308',
+  owner: '#dc2626',
+  director: '#c2410c',
+  manager: '#7c3aed',
+  receptionist: '#2563eb',
+  housekeeper: '#047857',
+  maintenance: '#4b5563',
+  accountant: '#a16207',
 };
 
 // ─── Permission override type ─────────────────────────────

@@ -2,7 +2,9 @@
 import type { BookingLang } from './translations';
 
 export function fmtDate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  // Local, not UTC — see the note on the rate card's fmtDate. A calendar cell
+  // the guest tapped must not become the previous day on the way to the server.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function parseDate(s: string): Date {

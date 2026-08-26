@@ -219,7 +219,7 @@ export function FormsTab({ siteId, onCountChange }: {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>Скрипти-колектори</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>JS-фрагмент для вставки у &lt;head&gt; партнерського сайту. Заявки надходять до <a href="/crm/leads" style={{ color: 'var(--accent-primary)' }}>CRM → Ліди</a></div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>JS-фрагмент для вставки у &lt;head&gt; партнерського сайту. Заявки надходять до <a href="/crm/leads" style={{ color: 'var(--accent-primary-text)' }}>CRM → Ліди</a></div>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Новий скрипт</button>
       </div>
@@ -294,10 +294,10 @@ export function FormsTab({ siteId, onCountChange }: {
 
           {/* CRM link hint */}
           <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(37,99,235,0.04)', border: '1px solid rgba(37,99,235,0.12)', borderRadius: 10 }}>
-            <Globe size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+            <Globe size={16} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               Заявки з форм автоматично потрапляють до{' '}
-              <a href="/crm/leads" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>CRM → Ліди</a>{' '}
+              <a href="/crm/leads" style={{ color: 'var(--accent-primary-text)', fontWeight: 600 }}>CRM → Ліди</a>{' '}
               з джерелом <strong>🌍 Сайт</strong> (web_form). Переглядайте та обробляйте їх там.
             </div>
           </div>

@@ -853,7 +853,7 @@ export default function MobileTasks() {
           {filtered.length} задач
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowSearch(p => !p)} style={{ background: 'transparent', border: 'none', color: showSearch ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>
+          <button onClick={() => setShowSearch(p => !p)} style={{ background: 'transparent', border: 'none', color: showSearch ? 'var(--accent-primary-text)' : 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>
             <Search size={16} />
           </button>
           <button onClick={fetchData} disabled={loading} style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}>

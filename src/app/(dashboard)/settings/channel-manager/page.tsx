@@ -447,7 +447,7 @@ export default function ChannelManagerPage() {
             style={{
               padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
               border: 'none', background: 'none',
-              color: activeTab === 'api' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+              color: activeTab === 'api' ? 'var(--accent-primary-text)' : 'var(--text-tertiary)',
               borderBottom: activeTab === 'api' ? '2px solid var(--accent-primary)' : '2px solid transparent',
               marginBottom: -2, display: 'flex', alignItems: 'center', gap: 6,
             }}
@@ -464,7 +464,7 @@ export default function ChannelManagerPage() {
             style={{
               padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
               border: 'none', background: 'none',
-              color: activeTab === 'ical' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+              color: activeTab === 'ical' ? 'var(--accent-primary-text)' : 'var(--text-tertiary)',
               borderBottom: activeTab === 'ical' ? '2px solid var(--accent-primary)' : '2px solid transparent',
               marginBottom: -2, display: 'flex', alignItems: 'center', gap: 6,
             }}
@@ -501,7 +501,7 @@ export default function ChannelManagerPage() {
             {syncStats && (
               <div className="card" style={{ padding: '12px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-                  <Activity size={14} style={{ color: 'var(--accent-primary)' }} />
+                  <Activity size={14} style={{ color: 'var(--accent-primary-text)' }} />
                   <span style={{ fontWeight: 700 }}>Sync Queue:</span>
                 </div>
                 <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
@@ -873,7 +873,7 @@ export default function ChannelManagerPage() {
               <div style={{ display: 'grid', gap: 8 }}>
                 {mappingData.mappings.map(m => (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)' }}>
-                    <Link2 size={14} style={{ color: 'var(--accent-primary)' }} />
+                    <Link2 size={14} style={{ color: 'var(--accent-primary-text)' }} />
                     <span style={{ flex: 1, fontSize: 13 }}>
                       <b>{m.unit_type_name}</b> ({m.unit_type_code})
                       <span style={{ color: 'var(--text-tertiary)' }}> → </span>

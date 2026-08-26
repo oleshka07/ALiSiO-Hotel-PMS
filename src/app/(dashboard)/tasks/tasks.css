@@ -62,7 +62,7 @@
 
 .tasks-sidebar-item.active {
   background: rgba(79, 110, 247, 0.12);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   font-weight: 500;
 }
 
@@ -110,7 +110,7 @@
 }
 
 .tasks-sidebar-add-btn:hover {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   border-color: var(--accent-primary);
   background: rgba(79, 110, 247, 0.06);
 }
@@ -218,7 +218,7 @@
 
 .tasks-filter-btn.active {
   border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   background: rgba(79, 110, 247, 0.08);
 }
 
@@ -241,7 +241,7 @@
 }
 
 .quick-add-icon {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   flex-shrink: 0;
 }
 
@@ -604,7 +604,7 @@
 }
 
 .tasks-kanban-add:hover {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   border-color: var(--accent-primary);
   background: rgba(79, 110, 247, 0.06);
 }
@@ -879,7 +879,7 @@
 }
 
 .subtask-add:hover {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
 }
 
 .subtask-add-input {
@@ -942,7 +942,7 @@
 }
 
 .tags-add-btn:hover {
-  color: var(--accent-primary);
+  color: var(--accent-primary-text);
   border-color: var(--accent-primary);
 }
 

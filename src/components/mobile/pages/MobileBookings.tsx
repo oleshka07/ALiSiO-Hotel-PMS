@@ -268,7 +268,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
             style={{
               padding: '5px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
               background: showSearch ? 'rgba(91,124,255,0.18)' : 'var(--bg-tertiary)',
-              color: showSearch ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              color: showSearch ? 'var(--accent-primary-text)' : 'var(--text-secondary)',
               display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}
             title="Пошук"
@@ -344,7 +344,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
           {categoryFilter === 'resort' && (
             <button
               onClick={() => setShowRoomAllocation(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 10, background: 'rgba(91,124,255,0.12)', border: '1px solid rgba(91,124,255,0.3)', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 10, background: 'rgba(91,124,255,0.12)', border: '1px solid rgba(91,124,255,0.3)', color: 'var(--accent-primary-text)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
               title="Розселення гостей по кімнатах Будови F"
             >
               <Building2 size={13} /> Розселення

@@ -424,7 +424,7 @@ export default function MobileBookingDetail({
               <div style={{ flex: 1, fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>
                 {b.first_name} {b.last_name}
               </div>
-              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--accent-primary-text)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                 {total.toLocaleString()} {b.currency || 'CZK'}
               </div>
             </div>
@@ -554,7 +554,7 @@ export default function MobileBookingDetail({
                   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                   padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer',
                   fontSize: 12.5, fontWeight: tab === t.k ? 600 : 500,
-                  color: tab === t.k ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                  color: tab === t.k ? 'var(--accent-primary-text)' : 'var(--text-tertiary)',
                   borderBottom: tab === t.k ? '2px solid var(--accent-primary)' : '2px solid transparent',
                 }}>
                 <t.Icon size={14} strokeWidth={1.8} />
@@ -645,7 +645,7 @@ export default function MobileBookingDetail({
                   </div>
                   {remaining > 0 && (
                     <button onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}
-                      style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: 11, fontWeight: 600, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-primary-text)', fontSize: 11, fontWeight: 600, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
                       Залишок: {remaining.toLocaleString()} {b.currency || 'CZK'}
                     </button>
                   )}
@@ -853,7 +853,7 @@ export default function MobileBookingDetail({
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{sb.label || 'Без назви'}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-primary-text)', fontVariantNumeric: 'tabular-nums' }}>
                         {(sb.subtotal || 0).toLocaleString()} {b.currency || 'CZK'}
                       </div>
                     </div>

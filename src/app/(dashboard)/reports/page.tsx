@@ -233,7 +233,7 @@ export default function ReportsPage() {
                   <h3 className="card-title">Оплати по методах</h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Wallet size={14} style={{ color: 'var(--text-tertiary)' }} />
-                    <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary-text)' }}>
                       {totalMethodPayments.toLocaleString()} CZK
                     </span>
                     <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>≈ {toEur(totalMethodPayments)} EUR</span>
@@ -309,7 +309,7 @@ export default function ReportsPage() {
                         <td>Всього</td>
                         <td>{summary.totalBookings}</td>
                         <td>{Object.values(catData).reduce((s: number, v: any) => s + (v as any).nights, 0)}</td>
-                        <td style={{ color: 'var(--accent-primary)' }}>{(summary.totalRevenue || 0).toLocaleString()}</td>
+                        <td style={{ color: 'var(--accent-primary-text)' }}>{(summary.totalRevenue || 0).toLocaleString()}</td>
                         <td style={{ color: 'var(--text-tertiary)' }}>≈ {toEur(summary.totalRevenue || 0)}</td>
                         <td>{(summary.avgCheck || 0).toLocaleString()}</td>
                       </tr>

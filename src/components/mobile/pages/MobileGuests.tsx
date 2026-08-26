@@ -498,7 +498,7 @@ export default function MobileGuests({ openNew }: { openNew?: boolean }) {
           </button>
           <button
             onClick={() => setShowSearch(p => !p)}
-            style={{ background: 'transparent', border: 'none', color: showSearch ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}
+            style={{ background: 'transparent', border: 'none', color: showSearch ? 'var(--accent-primary-text)' : 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}
           >
             <Search size={16} />
           </button>
@@ -554,7 +554,7 @@ export default function MobileGuests({ openNew }: { openNew?: boolean }) {
                     </span>
                   )}
                   {g.total_stays > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', padding: '2px 7px', borderRadius: 8, background: 'rgba(20,184,166,0.12)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary-text)', padding: '2px 7px', borderRadius: 8, background: 'rgba(20,184,166,0.12)' }}>
                       {g.total_stays}×
                     </span>
                   )}

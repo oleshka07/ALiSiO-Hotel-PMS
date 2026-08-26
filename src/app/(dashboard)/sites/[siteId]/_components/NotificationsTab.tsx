@@ -42,7 +42,7 @@ export function NotificationsTab({ site, onUpdate }: { site: Site; onUpdate: (cf
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12,
-          background: 'rgba(59,130,246,0.12)', color: 'var(--accent-primary)',
+          background: 'rgba(59,130,246,0.12)', color: 'var(--accent-primary-text)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Mail size={22} />
@@ -65,7 +65,7 @@ export function NotificationsTab({ site, onUpdate }: { site: Site; onUpdate: (cf
           onClick={() => setShowSplash(!showSplash)}
           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', cursor: 'pointer', userSelect: 'none' }}
         >
-          <Info size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+          <Info size={16} style={{ color: 'var(--accent-primary-text)', flexShrink: 0 }} />
           <span style={{ fontWeight: 600, flex: 1, color: 'var(--text-primary)' }}>Доступні змінні для шаблонів</span>
           <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
             {showSplash ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -80,7 +80,7 @@ export function NotificationsTab({ site, onUpdate }: { site: Site; onUpdate: (cf
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginTop: 4 }}>
               {placeholders.map(p => (
                 <div key={p.key} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border-primary)' }}>
-                  <code style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: 12 }}>{p.key}</code>
+                  <code style={{ color: 'var(--accent-primary-text)', fontWeight: 700, fontSize: 12 }}>{p.key}</code>
                   <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.label} <span style={{ color: 'var(--text-tertiary)' }}>({p.example})</span></span>
                 </div>
               ))}

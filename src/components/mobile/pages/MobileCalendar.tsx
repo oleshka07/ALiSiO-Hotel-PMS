@@ -621,16 +621,16 @@ export default function MobileCalendar() {
           {category === 'resort' && (
             <button
               onClick={() => setShowRoomAllocation(true)}
-              style={{ ...navBtn, color: 'var(--accent-primary)' }}
+              style={{ ...navBtn, color: 'var(--accent-primary-text)' }}
               title="Розселення по кімнатах Будови F"
             >
               <Building2 size={15} />
             </button>
           )}
-          <button onClick={() => setShowSearch(s => !s)} style={{ ...navBtn, color: showSearch ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
+          <button onClick={() => setShowSearch(s => !s)} style={{ ...navBtn, color: showSearch ? 'var(--accent-primary-text)' : 'var(--text-secondary)' }}>
             <Search size={16} />
           </button>
-          <button onClick={() => setShowFilters(true)} style={{ ...navBtn, position: 'relative', color: activeFilterCount > 0 ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
+          <button onClick={() => setShowFilters(true)} style={{ ...navBtn, position: 'relative', color: activeFilterCount > 0 ? 'var(--accent-primary-text)' : 'var(--text-secondary)' }}>
             <Filter size={16} />
             {activeFilterCount > 0 && (
               <span style={{ position: 'absolute', top: 2, right: 2, background: 'var(--accent-primary)', color: '#fff', borderRadius: 8, fontSize: 9, fontWeight: 700, padding: '0 4px', lineHeight: '14px' }}>
@@ -668,7 +668,7 @@ export default function MobileCalendar() {
           fontSize: 12, fontWeight: 600, display: 'flex', flexDirection: 'column', gap: 6,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>📅 Заїзд: {rangeStart.date} (натисніть другу дату на сітці)</span>
+            <span style={{ color: 'var(--accent-primary-text)', fontWeight: 700 }}>📅 Заїзд: {rangeStart.date} (натисніть другу дату на сітці)</span>
             <button
               onClick={() => setRangeStart(null)}
               style={{ border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 2 }}
@@ -893,10 +893,10 @@ export default function MobileCalendar() {
                   borderRight: '1px solid var(--border-primary)',
                   background: isTd ? 'rgba(20,184,166,0.15)' : undefined,
                 }}>
-                  <span style={{ fontSize: 9, color: isTd ? 'var(--accent-primary)' : 'var(--text-tertiary)', fontWeight: 600 }}>
+                  <span style={{ fontSize: 9, color: isTd ? 'var(--accent-primary-text)' : 'var(--text-tertiary)', fontWeight: 600 }}>
                     {DAY_ABBR[d.getDay()]}
                   </span>
-                  <span style={{ fontSize: 14, fontWeight: isTd ? 800 : 600, color: isTd ? 'var(--accent-primary)' : 'var(--text-primary)', lineHeight: 1 }}>
+                  <span style={{ fontSize: 14, fontWeight: isTd ? 800 : 600, color: isTd ? 'var(--accent-primary-text)' : 'var(--text-primary)', lineHeight: 1 }}>
                     {d.getDate()}
                   </span>
                 </div>
