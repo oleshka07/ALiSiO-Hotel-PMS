@@ -118,15 +118,33 @@ export default function BankInboxesTab() {
 
   async function handleRescan(item: BankInbox) {
     const n = skipped[item.id] || 0;
-    const msg = n > 0
-      ? `Перечитати «${item.name}»?\n\n${n} лист(ів) прийшли, але не потрапили у фінанси — розбір не вдався або не знайшовся рахунок за IBAN. Листи досі в скриньці.\n\nПовторні операції не створюються.`
-      : `Перечитати «${item.name}» за останні 14 днів?\n\nПовторні операції не створюються.`;
-    if (!confirm(msg)) return;
+    let body: Record<string, number> = {};
+    if (n > 0) {
+      const msg = `Перечитати «${item.name}»?\n\n${n} лист(ів) прийшли, але не потрапили у фінанси — розбір не вдався або не знайшовся рахунок за IBAN. Листи досі в скриньці.\n\nПовторні операції не створюються.`;
+      if (!confirm(msg)) return;
+    } else {
+      // Nothing recorded as skipped means the losses happened before this
+      // list existed — which is exactly the case worth recovering. Guessing a
+      // starting point costs real time and real money: every re-read PDF goes
+      // through the LLM extractor. So ask for the number instead of picking
+      // one. The last successful statement's UID is in its file name.
+      const answer = window.prompt(
+        `Перечитати «${item.name}» — з якого листа почати?\n\n`
+        + `Вкажіть UID листа. Перечитування почнеться з нього і піде до кінця скриньки.\n`
+        + `Номер останньої вдалої виписки видно в її імені файлу (…uid395.xml).\n\n`
+        + `Повторні операції не створюються.`,
+        String(item.last_uid ? Math.max(1, item.last_uid - 40) : 1),
+      );
+      if (!answer) return;
+      const uid = parseInt(answer, 10);
+      if (!Number.isFinite(uid) || uid < 1) { alert('Потрібен номер листа (ціле число).'); return; }
+      body = { from_uid: uid };
+    }
     setBusyId(item.id);
     const res = await fetch(`/api/finance/bank-inboxes/${item.id}/rescan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(n > 0 ? {} : { days: 14 }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     setBusyId(null);

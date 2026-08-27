@@ -568,13 +568,19 @@ export function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedSta
   const accountId = findAccountByIban(db, inbox.organization_id, stmt);
   if (!accountId) return { imported: -1, skipped: 0 }; // unmatched — don't import
 
-  // Create bank_statement record
-  const stmtId = `stmt_inbox_${Date.now()}_${uid}_${Math.random().toString(36).slice(2, 5)}`;
+  // Create bank_statement record — or reuse the one this email already made.
+  // A re-read does not post the transactions twice, but without this it would
+  // still leave a second statement row showing nothing imported, and a list of
+  // those is a poor way to reward someone for recovering their data.
   const fileName = `inbox-${inbox.imap_user}-uid${uid}.xml`;
-  db.prepare(`
-    INSERT INTO bank_statements (id, organization_id, file_name, bank_name, account_number, period_from, period_to, total_transactions, status)
-    VALUES (?, ?, ?, 'KB (auto)', ?, ?, ?, ?, 'done')
-  `).run(stmtId, inbox.organization_id, fileName, stmt.iban || stmt.account_number || '', stmt.period_from || '', stmt.period_to || '', stmt.transactions.length);
+  const existing = db.prepare("SELECT id FROM bank_statements WHERE file_name = ? LIMIT 1").get(fileName) as { id: string } | undefined;
+  const stmtId = existing?.id || `stmt_inbox_${Date.now()}_${uid}_${Math.random().toString(36).slice(2, 5)}`;
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO bank_statements (id, organization_id, file_name, bank_name, account_number, period_from, period_to, total_transactions, status)
+      VALUES (?, ?, ?, 'KB (auto)', ?, ?, ?, ?, 'done')
+    `).run(stmtId, inbox.organization_id, fileName, stmt.iban || stmt.account_number || '', stmt.period_from || '', stmt.period_to || '', stmt.transactions.length);
+  }
 
   // Insert bank_transactions + auto-rules → fin_operations
   const insTx = db.prepare(`
