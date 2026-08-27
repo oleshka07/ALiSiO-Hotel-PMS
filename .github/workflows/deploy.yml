@@ -181,8 +181,25 @@ jobs:
             # it instead of replacing it, so a release that shipped a data/
             # folder ended up running against its own copy of the database
             # while looking entirely healthy.
-            rm -rf "$REL/data" "$REL/.env"
-            ln -sfn "$BASE/.env" "$REL/.env"
+            rm -rf "$REL/data"
+
+            # EVERY .env* file, not just .env.
+            #
+            # The old unit ran `next start` from $BASE, and Next's dotenv reads
+            # .env.production.local, .env.local, .env.production and .env — in
+            # that order. Linking only .env silently dropped whatever lived in
+            # the others. BANK_INBOX_SECRET was one of them: the mailboxes
+            # started answering "must be 64-char hex" the moment the switch
+            # happened, having never been touched.
+            ENV_FILES=""
+            for f in "$BASE"/.env "$BASE"/.env.*; do
+              [ -f "$f" ] || continue
+              base=$(basename "$f")
+              rm -rf "$REL/$base"
+              ln -sfn "$f" "$REL/$base"
+              ENV_FILES="$ENV_FILES$base "
+            done
+            echo "Env files linked into the release: ${ENV_FILES:-(none)}"
 
             # ── Sync secrets from GitHub into .env ────────────────────────
             touch "$BASE/.env"
@@ -336,6 +353,16 @@ jobs:
             # Rewritten only when it differs, and the old one is kept next to
             # it so the rollback below can put it back.
             UNIT=/etc/systemd/system/alisio-pms.service
+            # One EnvironmentFile= line per .env* file, so systemd sees what
+            # dotenv sees. The leading '-' keeps a missing file from failing the
+            # unit. Belt and braces: whichever of the two paths ends up being
+            # the one that works, the variables are there.
+            ENV_FILE_LINES=""
+            for f in "$BASE"/.env "$BASE"/.env.*; do
+              [ -f "$f" ] && ENV_FILE_LINES="${ENV_FILE_LINES}EnvironmentFile=-$f"$'\n'
+            done
+            ENV_FILE_LINES=${ENV_FILE_LINES%$'\n'}
+
             NEW_UNIT=$(cat <<UNITEOF
             [Unit]
             Description=ALiSiO PMS
@@ -347,7 +374,7 @@ jobs:
             ExecStart=$NODE_BIN server.js
             Environment=NODE_ENV=production
             Environment=PORT=$LIVE_PORT
-            EnvironmentFile=-$BASE/.env
+            $ENV_FILE_LINES
             Restart=always
             RestartSec=3
             StandardOutput=journal
@@ -399,6 +426,33 @@ jobs:
             fi
 
             echo "Live on $LIVE_PORT — $GH_SHA"
+
+            # Does the running service actually see the configuration?
+            #
+            # A missing variable does not stop the site — it stops one quiet
+            # corner of it, and nobody finds out until a statement is missing
+            # weeks later. That is exactly how this deploy broke the mailboxes:
+            # the old unit ran `next start`, whose dotenv reads .env.local and
+            # .env.production too, and the first release linked only .env.
+            # Names only; values never reach this log.
+            SVC_PID=$(systemctl show -p MainPID --value alisio-pms 2>/dev/null || echo 0)
+            if [ "${SVC_PID:-0}" -gt 0 ] && [ -r "/proc/$SVC_PID/environ" ]; then
+              MISSING=""
+              for f in "$BASE"/.env "$BASE"/.env.*; do
+                [ -f "$f" ] || continue
+                while IFS= read -r key; do
+                  [ -n "$key" ] || continue
+                  tr '\0' '\n' < "/proc/$SVC_PID/environ" | grep -q "^$key=" || MISSING="$MISSING $key"
+                done < <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$f" | tr -d '=' | sort -u)
+              done
+              if [ -n "$MISSING" ]; then
+                echo "::warning::The service cannot see these configured variables:$MISSING"
+                echo "  They are in a .env* file but did not reach the process. Anything"
+                echo "  depending on them will fail quietly."
+              else
+                echo "Configuration: every variable in .env* is visible to the service"
+              fi
+            fi
 
             # ── Housekeeping ──────────────────────────────────────────────
             # Keep the three most recent releases: the running one, the one to
