@@ -1,12 +1,26 @@
 name: Deploy ALiSiO PMS
 
+# The build runs here, not on the VPS.
+#
+# It used to run there, and that was the single biggest source of outages: the
+# box has 4 GB, `next build` asks for a 3 GB heap, and when anything else was
+# resident the kernel killed the build part-way. Next writes BUILD_ID last, so
+# a killed build left a directory that served HTML while every JS chunk 500'd.
+# The old script grew a memory pre-check, a .next.prev copy and a rollback path
+# to survive that — all of it working around a build that had no business being
+# on a production server.
+#
+# Now GitHub builds a self-contained release, ships it, and the VPS only
+# unpacks it. The server never runs npm, never compiles, and needs no build
+# headroom at all. What arrives is ~260 MB of exactly the files the app runs,
+# instead of an 872 MB node_modules that is mostly build tooling.
+
 on:
   push:
     branches: [main]
 
 # Prevent parallel deploys: if a new push arrives while deploying,
 # wait for the current deploy to finish (cancel-in-progress: false).
-# Change to true if you prefer "cancel old, start fresh" behaviour.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -14,219 +28,376 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to VPS via SSH
-        uses: appleboy/ssh-action@v1
+      # better-sqlite3 is a native module: a binary built for one Node ABI will
+      # not load on another. Rather than pin a number here and let it drift out
+      # of step with the box, ask the box.
+      - name: Ask the VPS which Node it runs
+        id: vps
         env:
-          # Forward GitHub Secrets that the remote shell needs. To add a new
-          # key: define it in repo Settings → Secrets → Actions, list it
-          # here, list its name in the `envs:` field below, and append the
-          # idempotent .env-sync block at the bottom of the script.
-          PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          MAJOR=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 \
+                    -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT || 22 }}" \
+                    "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+                    'node -v' | tr -d 'v\r' | cut -d. -f1)
+          case "$MAJOR" in
+            ''|*[!0-9]*) echo "::error::Could not read the VPS Node version (got '$MAJOR')"; exit 1 ;;
+          esac
+          echo "The VPS runs Node $MAJOR — building against the same major"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.vps.outputs.major }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Some routes instantiate API clients at module-evaluation time, which
+          # next build runs during "Collecting page data". Pass dummy values so
+          # the build succeeds; real keys live in the VPS .env at runtime.
+          OPENAI_API_KEY: 'sk-build-dummy-not-used'
+          ANTHROPIC_API_KEY: 'sk-ant-build-dummy-not-used'
+          TEYA_CLIENT_ID: 'build-dummy'
+          TEYA_CLIENT_SECRET: 'build-dummy'
+          TEYA_STORE_ID: 'build-dummy'
+
+      - name: Assemble the release
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js || { echo "::error::No standalone output — is output:'standalone' still in next.config.ts?"; exit 1; }
+          test -f .next/BUILD_ID           || { echo "::error::Build produced no BUILD_ID"; exit 1; }
+
+          rm -rf release && mkdir release
+          # next build leaves three pieces that have to be put together by hand:
+          # the traced server, the static assets, and public/. Only the first is
+          # copied into standalone automatically.
+          cp -r .next/standalone/. release/
+          mkdir -p release/.next
+          cp -r .next/static release/.next/static
+          [ -d public ] && cp -r public release/public
+          cp .next/BUILD_ID release/.next/BUILD_ID
+
+          # next build evaluates route modules while collecting page data, which
+          # calls getDb() and creates data/alisio.db right here on the runner.
+          # next then copies that directory into the standalone output, and the
+          # deploy would ship an empty database over the live one — silently,
+          # because the site comes up perfectly happy on a fresh schema.
+          #
+          # outputFileTracingExcludes does not stop this; the directory is not
+          # coming in through the module trace. Removing it here does, and the
+          # check below makes sure a future change to next cannot undo it.
+          rm -rf release/data
+          if [ -e release/data ] || [ -e release/.env ]; then
+            echo "::error::Release still contains host state (data/ or .env) — refusing to ship it"
+            exit 1
+          fi
+
+          tar -czf release.tar.gz -C release .
+          echo "Release: $(du -sh release | cut -f1) → $(du -sh release.tar.gz | cut -f1) compressed"
+
+      # Kept for ten days so a bad deploy can be inspected, and so a release can
+      # be re-shipped by hand without rebuilding.
+      - name: Keep the release as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: release.tar.gz
+          retention-days: 10
+          compression-level: 0
+
+      - name: Upload the release to the VPS
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          envs: PRICELABS_API_KEY
+          source: release.tar.gz
+          target: /root/projects/alisio-pms/incoming
+          overwrite: true
+
+      - name: Install, verify, then switch over
+        uses: appleboy/ssh-action@v1
+        env:
+          # Forward GitHub Secrets that the remote shell needs. To add a new
+          # key: define it in repo Settings → Secrets → Actions, list it here,
+          # list its name in the `envs:` field below, and append an .env-sync
+          # block in the script.
+          PRICELABS_API_KEY: ${{ secrets.PRICELABS_API_KEY }}
+          GH_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: PRICELABS_API_KEY,GH_SHA
+          command_timeout: 15m
           script: |
             set -euo pipefail
 
-            cd /root/projects/alisio-pms
+            BASE=/root/projects/alisio-pms
+            REL="$BASE/releases/$GH_SHA"
+            # readlink WITHOUT -f: -f canonicalises a path that does not exist
+            # yet, so on the first standalone deploy it returned ".../current"
+            # itself and the rollback branch would have pointed at nothing.
+            PREVIOUS=$(readlink "$BASE/current" 2>/dev/null || true)
+            NODE_BIN=$(command -v node)
+            SMOKE_PORT=3011
+            LIVE_PORT=3001
 
-            PREVIOUS_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
-            echo "Previous commit: $PREVIOUS_COMMIT"
+            echo "Release:  $GH_SHA"
+            echo "Previous: ${PREVIOUS:-(none — first standalone deploy)}"
+            echo "Node:     $NODE_BIN ($(node -v))"
 
-            # Pull latest code
-            if [ ! -d ".git" ]; then
-              cd ..
-              rm -rf alisio-pms
-              git clone git@github.com:oleshka07/ALiSiO-Hotel-PMS.git alisio-pms
-              cd alisio-pms
-            else
-              git fetch origin
-              git reset --hard origin/main
+            # ── Unpack ────────────────────────────────────────────────────
+            mkdir -p "$BASE/releases" "$BASE/data"
+            rm -rf "$REL" && mkdir -p "$REL"
+            tar -xzf "$BASE/incoming/release.tar.gz" -C "$REL"
+            rm -f "$BASE/incoming/release.tar.gz"
+            test -f "$REL/server.js" || { echo "Release has no server.js — refusing"; rm -rf "$REL"; exit 1; }
+
+            # The database and the secrets stay put and are shared by every
+            # release. getDb() resolves them from process.cwd(), which is why
+            # they are linked into the release rather than copied.
+            # rm first: `ln -sfn` on an existing DIRECTORY puts the link inside
+            # it instead of replacing it, so a release that shipped a data/
+            # folder ended up running against its own copy of the database
+            # while looking entirely healthy.
+            rm -rf "$REL/data" "$REL/.env"
+            ln -sfn "$BASE/.env" "$REL/.env"
+
+            # ── Sync secrets from GitHub into .env ────────────────────────
+            touch "$BASE/.env"
+            if ! grep -q '^CRON_SECRET=' "$BASE/.env" 2>/dev/null; then
+              echo "CRON_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> "$BASE/.env"
+              echo "[setup] generated CRON_SECRET"
+            fi
+            if [ -n "${PRICELABS_API_KEY:-}" ]; then
+              if grep -q '^PRICELABS_API_KEY=' "$BASE/.env" 2>/dev/null; then
+                sed -i "s|^PRICELABS_API_KEY=.*|PRICELABS_API_KEY=${PRICELABS_API_KEY}|" "$BASE/.env"
+              else
+                echo "PRICELABS_API_KEY=${PRICELABS_API_KEY}" >> "$BASE/.env"
+              fi
+              echo "[setup] PRICELABS_API_KEY synced"
             fi
 
-            NEW_COMMIT=$(git rev-parse HEAD)
-            echo "New commit:      $NEW_COMMIT"
+            # ── Prove the release runs, before anything live is touched ───
+            #
+            # Against a COPY of the database: this process opens the same file
+            # the live site is serving from, and runs the schema migrations on
+            # startup. Two processes migrating the same file at once is not a
+            # risk worth taking to save copying three megabytes.
+            rm -rf "$BASE/.smoke-data"
+            cp -a "$BASE/data" "$BASE/.smoke-data"
+            rm -rf "$REL/data"
+            ln -sfn "$BASE/.smoke-data" "$REL/data"
 
-            # Ensure data dir exists (DB lives here, excluded from git)
-            mkdir -p data
+            # The extra argv is a handle, nothing more: node ignores it, and it
+            # makes this one process findable by name. Looking the pid up from
+            # the listening socket instead left the smoke server running after
+            # every deploy — ss does not always report a pid, and a stray Node
+            # holding a few hundred MB is the last thing a 4 GB box needs.
+            SMOKE_TAG="pms-smoke-$GH_SHA"
 
-            # Install dependencies
-            npm ci --production=false
-
-            # Safe stale-lock cleanup: only remove .next/lock if the PID
-            # recorded in it is no longer running (i.e. previous build crashed).
-            # This avoids killing a legitimate parallel build.
-            if [ -f .next/lock ]; then
-              LOCK_PID=$(cat .next/lock 2>/dev/null || echo "")
-              if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-                echo "Removing stale .next/lock (PID $LOCK_PID is gone)"
-                rm -f .next/lock
-              elif [ -z "$LOCK_PID" ]; then
-                echo "Removing empty .next/lock"
-                rm -f .next/lock
-              else
-                echo ".next/lock is held by running PID $LOCK_PID — waiting..."
+            # Nothing else may be listening there. A leftover process would
+            # answer the health check and the deploy would report success
+            # without the new build ever having run — which is exactly what a
+            # rehearsal of this script did before the kill above was fixed.
+            # curl already prints 000 when it cannot connect, so the fallback
+            # must not print a second one — `|| echo 000` made this read
+            # "000000", which is never equal to "000", and the check fired on
+            # a free port every time.
+            port_busy() { [ "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT/checkin" || true)" != "000" ]; }
+            if port_busy; then
+              echo "Port $SMOKE_PORT is occupied — clearing stale smoke servers"
+              pkill -9 -f -- '--pms-smoke-' 2>/dev/null || true
+              sleep 2
+              if port_busy; then
+                echo "Port $SMOKE_PORT is still in use. Refusing to run a health"
+                echo "check whose answer cannot be attributed to this release."
+                exit 1
               fi
             fi
 
-            # The VPS has 4 GB and the build asks for a 3 GB heap. When a
-            # Claude Code session or another build is also resident there is no
-            # room, the kernel kills the build, and — because the old version
-            # deleted .next FIRST — the box was left with nothing to serve.
-            # Next writes BUILD_ID last, so a killed build leaves a directory
-            # that serves HTML while every JS chunk 500s.
-            meminfo_mb() { awk -v k="$1" '$1==k":"{print int($2/1024); f=1} END{if(!f) print 0}' /proc/meminfo 2>/dev/null || echo 0; }
-            AVAIL_MB=$(meminfo_mb MemAvailable)
-            SWAP_FREE_MB=$(meminfo_mb SwapFree)
-            NEED_MB="${DEPLOY_NEED_MB:-3200}"
-            echo "Memory: ${AVAIL_MB}MB available + ${SWAP_FREE_MB}MB swap (build needs ~${NEED_MB}MB)"
-            ps -eo rss=,comm= --sort=-rss 2>/dev/null | awk '$1>300000{printf "  resident: %6dMB  %s\n", $1/1024, $2}' || true
-            if [ $((AVAIL_MB + SWAP_FREE_MB)) -lt "$NEED_MB" ]; then
-              echo "Not enough memory to build — refusing. The running site is untouched."
-              echo "Free memory on the box (close other sessions / add swap) and re-run this deploy."
+            echo "Starting the new release on port $SMOKE_PORT…"
+            : > /tmp/pms-smoke.log
+            ( cd "$REL" && PORT=$SMOKE_PORT HOSTNAME=127.0.0.1 \
+                PMS_SMOKE_TEST=1 NODE_ENV=production \
+                setsid "$NODE_BIN" server.js "--$SMOKE_TAG" > /tmp/pms-smoke.log 2>&1 < /dev/null & )
+
+            stop_smoke() {
+              pkill -9 -f -- "--$SMOKE_TAG" 2>/dev/null || true
+              sleep 1
+              rm -rf "$BASE/.smoke-data" "$REL/data"
+              ln -sfn "$BASE/data" "$REL/data"
+            }
+            trap stop_smoke EXIT
+
+            OK=0
+            for i in $(seq 1 45); do
+              CODE=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT/checkin" || true)
+              if [ "$CODE" = "200" ]; then OK=1; break; fi
+              sleep 2
+            done
+
+            # Whatever answered has to be the process this script started. The
+            # port was free a moment ago and this log was emptied a moment ago,
+            # so a startup banner in it is proof of authorship — and unlike
+            # pgrep it does not depend on being able to see the process table,
+            # which setsid'd processes do not always appear in.
+            if [ "$OK" = "1" ] && ! grep -q "Ready in" /tmp/pms-smoke.log 2>/dev/null; then
+              echo "Something answered on $SMOKE_PORT, but this release never logged a start."
+              echo "Treating that as a failure rather than trusting the reply."
+              OK=0
+            fi
+
+            if [ "$OK" = "1" ]; then
+              # /checkin only proves the server renders. This one reads the
+              # database through the same path the site uses, so a native-module
+              # or schema problem shows up here rather than on the live port.
+              CODE=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT/api/widget/prices" || true)
+              [ "$CODE" = "200" ] || { echo "Price list answered $CODE, expected 200"; OK=0; }
+            fi
+
+            stop_smoke
+            trap - EXIT
+
+            if [ "$OK" != "1" ]; then
+              echo "──────────────────────────────────────────────────────"
+              echo "The new build did not come up. NOTHING was switched —"
+              echo "the site is still serving the previous release."
+              echo "──────────────────────────────────────────────────────"
+              tail -60 /tmp/pms-smoke.log || true
+              rm -rf "$REL"
               exit 1
             fi
+            echo "New release answers on $SMOKE_PORT — switching over"
 
-            # Keep the working build until the new one is proven good.
-            rm -rf .next.prev
-            [ -d .next ] && mv .next .next.prev
+            # ── systemd unit ──────────────────────────────────────────────
+            # Rewritten only when it differs, and the old one is kept next to
+            # it so the rollback below can put it back.
+            UNIT=/etc/systemd/system/alisio-pms.service
+            NEW_UNIT=$(cat <<UNITEOF
+            [Unit]
+            Description=ALiSiO PMS
+            After=network.target
 
-            restore_previous() {
-              if [ -d .next.prev ]; then
-                echo "Restoring the previous working build"
-                rm -rf .next
-                mv .next.prev .next
+            [Service]
+            Type=simple
+            WorkingDirectory=$BASE/current
+            ExecStart=$NODE_BIN server.js
+            Environment=NODE_ENV=production
+            Environment=PORT=$LIVE_PORT
+            EnvironmentFile=-$BASE/.env
+            Restart=always
+            RestartSec=3
+            StandardOutput=journal
+            StandardError=journal
+
+            [Install]
+            WantedBy=multi-user.target
+            UNITEOF
+            )
+            if [ ! -f "$UNIT" ] || [ "$(cat "$UNIT")" != "$NEW_UNIT" ]; then
+              if [ -f "$UNIT" ]; then
+                cp "$UNIT" "$BASE/alisio-pms.service.prev"
+                # Printed because this is the one step that changes how the
+                # service is launched. If the old unit carried an environment
+                # variable this one does not, the log is where that shows.
+                echo "── previous unit ──────────────────────────────────────"
+                cat "$UNIT"
+                echo "───────────────────────────────────────────────────────"
               fi
-              if [ -n "$PREVIOUS_COMMIT" ]; then
-                echo "Rolling working tree back to $PREVIOUS_COMMIT"
-                git reset --hard "$PREVIOUS_COMMIT"
+              echo "$NEW_UNIT" > "$UNIT"
+              systemctl daemon-reload
+              echo "[setup] systemd unit updated (previous saved to $BASE/alisio-pms.service.prev)"
+            fi
+
+            # ── The switch ────────────────────────────────────────────────
+            ln -sfn "$REL" "$BASE/current"
+            systemctl restart alisio-pms
+
+            LIVE=0
+            for i in $(seq 1 30); do
+              CODE=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$LIVE_PORT/checkin" || true)
+              if [ "$CODE" = "200" ]; then LIVE=1; break; fi
+              sleep 2
+            done
+
+            if [ "$LIVE" != "1" ]; then
+              echo "Live port did not answer after the switch — rolling back"
+              if [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ]; then
+                ln -sfn "$PREVIOUS" "$BASE/current"
+              elif [ -f "$BASE/alisio-pms.service.prev" ]; then
+                # First standalone deploy failed: put the old unit back and let
+                # it serve from the tree that was working ten minutes ago.
+                cp "$BASE/alisio-pms.service.prev" "$UNIT"
+                systemctl daemon-reload
               fi
               systemctl restart alisio-pms || true
-            }
-
-            if ! npm run build; then
-              echo "Build failed — restoring the previous build."
-              restore_previous
+              journalctl -u alisio-pms -n 60 --no-pager || true
               exit 1
             fi
 
-            if [ ! -f .next/BUILD_ID ]; then
-              echo "Build produced no BUILD_ID — it was killed part-way (almost certainly OOM)."
-              restore_previous
-              exit 1
-            fi
+            echo "Live on $LIVE_PORT — $GH_SHA"
 
-            rm -rf .next.prev
+            # ── Housekeeping ──────────────────────────────────────────────
+            # Keep the three most recent releases: the running one, the one to
+            # roll back to, and one spare. Everything older is dead weight.
+            ls -1dt "$BASE"/releases/*/ 2>/dev/null | tail -n +4 | while read -r old; do
+              case "$(readlink -f "$old")" in
+                "$(readlink -f "$BASE/current")") ;;
+                *) echo "  pruning $(basename "$old")"; rm -rf "$old" ;;
+              esac
+            done
 
-            # ─────────────────────────────────────────────────────────
-            # Idempotent VPS setup for the bank-inbox cron endpoint
-            # (PR #63). The endpoint /api/cron/poll-bank-inboxes
-            # authenticates via process.env.CRON_SECRET. Generate
-            # once + install crontab + create log file. All steps are
-            # no-ops on subsequent runs.
-            # ─────────────────────────────────────────────────────────
-            if ! grep -q '^CRON_SECRET=' .env 2>/dev/null; then
-              SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-              echo "CRON_SECRET=$SECRET" >> .env
-              echo "[setup] generated CRON_SECRET and appended to .env"
-            else
-              echo "[setup] CRON_SECRET already present in .env"
-            fi
-
-            # ─────────────────────────────────────────────────────────
-            # Sync PRICELABS_API_KEY from GitHub Secrets into .env.
-            # Idempotent: appends on first run, overwrites in place
-            # afterwards. The `[ -n ... ]` guard avoids writing an empty
-            # line when the secret is unset in the GitHub repo.
-            # ─────────────────────────────────────────────────────────
-            if [ -n "${PRICELABS_API_KEY:-}" ]; then
-              if grep -q '^PRICELABS_API_KEY=' .env 2>/dev/null; then
-                sed -i "s|^PRICELABS_API_KEY=.*|PRICELABS_API_KEY=${PRICELABS_API_KEY}|" .env
-                echo "[setup] PRICELABS_API_KEY refreshed in .env"
-              else
-                echo "PRICELABS_API_KEY=${PRICELABS_API_KEY}" >> .env
-                echo "[setup] PRICELABS_API_KEY appended to .env"
+            # One-off: the old scheme built on the box and left ~1.3 GB behind.
+            # Now that the site is served from a release directory, none of it
+            # is reachable. Removed only after the switch is proven good.
+            for junk in node_modules .next .next.prev; do
+              if [ -e "$BASE/$junk" ]; then
+                echo "  reclaiming $BASE/$junk ($(du -sh "$BASE/$junk" 2>/dev/null | cut -f1))"
+                rm -rf "$BASE/$junk"
               fi
-            else
-              echo "[setup] PRICELABS_API_KEY not set in GitHub Secrets — skipping"
-            fi
+            done
+            rm -rf "$BASE/incoming"
 
-            # Ensure the log file exists with the right perms so cron
-            # output has somewhere to land.
-            touch /var/log/pms-cron-bank.log
-            chmod 644 /var/log/pms-cron-bank.log
+            echo "Disk: $(df -h "$BASE" | awk 'NR==2{print $4" free of "$2}')"
+            echo "Releases kept: $(ls -1d "$BASE"/releases/*/ 2>/dev/null | wc -l)"
 
-            # Crontab entries — Node listens on port 3001 in production
-            # (see ical-sync cron already on :3001). Use replace-not-
-            # append: strip any old entry pointing at the wrong port,
-            # then reinstall with the right one. Fully idempotent.
-            POLL_CRON='*/15 * * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3001/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1'
-            ( crontab -l 2>/dev/null | grep -v 'poll-bank-inboxes' || true
-              echo "$POLL_CRON"
-            ) | crontab -
-            echo "[setup] crontab poll-bank-inboxes refreshed (port 3001)"
+            # ── Cron endpoints ────────────────────────────────────────────
+            touch /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
+            chmod 644 /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
 
-            # Daily PriceLabs → price_calendar sync. 04:00 lets ČNB publish
-            # the day's EUR/CZK rate first; PriceLabs refreshes overnight.
-            touch /var/log/pms-cron-pricelabs.log
-            chmod 644 /var/log/pms-cron-pricelabs.log
-            PRICELABS_CRON='0 4 * * * curl -fsS -X POST -H "X-Cron-Secret: $(grep ^CRON_SECRET /root/projects/alisio-pms/.env | cut -d= -f2)" http://localhost:3001/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1'
-            ( crontab -l 2>/dev/null | grep -v 'sync-pricelabs' || true
+            CRON_HDR="X-Cron-Secret: \$(grep ^CRON_SECRET $BASE/.env | cut -d= -f2)"
+            BANK_CRON="*/15 * * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1"
+            # Forwarded invoices had no cron at all — their only automatic path
+            # was a tick inside getDb() that needed someone to load a page, and
+            # that tick had been throwing since it was written. Offset to :07 so
+            # the two mailbox polls do not open IMAP connections in lockstep.
+            RECEIPT_CRON="7-59/15 * * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/poll-receipt-inboxes >> /var/log/pms-cron-receipt.log 2>&1"
+            PRICELABS_CRON="0 4 * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/sync-pricelabs >> /var/log/pms-cron-pricelabs.log 2>&1"
+            ( crontab -l 2>/dev/null | grep -v 'poll-bank-inboxes' | grep -v 'poll-receipt-inboxes' | grep -v 'sync-pricelabs' || true
+              echo "$BANK_CRON"
+              echo "$RECEIPT_CRON"
               echo "$PRICELABS_CRON"
             ) | crontab -
-            echo "[setup] crontab sync-pricelabs refreshed (port 3001)"
+            echo "[setup] crontabs refreshed"
 
-            # Truncate the cron log if it grew because of port-3000
-            # connection-refused noise (PR #94 diagnostic showed 395
-            # lines of "curl: (7) Failed to connect"). One-off cleanup.
-            if [ -f /var/log/pms-cron-bank.log ] && grep -q 'port 3000' /var/log/pms-cron-bank.log; then
-              : > /var/log/pms-cron-bank.log
-              echo "[setup] truncated /var/log/pms-cron-bank.log (was full of port-3000 noise)"
-            fi
-
-            # ─────────────────────────────────────────────────────────
-            # One-time migration: fix EUR operations that were saved
-            # with currency='CZK' (amount_company not converted).
-            # The script is idempotent — safe to re-run.
-            # ─────────────────────────────────────────────────────────
-            if [ -f fix-eur-operations.js ]; then
-              echo "[migration] Running EUR operations fix..."
-              node fix-eur-operations.js --apply || echo "[migration] fix-eur-operations.js returned non-zero (non-fatal)"
-            fi
-
-
-
-
-            # Restart service only after a successful build.
-            systemctl restart alisio-pms
-            sleep 3
-
-            # Verify the service actually came up.
-            if ! systemctl is-active --quiet alisio-pms; then
-              echo "Service failed to start after restart — rolling back"
-              if [ -n "$PREVIOUS_COMMIT" ]; then
-                git reset --hard "$PREVIOUS_COMMIT"
-                npm ci --production=false
-                npm run build
-                systemctl restart alisio-pms
-                echo "Rolled back to $PREVIOUS_COMMIT"
-              fi
-              exit 1
-            fi
-
-            echo "Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
-            systemctl status alisio-pms --no-pager
-
-            # One-time: remove terminal payment fin_operations (they should come via bank)
-            if [ -f remove-terminal-ops.js ]; then
-              echo "[cleanup] Removing terminal fin_operations..."
-              node remove-terminal-ops.js --apply 2>&1 || true
-            fi
-
+            systemctl status alisio-pms --no-pager | head -12

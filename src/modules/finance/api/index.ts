@@ -299,6 +299,7 @@ import {
   deleteBankInbox as _deleteBankInbox, toggleBankInbox as _toggleBankInbox,
   testBankInbox as _testBankInbox, runBankInboxNow as _runBankInboxNow,
   runAllInboxes as _runAllInboxes,
+  rescanBankInbox as _rescanBankInbox, listSkippedEmails as _listSkippedEmails,
 } from './bank-inbox.handlers';
 export const listBankInboxes = withFinanceRead(_listBankInboxes);
 export const createBankInbox = withPermission('import_bank_data', _createBankInbox);
@@ -308,10 +309,13 @@ export const toggleBankInbox = withPermission('import_bank_data', _toggleBankInb
 export const testBankInbox   = withPermission('import_bank_data', _testBankInbox);
 export const runBankInboxNow = withPermission('import_bank_data', _runBankInboxNow);
 export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes);
+export const rescanBankInbox = withPermission('import_bank_data', _rescanBankInbox);
+export const listSkippedEmails = withFinanceRead(_listSkippedEmails);
 
 // ─── Cron-driven bank inbox poll ──────────────────────────────
 // X-Cron-Secret auth — NOT a user session.
 export { pollBankInboxesFromCron } from './cron-bank-inbox.handlers';
+export { pollReceiptInboxesFromCron } from './cron-receipt-inbox.handlers';
 
 // ─── Exports (PR #12) — read ──────────────────────────────────
 import {

@@ -104,6 +104,7 @@ When creating a new module:
 
 - NEVER `git push` directly to `main`. Use a feature branch + PR.
 - Before pushing any branch, verify locally: `npx tsc --noEmit` (no TS1xxx errors) and `npm run build` (succeeds).
+- The build runs on GitHub Actions, not the VPS. The server unpacks a ready release into `releases/<sha>/` and flips a `current` symlink; it never runs `npm` and never compiles. `data/` and `.env` are host state, shared by every release — a release must never carry either.
 - If you see syntax errors after editing (mismatched quotes, broken JSX, missing brackets) — FIX before committing.
 - Activate the pre-commit hook once per clone: `bash scripts/setup-hooks.sh` (or `scripts\setup-hooks.cmd` on Windows).
 - See [docs/DEPLOY_SAFETY.md](docs/DEPLOY_SAFETY.md) for the full pipeline (CI, branch protection, deploy guards).

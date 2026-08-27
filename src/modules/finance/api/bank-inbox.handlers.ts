@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { encryptPassword, decryptPassword, checkInbox, type BankInboxConfig } from '../data/bank-inbox-engine';
+import { encryptPassword, decryptPassword, checkInbox, listSkipped, type BankInboxConfig } from '../data/bank-inbox-engine';
 import { ImapFlow } from 'imapflow';
 import { publicMessage } from '@core/security/public-error';
 
@@ -187,6 +187,99 @@ export async function runBankInboxNow(
     if (!inbox) return NextResponse.json({ error: 'Inbox not found' }, { status: 404 });
     const result = await checkInbox(db, inbox);
     return NextResponse.json({ ok: true, ...result });
+  } catch (e: any) {
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
+  }
+}
+
+/**
+ * Re-read a mailbox from an earlier point.
+ *
+ * The poller advances last_uid past every message it reads, including the ones
+ * it could not turn into operations — a statement that would not parse, would
+ * not validate, or arrived for an IBAN no account here matches. Those were
+ * skipped and never revisited, which is how a week of statements can go
+ * missing while the poll itself reports success every fifteen minutes.
+ *
+ * Nothing was lost: this code never deletes or flags a message, so they are all
+ * still sitting in IMAP. This re-reads them.
+ *
+ * Safe to run repeatedly. importStatement now skips any transaction whose
+ * source_ref is already posted, so a re-read tops up what is missing instead of
+ * doubling what is there.
+ *
+ * Body (all optional):
+ *   from_uid       start here instead of after last_uid
+ *   days           start from the oldest still-skipped email, or that many days
+ *                  of UIDs back if none are recorded
+ *   retry_skipped  default true — start at the lowest UID in the skipped list
+ */
+export async function rescanBankInbox(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await ctx.params;
+    const inbox = db.prepare("SELECT * FROM fin_bank_inboxes WHERE id = ?").get(id) as BankInboxConfig | undefined;
+    if (!inbox) return NextResponse.json({ error: 'Inbox not found' }, { status: 404 });
+
+    const body = await req.json().catch(() => ({} as any));
+    const skipped = listSkipped(db, id);
+
+    let fromUid: number | undefined;
+    if (typeof body.from_uid === 'number' && body.from_uid > 0) {
+      fromUid = Math.floor(body.from_uid);
+    } else if (body.retry_skipped !== false && skipped.length > 0) {
+      fromUid = Math.min(...skipped.map(r => r.uid));
+    } else if (typeof body.days === 'number' && body.days > 0) {
+      // UIDs are not dates, so this is deliberately blunt: step back a
+      // generous number of them and let the duplicate check absorb the
+      // overlap. Re-reading too much costs a little IMAP traffic; re-reading
+      // too little leaves the statement missing.
+      fromUid = Math.max(1, (inbox.last_uid || 0) - Math.ceil(body.days) * 20);
+    }
+
+    if (fromUid == null) {
+      return NextResponse.json({
+        ok: true,
+        rescanned: false,
+        message: 'Nothing recorded as skipped. Pass from_uid or days to re-read anyway.',
+        last_uid: inbox.last_uid,
+      });
+    }
+
+    const before = listSkipped(db, id).length;
+    const result = await checkInbox(db, inbox, { fromUid });
+    const after = listSkipped(db, id).length;
+
+    return NextResponse.json({
+      ok: true,
+      rescanned: true,
+      from_uid: fromUid,
+      last_uid_before: inbox.last_uid,
+      emails_read: result.newEmails,
+      imported: result.imported,
+      already_posted: result.skippedDuplicates,
+      still_unmatched: result.unmatched,
+      skipped_before: before,
+      skipped_after: after,
+      errors: result.errors,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
+  }
+}
+
+/** What the poller read but could not import — the recoverable backlog. */
+export async function listSkippedEmails(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await ctx.params;
+    return NextResponse.json({ ok: true, skipped: listSkipped(db, id) });
   } catch (e: any) {
     return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }
