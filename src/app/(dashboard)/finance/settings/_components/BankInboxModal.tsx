@@ -127,12 +127,21 @@ export default function BankInboxModal({ initial, onClose, onSave }: Props) {
               <option value="0">Ні</option>
             </select>
           </Field>
-          <Field label="Формат attach">
+          {/* Kept because the column exists and is written, but the engine has
+              never read it: it recognises XML, CSV and PDF from the attachment
+              itself. The old label said "auto (XML/CSV)", which read as "PDF is
+              not supported" and made an operator hesitate over a setting that
+              changes nothing. */}
+          <Field label="Формат вкладення">
             <select value={format} onChange={(e) => setFormat(e.target.value)} style={input}>
-              <option value="auto">auto (XML/CSV)</option>
+              <option value="auto">auto — XML, CSV і PDF</option>
               <option value="xml">XML (CAMT.053)</option>
               <option value="csv">CSV</option>
             </select>
+            <div style={hintStyle}>
+              Тип визначається за самим вкладенням, тож <code>auto</code> підходить
+              будь-якому банку. PDF розпізнається завжди.
+            </div>
           </Field>
         </div>
 
