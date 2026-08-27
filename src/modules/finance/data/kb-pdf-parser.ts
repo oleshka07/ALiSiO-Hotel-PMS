@@ -249,9 +249,9 @@ function extractCounterparty(rawLines: string[]): string | null {
  * detected). The bank-inbox-engine catch wraps the throw into result.errors
  * which then triggers the Telegram alert (see notifyParseFailure).
  */
-export async function parseKbPdf(buf: Buffer): Promise<ParsedStatement> {
+export async function parseKbPdf(buf: Buffer, password?: string): Promise<ParsedStatement> {
   ensurePdfWorker();
-  const parser = new PDFParse({ data: buf });
+  const parser = new PDFParse({ data: buf, ...(password ? { password } : {}) });
   const data = await parser.getText();
   const text = data.text || '';
 

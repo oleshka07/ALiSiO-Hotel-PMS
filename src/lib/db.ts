@@ -2032,6 +2032,21 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_inbox_org ON fin_bank_inboxes(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_inbox_active ON fin_bank_inboxes(is_active, last_synced_at)');
 
+  // Česká spořitelna sends its statements as password-protected PDFs — the
+  // password being the last four digits of the account holder's IČO, printed
+  // in the covering email. Without it the text extractor cannot open the file
+  // and the statement never reaches the parser. Encrypted with the same key as
+  // the mailbox password, so a database copy alone still opens nothing.
+  try {
+    const inboxCols = database.prepare("PRAGMA table_info(fin_bank_inboxes)").all() as { name: string }[];
+    if (!inboxCols.some(c => c.name === 'attachment_password_encrypted')) {
+      database.exec("ALTER TABLE fin_bank_inboxes ADD COLUMN attachment_password_encrypted TEXT");
+      console.log('[DB] fin_bank_inboxes: added attachment_password_encrypted');
+    }
+  } catch (e: any) {
+    console.error('[DB] could not add attachment_password_encrypted:', e?.message || e);
+  }
+
   // --- Finance PR #10: budgets (plan/fact) ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS fin_budgets (

@@ -71,6 +71,11 @@ Rules:
     Konečný zůstatek = closing balance
     Připsáno = credited
     Odepsáno = debited
+    Příchozí úhrada = incoming payment (credit)
+    Zaúčtováno = booked / effective date
+- Czech statements write thousands with a space and the decimal separator is
+  EITHER a comma or a dot depending on the bank: "43 369,27" and "43 369.27"
+  are the same number. An amount may carry an explicit leading + or -.
 
 Critical: the math must check out:
   opening_balance + sum(transactions.amount) ≈ closing_balance (±0.01)
@@ -118,6 +123,13 @@ export async function parseStatementWithLlm(
   pdfBuffer: Buffer,
   filename: string,
   uid?: number,
+  /**
+   * For banks that encrypt the attachment. Česká spořitelna uses the last four
+   * digits of the holder's IČO and prints it in the covering email; without it
+   * the text extractor throws and the statement is lost before any parsing
+   * begins.
+   */
+  password?: string,
 ): Promise<ParsedStatement> {
   // 1. Archive the raw PDF before doing anything else.
   let archivePath: string | null = null;
@@ -129,7 +141,7 @@ export async function parseStatementWithLlm(
 
   // 2. Extract text.
   ensurePdfWorker();
-  const parsed = await new PDFParse({ data: pdfBuffer }).getText();
+  const parsed = await new PDFParse({ data: pdfBuffer, ...(password ? { password } : {}) }).getText();
   const text = parsed.text || '';
   if (!text.trim()) {
     throw new Error('PDF text extraction returned empty');

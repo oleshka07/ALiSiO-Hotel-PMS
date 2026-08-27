@@ -13,8 +13,10 @@ function getOrgId(db: any): string {
 
 function maskedRow(row: any) {
   if (!row) return row;
-  const { imap_password_encrypted: _omit, ...rest } = row;
-  return { ...rest, has_password: !!_omit };
+  // Neither ciphertext leaves the server. The flags are enough for the form to
+  // show "set" and to leave the field blank rather than round-tripping secrets.
+  const { imap_password_encrypted: _omit, attachment_password_encrypted: _omit2, ...rest } = row;
+  return { ...rest, has_password: !!_omit, has_attachment_password: !!_omit2 };
 }
 
 export async function listBankInboxes(_req: NextRequest): Promise<NextResponse> {
@@ -39,6 +41,7 @@ export async function createBankInbox(req: NextRequest): Promise<NextResponse> {
       name, imap_host, imap_port = 993, imap_user, imap_password,
       imap_folder = 'INBOX', use_tls = true,
       sender_filter, subject_filter, attachment_format = 'auto',
+      attachment_password,
       is_active = true,
     } = body;
 
@@ -50,17 +53,26 @@ export async function createBankInbox(req: NextRequest): Promise<NextResponse> {
     try { encrypted = encryptPassword(imap_password); }
     catch (e: any) { return NextResponse.json({ error: `Encryption failed: ${e.message}` }, { status: 500 }); }
 
+    // Only some banks encrypt the attachment, so this stays optional.
+    let attachmentEncrypted: string | null = null;
+    if (attachment_password) {
+      try { attachmentEncrypted = encryptPassword(String(attachment_password)); }
+      catch (e: any) { return NextResponse.json({ error: `Encryption failed: ${e.message}` }, { status: 500 }); }
+    }
+
     const orgId = getOrgId(db);
     const id = `inbox_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     db.prepare(`
       INSERT INTO fin_bank_inboxes
         (id, organization_id, name, imap_host, imap_port, imap_user, imap_password_encrypted,
-         imap_folder, use_tls, sender_filter, subject_filter, attachment_format, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         imap_folder, use_tls, sender_filter, subject_filter, attachment_format,
+         attachment_password_encrypted, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, orgId, name.trim(), imap_host, imap_port, imap_user, encrypted,
       imap_folder, use_tls ? 1 : 0,
       sender_filter || null, subject_filter || null, attachment_format,
+      attachmentEncrypted,
       is_active ? 1 : 0,
     );
     const row = db.prepare("SELECT * FROM fin_bank_inboxes WHERE id = ?").get(id);
@@ -95,6 +107,11 @@ export async function updateBankInbox(
     if (body.imap_password) {
       fields.push('imap_password_encrypted = ?');
       params.push(encryptPassword(body.imap_password));
+    }
+    // An empty string clears it — a bank can stop encrypting its statements.
+    if (body.attachment_password !== undefined) {
+      fields.push('attachment_password_encrypted = ?');
+      params.push(body.attachment_password ? encryptPassword(String(body.attachment_password)) : null);
     }
     fields.push("updated_at = datetime('now')");
     if (fields.length === 1) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
