@@ -237,17 +237,39 @@ jobs:
 
             # A malformed secret does not stop the site, so nothing shouts about
             # it — the mailboxes simply go quiet and the operator finds out
-            # weeks later from a missing statement. Say it here, loudly, on
-            # every deploy.
+            # weeks later from a missing statement. Say it here, on every
+            # deploy. A warning only: this must never be able to stop a deploy,
+            # which is exactly what the first version of it did.
+            #
+            # Across every env file, not just .env. BANK_INBOX_SECRET lives in
+            # .env.local on this box; looking only in .env reported it missing
+            # when it was there all along.
+            #
+            # The `|| true` matters: grep exits 1 when it finds nothing, and
+            # under `set -o pipefail` that failure propagates out of the command
+            # substitution and `set -e` kills the script. That is how a check
+            # meant to warn about a missing secret aborted deploy 526 instead.
             for key in BANK_INBOX_SECRET CRON_SECRET; do
-              val=$(grep "^$key=" "$BASE/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')
-              count=$(grep -c "^$key=" "$BASE/.env" 2>/dev/null || true)
+              val=""
+              count=0
+              for base in .env .env.production .env.local .env.production.local; do
+                f="$BASE/$base"
+                [ -f "$f" ] || continue
+                hits=$(grep -c "^$key=" "$f" 2>/dev/null || true)
+                hits=${hits:-0}
+                count=$((count + hits))
+                if [ "$hits" -gt 0 ] && [ -z "$val" ]; then
+                  val=$(grep "^$key=" "$f" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]' || true)
+                fi
+              done
               if [ -z "$val" ]; then
-                echo "::warning::$key is missing from .env"
+                echo "::warning::$key is not set in any .env file — whatever depends on it will fail quietly"
               elif [ "$count" -gt 1 ]; then
-                echo "::warning::$key appears $count times in .env — dotenv reads the first, systemd the last"
+                echo "::warning::$key is defined $count times across the .env files — dotenv takes the first it finds"
               elif [ "$key" = "BANK_INBOX_SECRET" ] && ! printf '%s' "$val" | grep -qE '^[0-9a-fA-F]{64}$'; then
                 echo "::warning::BANK_INBOX_SECRET is ${#val} characters, not 64 hex — every mailbox will refuse to sync"
+              else
+                echo "Config: $key looks right"
               fi
             done
 
