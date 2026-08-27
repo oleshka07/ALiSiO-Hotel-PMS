@@ -15,6 +15,7 @@ export interface InboxFormValues {
   sender_filter?: string;
   subject_filter?: string;
   attachment_format: string;
+  attachment_password?: string;
   is_active?: boolean;
 }
 
@@ -36,6 +37,10 @@ export default function BankInboxModal({ initial, onClose, onSave }: Props) {
   const [sender, setSender] = useState(initial?.sender_filter || 'kb.cz');
   const [subject, setSubject] = useState(initial?.subject_filter || '');
   const [format, setFormat] = useState(initial?.attachment_format || 'auto');
+  // Česká spořitelna encrypts its PDFs; KB does not. Left blank the field
+  // changes nothing, so an existing inbox is never disturbed by opening it.
+  const [attachPw, setAttachPw] = useState('');
+  const [clearAttachPw, setClearAttachPw] = useState(false);
   const [isActive, setIsActive] = useState(initial ? !!initial.is_active : true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +63,8 @@ export default function BankInboxModal({ initial, onClose, onSave }: Props) {
         is_active: isActive,
       };
       if (password) values.imap_password = password;
+      if (attachPw) values.attachment_password = attachPw;
+      else if (clearAttachPw) values.attachment_password = '';
       await onSave(values);
     } catch (err: any) {
       setError(err.message);
@@ -139,6 +146,27 @@ export default function BankInboxModal({ initial, onClose, onSave }: Props) {
         <Field label="Subject filter (опц.)">
           <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} style={input} placeholder="напр. Výpis z účtu" />
           <div style={hintStyle}>Якщо вказано — обробляються тільки email з таким текстом у темі.</div>
+        </Field>
+
+        <div style={sectionDivider}>Пароль на вкладенні (тільки для банків, які шифрують PDF)</div>
+
+        <Field label={(initial as any)?.has_attachment_password ? 'Пароль PDF — збережений, введіть новий щоб змінити' : 'Пароль PDF (опц.)'}>
+          <input
+            type="text" value={attachPw} onChange={(e) => { setAttachPw(e.target.value); setClearAttachPw(false); }}
+            style={input} placeholder="напр. 7031" autoComplete="off"
+          />
+          <div style={hintStyle}>
+            Česká spořitelna надсилає виписки як захищений PDF. Пароль — останні 4 цифри IČO
+            власника рахунку, він написаний у самому листі. KB та більшість інших банків
+            пароля не ставлять — тоді лишіть порожнім.
+          </div>
+          {(initial as any)?.has_attachment_password && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6 }}>
+              <input type="checkbox" checked={clearAttachPw}
+                onChange={(e) => { setClearAttachPw(e.target.checked); if (e.target.checked) setAttachPw(''); }} />
+              Прибрати збережений пароль
+            </label>
+          )}
         </Field>
 
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 12 }}>

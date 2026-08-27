@@ -333,6 +333,8 @@ export function parseKbCsv(csv: string): ParsedStatement {
 // ─────────────────────────────────────────────────────────────────
 
 export interface BankInboxConfig {
+  /** Set only for banks that send encrypted PDFs, e.g. Česká spořitelna. */
+  attachment_password_encrypted?: string | null;
   id: string;
   organization_id: string;
   name: string;
@@ -374,6 +376,16 @@ export interface CheckInboxOptions {
 export async function checkInbox(db: any, inbox: BankInboxConfig, opts: CheckInboxOptions = {}): Promise<CheckResult> {
   const result: CheckResult = { newEmails: 0, imported: 0, errors: [], unmatched: 0, skippedDuplicates: 0 };
   const password = decryptPassword(inbox.imap_password_encrypted);
+
+  // Only some banks encrypt the attachment, so a missing one is normal.
+  let attachmentPassword: string | undefined;
+  if (inbox.attachment_password_encrypted) {
+    try {
+      attachmentPassword = decryptPassword(inbox.attachment_password_encrypted);
+    } catch (e: any) {
+      result.errors.push(`attachment password could not be decrypted: ${e?.message || e}`);
+    }
+  }
 
   const client = new ImapFlow({
     host: inbox.imap_host,
@@ -428,13 +440,13 @@ export async function checkInbox(db: any, inbox: BankInboxConfig, opts: CheckInb
                 // the legacy KB-specific regex parser as a last resort.
                 if (process.env.OPENAI_API_KEY) {
                   try {
-                    stmt = await parseStatementWithLlm(att.content as Buffer, filename, msg.uid);
+                    stmt = await parseStatementWithLlm(att.content as Buffer, filename, msg.uid, attachmentPassword);
                   } catch (llmErr: any) {
                     console.log(`[BankInbox] LLM extractor failed (${llmErr.message}), falling back to regex parser`);
-                    stmt = await parseKbPdf(att.content as Buffer);
+                    stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
                   }
                 } else {
-                  stmt = await parseKbPdf(att.content as Buffer);
+                  stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
                 }
               }
             } catch (e: any) {

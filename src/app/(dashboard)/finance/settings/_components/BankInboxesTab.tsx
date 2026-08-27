@@ -16,6 +16,7 @@ export interface BankInbox {
   subject_filter: string | null;
   attachment_format: string;
   last_uid: number | null;
+  has_attachment_password?: boolean;
   last_synced_at: string | null;
   last_error: string | null;
   last_email_at: string | null;
