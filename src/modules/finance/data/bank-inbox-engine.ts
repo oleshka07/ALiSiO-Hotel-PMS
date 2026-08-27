@@ -15,10 +15,35 @@ import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 // Encryption (AES-256-GCM)
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Why this reports the length it found.
+ *
+ * The old message said only "must be 64-char hex", which is true of a missing
+ * variable, a variable with a stray carriage return, and a variable that got
+ * glued to the next line of .env by an `echo >>` into a file with no trailing
+ * newline. Those need completely different fixes, and the operator had no way
+ * to tell them apart — the mailboxes just went quiet.
+ *
+ * The value itself is never in the message: this text reaches the settings
+ * page and the Telegram alerts.
+ */
 function getKey(): Buffer {
-  const hex = process.env.BANK_INBOX_SECRET;
-  if (!hex || hex.length !== 64) {
-    throw new Error('BANK_INBOX_SECRET env variable must be 64-char hex (32 bytes). Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  // Surrounding whitespace is never part of a secret. A .env saved with CRLF
+  // endings produced a 65-character value and locked every mailbox out.
+  const hex = (process.env.BANK_INBOX_SECRET || '').trim();
+
+  if (!hex) {
+    throw new Error('BANK_INBOX_SECRET is not set. Mailbox passwords are encrypted with it and cannot be read without it.');
+  }
+  if (hex.length !== 64) {
+    throw new Error(
+      `BANK_INBOX_SECRET is ${hex.length} characters, expected exactly 64 hex. `
+      + 'A common cause is .env having no newline on its last line, so an appended '
+      + 'variable got glued onto the end of this one — check for another VAR= inside the value.'
+    );
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error('BANK_INBOX_SECRET is 64 characters but not hexadecimal — check it was not truncated or re-wrapped.');
   }
   return Buffer.from(hex, 'hex');
 }
@@ -44,6 +69,95 @@ export function decryptPassword(encrypted: string): string {
   decipher.setAuthTag(tag);
   const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
   return pt.toString('utf8');
+}
+
+/**
+ * Why a mailbox cannot be read, without touching the network.
+ *
+ * "must be 64-char hex" and "this password was encrypted with a different key"
+ * look identical from the settings page — every mailbox simply stops — but they
+ * are opposite problems. The first is a broken .env and the passwords are fine.
+ * The second means the secret was replaced, AES-GCM will never authenticate the
+ * stored ciphertext again, and every password has to be typed in once more.
+ * There is no way to guess which from the outside, so this answers it directly.
+ *
+ * Returns no secret and no password.
+ */
+export interface InboxCryptoDiagnosis {
+  secret: {
+    present: boolean;
+    length: number;
+    looks_hex: boolean;
+    ok: boolean;
+    problem: string | null;
+  };
+  inboxes: Array<{
+    id: string;
+    name: string;
+    imap_user: string;
+    is_active: number;
+    last_synced_at: string | null;
+    last_uid: number | null;
+    can_decrypt: boolean;
+    reason: string | null;
+  }>;
+  verdict: string;
+}
+
+export function diagnoseInboxCrypto(db: any): InboxCryptoDiagnosis {
+  const raw = (process.env.BANK_INBOX_SECRET || '').trim();
+  const looksHex = /^[0-9a-fA-F]+$/.test(raw);
+  let problem: string | null = null;
+  if (!raw) problem = 'BANK_INBOX_SECRET is not set';
+  else if (raw.length !== 64) problem = `BANK_INBOX_SECRET is ${raw.length} characters, expected 64`;
+  else if (!looksHex) problem = 'BANK_INBOX_SECRET is 64 characters but not hexadecimal';
+
+  const secret = { present: raw.length > 0, length: raw.length, looks_hex: looksHex, ok: problem === null, problem };
+
+  const rows = db.prepare(`
+    SELECT id, name, imap_user, is_active, last_synced_at, last_uid, imap_password_encrypted
+    FROM fin_bank_inboxes ORDER BY name
+  `).all() as any[];
+
+  const inboxes = rows.map(r => {
+    let can = false;
+    let reason: string | null = null;
+    if (!secret.ok) {
+      reason = 'cannot try — the secret itself is unusable';
+    } else if (!r.imap_password_encrypted) {
+      reason = 'no password stored';
+    } else {
+      try {
+        decryptPassword(r.imap_password_encrypted);
+        can = true;
+      } catch (e: any) {
+        // An auth-tag failure here means the ciphertext was produced by a
+        // different key. Nothing can recover it; the password must be re-entered.
+        reason = /Invalid encrypted payload format/.test(e?.message || '')
+          ? 'stored value is not in the expected iv:tag:ciphertext form'
+          : 'encrypted with a different BANK_INBOX_SECRET — this password must be re-entered';
+      }
+    }
+    return {
+      id: r.id, name: r.name, imap_user: r.imap_user, is_active: r.is_active,
+      last_synced_at: r.last_synced_at, last_uid: r.last_uid,
+      can_decrypt: can, reason,
+    };
+  });
+
+  const bad = inboxes.filter(i => !i.can_decrypt).length;
+  let verdict: string;
+  if (!secret.ok) {
+    verdict = `${problem}. Fix .env and no password needs re-entering — they are still valid.`;
+  } else if (bad === 0) {
+    verdict = 'The secret is valid and every stored password decrypts.';
+  } else if (bad === inboxes.length) {
+    verdict = 'The secret is well-formed but decrypts nothing — it was replaced. Every password has to be entered again.';
+  } else {
+    verdict = `${bad} of ${inboxes.length} passwords were encrypted with a different secret and must be re-entered.`;
+  }
+
+  return { secret, inboxes, verdict };
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -147,7 +147,9 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           envs: PRICELABS_API_KEY,GH_SHA
-          command_timeout: 15m
+          # The work itself takes about a minute. A longer window only means a
+          # hung session burns Actions minutes before anyone finds out.
+          command_timeout: 8m
           script: |
             set -euo pipefail
 
@@ -179,11 +181,47 @@ jobs:
             # it instead of replacing it, so a release that shipped a data/
             # folder ended up running against its own copy of the database
             # while looking entirely healthy.
-            rm -rf "$REL/data" "$REL/.env"
-            ln -sfn "$BASE/.env" "$REL/.env"
+            rm -rf "$REL/data"
+
+            # EVERY .env* file, not just .env.
+            #
+            # The old unit ran `next start` from $BASE, and Next's dotenv reads
+            # .env.production.local, .env.local, .env.production and .env — in
+            # that order. Linking only .env silently dropped whatever lived in
+            # the others. BANK_INBOX_SECRET was one of them: the mailboxes
+            # started answering "must be 64-char hex" the moment the switch
+            # happened, having never been touched.
+            # Named explicitly, never globbed. A glob over .env.* on this box
+            # also matches .env.example (placeholder values) and
+            # .env.local.save (a backup from July holding an older secret) —
+            # and .env.local.save sorts after .env.local, so it would have
+            # overwritten the good secret with a stale one. Only the four files
+            # Next's dotenv actually reads belong here.
+            ENV_FILES=""
+            for base in .env .env.production .env.local .env.production.local; do
+              [ -f "$BASE/$base" ] || continue
+              rm -rf "$REL/$base"
+              ln -sfn "$BASE/$base" "$REL/$base"
+              ENV_FILES="$ENV_FILES$base "
+            done
+            echo "Env files linked into the release: ${ENV_FILES:-(none)}"
 
             # ── Sync secrets from GitHub into .env ────────────────────────
             touch "$BASE/.env"
+
+            # `echo >> .env` on a file whose last line has no newline glues the
+            # two together. That is not hypothetical: it turns
+            #   BANK_INBOX_SECRET=<64 hex>
+            # into
+            #   BANK_INBOX_SECRET=<64 hex>CRON_SECRET=...
+            # and the app then refuses every mailbox with "must be 64-char hex",
+            # having never touched the mailbox at all. Close the file properly
+            # before appending anything to it.
+            if [ -s "$BASE/.env" ] && [ -n "$(tail -c1 "$BASE/.env")" ]; then
+              echo "[setup] .env had no trailing newline — adding one before appending"
+              printf '\n' >> "$BASE/.env"
+            fi
+
             if ! grep -q '^CRON_SECRET=' "$BASE/.env" 2>/dev/null; then
               echo "CRON_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> "$BASE/.env"
               echo "[setup] generated CRON_SECRET"
@@ -197,14 +235,41 @@ jobs:
               echo "[setup] PRICELABS_API_KEY synced"
             fi
 
+            # A malformed secret does not stop the site, so nothing shouts about
+            # it — the mailboxes simply go quiet and the operator finds out
+            # weeks later from a missing statement. Say it here, loudly, on
+            # every deploy.
+            for key in BANK_INBOX_SECRET CRON_SECRET; do
+              val=$(grep "^$key=" "$BASE/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')
+              count=$(grep -c "^$key=" "$BASE/.env" 2>/dev/null || true)
+              if [ -z "$val" ]; then
+                echo "::warning::$key is missing from .env"
+              elif [ "$count" -gt 1 ]; then
+                echo "::warning::$key appears $count times in .env — dotenv reads the first, systemd the last"
+              elif [ "$key" = "BANK_INBOX_SECRET" ] && ! printf '%s' "$val" | grep -qE '^[0-9a-fA-F]{64}$'; then
+                echo "::warning::BANK_INBOX_SECRET is ${#val} characters, not 64 hex — every mailbox will refuse to sync"
+              fi
+            done
+
             # ── Prove the release runs, before anything live is touched ───
             #
             # Against a COPY of the database: this process opens the same file
             # the live site is serving from, and runs the schema migrations on
             # startup. Two processes migrating the same file at once is not a
             # risk worth taking to save copying three megabytes.
+            #
+            # Only the database file. data/uploads holds the guests' passport
+            # scans and grows for ever; copying all of it on every deploy is
+            # slow on a small box, doubles the disk those documents occupy, and
+            # duplicates identity documents that should exist in exactly one
+            # place. The health check reads two pages and touches none of them,
+            # so it gets an empty directory instead.
             rm -rf "$BASE/.smoke-data"
-            cp -a "$BASE/data" "$BASE/.smoke-data"
+            mkdir -p "$BASE/.smoke-data/uploads"
+            for f in "$BASE"/data/alisio.db*; do
+              [ -e "$f" ] && cp -a "$f" "$BASE/.smoke-data/"
+            done
+            echo "Smoke copy: $(du -sh "$BASE/.smoke-data" | cut -f1) (database only)"
             rm -rf "$REL/data"
             ln -sfn "$BASE/.smoke-data" "$REL/data"
 
@@ -293,6 +358,18 @@ jobs:
             # Rewritten only when it differs, and the old one is kept next to
             # it so the rollback below can put it back.
             UNIT=/etc/systemd/system/alisio-pms.service
+            # One EnvironmentFile= line per .env* file, so systemd sees what
+            # dotenv sees. The leading '-' keeps a missing file from failing the
+            # unit. Belt and braces: whichever of the two paths ends up being
+            # the one that works, the variables are there.
+            # Same explicit list, and in dotenv's own precedence order so the
+            # last line wins the same way dotenv's first match does.
+            ENV_FILE_LINES=""
+            for base in .env .env.production .env.local .env.production.local; do
+              [ -f "$BASE/$base" ] && ENV_FILE_LINES="${ENV_FILE_LINES}EnvironmentFile=-$BASE/$base"$'\n'
+            done
+            ENV_FILE_LINES=${ENV_FILE_LINES%$'\n'}
+
             NEW_UNIT=$(cat <<UNITEOF
             [Unit]
             Description=ALiSiO PMS
@@ -304,7 +381,7 @@ jobs:
             ExecStart=$NODE_BIN server.js
             Environment=NODE_ENV=production
             Environment=PORT=$LIVE_PORT
-            EnvironmentFile=-$BASE/.env
+            $ENV_FILE_LINES
             Restart=always
             RestartSec=3
             StandardOutput=journal
@@ -357,6 +434,28 @@ jobs:
 
             echo "Live on $LIVE_PORT — $GH_SHA"
 
+            # Does the running service actually have the configuration?
+            #
+            # NOT by reading /proc/PID/environ. That shows only the environment
+            # the process was handed at exec time; everything Next's dotenv
+            # loads from .env* is set inside the process afterwards and never
+            # appears there. Checking it that way reports every dotenv variable
+            # as missing — which is exactly the false alarm that sent this
+            # investigation down the wrong path.
+            #
+            # Ask the application instead. The registration bridge answers 503
+            # when its token is unset and 401 when it is set but wrong, so one
+            # unauthenticated request tells us whether configuration reached the
+            # code, without a session and without revealing anything.
+            BRIDGE=$(curl -s -o /dev/null -m 10 -w '%{http_code}' \
+              -H 'Authorization: Bearer probe-not-a-real-token' \
+              "http://127.0.0.1:$LIVE_PORT/api/registration/telegram-bridge" || true)
+            case "$BRIDGE" in
+              401) echo "Configuration: reaching the app (bridge answered 401)" ;;
+              503) echo "::warning::TELEGRAM_BRIDGE_TOKEN is not reaching the app — check that every .env* file is linked into the release" ;;
+              *)   echo "Configuration check inconclusive (bridge answered $BRIDGE)" ;;
+            esac
+
             # ── Housekeeping ──────────────────────────────────────────────
             # Keep the three most recent releases: the running one, the one to
             # roll back to, and one spare. Everything older is dead weight.
@@ -400,4 +499,13 @@ jobs:
             ) | crontab -
             echo "[setup] crontabs refreshed"
 
-            systemctl status alisio-pms --no-pager | head -12
+            systemctl --no-pager --lines=0 status alisio-pms || true
+
+            # Deploy 525 did all of this in 19 seconds and then sat there until
+            # the 15-minute timeout killed it, so the run went red over work
+            # that had entirely succeeded. Something was still holding the ssh
+            # channel open. Leave nothing behind and say goodbye explicitly.
+            pkill -9 -f -- '--pms-smoke-' 2>/dev/null || true
+            rm -rf "$BASE/.smoke-data"
+            echo "Done."
+            exit 0

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { encryptPassword, decryptPassword, checkInbox, listSkipped, type BankInboxConfig } from '../data/bank-inbox-engine';
+import { encryptPassword, decryptPassword, checkInbox, listSkipped, diagnoseInboxCrypto, type BankInboxConfig } from '../data/bank-inbox-engine';
 import { ImapFlow } from 'imapflow';
 import { publicMessage } from '@core/security/public-error';
 
@@ -280,6 +280,15 @@ export async function listSkippedEmails(
     const db = getDb();
     const { id } = await ctx.params;
     return NextResponse.json({ ok: true, skipped: listSkipped(db, id) });
+  } catch (e: any) {
+    return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
+  }
+}
+
+/** Why the mailboxes stopped: a broken .env, or a replaced secret. */
+export async function diagnoseBankInboxes(_req: NextRequest): Promise<NextResponse> {
+  try {
+    return NextResponse.json({ ok: true, ...diagnoseInboxCrypto(getDb()) });
   } catch (e: any) {
     return NextResponse.json({ error: publicMessage(e) }, { status: 500 });
   }

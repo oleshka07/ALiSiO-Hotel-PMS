@@ -85,6 +85,17 @@ export default function BankInboxesTab() {
     }
   }
 
+  // Why the mailboxes stopped, when they have. A broken .env and a replaced
+  // secret look identical from here — everything simply goes quiet — but one is
+  // fixed by editing a file and the other means re-typing every password.
+  const [diag, setDiag] = useState<any>(null);
+  useEffect(() => {
+    fetch('/api/finance/bank-inboxes/diagnostics')
+      .then(r => r.json())
+      .then(d => { if (d.ok) setDiag(d); })
+      .catch(() => { /* a missing diagnosis must not break the page */ });
+  }, [items]);
+
   // Emails the poller read but could not import. last_uid moved past them, so
   // an ordinary "read now" will not go back for them — only a re-read will.
   const [skipped, setSkipped] = useState<Record<string, number>>({});
@@ -148,6 +159,38 @@ export default function BankInboxesTab() {
 
   return (
     <div>
+      {diag && (!diag.secret.ok || diag.inboxes.some((i: any) => !i.can_decrypt)) && (
+        <div style={{
+          marginBottom: 16, padding: 14, borderRadius: 8,
+          background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)',
+          color: 'var(--text-primary)', fontSize: 13, lineHeight: 1.5,
+        }}>
+          <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 6 }}>
+            <AlertCircle size={14} style={{ verticalAlign: -2 }} /> Скриньки не читаються
+          </div>
+          {!diag.secret.ok ? (
+            <>
+              <div><strong>{diag.secret.problem}</strong></div>
+              <div style={{ marginTop: 6 }}>
+                Паролі при цьому цілі — треба полагодити лише <code>.env</code> на сервері.
+                Часта причина: в кінці файлу немає переводу рядка, і дописана змінна
+                приклеїлась до кінця цієї. Перевір, чи немає всередині значення ще одного{' '}
+                <code>ЩОСЬ=</code>.
+              </div>
+            </>
+          ) : (
+            <>
+              <div><strong>{diag.verdict}</strong></div>
+              <div style={{ marginTop: 6 }}>
+                {diag.inboxes.filter((i: any) => !i.can_decrypt).map((i: any) => (
+                  <div key={i.id}>· {i.name} ({i.imap_user}) — {i.reason}</div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>Банк-приймач (IMAP)</h2>
         <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
