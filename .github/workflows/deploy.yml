@@ -434,33 +434,27 @@ jobs:
 
             echo "Live on $LIVE_PORT — $GH_SHA"
 
-            # Does the running service actually see the configuration?
+            # Does the running service actually have the configuration?
             #
-            # A missing variable does not stop the site — it stops one quiet
-            # corner of it, and nobody finds out until a statement is missing
-            # weeks later. That is exactly how this deploy broke the mailboxes:
-            # the old unit ran `next start`, whose dotenv reads .env.local and
-            # .env.production too, and the first release linked only .env.
-            # Names only; values never reach this log.
-            SVC_PID=$(systemctl show -p MainPID --value alisio-pms 2>/dev/null || echo 0)
-            if [ "${SVC_PID:-0}" -gt 0 ] && [ -r "/proc/$SVC_PID/environ" ]; then
-              MISSING=""
-              for base in .env .env.production .env.local .env.production.local; do
-                f="$BASE/$base"
-                [ -f "$f" ] || continue
-                while IFS= read -r key; do
-                  [ -n "$key" ] || continue
-                  tr '\0' '\n' < "/proc/$SVC_PID/environ" | grep -q "^$key=" || MISSING="$MISSING $key"
-                done < <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$f" | tr -d '=' | sort -u)
-              done
-              if [ -n "$MISSING" ]; then
-                echo "::warning::The service cannot see these configured variables:$MISSING"
-                echo "  They are in a .env* file but did not reach the process. Anything"
-                echo "  depending on them will fail quietly."
-              else
-                echo "Configuration: every variable in .env* is visible to the service"
-              fi
-            fi
+            # NOT by reading /proc/PID/environ. That shows only the environment
+            # the process was handed at exec time; everything Next's dotenv
+            # loads from .env* is set inside the process afterwards and never
+            # appears there. Checking it that way reports every dotenv variable
+            # as missing — which is exactly the false alarm that sent this
+            # investigation down the wrong path.
+            #
+            # Ask the application instead. The registration bridge answers 503
+            # when its token is unset and 401 when it is set but wrong, so one
+            # unauthenticated request tells us whether configuration reached the
+            # code, without a session and without revealing anything.
+            BRIDGE=$(curl -s -o /dev/null -m 10 -w '%{http_code}' \
+              -H 'Authorization: Bearer probe-not-a-real-token' \
+              "http://127.0.0.1:$LIVE_PORT/api/registration/telegram-bridge" || true)
+            case "$BRIDGE" in
+              401) echo "Configuration: reaching the app (bridge answered 401)" ;;
+              503) echo "::warning::TELEGRAM_BRIDGE_TOKEN is not reaching the app — check that every .env* file is linked into the release" ;;
+              *)   echo "Configuration check inconclusive (bridge answered $BRIDGE)" ;;
+            esac
 
             # ── Housekeeping ──────────────────────────────────────────────
             # Keep the three most recent releases: the running one, the one to
