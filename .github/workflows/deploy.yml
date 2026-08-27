@@ -295,12 +295,42 @@ jobs:
             rm -rf "$REL/data"
             ln -sfn "$BASE/.smoke-data" "$REL/data"
 
-            # The extra argv is a handle, nothing more: node ignores it, and it
-            # makes this one process findable by name. Looking the pid up from
-            # the listening socket instead left the smoke server running after
-            # every deploy — ss does not always report a pid, and a stray Node
-            # holding a few hundred MB is the last thing a 4 GB box needs.
-            SMOKE_TAG="pms-smoke-$GH_SHA"
+            # Whatever is still listening on the smoke port has to go before we
+            # start ours, or its reply would be mistaken for the new release
+            # answering. By PORT, never by `pkill -f`: drone-ssh runs this whole
+            # script as an argument to a shell, so its text is in that shell's
+            # command line — a pattern naming the smoke server matched the
+            # deploy itself and killed it. Deploy 527 died that way, signal 9,
+            # by its own hand.
+            free_smoke_port() {
+              local pid cmd cwd
+              pid=$(ss -lptnH "sport = :$SMOKE_PORT" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)
+              if [ -z "${pid:-}" ] && command -v fuser >/dev/null 2>&1; then
+                pid=$(fuser "$SMOKE_PORT/tcp" 2>/dev/null | tr -d ' ' || true)
+              fi
+              # Must come before any /proc read: with an empty pid the path
+              # collapses to /proc/cmdline, which is the kernel's boot line, and
+              # the checks below would be judging that instead.
+              [ -n "${pid:-}" ] || return 0
+
+              cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+              cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+
+              # Next renames the process to "next-server (v16.1.6)", so the
+              # command line says nothing about server.js — matching on that
+              # alone identified nothing. The working directory is the reliable
+              # tell: a release server sits inside releases/.
+              case "$cmd|$cwd" in
+                *next-server*|*"$BASE/releases"*|*server.js*)
+                  echo "  freeing port $SMOKE_PORT (pid $pid, left over from an earlier deploy)"
+                  kill -9 "$pid" 2>/dev/null || true
+                  sleep 1
+                  ;;
+                *)
+                  echo "::warning::Port $SMOKE_PORT is held by pid $pid ($cmd), which is not a release server — leaving it alone"
+                  ;;
+              esac
+            }
 
             # Nothing else may be listening there. A leftover process would
             # answer the health check and the deploy would report success
@@ -312,8 +342,8 @@ jobs:
             # a free port every time.
             port_busy() { [ "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT/checkin" || true)" != "000" ]; }
             if port_busy; then
-              echo "Port $SMOKE_PORT is occupied — clearing stale smoke servers"
-              pkill -9 -f -- '--pms-smoke-' 2>/dev/null || true
+              echo "Port $SMOKE_PORT is occupied — clearing it"
+              free_smoke_port
               sleep 2
               if port_busy; then
                 echo "Port $SMOKE_PORT is still in use. Refusing to run a health"
@@ -324,13 +354,15 @@ jobs:
 
             echo "Starting the new release on port $SMOKE_PORT…"
             : > /tmp/pms-smoke.log
-            ( cd "$REL" && PORT=$SMOKE_PORT HOSTNAME=127.0.0.1 \
-                PMS_SMOKE_TEST=1 NODE_ENV=production \
-                setsid "$NODE_BIN" server.js "--$SMOKE_TAG" > /tmp/pms-smoke.log 2>&1 < /dev/null & )
+            cd "$REL"
+            PORT=$SMOKE_PORT HOSTNAME=127.0.0.1 PMS_SMOKE_TEST=1 NODE_ENV=production \
+              nohup "$NODE_BIN" server.js > /tmp/pms-smoke.log 2>&1 < /dev/null &
+            SMOKE_PID=$!
+            cd - >/dev/null
 
             stop_smoke() {
-              pkill -9 -f -- "--$SMOKE_TAG" 2>/dev/null || true
-              sleep 1
+              [ -n "${SMOKE_PID:-}" ] && kill -9 "$SMOKE_PID" 2>/dev/null || true
+              free_smoke_port
               rm -rf "$BASE/.smoke-data" "$REL/data"
               ln -sfn "$BASE/data" "$REL/data"
             }
@@ -506,7 +538,19 @@ jobs:
             touch /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
             chmod 644 /var/log/pms-cron-bank.log /var/log/pms-cron-receipt.log /var/log/pms-cron-pricelabs.log
 
-            CRON_HDR="X-Cron-Secret: \$(grep ^CRON_SECRET $BASE/.env | cut -d= -f2)"
+            # From the file the service actually takes it from, not blindly from
+            # .env. systemd applies EnvironmentFile lines in order and the last
+            # one wins, so when CRON_SECRET is defined in more than one file —
+            # and on this box it is — reading .env would hand cron a different
+            # value than the app checks against. Every cron call would answer
+            # 401 and the mailbox polling would stop again, silently, exactly
+            # the way it did before.
+            CRON_SRC="$BASE/.env"
+            for base in .env .env.production .env.local .env.production.local; do
+              [ -f "$BASE/$base" ] && grep -q '^CRON_SECRET=' "$BASE/$base" 2>/dev/null && CRON_SRC="$BASE/$base"
+            done
+            echo "[setup] cron reads CRON_SECRET from $(basename "$CRON_SRC")"
+            CRON_HDR="X-Cron-Secret: \$(grep ^CRON_SECRET $CRON_SRC | head -1 | cut -d= -f2-)"
             BANK_CRON="*/15 * * * * curl -fsS -X POST -H \"$CRON_HDR\" http://localhost:$LIVE_PORT/api/cron/poll-bank-inboxes >> /var/log/pms-cron-bank.log 2>&1"
             # Forwarded invoices had no cron at all — their only automatic path
             # was a tick inside getDb() that needed someone to load a page, and
@@ -527,7 +571,7 @@ jobs:
             # the 15-minute timeout killed it, so the run went red over work
             # that had entirely succeeded. Something was still holding the ssh
             # channel open. Leave nothing behind and say goodbye explicitly.
-            pkill -9 -f -- '--pms-smoke-' 2>/dev/null || true
+            free_smoke_port
             rm -rf "$BASE/.smoke-data"
             echo "Done."
             exit 0
