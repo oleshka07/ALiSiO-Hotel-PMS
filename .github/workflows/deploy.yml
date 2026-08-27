@@ -147,7 +147,9 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           envs: PRICELABS_API_KEY,GH_SHA
-          command_timeout: 15m
+          # The work itself takes about a minute. A longer window only means a
+          # hung session burns Actions minutes before anyone finds out.
+          command_timeout: 8m
           script: |
             set -euo pipefail
 
@@ -441,4 +443,13 @@ jobs:
             ) | crontab -
             echo "[setup] crontabs refreshed"
 
-            systemctl status alisio-pms --no-pager | head -12
+            systemctl --no-pager --lines=0 status alisio-pms || true
+
+            # Deploy 525 did all of this in 19 seconds and then sat there until
+            # the 15-minute timeout killed it, so the run went red over work
+            # that had entirely succeeded. Something was still holding the ssh
+            # channel open. Leave nothing behind and say goodbye explicitly.
+            pkill -9 -f -- '--pms-smoke-' 2>/dev/null || true
+            rm -rf "$BASE/.smoke-data"
+            echo "Done."
+            exit 0
