@@ -191,12 +191,17 @@ jobs:
             # the others. BANK_INBOX_SECRET was one of them: the mailboxes
             # started answering "must be 64-char hex" the moment the switch
             # happened, having never been touched.
+            # Named explicitly, never globbed. A glob over .env.* on this box
+            # also matches .env.example (placeholder values) and
+            # .env.local.save (a backup from July holding an older secret) —
+            # and .env.local.save sorts after .env.local, so it would have
+            # overwritten the good secret with a stale one. Only the four files
+            # Next's dotenv actually reads belong here.
             ENV_FILES=""
-            for f in "$BASE"/.env "$BASE"/.env.*; do
-              [ -f "$f" ] || continue
-              base=$(basename "$f")
+            for base in .env .env.production .env.local .env.production.local; do
+              [ -f "$BASE/$base" ] || continue
               rm -rf "$REL/$base"
-              ln -sfn "$f" "$REL/$base"
+              ln -sfn "$BASE/$base" "$REL/$base"
               ENV_FILES="$ENV_FILES$base "
             done
             echo "Env files linked into the release: ${ENV_FILES:-(none)}"
@@ -357,9 +362,11 @@ jobs:
             # dotenv sees. The leading '-' keeps a missing file from failing the
             # unit. Belt and braces: whichever of the two paths ends up being
             # the one that works, the variables are there.
+            # Same explicit list, and in dotenv's own precedence order so the
+            # last line wins the same way dotenv's first match does.
             ENV_FILE_LINES=""
-            for f in "$BASE"/.env "$BASE"/.env.*; do
-              [ -f "$f" ] && ENV_FILE_LINES="${ENV_FILE_LINES}EnvironmentFile=-$f"$'\n'
+            for base in .env .env.production .env.local .env.production.local; do
+              [ -f "$BASE/$base" ] && ENV_FILE_LINES="${ENV_FILE_LINES}EnvironmentFile=-$BASE/$base"$'\n'
             done
             ENV_FILE_LINES=${ENV_FILE_LINES%$'\n'}
 
@@ -438,7 +445,8 @@ jobs:
             SVC_PID=$(systemctl show -p MainPID --value alisio-pms 2>/dev/null || echo 0)
             if [ "${SVC_PID:-0}" -gt 0 ] && [ -r "/proc/$SVC_PID/environ" ]; then
               MISSING=""
-              for f in "$BASE"/.env "$BASE"/.env.*; do
+              for base in .env .env.production .env.local .env.production.local; do
+                f="$BASE/$base"
                 [ -f "$f" ] || continue
                 while IFS= read -r key; do
                   [ -n "$key" ] || continue
