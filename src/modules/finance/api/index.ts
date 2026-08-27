@@ -300,6 +300,7 @@ import {
   testBankInbox as _testBankInbox, runBankInboxNow as _runBankInboxNow,
   runAllInboxes as _runAllInboxes,
   rescanBankInbox as _rescanBankInbox, listSkippedEmails as _listSkippedEmails,
+  diagnoseBankInboxes as _diagnoseBankInboxes,
 } from './bank-inbox.handlers';
 export const listBankInboxes = withFinanceRead(_listBankInboxes);
 export const createBankInbox = withPermission('import_bank_data', _createBankInbox);
@@ -311,6 +312,7 @@ export const runBankInboxNow = withPermission('import_bank_data', _runBankInboxN
 export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes);
 export const rescanBankInbox = withPermission('import_bank_data', _rescanBankInbox);
 export const listSkippedEmails = withFinanceRead(_listSkippedEmails);
+export const diagnoseBankInboxes = withFinanceRead(_diagnoseBankInboxes);
 
 // ─── Cron-driven bank inbox poll ──────────────────────────────
 // X-Cron-Secret auth — NOT a user session.
