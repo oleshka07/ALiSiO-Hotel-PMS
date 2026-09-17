@@ -230,12 +230,23 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
     return best as OcrResult;
   }
 
-  // Passport scans do not go to a third party unless somebody deliberately
-  // turns it on. Every foreigner who has to be reported carries a document
-  // with a machine-readable zone — a passport on the photo page, an identity
-  // card on the back — so the answer to a failed read is a better photograph,
-  // not a copy of the document in somebody else's data centre.
-  if (process.env.OCR_CLOUD_FALLBACK !== '1') {
+  // Everything above stays on this machine. This does not: the image goes to
+  // OpenAI. It is on by default because a document without a readable strip —
+  // a driving licence, the front of an identity card, a bad photograph — would
+  // otherwise not be read at all.
+  //
+  // Set OCR_CLOUD_FALLBACK=0 to switch it off once the local read is trusted
+  // to cover enough of the documents that actually arrive. The line below is
+  // deliberately easy to count in the log, so that decision can be made on
+  // numbers rather than on a feeling:
+  //
+  //   journalctl -u alisio-pms | grep -c 'OCR.*sending document to OpenAI'
+  //
+  const cloudAllowed = !['0', 'false', 'off'].includes(
+    (process.env.OCR_CLOUD_FALLBACK || '').toLowerCase(),
+  );
+
+  if (!cloudAllowed) {
     console.log('[OCR] No MRZ found; cloud fallback is off — document not read');
     return {
       firstName: '',
@@ -250,7 +261,7 @@ export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
     };
   }
 
-  console.log('[OCR] No MRZ recovered locally. Falling back to OpenAI...');
+  console.warn('[OCR] no MRZ locally — sending document to OpenAI');
 
   // Fallback to OpenAI
   const response = await getClient().chat.completions.create({
