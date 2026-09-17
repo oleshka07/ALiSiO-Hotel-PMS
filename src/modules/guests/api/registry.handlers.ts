@@ -219,6 +219,7 @@ export async function exportRegistryUnl(request: NextRequest): Promise<NextRespo
         records: result.records,
         ids: exportedIds,
         problems: result.problems,
+        warnings: result.warnings,
       });
     }
 
@@ -229,6 +230,7 @@ export async function exportRegistryUnl(request: NextRequest): Promise<NextRespo
           candidates: entries.length,
           records: result.records,
           problems: result.problems,
+          warnings: result.warnings,
         },
         { status: 422 },
       );

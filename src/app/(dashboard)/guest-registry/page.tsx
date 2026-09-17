@@ -21,6 +21,7 @@ interface UnlDryRun {
   records: number;
   ids: string[];
   problems: UnlProblem[];
+  warnings: UnlProblem[];
 }
 
 function firstOfPreviousMonths(n: number): string {
@@ -579,6 +580,19 @@ export default function GuestRegistryPage() {
                     </div>
                   )}
 
+                  {unlDry.warnings?.length > 0 && (
+                    <div className="unl-warnings">
+                      <h4><AlertTriangle size={15} /> Odesláno, ale s výhradou</h4>
+                      <ul>
+                        {unlDry.warnings.map((w, i) => (
+                          <li key={`${w.id}-w${i}`}>
+                            <strong>{w.name}</strong> · {w.field} — {w.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {!unlDownloaded ? (
                     <button className="unl-download" onClick={downloadUnl} disabled={unlBusy || !unlDry.records}>
                       <Download size={16} />
@@ -839,6 +853,29 @@ export default function GuestRegistryPage() {
           font-size: 11px;
           color: #475569;
           margin-top: 2px;
+        }
+        .unl-warnings {
+          border: 1px solid #fde68a;
+          background: #fffbeb;
+          border-radius: 10px;
+          padding: 12px;
+          margin-bottom: 14px;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        .unl-warnings h4 {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 8px;
+          font-size: 13px;
+          color: #92400e;
+        }
+        .unl-warnings ul { margin: 0; padding-left: 18px; }
+        .unl-warnings li {
+          font-size: 12.5px;
+          line-height: 1.6;
+          color: #334155;
         }
         .unl-problems {
           border: 1px solid #fecaca;

@@ -72,15 +72,57 @@ export function sanitizeDoc(raw: string | null | undefined, max: number): string
   return String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, max);
 }
 
-/** §2.7 Bydliště: components joined by ", " (§3.3 field 11), max 255. */
-export function sanitizeAddress(raw: string | null | undefined): string {
-  if (!raw) return '';
-  return String(raw)
-    .replace(/[\r\n]+/g, ', ')
+/** §2.7 Bydliště: one component — street or city — cleaned to the allowed set. */
+function addressPart(raw: string): string {
+  return raw
     .replace(ADDRESS_RE, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 255);
+    .slice(0, 42);
+}
+
+export interface Residence {
+  value: string;
+  /** Why the field came out empty or shorter than the address we hold. */
+  note?: string;
+}
+
+/**
+ * §2.7 Trvalé bydliště v zahraničí — a composite of street, city and state,
+ * components separated by ", " (§3.3 field 11), the state written as the
+ * three-letter code, a hyphen and its Czech name from the codebook.
+ *
+ * "Pokud je uvedena ulice, musí být uvedeno město a stát. Pokud je uvedeno
+ * město, musí být uveden stát." We hold a single free-text address, so the
+ * state has to be recognised in it. When it cannot be, the field goes out
+ * EMPTY — §3.3 allows 0 characters — rather than as free text that would have
+ * the whole record rejected. The operator is told, so the address can be
+ * completed and the guest re-sent.
+ */
+export function buildResidence(raw: string | null | undefined): Residence {
+  const text = String(raw ?? '').replace(/[\r\n]+/g, ', ').trim();
+  if (!text) return { value: '' };
+
+  const parts = text.split(',').map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return { value: '' };
+
+  const stateCode = toUbyportState(parts[parts.length - 1]);
+  if (!stateCode) {
+    return { value: '', note: `у адресі «${text}» не розпізнано державу — поле лишено порожнім` };
+  }
+
+  const state = `${stateCode}-${UBYPORT_STATES[stateCode]}`;
+  const rest = parts.slice(0, -1).map(addressPart).filter((p) => p && !/^\d+$/.test(p));
+
+  // Street and city only; anything further (region, postcode) has no field of
+  // its own and would push the state out of last position.
+  const head = rest.slice(0, 2);
+  const dropped = rest.length - head.length;
+
+  const value = [...head, state].join(', ').slice(0, 255);
+  return dropped > 0
+    ? { value, note: `з адреси взято вулицю й місто, відкинуто зайві частини (${dropped})` }
+    : { value };
 }
 
 /** §3.3 Poznámka: any characters, "|" becomes "\". */
@@ -128,41 +170,278 @@ const ALPHA2_TO_ALPHA3: Record<string, string> = {
 };
 
 /**
- * The Kod3 column of the police's own `Staty` codebook, read from the web
- * service (`DejMiCiselnik('X', 'Staty')`) on 17.09.2026 — 256 entries.
+ * The police's own `Staty` codebook, read from the web service
+ * (`DejMiCiselnik('X', 'Staty')`) on 17.09.2026 — 256 entries, Kod3 and TextCZ.
  *
- * It is ISO 3166-1 alpha-3, so the mapping above agrees with it everywhere
+ * Kod3 is ISO 3166-1 alpha-3, so the mapping above agrees with it everywhere
  * except CZE, which is absent: this is a codebook of foreign nationalities and
  * a Czech is never reported to the foreign police. Nine codes are theirs
  * alone — XXA stateless, XXB/XXC refugee, XXK Kosovo, YUG, UNA/UNO, XGG, XMR.
  *
- * Note their Kod2 is NOT ISO alpha-2 — SK is Saint Kitts there, SI is the
- * Solomon Islands, GE is Equatorial Guinea. Nothing here may use it.
+ * Their Kod2 is NOT ISO alpha-2 — SK is Saint Kitts there, SI the Solomon
+ * Islands, GE Equatorial Guinea. Nothing here may use it.
+ *
+ * The Czech names are needed verbatim: §2.7 spells the state inside Bydliště
+ * as the three-letter code, a hyphen, and the name from this codebook.
  */
-const UBYPORT_STATES = new Set([
-  'ABW', 'AFG', 'AGO', 'AIA', 'ALA', 'ALB', 'AND', 'ARE', 'ARG', 'ARM', 'ASM', 'ATF',
-  'ATG', 'AUS', 'AUT', 'AZE', 'BDI', 'BEL', 'BEN', 'BES', 'BFA', 'BGD', 'BGR', 'BHR',
-  'BHS', 'BIH', 'BLM', 'BLR', 'BLZ', 'BMU', 'BOL', 'BRA', 'BRB', 'BRN', 'BTN', 'BVT',
-  'BWA', 'CAF', 'CAN', 'CCK', 'CHE', 'CHL', 'CHN', 'CIV', 'CMR', 'COD', 'COG', 'COK',
-  'COL', 'COM', 'CPV', 'CRI', 'CUB', 'CUW', 'CXR', 'CYM', 'CYP', 'DEU', 'DJI', 'DMA',
-  'DNK', 'DOM', 'DZA', 'ECU', 'EGY', 'ERI', 'ESH', 'ESP', 'EST', 'ETH', 'FIN', 'FJI',
-  'FLK', 'FRA', 'FRO', 'FSM', 'GAB', 'GBR', 'GEO', 'GGY', 'GHA', 'GIB', 'GIN', 'GLP',
-  'GMB', 'GNB', 'GNQ', 'GRC', 'GRD', 'GRL', 'GTM', 'GUF', 'GUM', 'GUY', 'HKG', 'HMD',
-  'HND', 'HRV', 'HTI', 'HUN', 'IDN', 'IMN', 'IND', 'IOT', 'IRL', 'IRN', 'IRQ', 'ISL',
-  'ISR', 'ITA', 'JAM', 'JEY', 'JOR', 'JPN', 'KAZ', 'KEN', 'KGZ', 'KHM', 'KIR', 'KNA',
-  'KOR', 'KWT', 'LAO', 'LBN', 'LBR', 'LBY', 'LCA', 'LIE', 'LKA', 'LSO', 'LTU', 'LUX',
-  'LVA', 'MAC', 'MAF', 'MAR', 'MCO', 'MDA', 'MDG', 'MDV', 'MEX', 'MHL', 'MKD', 'MLI',
-  'MLT', 'MMR', 'MNE', 'MNG', 'MNP', 'MOZ', 'MRT', 'MSR', 'MTQ', 'MUS', 'MWI', 'MYS',
-  'MYT', 'NAM', 'NCL', 'NER', 'NFK', 'NGA', 'NIC', 'NIU', 'NLD', 'NOR', 'NPL', 'NRU',
-  'NZL', 'OMN', 'PAK', 'PAN', 'PCN', 'PER', 'PHL', 'PLW', 'PNG', 'POL', 'PRI', 'PRK',
-  'PRT', 'PRY', 'PSE', 'PYF', 'QAT', 'REU', 'ROU', 'RUS', 'RWA', 'SAU', 'SDN', 'SEN',
-  'SGP', 'SGS', 'SHN', 'SJM', 'SLB', 'SLE', 'SLV', 'SMR', 'SOM', 'SPM', 'SRB', 'SSD',
-  'STP', 'SUR', 'SVK', 'SVN', 'SWE', 'SWZ', 'SXM', 'SYC', 'SYR', 'TCA', 'TCD', 'TGO',
-  'THA', 'TJK', 'TKL', 'TKM', 'TLS', 'TON', 'TTO', 'TUN', 'TUR', 'TUV', 'TWN', 'TZA',
-  'UGA', 'UKR', 'UMI', 'UNA', 'UNO', 'URY', 'USA', 'UZB', 'VAT', 'VCT', 'VEN', 'VGB',
-  'VIR', 'VNM', 'VUT', 'WLF', 'WSM', 'XGG', 'XMR', 'XXA', 'XXB', 'XXC', 'XXK', 'YEM',
-  'YUG', 'ZAF', 'ZMB', 'ZWE'
-]);
+const UBYPORT_STATES: Record<string, string> = {
+  ABW: 'Aruba',
+  AFG: 'Afghánská islámská republika',
+  AGO: 'Angolská republika',
+  AIA: 'Anguilla',
+  ALA: 'Provincie Alandy',
+  ALB: 'Albánská republika',
+  AND: 'Andorrské knížectví',
+  ARE: 'Stát Spojené arabské emiráty',
+  ARG: 'Argentinská republika',
+  ARM: 'Arménská republika',
+  ASM: 'Území Americká Samoa',
+  ATF: 'Teritorium Francouzská jižní a antarktická území',
+  ATG: 'Antigua a Barbuda',
+  AUS: 'Australské společenství',
+  AUT: 'Rakouská republika',
+  AZE: 'Ázerbájdžánská republika',
+  BDI: 'Burundská republika',
+  BEL: 'Belgické království',
+  BEN: 'Beninská republika',
+  BES: 'Bonaire, Svatý Eustach a Saba',
+  BFA: 'Burkina Faso',
+  BGD: 'Bangladéšská lidová republika',
+  BGR: 'Bulharská republika',
+  BHR: 'Království Bahrajn',
+  BHS: 'Bahamské společenství',
+  BIH: 'Bosna a Hercegovina',
+  BLM: 'Společenství Svatý Bartoloměj',
+  BLR: 'Běloruská republika',
+  BLZ: 'Belize',
+  BMU: 'Bermudy',
+  BOL: 'Mnohonárodní stát Bolívie',
+  BRA: 'Brazilská federativní republika',
+  BRB: 'Barbados',
+  BRN: 'Stát Brunej Darussalam',
+  BTN: 'Bhútánské království',
+  BVT: 'Bouvetův ostrov',
+  BWA: 'Botswanská republika',
+  CAF: 'Středoafrická republika',
+  CAN: 'Kanada',
+  CCK: 'Území Kokosové (Keelingovy) ostrovy',
+  CHE: 'Švýcarská konfederace',
+  CHL: 'Chilská republika',
+  CHN: 'Čínská lidová republika',
+  CIV: 'Republika Pobřeží slonoviny',
+  CMR: 'Kamerunská republika',
+  COD: 'Demokratická republika Kongo',
+  COG: 'Konžská republika',
+  COK: 'Cookovy ostrovy',
+  COL: 'Kolumbijská republika',
+  COM: 'Komorský svaz',
+  CPV: 'Kapverdská republika',
+  CRI: 'Kostarická republika',
+  CUB: 'Kubánská republika',
+  CUW: 'Curaçao',
+  CXR: 'Území Vánoční ostrov',
+  CYM: 'Kajmanské ostrovy',
+  CYP: 'Kyperská republika',
+  DEU: 'Spolková republika Německo',
+  DJI: 'Džibutská republika',
+  DMA: 'Dominické společenství',
+  DNK: 'Dánské království',
+  DOM: 'Dominikánská republika',
+  DZA: 'Alžírská demokratická a lidová republika',
+  ECU: 'Ekvádorská republika',
+  EGY: 'Egyptská arabská republika',
+  ERI: 'Stát Eritrea',
+  ESH: 'Saharská arabská demokratická republika',
+  ESP: 'Španělské království',
+  EST: 'Estonská republika',
+  ETH: 'Etiopská federativní demokratická republika',
+  FIN: 'Finská republika',
+  FJI: 'Fidžijská republika',
+  FLK: 'Falklandské ostrovy',
+  FRA: 'Francouzská republika',
+  FRO: 'Faerské ostrovy',
+  FSM: 'Federativní státy Mikronésie',
+  GAB: 'Gabonská republika',
+  GBR: 'Spojené království Velké Británie a Severního Irska',
+  GEO: 'Gruzie',
+  GGY: 'Bailiwick Guernsey',
+  GHA: 'Ghanská republika',
+  GIB: 'Gibraltar',
+  GIN: 'Guinejská republika',
+  GLP: 'Region Guadeloupe',
+  GMB: 'Gambijská republika',
+  GNB: 'Republika Guinea-Bissau',
+  GNQ: 'Republika Rovníková Guinea',
+  GRC: 'Řecká republika',
+  GRD: 'Grenadský stát',
+  GRL: 'Grónsko',
+  GTM: 'Guatemalská republika',
+  GUF: 'Region Francouzská Guayana',
+  GUM: 'Teritorium Guam',
+  GUY: 'Guyanská kooperativní republika',
+  HKG: 'Zvláštní administrativní oblast Čínské lidové rep. Hongkong',
+  HMD: 'Heardův ostrov a MacDonaldovy ostrovy',
+  HND: 'Honduraská republika',
+  HRV: 'Chorvatská republika',
+  HTI: 'Republika Haiti',
+  HUN: 'Maďarsko',
+  IDN: 'Indonéská republika',
+  IMN: 'Ostrov Man',
+  IND: 'Indická republika',
+  IOT: 'Britské území v Indickém oceánu',
+  IRL: 'Irsko',
+  IRN: 'Íránská islámská republika',
+  IRQ: 'Irácká republika',
+  ISL: 'Islandská republika',
+  ISR: 'Stát Izrael',
+  ITA: 'Italská republika',
+  JAM: 'Jamajka',
+  JEY: 'Bailiwick Jersey',
+  JOR: 'Jordánské hášimovské království',
+  JPN: 'Japonsko',
+  KAZ: 'Republika Kazachstán',
+  KEN: 'Keňská republika',
+  KGZ: 'Kyrgyzská republika',
+  KHM: 'Kambodžské království',
+  KIR: 'Republika Kiribati',
+  KNA: 'Federace Svatý Kryštof a Nevis',
+  KOR: 'Korejská republika',
+  KWT: 'Kuvajtský stát',
+  LAO: 'Laoská lidově demokratická republika',
+  LBN: 'Libanonská republika',
+  LBR: 'Liberijská republika',
+  LBY: 'Libyjský stát',
+  LCA: 'Svatá Lucie',
+  LIE: 'Lichtenštejnské knížectví',
+  LKA: 'Šrílanská demokratická socialistická republika',
+  LSO: 'Lesothské království',
+  LTU: 'Litevská republika',
+  LUX: 'Lucemburské velkovévodství',
+  LVA: 'Lotyšská republika',
+  MAC: 'Zvláštní administrativní oblast Čínské lidové rep. Macao',
+  MAF: 'Společenství Svatý Martin',
+  MAR: 'Marocké království',
+  MCO: 'Monacké knížectví',
+  MDA: 'Moldavská republika',
+  MDG: 'Madagaskarská republika',
+  MDV: 'Maledivská republika',
+  MEX: 'Spojené státy mexické',
+  MHL: 'Republika Marshallovy ostrovy',
+  MKD: 'Bývalá jugoslávská republika Makedonie',
+  MLI: 'Republika Mali',
+  MLT: 'Maltská republika',
+  MMR: 'Republika Myanmarský svaz',
+  MNE: 'Černá Hora',
+  MNG: 'Mongolsko',
+  MNP: 'Společenství Severní Mariany',
+  MOZ: 'Mosambická republika',
+  MRT: 'Mauritánská islámská republika',
+  MSR: 'Montserrat',
+  MTQ: 'Region Martinik',
+  MUS: 'Mauricijská republika',
+  MWI: 'Malawská republika',
+  MYS: 'Malajsie',
+  MYT: 'Departementní společenství Mayotte',
+  NAM: 'Namibijská republika',
+  NCL: 'Nová Kaledonie',
+  NER: 'Nigerská republika',
+  NFK: 'Území Norfolk',
+  NGA: 'Nigerijská federativní republika',
+  NIC: 'Nikaragujská republika',
+  NIU: 'Niue',
+  NLD: 'Nizozemsko',
+  NOR: 'Norské království',
+  NPL: 'Nepálská federativní demokratická republika',
+  NRU: 'Republika Nauru',
+  NZL: 'Nový Zéland',
+  OMN: 'Sultanát Omán',
+  PAK: 'Pákistánská islámská republika',
+  PAN: 'Panamská republika',
+  PCN: 'Pitcairnovy ostrovy',
+  PER: 'Peruánská republika',
+  PHL: 'Filipínská republika',
+  PLW: 'Republika Palau',
+  PNG: 'Nezávislý stát Papua Nová Guinea',
+  POL: 'Polská republika',
+  PRI: 'Portorické společenství',
+  PRK: 'Korejská lidově demokratická republika',
+  PRT: 'Portugalská republika',
+  PRY: 'Paraguayská republika',
+  PSE: 'Palestinská autonomní území',
+  PYF: 'Francouzská Polynésie',
+  QAT: 'Stát Katar',
+  REU: 'Region Réunion',
+  ROU: 'Rumunsko',
+  RUS: 'Ruská federace',
+  RWA: 'Rwandská republika',
+  SAU: 'Království Saúdská Arábie',
+  SDN: 'Súdánská republika',
+  SEN: 'Senegalská republika',
+  SGP: 'Singapurská republika',
+  SGS: 'Jižní Georgie a Jižní Sandwichovy ostrovy',
+  SHN: 'Svatá Helena,Ascension a Tristan da Cunha',
+  SJM: 'Špicberky a Jan Mayen',
+  SLB: 'Šalomounovy ostrovy',
+  SLE: 'Republika Sierra Leone',
+  SLV: 'Salvadorská republika',
+  SMR: 'Republika San Marino',
+  SOM: 'Somálská federativní republika',
+  SPM: 'Územní společenství Saint Pierre a Miquelon',
+  SRB: 'Srbská republika',
+  SSD: 'Jihosúdanská republika',
+  STP: 'Demokratická republika Svatý Tomáš a Princův ostrov',
+  SUR: 'Surinamská republika',
+  SVK: 'Slovenská republika',
+  SVN: 'Slovinská republika',
+  SWE: 'Švédské království',
+  SWZ: 'Svazijské království',
+  SXM: 'Svatý Martin (NL)',
+  SYC: 'Seychelská republika',
+  SYR: 'Syrská arabská republika',
+  TCA: 'Ostrovy Turks a Caicos',
+  TCD: 'Čadská republika',
+  TGO: 'Tožská republika',
+  THA: 'Thajské království',
+  TJK: 'Republika Tádžikistán',
+  TKL: 'Tokelau',
+  TKM: 'Turkmenistán',
+  TLS: 'Demokratická republika Východní Timor',
+  TON: 'Království Tonga',
+  TTO: 'Republika Trinidad a Tobago',
+  TUN: 'Tuniská republika',
+  TUR: 'Turecká republika',
+  TUV: 'Tuvalu',
+  TWN: 'Čínská republika (Tchaj-wan)',
+  TZA: 'Tanzanská sjednocená republika',
+  UGA: 'Ugandská republika',
+  UKR: 'Ukrajina',
+  UMI: 'Menší odlehlé ostrovy USA',
+  UNA: 'Agentura spojených národů',
+  UNO: 'Organizace spojených národů',
+  URY: 'Uruguayská východní republika',
+  USA: 'Spojené státy americké',
+  UZB: 'Republika Uzbekistán',
+  VAT: 'Vatikánský městský stát',
+  VCT: 'Svatý Vincenc a Grenadiny',
+  VEN: 'Bolívarovská republika Venezuela',
+  VGB: 'Britské Panenské ostrovy',
+  VIR: 'Americké Panenské ostrovy',
+  VNM: 'Vietnamská socialistická republika',
+  VUT: 'Republika Vanuatu',
+  WLF: 'Teritorium Wallisovy ostrovy a Futuna',
+  WSM: 'Nezávislý stát Samoa',
+  XGG: 'Guernsey',
+  XMR: 'Řád Maltézských Rytířů',
+  XXA: 'Bez státní příslušnosti - dle OSN',
+  XXB: 'uprchlík dle konvence 1951',
+  XXC: 'uprchlík ostatní',
+  XXK: 'Kosovská republika',
+  YEM: 'Jemenská republika',
+  YUG: 'Svazová republika Jugoslávie',
+  ZAF: 'Jihoafrická republika',
+  ZMB: 'Zambijská republika',
+  ZWE: 'Zimbabwská republika'
+};
 
 const ALPHA3 = new Set(Object.values(ALPHA2_TO_ALPHA3));
 
@@ -275,7 +554,7 @@ export function toIso3(raw: string | null | undefined): string | null {
  */
 export function toUbyportState(raw: string | null | undefined): string | null {
   const code = toIso3(raw);
-  return code && UBYPORT_STATES.has(code) ? code : null;
+  return code && UBYPORT_STATES[code] ? code : null;
 }
 
 // ─── §3.3 field 14 — účel pobytu ──────────────────────
@@ -285,24 +564,62 @@ export function toUbyportState(raw: string | null | undefined): string | null {
 // were accepted by Ubyport up to 26.07.2026 — so they are verified against the
 // číselník by practice, not guessed.
 
-const PURPOSE_CODES: Record<string, string> = {
-  tourism: '10', turistika: '10', turyzm: '10',
-  business: '20', obchod: '20',
-  study: '30', studium: '30',
-  health: '40', zdravi: '40',
-  culture: '50', kultura: '50',
-  sport: '60',
-  official: '70',
-  religion: '80',
-  other: '99', ostatni: '99',
+/**
+ * `UcelyPobytu`, read from the service on 17.09.2026. The codes are NOT a
+ * round decade scale — there is no 20, 30, 40, 50, 60, 70 or 80. Tourism is
+ * 10, employment is 27, study is 11, business is 01.
+ */
+const UBYPORT_PURPOSES: Record<string, string> = {
+  '00': 'ZDRAVOTNÍ',
+  '01': 'OBCHODNÍ',
+  '02': 'KULTURNÍ',
+  '03': 'NÁVŠTĚVA RODINY NEBO PŘÁTEL',
+  '04': 'POZVÁNÍ',
+  '05': 'OFICIÁLNÍ (POLITICKÝ)',
+  '06': 'PODNIKÁNÍ-OSVČ',
+  '07': 'SPORTOVNÍ',
+  '10': 'TURISTIKA',
+  '11': 'STUDIUM (školení, stáž)',
+  '12': 'TRANZIT (průjezd)',
+  '13': 'LETIŠTNÍ TRANZIT (průjezd)',
+  '27': 'ZAMĚSTNÁNÍ',
+  '38': 'ZÁCVIK',
+  '52': 'SEZÓNNÍ ZAMĚSTNÁNÍ',
+  '93': 'ADS VÍZUM — MEMORANDUM O POROZUMĚNÍ',
+  '99': 'JINÉ / OSTATNÍ',
+};
+
+export function isKnownPurpose(code: string): boolean {
+  return Object.prototype.hasOwnProperty.call(UBYPORT_PURPOSES, code);
+}
+
+/** Free text in `purpose_of_stay` → a code that exists in the codebook. */
+const PURPOSE_TEXT: Record<string, string> = {
+  tourism: '10', turistika: '10', turyzm: '10', turizm: '10', holiday: '10', vacation: '10',
+  business: '01', obchod: '01', obchodni: '01', commercial: '01',
+  podnikani: '06', selfemployed: '06', osvc: '06',
+  study: '11', studium: '11', navchannia: '11', school: '11', training: '11', staz: '11',
+  work: '27', employment: '27', zamestnani: '27', robota: '27', job: '27',
+  seasonalwork: '52', sezonnizamestnani: '52',
+  health: '00', zdravotni: '00', medical: '00', lecba: '00',
+  culture: '02', kulturni: '02', kultura: '02',
+  family: '03', navstevarodiny: '03', visitingfamily: '03', friends: '03',
+  invitation: '04', pozvani: '04',
+  official: '05', oficialni: '05', political: '05',
+  sport: '07', sportovni: '07',
+  transit: '12', tranzit: '12',
+  airporttransit: '13', letistnitranzit: '13',
+  other: '99', ostatni: '99', jine: '99', religion: '99', nabozenstvi: '99',
 };
 
 /** Free text or a bare code → two-digit code; `fallback` is the property default. */
 export function toPurposeCode(raw: string | null | undefined, fallback: string): string {
   const text = String(raw ?? '').trim();
-  if (/^\d{1,2}$/.test(text)) return text.padStart(2, '0');
-  const key = fold(text);
-  return PURPOSE_CODES[key] ?? fallback;
+  if (/^\d{1,2}$/.test(text)) {
+    const padded = text.padStart(2, '0');
+    if (isKnownPurpose(padded)) return padded;
+  }
+  return PURPOSE_TEXT[fold(text)] ?? fallback;
 }
 
 // ─── Records ──────────────────────────────────────────
@@ -347,6 +664,8 @@ export interface UnlResult {
   content: string;
   records: number;
   problems: UnlProblem[];
+  /** Records that go out, but with something worth telling the operator. */
+  warnings: UnlProblem[];
 }
 
 const PIPE_OR_BREAK = /[|\r\n]/g;
@@ -381,7 +700,7 @@ function recordA(p: UnlProvider, exportedAt: Date): string {
   ].join('|');
 }
 
-function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | null {
+function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[], warnings: UnlProblem[]): string | null {
   const label = `${g.last_name || ''} ${g.first_name || ''}`.trim() || g.id;
   const before = problems.length;
   const fail = (f: string, m: string) => problems.push({ id: g.id, name: label, field: f, message: m });
@@ -422,10 +741,8 @@ function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | 
 
   const vizum = sanitizeDoc(g.visa_number, 15);
 
-  const bydliste = sanitizeAddress(g.address);
-  if (bydliste && /^\d+$/.test(bydliste.replace(/[\s,]/g, ''))) {
-    fail('Bydliště', 'адреса не може складатися лише з цифр');
-  }
+  const residence = buildResidence(g.address);
+  if (residence.note) warnings.push({ id: g.id, name: label, field: 'Bydliště', message: residence.note });
 
   const ucel = toPurposeCode(g.purpose_of_stay, p.ucelPobytu);
   if (!/^\d{2}$/.test(ucel)) fail('Účel pobytu', 'потрібен двоцифровий код з číselníku');
@@ -443,7 +760,7 @@ function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | 
     '',            // rezerva 2
     '',            // rezerva 3
     stat!,
-    bydliste,
+    residence.value,
     doklad,
     vizum,
     ucel,
@@ -458,16 +775,21 @@ function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | 
  */
 export function buildUnl(guests: UnlGuest[], provider: UnlProvider, exportedAt = new Date()): UnlResult {
   const problems: UnlProblem[] = [];
+  const warnings: UnlProblem[] = [];
   const lines = [recordA(provider, exportedAt)];
 
   for (const g of guests) {
-    const line = recordU(g, provider, problems);
+    const line = recordU(g, provider, problems, warnings);
     if (line) lines.push(line);
   }
+
+  // A warning on a guest that never made it into the file is noise.
+  const emitted = new Set(guests.filter((g) => !problems.some((p) => p.id === g.id)).map((g) => g.id));
 
   return {
     content: lines.join('\r\n') + '\r\n',
     records: lines.length - 1,
     problems,
+    warnings: warnings.filter((w) => emitted.has(w.id)),
   };
 }
