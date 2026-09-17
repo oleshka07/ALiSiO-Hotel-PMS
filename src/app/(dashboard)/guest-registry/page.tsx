@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardList, Search, Download, Filter, CheckCircle2,
   AlertTriangle, Users, Globe, Banknote, ChevronLeft, ChevronRight,
-  Eye, X, Check, ShieldCheck,
+  Eye, X, Check, ShieldCheck, BookOpen,
 } from 'lucide-react';
 
 interface UnlProblem {
@@ -127,6 +127,10 @@ export default function GuestRegistryPage() {
   const [unlDownloaded, setUnlDownloaded] = useState<string[] | null>(null);
   const [unlRef, setUnlRef] = useState('');
   const [unlIncludeReported, setUnlIncludeReported] = useState(false);
+
+  const [knihaOpen, setKnihaOpen] = useState(false);
+  const [knihaFrom, setKnihaFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
+  const [knihaTo, setKnihaTo] = useState(today);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -285,6 +289,15 @@ export default function GuestRegistryPage() {
     }
   };
 
+  // Domovní kniha for a foreign-police inspection: a date range, not a
+  // calendar month, and only the fields §101 lists.
+  const downloadKniha = () => {
+    const p = new URLSearchParams({
+      format: 'csv', kniha: 'domovni', from: knihaFrom, to: knihaTo,
+    });
+    window.open(`/api/guest-registry?${p}`, '_blank');
+  };
+
   const handleExportCSV = () => {
     const params = new URLSearchParams({ month, format: 'csv' });
     if (foreignersOnly) params.set('foreignersOnly', '1');
@@ -307,6 +320,9 @@ export default function GuestRegistryPage() {
         <div className="registry-header-actions">
           <button className="registry-export-btn" onClick={handleExportCSV}>
             <Download size={16} /> Export CSV
+          </button>
+          <button className="registry-kniha-btn" onClick={() => setKnihaOpen(true)}>
+            <BookOpen size={16} /> Domovní kniha
           </button>
           <button className="registry-unl-btn" onClick={openUnl}>
             <ShieldCheck size={16} /> Ubyport (.unl)
@@ -498,6 +514,38 @@ export default function GuestRegistryPage() {
                 disabled={updating === hideConfirm.id}
               >
                 {updating === hideConfirm.id ? 'Skrývám...' : 'Skrýt záznam'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Domovní kniha — foreign-police inspection */}
+      {knihaOpen && (
+        <div className="registry-modal-backdrop" onClick={() => setKnihaOpen(false)}>
+          <div className="registry-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="registry-modal-header">
+              <h2>Domovní kniha</h2>
+              <button onClick={() => setKnihaOpen(false)}><X size={20} /></button>
+            </div>
+            <div className="registry-modal-body">
+              <p className="unl-note">
+                Výpis pro kontrolu cizinecké policie podle §101 zákona č. 326/1999 Sb.
+                Obsahuje pouze cizince a pouze údaje, které tento paragraf vyžaduje.
+                Poplatkové sloupce sem nepatří — ty jsou pro evidenční knihu obce.
+              </p>
+              <div className="unl-range">
+                <label>
+                  Od
+                  <input type="date" value={knihaFrom} onChange={(e) => setKnihaFrom(e.target.value)} />
+                </label>
+                <label>
+                  Do
+                  <input type="date" value={knihaTo} onChange={(e) => setKnihaTo(e.target.value)} />
+                </label>
+              </div>
+              <button className="unl-download" onClick={downloadKniha}>
+                <Download size={16} /> Stáhnout CSV
               </button>
             </div>
           </div>
@@ -741,6 +789,20 @@ export default function GuestRegistryPage() {
           gap: 10px;
           align-items: center;
         }
+        .registry-kniha-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          background: #0f766e;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .registry-kniha-btn:hover { background: #115e59; }
         .registry-unl-btn {
           display: flex;
           align-items: center;

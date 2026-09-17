@@ -78,20 +78,38 @@ export async function exportRegistry(request: NextRequest): Promise<NextResponse
     const { searchParams } = new URL(request.url);
     const now = new Date();
     const month = searchParams.get('month') || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const foreignersOnly = searchParams.get('foreignersOnly') === 'true';
+    const from = searchParams.get('from') || undefined;
+    const to = searchParams.get('to') || undefined;
+
+    // Domovní kniha (§101 zákona 326/1999 Sb.) is the document the foreign
+    // police ask for at an inspection. It covers foreigners and carries the
+    // fields that section lists — the local-fee columns belong to the
+    // municipality's evidenční kniha and only get in the way there.
+    const domovni = searchParams.get('kniha') === 'domovni';
+
+    const foreignersOnly = domovni || searchParams.get('foreignersOnly') === 'true';
     const unregisteredOnly = searchParams.get('unregisteredOnly') === 'true';
     const search = searchParams.get('search') || undefined;
     const propertyId = searchParams.get('propertyId') || undefined;
 
-    const entries = registryRepo.getRegistryEntries({ month, foreignersOnly, unregisteredOnly, search, propertyId });
+    const entries = registryRepo.getRegistryEntries({
+      month, from, to, foreignersOnly, unregisteredOnly, search, propertyId,
+    });
 
-    const headers = [
-      'Jméno', 'Příjmení', 'Datum narození', 'Státní příslušnost',
-      'Typ dokladu', 'Číslo dokladu', 'Adresa', 'Účel pobytu',
-      'Check-in', 'Check-out', 'Noci', 'Jednotka',
-      'Poplatek', 'Osvobozeno', 'Důvod osvobození',
-      'Nahlášeno policii', 'Ref. policie',
-    ];
+    const headers = domovni
+      ? [
+          'Poř.', 'Příjmení', 'Jméno', 'Datum narození', 'Státní občanství',
+          'Číslo cestovního dokladu', 'Adresa místa trvalého pobytu v zahraničí',
+          'Účel pobytu', 'Počátek ubytování', 'Konec ubytování', 'Ubytovací jednotka',
+          'Nahlášeno cizinecké policii', 'Ref. hlášení',
+        ]
+      : [
+          'Jméno', 'Příjmení', 'Datum narození', 'Státní příslušnost',
+          'Typ dokladu', 'Číslo dokladu', 'Adresa', 'Účel pobytu',
+          'Počátek ubytování', 'Konec ubytování', 'Noci', 'Jednotka',
+          'Poplatek', 'Osvobozeno', 'Důvod osvobození',
+          'Nahlášeno policii', 'Ref. policie',
+        ];
 
     const escCsv = (val: any): string => {
       if (val == null) return '';
@@ -102,21 +120,31 @@ export async function exportRegistry(request: NextRequest): Promise<NextResponse
       return s;
     };
 
-    const rows = entries.map((e: any) => [
-      e.first_name, e.last_name, e.date_of_birth, e.nationality,
-      e.document_type, e.document_number, e.address, e.purpose_of_stay,
-      e.check_in, e.check_out, e.nights, e.unit_name,
-      e.fee_amount, e.fee_exempt ? 'Ano' : 'Ne', e.fee_exempt_reason,
-      e.police_reported ? 'Ano' : 'Ne', e.police_report_ref,
-    ].map(escCsv).join(','));
+    const rows = entries.map((e: any, i: number) => (domovni
+      ? [
+          i + 1, e.last_name, e.first_name, e.date_of_birth, e.nationality,
+          e.document_number, e.address, e.purpose_of_stay,
+          e.check_in, e.check_out, e.unit_code || e.unit_name,
+          e.police_reported ? 'Ano' : 'Ne', e.police_report_ref,
+        ]
+      : [
+          e.first_name, e.last_name, e.date_of_birth, e.nationality,
+          e.document_type, e.document_number, e.address, e.purpose_of_stay,
+          e.check_in, e.check_out, e.nights, e.unit_name,
+          e.fee_amount, e.fee_exempt ? 'Ano' : 'Ne', e.fee_exempt_reason,
+          e.police_reported ? 'Ano' : 'Ne', e.police_report_ref,
+        ]
+    ).map(escCsv).join(','));
 
     const csv = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const label = from && to ? `${from}_${to}` : month;
+    const name = domovni ? `domovni-kniha-${label}` : `evidencni-kniha-${label}`;
 
     return new NextResponse(csv, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="evidencni-kniha-${month}.csv"`,
+        'Content-Disposition': `attachment; filename="${name}.csv"`,
       },
     });
   } catch (error: any) {

@@ -31,6 +31,7 @@ import {
 - **Services** — additional service ordering + Teya payment integration
 - **Translations** — on-demand OpenAI translation of portal content
 - **Guest registry** — evidenční a domovní kniha: fees, exemptions, CSV export
+- **Domovní kniha** — `?format=csv&kniha=domovni&from=&to=`: foreigners only, over a date range, carrying the fields §101 zákona 326/1999 Sb. lists. This is the document the foreign police ask for at an inspection; the local-fee columns belong to the municipality's evidenční kniha and are left out.
 - **Ubyport** — `.unl` batch file for the foreign police (Příloha č. 3 Provozního řádu): CP1250, record A (property) + records U (guests), validated up front so a rejectable batch is never produced silently
 
 ### Ubyport notes
