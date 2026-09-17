@@ -5097,6 +5097,23 @@ function runMigrations(database: any) {
     `);
     console.log('[DB] Created partner_reports table');
   }
+
+  // --- Migration: Ubyport property identifiers (záznam typu A) ---
+  // IDUB and the five-letter zkratka are issued by the Služba cizinecké policie
+  // and are already in use by the reporting bot; seeding them here saves typing
+  // a twelve-digit identifier into a file that goes to the police. INSERT OR
+  // IGNORE, so a value corrected in Nastavení is never overwritten on deploy.
+  // ucelPobytu is deliberately NOT seeded — it comes from the číselník and
+  // guessing it would put a wrong code on every guest.
+  try {
+    const seedUby = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+    seedUby.run('ubyport_idub', '100123430567');
+    seedUby.run('ubyport_zkratka', 'ISQYA');
+    seedUby.run('ubyport_ubytovatel', 'Kemp Carlsbad');
+    seedUby.run('ubyport_obec', 'Březová');
+  } catch (e: any) {
+    console.log('[DB] Ubyport settings seed note:', e.message);
+  }
 }
 
 // Generate a cryptographically secure random token for guest pages

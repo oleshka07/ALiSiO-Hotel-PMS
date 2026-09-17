@@ -18,6 +18,7 @@ import {
   Code2,
   Sparkles,
   Brain,
+  ShieldCheck,
 } from 'lucide-react';
 
 const settingsItems = [
@@ -69,6 +70,13 @@ const settingsItems = [
     icon: <Brain size={22} />,
     href: '/settings/ai-knowledge',
     color: 'purple',
+  },
+  {
+    title: 'Ubyport (цизінецька поліція)',
+    desc: 'IDUB, зкратка та адреса закладу для дявок .unl',
+    icon: <ShieldCheck size={22} />,
+    href: '/settings/ubyport',
+    color: 'blue',
   },
   {
     title: 'Шаблони документів',

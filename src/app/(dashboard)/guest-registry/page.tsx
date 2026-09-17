@@ -4,8 +4,37 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardList, Search, Download, Filter, CheckCircle2,
   AlertTriangle, Users, Globe, Banknote, ChevronLeft, ChevronRight,
-  Eye, X, Check,
+  Eye, X, Check, ShieldCheck, BookOpen,
 } from 'lucide-react';
+
+interface UnlProblem {
+  id: string;
+  name: string;
+  field: string;
+  message: string;
+}
+
+interface UnlDryRun {
+  from: string;
+  to: string;
+  candidates: number;
+  records: number;
+  ids: string[];
+  problems: UnlProblem[];
+  warnings: UnlProblem[];
+}
+
+function firstOfPreviousMonths(n: number): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 interface RegistryEntry {
   id: string;
@@ -89,6 +118,20 @@ export default function GuestRegistryPage() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [hideConfirm, setHideConfirm] = useState<RegistryEntry | null>(null);
 
+  const [unlOpen, setUnlOpen] = useState(false);
+  const [unlBusy, setUnlBusy] = useState(false);
+  const [unlFrom, setUnlFrom] = useState(() => firstOfPreviousMonths(3));
+  const [unlTo, setUnlTo] = useState(today);
+  const [unlDry, setUnlDry] = useState<UnlDryRun | null>(null);
+  const [unlError, setUnlError] = useState<string | null>(null);
+  const [unlDownloaded, setUnlDownloaded] = useState<string[] | null>(null);
+  const [unlRef, setUnlRef] = useState('');
+  const [unlIncludeReported, setUnlIncludeReported] = useState(false);
+
+  const [knihaOpen, setKnihaOpen] = useState(false);
+  const [knihaFrom, setKnihaFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
+  const [knihaTo, setKnihaTo] = useState(today);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -151,6 +194,110 @@ export default function GuestRegistryPage() {
     }
   };
 
+  const unlParams = useCallback(() => {
+    const p = new URLSearchParams({ from: unlFrom, to: unlTo });
+    if (search) p.set('search', search);
+    if (unlIncludeReported) p.set('includeReported', '1');
+    return p;
+  }, [unlFrom, unlTo, search, unlIncludeReported]);
+
+  const runUnlDryRun = useCallback(async () => {
+    setUnlBusy(true);
+    setUnlError(null);
+    setUnlDownloaded(null);
+    try {
+      const p = unlParams();
+      p.set('format', 'unl');
+      p.set('dry', '1');
+      const res = await fetch(`/api/guest-registry?${p}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setUnlDry(null);
+        setUnlError(data.detail || data.error || 'Chyba při přípravě dávky');
+      } else {
+        setUnlDry(data);
+      }
+    } catch (e) {
+      setUnlDry(null);
+      setUnlError(String(e));
+    } finally {
+      setUnlBusy(false);
+    }
+  }, [unlParams]);
+
+  const openUnl = () => {
+    setUnlOpen(true);
+    runUnlDryRun();
+  };
+
+  // The browser cannot read X-Unl-Ids from a plain window.open, and we need
+  // those ids to mark the batch afterwards — so fetch the blob by hand.
+  const downloadUnl = async () => {
+    if (!unlDry) return;
+    setUnlBusy(true);
+    setUnlError(null);
+    try {
+      const p = unlParams();
+      p.set('format', 'unl');
+      if (unlDry.problems.length) p.set('skipInvalid', '1');
+      const res = await fetch(`/api/guest-registry?${p}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setUnlError(data.detail || data.error || `Chyba ${res.status}`);
+        return;
+      }
+      const ids = (res.headers.get('X-Unl-Ids') || '').split(',').filter(Boolean);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ubyport-${unlFrom}_${unlTo}.unl`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setUnlDownloaded(ids.length ? ids : unlDry.ids);
+    } catch (e) {
+      setUnlError(String(e));
+    } finally {
+      setUnlBusy(false);
+    }
+  };
+
+  const markBatchReported = async () => {
+    if (!unlDownloaded || !unlRef.trim()) return;
+    setUnlBusy(true);
+    try {
+      const res = await fetch('/api/guest-registry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_police_bulk', ids: unlDownloaded, ref: unlRef.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setUnlError(data.error || `Chyba ${res.status}`);
+        return;
+      }
+      setUnlOpen(false);
+      setUnlDownloaded(null);
+      setUnlRef('');
+      await fetchData();
+    } catch (e) {
+      setUnlError(String(e));
+    } finally {
+      setUnlBusy(false);
+    }
+  };
+
+  // Domovní kniha for a foreign-police inspection: a date range, not a
+  // calendar month, and only the fields §101 lists.
+  const downloadKniha = () => {
+    const p = new URLSearchParams({
+      format: 'csv', kniha: 'domovni', from: knihaFrom, to: knihaTo,
+    });
+    window.open(`/api/guest-registry?${p}`, '_blank');
+  };
+
   const handleExportCSV = () => {
     const params = new URLSearchParams({ month, format: 'csv' });
     if (foreignersOnly) params.set('foreignersOnly', '1');
@@ -170,9 +317,17 @@ export default function GuestRegistryPage() {
             <p className="registry-subtitle">Kniha ubytovaných hostů</p>
           </div>
         </div>
-        <button className="registry-export-btn" onClick={handleExportCSV}>
-          <Download size={16} /> Export CSV
-        </button>
+        <div className="registry-header-actions">
+          <button className="registry-export-btn" onClick={handleExportCSV}>
+            <Download size={16} /> Export CSV
+          </button>
+          <button className="registry-kniha-btn" onClick={() => setKnihaOpen(true)}>
+            <BookOpen size={16} /> Domovní kniha
+          </button>
+          <button className="registry-unl-btn" onClick={openUnl}>
+            <ShieldCheck size={16} /> Ubyport (.unl)
+          </button>
+        </div>
       </div>
 
       {/* Month Selector */}
@@ -365,6 +520,161 @@ export default function GuestRegistryPage() {
         </div>
       )}
 
+      {/* Domovní kniha — foreign-police inspection */}
+      {knihaOpen && (
+        <div className="registry-modal-backdrop" onClick={() => setKnihaOpen(false)}>
+          <div className="registry-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="registry-modal-header">
+              <h2>Domovní kniha</h2>
+              <button onClick={() => setKnihaOpen(false)}><X size={20} /></button>
+            </div>
+            <div className="registry-modal-body">
+              <p className="unl-note">
+                Výpis pro kontrolu cizinecké policie podle §101 zákona č. 326/1999 Sb.
+                Obsahuje pouze cizince a pouze údaje, které tento paragraf vyžaduje.
+                Poplatkové sloupce sem nepatří — ty jsou pro evidenční knihu obce.
+              </p>
+              <div className="unl-range">
+                <label>
+                  Od
+                  <input type="date" value={knihaFrom} onChange={(e) => setKnihaFrom(e.target.value)} />
+                </label>
+                <label>
+                  Do
+                  <input type="date" value={knihaTo} onChange={(e) => setKnihaTo(e.target.value)} />
+                </label>
+              </div>
+              <button className="unl-download" onClick={downloadKniha}>
+                <Download size={16} /> Stáhnout CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ubyport UNL batch */}
+      {unlOpen && (
+        <div className="registry-modal-backdrop" onClick={() => setUnlOpen(false)}>
+          <div className="registry-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="registry-modal-header">
+              <h2>Dávka pro Ubyport (.unl)</h2>
+              <button onClick={() => setUnlOpen(false)}><X size={20} /></button>
+            </div>
+            <div className="registry-modal-body">
+              <div className="unl-range">
+                <label>
+                  Pobyt od
+                  <input type="date" value={unlFrom} onChange={(e) => setUnlFrom(e.target.value)} />
+                </label>
+                <label>
+                  Pobyt do
+                  <input type="date" value={unlTo} onChange={(e) => setUnlTo(e.target.value)} />
+                </label>
+                <button className="unl-recheck" onClick={runUnlDryRun} disabled={unlBusy}>
+                  {unlBusy ? 'Počítám…' : 'Zkontrolovat'}
+                </button>
+              </div>
+
+              <label className="unl-toggle">
+                <input
+                  type="checkbox"
+                  checked={unlIncludeReported}
+                  onChange={(e) => setUnlIncludeReported(e.target.checked)}
+                />
+                <span>
+                  Zahrnout i hosty už označené jako nahlášené
+                  <em>
+                    Pro dávky, které web service potvrdila, ale Ubyport je nepřijal —
+                    poslední přijatá dávka je z 26. 7. 2026.
+                  </em>
+                </span>
+              </label>
+
+              <p className="unl-note">
+                Do dávky jdou jen cizinci, kteří ještě nejsou nahlášeni. Soubor je v kódování
+                CP1250 podle přílohy č. 3 Provozního řádu. Před nahráním do Ubyportu ho ověřte
+                aplikací UbyData.
+              </p>
+
+              {unlError && <div className="unl-error">{unlError}</div>}
+
+              {unlDry && (
+                <>
+                  <div className="unl-counts">
+                    <div className="unl-count ok">
+                      <span className="unl-count-value">{unlDry.records}</span>
+                      <span className="unl-count-label">připraveno k odeslání</span>
+                    </div>
+                    <div className={`unl-count ${unlDry.problems.length ? 'bad' : ''}`}>
+                      <span className="unl-count-value">{unlDry.problems.length}</span>
+                      <span className="unl-count-label">záznamů s chybou</span>
+                    </div>
+                    <div className="unl-count">
+                      <span className="unl-count-value">{unlDry.candidates}</span>
+                      <span className="unl-count-label">celkem v období</span>
+                    </div>
+                  </div>
+
+                  {unlDry.problems.length > 0 && (
+                    <div className="unl-problems">
+                      <h4><AlertTriangle size={15} /> Policie by tyto záznamy odmítla</h4>
+                      <ul>
+                        {unlDry.problems.map((p, i) => (
+                          <li key={`${p.id}-${i}`}>
+                            <strong>{p.name}</strong> · {p.field} — {p.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {unlDry.warnings?.length > 0 && (
+                    <div className="unl-warnings">
+                      <h4><AlertTriangle size={15} /> Odesláno, ale s výhradou</h4>
+                      <ul>
+                        {unlDry.warnings.map((w, i) => (
+                          <li key={`${w.id}-w${i}`}>
+                            <strong>{w.name}</strong> · {w.field} — {w.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!unlDownloaded ? (
+                    <button className="unl-download" onClick={downloadUnl} disabled={unlBusy || !unlDry.records}>
+                      <Download size={16} />
+                      {unlDry.problems.length
+                        ? `Stáhnout ${unlDry.records} záznamů (${unlDry.problems.length} vynecháno)`
+                        : `Stáhnout ${unlDry.records} záznamů`}
+                    </button>
+                  ) : (
+                    <div className="unl-confirm">
+                      <h4><CheckCircle2 size={15} /> Soubor stažen — {unlDownloaded.length} osob</h4>
+                      <p>
+                        Nahrajte ho do Ubyportu. Teprve až portál dávku přijme, zadejte číslo
+                        potvrzení a označte tyto hosty jako nahlášené.
+                      </p>
+                      <div className="unl-confirm-row">
+                        <input
+                          type="text"
+                          placeholder="Číslo potvrzení z Ubyportu"
+                          value={unlRef}
+                          onChange={(e) => setUnlRef(e.target.value)}
+                        />
+                        <button onClick={markBatchReported} disabled={unlBusy || !unlRef.trim()}>
+                          <Check size={15} /> Označit jako nahlášené
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detail Modal */}
       {selectedEntry && (
         <div className="registry-modal-backdrop" onClick={() => setSelectedEntry(null)}>
@@ -474,6 +784,242 @@ export default function GuestRegistryPage() {
           margin: 2px 0 0;
         }
 
+        .registry-header-actions {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+        .registry-kniha-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          background: #0f766e;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .registry-kniha-btn:hover { background: #115e59; }
+        .registry-unl-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          background: #1d4ed8;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .registry-unl-btn:hover { background: #1e40af; }
+        .unl-range {
+          display: flex;
+          gap: 12px;
+          align-items: flex-end;
+          flex-wrap: wrap;
+          margin-bottom: 12px;
+        }
+        .unl-range label {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #475569;
+        }
+        .unl-range input {
+          padding: 8px 10px;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          font-size: 14px;
+          color: #0f172a;
+        }
+        .unl-recheck {
+          padding: 9px 14px;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          background: #f8fafc;
+          font-size: 13px;
+          font-weight: 600;
+          color: #0f172a;
+          cursor: pointer;
+        }
+        .unl-toggle {
+          display: flex;
+          gap: 9px;
+          align-items: flex-start;
+          padding: 10px 12px;
+          margin-bottom: 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 9px;
+          background: #f8fafc;
+          cursor: pointer;
+        }
+        .unl-toggle input { margin-top: 2px; }
+        .unl-toggle span {
+          font-size: 13px;
+          font-weight: 600;
+          color: #0f172a;
+          line-height: 1.4;
+        }
+        .unl-toggle em {
+          display: block;
+          font-style: normal;
+          font-weight: 400;
+          font-size: 11.5px;
+          color: #6e6e73;
+          margin-top: 2px;
+        }
+        .unl-note {
+          font-size: 12px;
+          line-height: 1.5;
+          color: #64748b;
+          margin: 0 0 14px;
+        }
+        .unl-error {
+          padding: 10px 12px;
+          border-radius: 8px;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #b91c1c;
+          font-size: 13px;
+          margin-bottom: 14px;
+        }
+        .unl-counts {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 14px;
+        }
+        .unl-count {
+          flex: 1;
+          padding: 12px;
+          border-radius: 10px;
+          background: #f1f5f9;
+          text-align: center;
+        }
+        .unl-count.ok { background: #ecfdf5; }
+        .unl-count.bad { background: #fef2f2; }
+        .unl-count-value {
+          display: block;
+          font-size: 22px;
+          font-weight: 700;
+          color: #0f172a;
+        }
+        .unl-count-label {
+          display: block;
+          font-size: 11px;
+          color: #475569;
+          margin-top: 2px;
+        }
+        .unl-warnings {
+          border: 1px solid #fde68a;
+          background: #fffbeb;
+          border-radius: 10px;
+          padding: 12px;
+          margin-bottom: 14px;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        .unl-warnings h4 {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 8px;
+          font-size: 13px;
+          color: #92400e;
+        }
+        .unl-warnings ul { margin: 0; padding-left: 18px; }
+        .unl-warnings li {
+          font-size: 12.5px;
+          line-height: 1.6;
+          color: #334155;
+        }
+        .unl-problems {
+          border: 1px solid #fecaca;
+          border-radius: 10px;
+          padding: 12px;
+          margin-bottom: 14px;
+          max-height: 260px;
+          overflow-y: auto;
+        }
+        .unl-problems h4 {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 8px;
+          font-size: 13px;
+          color: #b91c1c;
+        }
+        .unl-problems ul { margin: 0; padding-left: 18px; }
+        .unl-problems li {
+          font-size: 12.5px;
+          line-height: 1.6;
+          color: #334155;
+        }
+        .unl-download {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 12px;
+          background: #1d4ed8;
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .unl-download:disabled { background: #94a3b8; cursor: not-allowed; }
+        .unl-confirm {
+          border: 1px solid #a7f3d0;
+          background: #f0fdf4;
+          border-radius: 10px;
+          padding: 12px;
+        }
+        .unl-confirm h4 {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 6px;
+          font-size: 13px;
+          color: #047857;
+        }
+        .unl-confirm p {
+          margin: 0 0 10px;
+          font-size: 12.5px;
+          line-height: 1.5;
+          color: #334155;
+        }
+        .unl-confirm-row { display: flex; gap: 8px; }
+        .unl-confirm-row input {
+          flex: 1;
+          padding: 9px 10px;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          font-size: 13px;
+          color: #0f172a;
+        }
+        .unl-confirm-row button {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 9px 14px;
+          background: #047857;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .unl-confirm-row button:disabled { background: #94a3b8; cursor: not-allowed; }
         .registry-export-btn {
           display: flex;
           align-items: center;
