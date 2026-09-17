@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
@@ -64,6 +63,20 @@ Rules:
 //
 const TESSERACT_BIN = process.env.TESSERACT_BIN || 'tesseract';
 
+// @napi-rs/canvas is a native binding: Turbopack cannot place it in an ESM
+// chunk, so a static import fails the build outright. pdfjs reaches it at
+// runtime and next.config.ts already traces it into the standalone output;
+// this loads it the same way.
+type CanvasModule = typeof import('@napi-rs/canvas');
+let canvasModule: CanvasModule | null = null;
+function canvasLib(): CanvasModule {
+  if (!canvasModule) {
+    const requireFn = eval('require') as NodeRequire;
+    canvasModule = requireFn('@napi-rs/canvas') as CanvasModule;
+  }
+  return canvasModule;
+}
+
 // The MRZ alphabet, ICAO 9303: capitals, digits and the filler.
 const MRZ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 
@@ -127,6 +140,7 @@ function runTesseract(file: string, psm: string): Promise<string | null> {
 const OCR_TARGET_WIDTH = 2400;
 
 async function candidates(file: string): Promise<string[]> {
+  const { createCanvas, loadImage } = canvasLib();
   const img = await loadImage(file);
   const out: string[] = [];
 
