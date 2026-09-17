@@ -127,6 +127,43 @@ const ALPHA2_TO_ALPHA3: Record<string, string> = {
   VN:'VNM',VU:'VUT',WF:'WLF',WS:'WSM',YE:'YEM',YT:'MYT',ZA:'ZAF',ZM:'ZMB',ZW:'ZWE',
 };
 
+/**
+ * The Kod3 column of the police's own `Staty` codebook, read from the web
+ * service (`DejMiCiselnik('X', 'Staty')`) on 17.09.2026 — 256 entries.
+ *
+ * It is ISO 3166-1 alpha-3, so the mapping above agrees with it everywhere
+ * except CZE, which is absent: this is a codebook of foreign nationalities and
+ * a Czech is never reported to the foreign police. Nine codes are theirs
+ * alone — XXA stateless, XXB/XXC refugee, XXK Kosovo, YUG, UNA/UNO, XGG, XMR.
+ *
+ * Note their Kod2 is NOT ISO alpha-2 — SK is Saint Kitts there, SI is the
+ * Solomon Islands, GE is Equatorial Guinea. Nothing here may use it.
+ */
+const UBYPORT_STATES = new Set([
+  'ABW', 'AFG', 'AGO', 'AIA', 'ALA', 'ALB', 'AND', 'ARE', 'ARG', 'ARM', 'ASM', 'ATF',
+  'ATG', 'AUS', 'AUT', 'AZE', 'BDI', 'BEL', 'BEN', 'BES', 'BFA', 'BGD', 'BGR', 'BHR',
+  'BHS', 'BIH', 'BLM', 'BLR', 'BLZ', 'BMU', 'BOL', 'BRA', 'BRB', 'BRN', 'BTN', 'BVT',
+  'BWA', 'CAF', 'CAN', 'CCK', 'CHE', 'CHL', 'CHN', 'CIV', 'CMR', 'COD', 'COG', 'COK',
+  'COL', 'COM', 'CPV', 'CRI', 'CUB', 'CUW', 'CXR', 'CYM', 'CYP', 'DEU', 'DJI', 'DMA',
+  'DNK', 'DOM', 'DZA', 'ECU', 'EGY', 'ERI', 'ESH', 'ESP', 'EST', 'ETH', 'FIN', 'FJI',
+  'FLK', 'FRA', 'FRO', 'FSM', 'GAB', 'GBR', 'GEO', 'GGY', 'GHA', 'GIB', 'GIN', 'GLP',
+  'GMB', 'GNB', 'GNQ', 'GRC', 'GRD', 'GRL', 'GTM', 'GUF', 'GUM', 'GUY', 'HKG', 'HMD',
+  'HND', 'HRV', 'HTI', 'HUN', 'IDN', 'IMN', 'IND', 'IOT', 'IRL', 'IRN', 'IRQ', 'ISL',
+  'ISR', 'ITA', 'JAM', 'JEY', 'JOR', 'JPN', 'KAZ', 'KEN', 'KGZ', 'KHM', 'KIR', 'KNA',
+  'KOR', 'KWT', 'LAO', 'LBN', 'LBR', 'LBY', 'LCA', 'LIE', 'LKA', 'LSO', 'LTU', 'LUX',
+  'LVA', 'MAC', 'MAF', 'MAR', 'MCO', 'MDA', 'MDG', 'MDV', 'MEX', 'MHL', 'MKD', 'MLI',
+  'MLT', 'MMR', 'MNE', 'MNG', 'MNP', 'MOZ', 'MRT', 'MSR', 'MTQ', 'MUS', 'MWI', 'MYS',
+  'MYT', 'NAM', 'NCL', 'NER', 'NFK', 'NGA', 'NIC', 'NIU', 'NLD', 'NOR', 'NPL', 'NRU',
+  'NZL', 'OMN', 'PAK', 'PAN', 'PCN', 'PER', 'PHL', 'PLW', 'PNG', 'POL', 'PRI', 'PRK',
+  'PRT', 'PRY', 'PSE', 'PYF', 'QAT', 'REU', 'ROU', 'RUS', 'RWA', 'SAU', 'SDN', 'SEN',
+  'SGP', 'SGS', 'SHN', 'SJM', 'SLB', 'SLE', 'SLV', 'SMR', 'SOM', 'SPM', 'SRB', 'SSD',
+  'STP', 'SUR', 'SVK', 'SVN', 'SWE', 'SWZ', 'SXM', 'SYC', 'SYR', 'TCA', 'TCD', 'TGO',
+  'THA', 'TJK', 'TKL', 'TKM', 'TLS', 'TON', 'TTO', 'TUN', 'TUR', 'TUV', 'TWN', 'TZA',
+  'UGA', 'UKR', 'UMI', 'UNA', 'UNO', 'URY', 'USA', 'UZB', 'VAT', 'VCT', 'VEN', 'VGB',
+  'VIR', 'VNM', 'VUT', 'WLF', 'WSM', 'XGG', 'XMR', 'XXA', 'XXB', 'XXC', 'XXK', 'YEM',
+  'YUG', 'ZAF', 'ZMB', 'ZWE'
+]);
+
 const ALPHA3 = new Set(Object.values(ALPHA2_TO_ALPHA3));
 
 /**
@@ -135,6 +172,7 @@ const ALPHA3 = new Set(Object.values(ALPHA2_TO_ALPHA3));
  * ISO 3166 and the web service answers E_NATI_INVALID.
  */
 const OVAL_CODES: Record<string, string> = {
+  XK:'XXK', KOSOVO:'XXK', RKS:'XXK',
   A:'AUT', B:'BEL', D:'DEU', E:'ESP', F:'FRA', H:'HUN', I:'ITA', L:'LUX', N:'NOR', P:'PRT', S:'SWE',
   UK:'GBR', SLO:'SVN', GBZ:'GIB', IRL:'IRL', RSM:'SMR', MNE:'MNE', BIH:'BIH', SRB:'SRB',
 };
@@ -174,6 +212,10 @@ const NAME_ALIASES: Record<string, string> = {
   finsko:'FIN', finland:'FIN', irsko:'IRL', ireland:'IRL',
   chorvatsko:'HRV', croatia:'HRV', slovinsko:'SVN', slovenia:'SVN',
   recko:'GRC', greece:'GRC', srbsko:'SRB', serbia:'SRB',
+  kosovo:'XXK', kosova:'XXK',
+  // Not countries, but the codebook carries them and real guests have them.
+  bezstatniprislusnosti:'XXA', stateless:'XXA', apatrid:'XXA', bezgromadyanstva:'XXA',
+  uprchlik:'XXB', refugee:'XXB', bizhenets:'XXB',
 };
 
 function fold(raw: string): string {
@@ -224,6 +266,16 @@ export function toIso3(raw: string | null | undefined): string | null {
   const latin = Array.from(folded).map((c) => CYR_TO_LAT[c] ?? c).join('');
   if (NAME_ALIASES[latin]) return NAME_ALIASES[latin];
   return null;
+}
+
+/**
+ * The code that actually goes into the file. Anything the police codebook does
+ * not contain comes back null so the guest is listed as a problem instead of
+ * being submitted with a code that will be rejected.
+ */
+export function toUbyportState(raw: string | null | undefined): string | null {
+  const code = toIso3(raw);
+  return code && UBYPORT_STATES.has(code) ? code : null;
 }
 
 // ─── §3.3 field 14 — účel pobytu ──────────────────────
@@ -355,8 +407,15 @@ function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | 
   else if (g.date_of_birth! < '1900-01-01') fail('Datum narození', 'раніше за 31.12.1899');
   else if (g.date_of_birth! > g.check_in) fail('Datum narození', 'пізніше за дату заїзду');
 
-  const stat = toIso3(g.nationality);
-  if (!stat) fail('Státní příslušnost', `не розпізнано «${g.nationality ?? ''}» — потрібен 3-літерний код`);
+  const stat = toUbyportState(g.nationality);
+  if (!stat) {
+    const iso = toIso3(g.nationality);
+    if (iso === 'CZE') {
+      fail('Státní příslušnost', 'громадянин ЧР — до cizinecké policie не подається');
+    } else {
+      fail('Státní příslušnost', `не розпізнано «${g.nationality ?? ''}» — немає в číselníku Stát`);
+    }
+  }
 
   const doklad = sanitizeDoc(g.document_number, 30);
   if (doklad.length < 6) fail('Číslo dokladu', `потрібно 6–30 символів A–Z/0–9, є «${g.document_number ?? ''}»`);
