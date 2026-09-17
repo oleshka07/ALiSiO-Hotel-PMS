@@ -144,16 +144,19 @@ const NAME_ALIASES: Record<string, string> = {
   cesko:'CZE', ceskarepublika:'CZE', czechia:'CZE', czechrepublic:'CZE', czech:'CZE', cechia:'CZE',
   chekhia:'CZE', chekhyia:'CZE', chekhiia:'CZE', cheska:'CZE', cheskarespublika:'CZE',
   nemecko:'DEU', germany:'DEU', deutschland:'DEU', german:'DEU', nimechchyna:'DEU', germaniya:'DEU',
+  deutsch:'DEU', deutsche:'DEU', nemecka:'DEU', nemec:'DEU',
   nizozemsko:'NLD', netherlands:'NLD', holland:'NLD', holandsko:'NLD', niderlandy:'NLD', gollandiya:'NLD',
-  polsko:'POL', poland:'POL', polska:'POL', polshcha:'POL', polsha:'POL',
+  nederland:'NLD', nederlands:'NLD', nederlandse:'NLD', dutch:'NLD', niderlandska:'NLD',
+  polsko:'POL', poland:'POL', polska:'POL', polshcha:'POL', polsha:'POL', polish:'POL', polskie:'POL',
   slovensko:'SVK', slovakia:'SVK', slovachchyna:'SVK', slovakiya:'SVK',
   rakousko:'AUT', austria:'AUT', osterreich:'AUT', avstriya:'AUT',
   ukrajina:'UKR', ukraine:'UKR', ukraina:'UKR',
   rusko:'RUS', russia:'RUS', rossiya:'RUS', rosiya:'RUS',
   velkabritanie:'GBR', unitedkingdom:'GBR', greatbritain:'GBR', england:'GBR', britain:'GBR',
-  italie:'ITA', italy:'ITA', italia:'ITA', italiya:'ITA',
-  francie:'FRA', france:'FRA', frantsiya:'FRA',
+  italie:'ITA', italy:'ITA', italia:'ITA', italiya:'ITA', italiana:'ITA', italiano:'ITA', italian:'ITA',
+  francie:'FRA', france:'FRA', frantsiya:'FRA', francais:'FRA', francaise:'FRA', french:'FRA',
   spanelsko:'ESP', spain:'ESP', espana:'ESP', ispaniya:'ESP',
+  espanol:'ESP', espanola:'ESP', spanish:'ESP', ispanska:'ESP',
   madarsko:'HUN', hungary:'HUN', ugorshchyna:'HUN', vengriya:'HUN',
   belgie:'BEL', belgium:'BEL', belgiya:'BEL',
   svycarsko:'CHE', switzerland:'CHE', schweiz:'CHE', shveytsariya:'CHE',
@@ -205,8 +208,11 @@ export function hasCyrillic(raw: string | null | undefined): boolean {
 }
 
 /** Free-text nationality → three-letter code, or null when we cannot tell. */
+const NOT_A_NATIONALITY = new Set(['null', 'undefined', 'none', 'nan', 'n/a', 'na', '-', '?']);
+
 export function toIso3(raw: string | null | undefined): string | null {
   if (!raw) return null;
+  if (NOT_A_NATIONALITY.has(String(raw).trim().toLowerCase())) return null;
   const upper = String(raw).trim().toUpperCase();
   if (ALPHA3.has(upper)) return upper;
   if (ALPHA2_TO_ALPHA3[upper]) return ALPHA2_TO_ALPHA3[upper];
