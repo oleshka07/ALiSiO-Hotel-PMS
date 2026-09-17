@@ -125,6 +125,7 @@ export default function GuestRegistryPage() {
   const [unlError, setUnlError] = useState<string | null>(null);
   const [unlDownloaded, setUnlDownloaded] = useState<string[] | null>(null);
   const [unlRef, setUnlRef] = useState('');
+  const [unlIncludeReported, setUnlIncludeReported] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -191,8 +192,9 @@ export default function GuestRegistryPage() {
   const unlParams = useCallback(() => {
     const p = new URLSearchParams({ from: unlFrom, to: unlTo });
     if (search) p.set('search', search);
+    if (unlIncludeReported) p.set('includeReported', '1');
     return p;
-  }, [unlFrom, unlTo, search]);
+  }, [unlFrom, unlTo, search, unlIncludeReported]);
 
   const runUnlDryRun = useCallback(async () => {
     setUnlBusy(true);
@@ -524,6 +526,21 @@ export default function GuestRegistryPage() {
                 </button>
               </div>
 
+              <label className="unl-toggle">
+                <input
+                  type="checkbox"
+                  checked={unlIncludeReported}
+                  onChange={(e) => setUnlIncludeReported(e.target.checked)}
+                />
+                <span>
+                  Zahrnout i hosty už označené jako nahlášené
+                  <em>
+                    Pro dávky, které web service potvrdila, ale Ubyport je nepřijal —
+                    poslední přijatá dávka je z 26. 7. 2026.
+                  </em>
+                </span>
+              </label>
+
               <p className="unl-note">
                 Do dávky jdou jen cizinci, kteří ještě nejsou nahlášeni. Soubor je v kódování
                 CP1250 podle přílohy č. 3 Provozního řádu. Před nahráním do Ubyportu ho ověřte
@@ -755,6 +772,32 @@ export default function GuestRegistryPage() {
           font-weight: 600;
           color: #0f172a;
           cursor: pointer;
+        }
+        .unl-toggle {
+          display: flex;
+          gap: 9px;
+          align-items: flex-start;
+          padding: 10px 12px;
+          margin-bottom: 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 9px;
+          background: #f8fafc;
+          cursor: pointer;
+        }
+        .unl-toggle input { margin-top: 2px; }
+        .unl-toggle span {
+          font-size: 13px;
+          font-weight: 600;
+          color: #0f172a;
+          line-height: 1.4;
+        }
+        .unl-toggle em {
+          display: block;
+          font-style: normal;
+          font-weight: 400;
+          font-size: 11.5px;
+          color: #6e6e73;
+          margin-top: 2px;
         }
         .unl-note {
           font-size: 12px;

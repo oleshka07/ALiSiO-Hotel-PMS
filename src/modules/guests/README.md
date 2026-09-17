@@ -38,6 +38,8 @@ import {
 - `domain/ubyport.ts` owns the format: CP1250 encoding, the §2.4.1 character sets, `dd.mm.yyyy` dates, and free-text nationality → three-letter code (including oval plate codes like `D` → `DEU`, which the web service rejects as `E_NATI_INVALID`).
 - The export **refuses** a batch containing records the police would reject, and lists them per guest and field. `skipInvalid=1` emits the valid rows only and reports how many were left out.
 - Record A (IDUB, zkratka, address, účel pobytu) lives in `settings` under `ubyport_*`, edited at `/settings/ubyport`. `ucelPobytu` is never seeded — it comes from the police číselník.
+- `purpose_of_stay` is free text ('Tourism'); `toPurposeCode` maps it to the codes the reporting bot sent while Ubyport was still accepting batches (10 turistika, 20 obchod, 30 studium, 40 zdraví, 50 kultura, 60 sport, 70 official, 80 religion, 99 ostatní).
+- `includeReported=1` exports guests already flagged as reported — needed for the 26.07–05.09 window, where the flag was set by a `PseudoRazitko` that produced no batch.
 - A guest is marked reported **only after the portal accepts the batch**, via `mark_police_bulk` with the receipt number. A web-service `PseudoRazitko` is not an acceptance.
 - Verify the produced file with the police's `UbyData` application before uploading it to Ubyport.
 

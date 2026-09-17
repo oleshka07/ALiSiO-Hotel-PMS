@@ -220,6 +220,33 @@ export function toIso3(raw: string | null | undefined): string | null {
   return null;
 }
 
+// ─── §3.3 field 14 — účel pobytu ──────────────────────
+//
+// purpose_of_stay is free text in this database ('Tourism' by default). These
+// are the codes the reporting bot has been sending, and batches carrying them
+// were accepted by Ubyport up to 26.07.2026 — so they are verified against the
+// číselník by practice, not guessed.
+
+const PURPOSE_CODES: Record<string, string> = {
+  tourism: '10', turistika: '10', turyzm: '10',
+  business: '20', obchod: '20',
+  study: '30', studium: '30',
+  health: '40', zdravi: '40',
+  culture: '50', kultura: '50',
+  sport: '60',
+  official: '70',
+  religion: '80',
+  other: '99', ostatni: '99',
+};
+
+/** Free text or a bare code → two-digit code; `fallback` is the property default. */
+export function toPurposeCode(raw: string | null | undefined, fallback: string): string {
+  const text = String(raw ?? '').trim();
+  if (/^\d{1,2}$/.test(text)) return text.padStart(2, '0');
+  const key = fold(text);
+  return PURPOSE_CODES[key] ?? fallback;
+}
+
 // ─── Records ──────────────────────────────────────────
 
 export interface UnlProvider {
@@ -335,10 +362,7 @@ function recordU(g: UnlGuest, p: UnlProvider, problems: UnlProblem[]): string | 
     fail('Bydliště', 'адреса не може складатися лише з цифр');
   }
 
-  // purpose_of_stay is free text for most rows ('Tourism'); only a bare code
-  // overrides the property default, otherwise every guest would get "00".
-  const raw = field(g.purpose_of_stay);
-  const ucel = /^\d{1,2}$/.test(raw) ? raw.padStart(2, '0') : p.ucelPobytu;
+  const ucel = toPurposeCode(g.purpose_of_stay, p.ucelPobytu);
   if (!/^\d{2}$/.test(ucel)) fail('Účel pobytu', 'потрібен двоцифровий код з číselníku');
 
   if (problems.length > before) return null;
