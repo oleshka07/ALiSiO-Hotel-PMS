@@ -1,5 +1,8 @@
 import OpenAI from 'openai';
 import { spawn } from 'child_process';
+import { randomBytes } from 'crypto';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { parseMrz } from './mrz-parser';
 
@@ -44,58 +47,106 @@ Rules:
 - confidence: 90+ if you can clearly read all fields, 50-89 if partially readable, below 50 if very unclear
 - If the image is not a document, return confidence: 0 with empty strings`;
 
-async function runLocalTesseract(imageUrl: string): Promise<string | null> {
+// ─── Local OCR ────────────────────────────────────────
+//
+// Passport and ID photographs are read on this machine first. Only when the
+// machine-readable zone cannot be recovered does the image go to OpenAI — so
+// for a passport, which always has an MRZ, the scan never leaves the server.
+//
+// This used to call tesseract.js through a helper script. That package was
+// never in package.json, so the helper threw MODULE_NOT_FOUND on its first
+// line and every document silently fell through to OpenAI. The system binary
+// needs no npm dependency, keeps its language data on disk, and is a fraction
+// of the memory of the WASM build.
+//
+//   apt install tesseract-ocr tesseract-ocr-eng
+//
+const TESSERACT_BIN = process.env.TESSERACT_BIN || 'tesseract';
+
+// The MRZ alphabet, ICAO 9303: capitals, digits and the filler.
+const MRZ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
+
+let missingBinaryReported = false;
+
+function runTesseract(file: string, mrzOnly: boolean): Promise<string | null> {
   return new Promise((resolve) => {
+    const args = [file, 'stdout', '-l', 'eng', '--psm', '6'];
+    if (mrzOnly) args.push('-c', `tessedit_char_whitelist=${MRZ_CHARS}`);
+
+    let child;
     try {
-      const cwd = process.cwd();
-      const scriptPath = `${cwd}/scripts/run-tesseract.js`;
-      
-      // Prevent Turbopack from tracing spawn arguments
-      const runCmd = eval('require("child_process").spawn');
-      const child = runCmd('node', [scriptPath]);
-      let stdout = '';
-
-      child.stdout.on('data', (data: any) => { stdout += data.toString(); });
-      child.stderr.on('data', (data: any) => { console.error('[Tesseract STDERR]', data.toString()); });
-
-      child.on('close', (code: any) => {
-        if (code !== 0) {
-          console.error('[Tesseract] exited with code', code);
-          return resolve(null);
-        }
-        try {
-          const result = JSON.parse(stdout);
-          if (result.success) return resolve(result.text);
-          console.error('[Tesseract JSON Error]', result.error);
-          return resolve(null);
-        } catch {
-          return resolve(null);
-        }
-      });
-
-      child.stdin.write(imageUrl);
-      child.stdin.end();
-    } catch (e) {
-      console.error('[Tesseract Run Error]', e);
-      resolve(null);
+      child = spawn(TESSERACT_BIN, args);
+    } catch {
+      return resolve(null);
     }
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT' && !missingBinaryReported) {
+        missingBinaryReported = true;
+        console.error(
+          '[OCR] tesseract is not installed — every document will be sent to OpenAI. ' +
+          'Install it with: apt install tesseract-ocr tesseract-ocr-eng',
+        );
+      } else if (err.code !== 'ENOENT') {
+        console.error('[OCR] tesseract failed to start:', err.message);
+      }
+      resolve(null);
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        console.error('[OCR] tesseract exited with', code, stderr.trim().slice(0, 200));
+        return resolve(null);
+      }
+      resolve(stdout);
+    });
   });
 }
 
+/** Write a data: URL to a temp file; a path is passed through unchanged. */
+function materialise(imageUrl: string): { file: string; cleanup: () => void } {
+  const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(imageUrl);
+  if (!m) return { file: imageUrl, cleanup: () => {} };
+
+  const ext = (m[1] || 'image/jpeg').split('/')[1]?.split('+')[0] || 'jpg';
+  const file = path.join(os.tmpdir(), `pms-ocr-${randomBytes(8).toString('hex')}.${ext}`);
+  const body = m[3];
+  fs.writeFileSync(file, Buffer.from(body, m[2] ? 'base64' : 'utf8'));
+  return {
+    file,
+    // A passport scan must not linger in /tmp once it has been read.
+    cleanup: () => { try { fs.unlinkSync(file); } catch { /* already gone */ } },
+  };
+}
+
 export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
-  console.log('[OCR] Starting local Tesseract OCR...');
-  const text = await runLocalTesseract(imageUrl);
-  
-  if (text) {
-    const mrzData = parseMrz(text);
-    if (mrzData && mrzData.firstName && mrzData.lastName && mrzData.firstName !== 'Unknown') {
-      console.log('[OCR] Successfully parsed MRZ from local OCR.');
-      return mrzData as OcrResult;
+  const { file, cleanup } = materialise(imageUrl);
+  try {
+    // The whitelisted pass first: it is the one that reads the MRZ cleanly.
+    // The unrestricted pass is only worth its second or two when that fails.
+    for (const mrzOnly of [true, false]) {
+      const text = await runTesseract(file, mrzOnly);
+      if (!text) break;
+
+      const mrzData = parseMrz(text);
+      if (mrzData && mrzData.firstName && mrzData.lastName && mrzData.firstName !== 'Unknown') {
+        console.log(
+          `[OCR] MRZ read locally (${mrzOnly ? 'whitelisted' : 'plain'} pass), ` +
+          `confidence ${mrzData.confidence} — nothing sent to OpenAI`,
+        );
+        return mrzData as OcrResult;
+      }
     }
-    console.log('[OCR] MRZ parse failed or missing fields. Falling back to OpenAI...');
-  } else {
-    console.log('[OCR] Local OCR failed entirely. Falling back to OpenAI...');
+  } finally {
+    cleanup();
   }
+
+  console.log('[OCR] No MRZ recovered locally. Falling back to OpenAI...');
 
   // Fallback to OpenAI
   const response = await getClient().chat.completions.create({
