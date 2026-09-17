@@ -1,6 +1,6 @@
 # Guests Module
 
-Manages guest profiles, guest portal (token-based public page), registration, chat, feedback, and service orders.
+Manages guest profiles, guest portal (token-based public page), registration, chat, feedback, service orders, and the guest registry (evidenční kniha + Ubyport reporting to the Czech foreign police).
 
 ## Public API
 
@@ -15,6 +15,9 @@ import {
   payForService,
   getChatMessages, sendChatMessage,
   translateTexts,
+  getRegistry, updateRegistryEntry, bulkUpdateRegistry,
+  exportRegistry, exportRegistryUnl,
+  getUbyportSettings, saveUbyportSettings,
 } from '@guests';
 ```
 
@@ -27,6 +30,16 @@ import {
 - **Feedback** — post-stay feedback saved as reservation activity
 - **Services** — additional service ordering + Teya payment integration
 - **Translations** — on-demand OpenAI translation of portal content
+- **Guest registry** — evidenční a domovní kniha: fees, exemptions, CSV export
+- **Ubyport** — `.unl` batch file for the foreign police (Příloha č. 3 Provozního řádu): CP1250, record A (property) + records U (guests), validated up front so a rejectable batch is never produced silently
+
+### Ubyport notes
+
+- `domain/ubyport.ts` owns the format: CP1250 encoding, the §2.4.1 character sets, `dd.mm.yyyy` dates, and free-text nationality → three-letter code (including oval plate codes like `D` → `DEU`, which the web service rejects as `E_NATI_INVALID`).
+- The export **refuses** a batch containing records the police would reject, and lists them per guest and field. `skipInvalid=1` emits the valid rows only and reports how many were left out.
+- Record A (IDUB, zkratka, address, účel pobytu) lives in `settings` under `ubyport_*`, edited at `/settings/ubyport`. `ucelPobytu` is never seeded — it comes from the police číselník.
+- A guest is marked reported **only after the portal accepts the batch**, via `mark_police_bulk` with the receipt number. A web-service `PseudoRazitko` is not an acceptance.
+- Verify the produced file with the police's `UbyData` application before uploading it to Ubyport.
 
 ## Data Layer
 
@@ -37,6 +50,7 @@ import {
 | `registration.repo.ts` | Guest registration (find-or-create, transaction) |
 | `chat.repo.ts` | Chat messages read/write |
 | `guest-actions.repo.ts` | Feedback, service orders, Teya payment helpers |
+| `registry.repo.ts` | Evidenční kniha queries, police flags, `ubyport_*` settings |
 
 ## Cross-Module Dependencies
 
@@ -65,3 +79,10 @@ import {
 | GET | `/api/guest/[token]/chat` | `getChatMessages` |
 | POST | `/api/guest/[token]/chat` | `sendChatMessage` |
 | POST | `/api/guest/translate` | `translateTexts` |
+| GET | `/api/guest-registry` | `getRegistry` |
+| GET | `/api/guest-registry?format=csv` | `exportRegistry` |
+| GET | `/api/guest-registry?format=unl` | `exportRegistryUnl` (`dry=1`, `skipInvalid=1`) |
+| PATCH | `/api/guest-registry` | `bulkUpdateRegistry` (`mark_police_bulk`) |
+| PATCH | `/api/guest-registry/[id]` | `updateRegistryEntry` |
+| GET | `/api/ubyport-settings` | `getUbyportSettings` |
+| PUT | `/api/ubyport-settings` | `saveUbyportSettings` |

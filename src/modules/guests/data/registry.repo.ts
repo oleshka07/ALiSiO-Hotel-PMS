@@ -6,6 +6,9 @@ import { registerNationalitySql } from '../domain/nationality';
 
 export interface RegistryFilters {
   month: string;               // YYYY-MM
+  /** Inclusive check-in range. When both are set they replace `month`. */
+  from?: string;               // YYYY-MM-DD
+  to?: string;                 // YYYY-MM-DD
   foreignersOnly?: boolean;
   unregisteredOnly?: boolean;
   search?: string;
@@ -64,8 +67,10 @@ function nextMonth(month: string): string {
 // ─── Queries ──────────────────────────────────────────
 
 export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
-  const monthStart = `${filters.month}-01`;
-  const monthEnd = nextMonth(filters.month);
+  // A police batch spans whatever backlog is outstanding, not a calendar month.
+  const useRange = Boolean(filters.from && filters.to);
+  const monthStart = useRange ? filters.from! : `${filters.month}-01`;
+  const monthEnd = useRange ? filters.to! : nextMonth(filters.month);
 
   let query = `
     SELECT
@@ -97,7 +102,7 @@ export function getRegistryEntries(filters: RegistryFilters): RegistryEntry[] {
     FROM reservation_guests rg
     JOIN reservations r ON rg.reservation_id = r.id
     JOIN units u ON r.unit_id = u.id
-    WHERE r.check_in >= ? AND r.check_in < ?
+    WHERE r.check_in >= ? AND r.check_in ${useRange ? '<=' : '<'} ?
       AND r.status NOT IN ('cancelled', 'no_show')
   `;
   const params: (string | number)[] = [monthStart, monthEnd];
@@ -181,6 +186,72 @@ export function markPoliceReported(id: string, ref?: string): void {
         police_report_ref = ?
     WHERE id = ?
   `).run(ref ?? null, id);
+}
+
+/** One statement per id inside a transaction — a batch is marked all or not at all. */
+export function markPoliceReportedBulk(ids: string[], ref: string): number {
+  if (!ids.length) return 0;
+  const db = getDb();
+  const stmt = db.prepare(`
+    UPDATE reservation_guests
+    SET police_reported = 1,
+        police_reported_at = datetime('now'),
+        police_report_ref = ?
+    WHERE id = ?
+  `);
+  const run = db.transaction((list: string[]) => {
+    let n = 0;
+    for (const id of list) n += stmt.run(ref, id).changes;
+    return n;
+  });
+  return run(ids) as number;
+}
+
+export interface UbyportProvider {
+  idub: string;
+  zkratka: string;
+  ubytovatel: string;
+  kontakt?: string;
+  okres?: string;
+  obec?: string;
+  castObce?: string;
+  ulice?: string;
+  cisloDomovni?: string;
+  cisloOrientacni?: string;
+  psc?: string;
+  ucelPobytu: string;
+}
+
+const UBYPORT_KEYS = [
+  'idub', 'zkratka', 'ubytovatel', 'kontakt', 'okres', 'obec',
+  'castObce', 'ulice', 'cisloDomovni', 'cisloOrientacni', 'psc', 'ucelPobytu',
+] as const;
+
+/** Záznam typu A is property data, not guest data — it lives in settings under `ubyport_*`. */
+export function getUbyportProvider(): UbyportProvider {
+  const rows = getDb()
+    .prepare("SELECT key, value FROM settings WHERE key LIKE 'ubyport_%'")
+    .all() as Array<{ key: string; value: string | null }>;
+
+  const map = new Map(rows.map((r) => [r.key, (r.value ?? '').trim()]));
+  const out = {} as Record<string, string>;
+  for (const k of UBYPORT_KEYS) out[k] = map.get(`ubyport_${k}`) ?? '';
+  return out as unknown as UbyportProvider;
+}
+
+export function saveUbyportProvider(data: Partial<UbyportProvider>): void {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  `);
+  const run = db.transaction(() => {
+    for (const k of UBYPORT_KEYS) {
+      if (data[k] === undefined) continue;
+      stmt.run(`ubyport_${k}`, String(data[k] ?? '').trim());
+    }
+  });
+  run();
 }
 
 export function unmarkPoliceReported(id: string): void {
