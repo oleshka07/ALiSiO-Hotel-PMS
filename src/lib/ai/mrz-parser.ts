@@ -17,28 +17,48 @@ const MRZ_LENGTHS = [30, 36, 44];
  * alone to fail honestly rather than be completed with a guess that would put
  * a wrong document number in front of the foreign police.
  */
-function repairLength(line: string): string {
-  if (MRZ_LENGTHS.includes(line.length)) return line;
+function snap(len: number): number | null {
+  for (const n of MRZ_LENGTHS) if (len === n) return n;
+  return null;
+}
 
-  const longer = MRZ_LENGTHS.find(n => n > line.length && n - line.length <= 8);
-  if (longer && line.endsWith('<')) return line.padEnd(longer, '<');
+/**
+ * Bring the recovered lines to one consistent document format.
+ *
+ * '<' is padding and carries no data, and a long run of identical glyphs has
+ * no word shape for the engine to lock onto — so the tail of the name line
+ * routinely comes back short while line 2, the one with the document number
+ * and the check digits, comes out exact. Guessing a length per line therefore
+ * gets it wrong: a 32-character name line looks like a truncated TD2 when it
+ * is really a TD3 that lost twelve fillers.
+ *
+ * So the longest line decides the format, and the others are padded to match.
+ * Padding is only ever filler, and only where the line already ends in filler:
+ * a short line ending in a digit has lost something that matters and is left
+ * alone to fail honestly rather than be completed with a guess that would put
+ * a wrong document number in front of the foreign police.
+ */
+function unify(lines: string[]): string[] {
+  if (!lines.length) return lines;
 
-  // Too long: an extra glyph read out of the margin, but only if it is filler.
-  for (const n of [...MRZ_LENGTHS].reverse()) {
-    if (line.length > n && /^<+$/.test(line.slice(n))) return line.slice(0, n);
-  }
-  return line;
+  const longest = Math.max(...lines.map(l => l.length));
+  const target = snap(longest) ?? MRZ_LENGTHS.find(n => n >= longest) ?? MRZ_LENGTHS[MRZ_LENGTHS.length - 1];
+
+  return lines.map((line) => {
+    if (line.length === target) return line;
+    if (line.length < target) return line.endsWith('<') ? line.padEnd(target, '<') : line;
+    // Too long: glyphs read out of the margin, but only if they are filler.
+    return /^<+$/.test(line.slice(target)) ? line.slice(0, target) : line;
+  });
 }
 
 function cleanMrzLines(rawText: string): string[] {
   const lines = rawText.split('\n')
     .map(line => line.replace(/\s+/g, '').replace(/«/g, '<').toUpperCase())
-    .filter(line => line.includes('<') && line.length > 20)
-    .map(repairLength);
+    .filter(line => line.includes('<') && line.length > 20);
 
   // Take the last 2 or 3 valid MRZ lines
-  if (lines.length > 3) return lines.slice(-3);
-  return lines;
+  return unify(lines.length > 3 ? lines.slice(-3) : lines);
 }
 
 function formatDateOfBirth(mrzDate: string): string | null {
