@@ -435,18 +435,36 @@ export async function checkInbox(db: any, inbox: BankInboxConfig, opts: CheckInb
               } else if (isCsv) {
                 stmt = parseKbCsv(att.content.toString('utf8'));
               } else {
-                // PDF — LLM-based extractor (works for any bank format).
-                // If OPENAI_API_KEY is missing or LLM fails, fall back to
+                // PDF — LLM-based extractor (works for any bank format), with
                 // the legacy KB-specific regex parser as a last resort.
+                //
+                // That parser only knows KB's layout, so on a statement from
+                // another bank it fails with "opening or closing balance not
+                // detected — format may have changed". Reported as-is, that
+                // sent an operator to check a KB format that had not changed:
+                // twelve Česká spořitelna statements were skipped that way,
+                // every one of them because the extractor was out of OpenAI
+                // credit. The failure that matters is the first one.
                 if (process.env.OPENAI_API_KEY) {
                   try {
                     stmt = await parseStatementWithLlm(att.content as Buffer, filename, msg.uid, attachmentPassword);
                   } catch (llmErr: any) {
                     console.log(`[BankInbox] LLM extractor failed (${llmErr.message}), falling back to regex parser`);
-                    stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
+                    try {
+                      stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
+                    } catch {
+                      throw new Error(`PDF extractor failed — ${llmErr.message}`);
+                    }
                   }
                 } else {
-                  stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
+                  try {
+                    stmt = await parseKbPdf(att.content as Buffer, attachmentPassword);
+                  } catch (kbErr: any) {
+                    throw new Error(
+                      'PDF extractor unavailable — OPENAI_API_KEY is not set, and the ' +
+                      `fallback parser only understands KB statements (${kbErr.message})`,
+                    );
+                  }
                 }
               }
             } catch (e: any) {
